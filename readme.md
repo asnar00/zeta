@@ -3,6 +3,10 @@
 
 `zeta` (`ze`ro `t`o `a`nything) is a compiler that reads in `zero` programs (expressed in *feature normal form*) and generates code in any language and for any backend. Initially we'll support typescript and swift/metal.
 
+## zero
+
+`zero` is an experimental programming language built around the concept of *feature modularity*. For a full explanation, look at the test [hello world](./src/test/Hello.zero.md) example.
+
 ## feature normal form
 
 *Feature-normal form* (`fnf`) represents code as a tree of markdown files, each one defining a feature. Sub-features are stored in a folder of the same name, ordered by creation date. Markdown files look a lot like blog posts - they contain formatted text designed for human readers, with code snippets inline.
