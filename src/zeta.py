@@ -566,7 +566,6 @@ on ( string out$ ) << hello ( ) {indent}
 def test():
     print("test ------------------------------------")
     test_parse_rules()
-    print(" ")
     test_lexer()
 
 def main():
