@@ -7,7 +7,11 @@ This file explains `fnf` and the syntax of `zero`, while also providing a test f
 
 ## feature modularity
 
-In zero, the fundamental unit of code modularity is the `feature`. All code is bound to features; zero doesn't support "objects" in the classic sense, just structures (a bit like C) that are lightweight objects containing no code.
+In zero, the fundamental unit of code modularity is the `feature`. A program is a tree of features, applied in the order they were written. Each feature changes the behaviour of its parent feature.
+
+All code is bound to features; zero doesn't support "objects" in the classic sense, just structures (a bit like C) that are lightweight objects containing no code.
+
+A longer discussion of the motivation for, and potential benefits of, feature modularity can be found [here](../../features.md).
 
 ## our first feature clause
 
@@ -20,7 +24,7 @@ The first thing to do is to declare the feature itself, extending the built-in `
 Our new feature is going to implement a function called `hello` that returns "hello world" when called, like this:
 
     > hello()
-    => hello world
+    => "hello world"
 
 This code snippet defines a *test* : the `>` symbol at the start (mimicking a BASIC prompt from the old microcomputer days) will generate test code on the target platform, and run it. 
 
@@ -48,33 +52,33 @@ The `$` suffix on the `out$` variable indicates that `out` is a *stream* of valu
 The `<<` operator (called "push", loosely inspired by C++'s stream operator) pushes the result of the function into the stream.
 
 We'll look at streams in more detail in future examples. For now, just think of a stream as an array of items. In this case, a stream of type `string` is just the stand-in for a console.
-            
+
 ## layout agnostic
 
 You'll notice that the layout of this code uses significant whitespace like python, but without the traditional `:` at the end of the declaration line. 
 
-The `zeta` compiler is *layout-agnostic* - it accepts code written according to the conventions of multiple languages. (the goal is to make zero programming feel natural for people with lots of muscle-memory of those languages).
+The `zeta` parser is *layout-agnostic* - it accepts code written according to the conventions of multiple languages. (the goal is to make zero programming feel natural for people with lots of muscle-memory of those languages).
 
 For instance, the following are all acceptable alternative forms of `hello`:
 
-C/C++ layout:
+C/C++ layout: (`type` then `name` in declarations, braces for indents)
 
     on (string out$) << hello() {
         out$ << "hello world";
     }
 
-Typescript/Javascript layout:
+Typescript layout: (`name` : `type` in declarations, braces for indents)
 
     on (out$ : string) << hello() {
         out$ << "hello world";
     }
 
-Python layout:
+Python layout: (`name` : `type` in declarations, `:` and significant whitespace)
 
     on (out$ : string) << hello():
         out$ << "hello world"
 
-Blended C/C++/Python layout (types first, sig-whitespace, no ":")
+Blended C/C++/Python layout (`type` then `name` in declarations, significant whitespace, no ":")
 
     on (string out$) << hello()
         out$ << "hello world"
