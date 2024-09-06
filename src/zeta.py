@@ -5,6 +5,7 @@
 from typing import List, Tuple
 import inspect
 import os
+import re
 
 #------------------------------------------------------------------------------
 # kenny loggings
@@ -16,6 +17,33 @@ def log_clear():
 # returns a grey-coloured foreground, black background
 def log_grey(str) -> str:
     return f'\033[30;1m{str}\033[0m'
+
+# strips all colour-related codes out of a string
+def log_strip(str) -> str:
+    str = re.sub(r'\033\[[0-9;]*m', '', str)
+    # also strip out :number:, replace with :...:
+    str = re.sub(r':\d+:', ':..:', str)
+    return str
+
+# log_disclose shows CRs and tabs and spaces within a string
+def log_disclose(str) -> str:
+    return str.replace('\n', '↩︎\n').replace('\t', '▶︎').replace(' ', '_')
+
+# log_assert checks if two strings are equal, and prints a message if they're not
+def log_assert(name, a, b: str):
+    sa = log_strip(str(a))
+    sb = log_strip(b).rstrip()
+    if sb.startswith("\n"): sb = sb[1:]
+    ctx = context()
+    ctx_str = f"{ctx[0]}:{ctx[1]}"
+    if sa == sb:
+        print(f"{log_grey(ctx_str)} {name}: passed")
+    else:
+        print(f"{log_grey(ctx_str)} {name}: failed")
+        print("expected:")
+        print(sb)
+        print("got:")
+        print(sa)
 
 #------------------------------------------------------------------------------
 # context: figure out which file/line called us
@@ -233,16 +261,23 @@ def constant() -> dict:
 # main, test, etc
 
 def test():
-    print(rule_as_string(feature()))
-
+    print("test ------------------------------------")
+    log_assert("rule_as_string",
+        rule_as_string(feature()), """
+             feature = 
+zeta.py:198: seq(
+zeta.py:199:     kw('feature'), set('name', id()), 
+zeta.py:200:     opt(seq(kw(':'), set('parent', id()))), 
+zeta.py:201:     block(list(any(function(), struct(), variable()))))
+               """)
 def main():
     log_clear()
-    print('------------------------------------------------------------------------------')
     print('ᕦ(ツ)ᕤ zeta.py\n')
     test()
           
 if __name__ == '__main__':
     main()
+    print("\ndone.")
 
 
 
