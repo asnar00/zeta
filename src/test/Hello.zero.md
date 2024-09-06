@@ -45,7 +45,7 @@ Let's unpack this to understand each of the keywords:
 
 `on` defines a new function, but can also extend an existing function (which we'll look at later).
 
-`(out$ : str)` defines the result of the function `hello`. `zero` uses an unusual convention called *named results* - there's no `return` keyword; rather, we supply a name and type for the result variable. (We do this because it simplifies a whole bunch of stuff, as we'll see later on).
+`(out$ : string)` defines the result of the function `hello`. `zero` uses an unusual convention called *named results* - there's no `return` keyword; rather, we supply a name and type for the result variable. (We do this because it simplifies a whole bunch of stuff, as we'll see later on).
 
 The `$` suffix on the `out$` variable indicates that `out` is a *stream* of values (of type `string`) rather than a single value. (We require the `$` suffix in the variable name because that makes it easy to tell, just by looking at a variable, whether it's a stream or a singular value.)
 
