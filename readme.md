@@ -1,7 +1,7 @@
 ᕦ(ツ)ᕤ
 # zeta
 
-`zeta` (`ze`ro `t`o `a`nything) is a compiler that reads in `zero` programs (expressed in *feature normal form*) and generates code in any language and for any backend. Initially we'll support typescript and swift/metal.
+`zeta` (**ze**ro **t**o **a**nything) is a compiler that reads in `zero` programs (expressed in *feature normal form*) and generates code in any language and for any backend. 
 
 ## zero
 

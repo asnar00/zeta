@@ -28,7 +28,7 @@ Our new feature is going to implement a function called `hello` that returns "he
 
 This code snippet defines a *test* : the `>` symbol at the start (mimicking a BASIC prompt from the old microcomputer days) will generate test code on the target platform, and run it. 
 
-The `=>` operator specifies the result that we expect to see; if the result doesn't match, `zeta` will report a test failure tagged with the source filename and line number.
+The `=>` operator specifies the result that we expect to see; if the result doesn't match, zeta will report a test failure tagged with the source filename and line number.
 
 We can also just call the function without specifying an expected result; this will just output the result to the console, tagged with the file and line number of the code.
 
@@ -57,7 +57,7 @@ We'll look at streams in more detail in future examples. For now, just think of 
 
 You'll notice that the layout of this code uses significant whitespace like python, but without the traditional `:` at the end of the declaration line. 
 
-The `zeta` parser is *layout-agnostic* - it accepts code written according to the conventions of multiple languages. (the goal is to make zero programming feel natural for people with lots of muscle-memory of those languages).
+The zeta parser is *layout-agnostic* - it accepts code written according to the conventions of multiple languages. (the goal is to make zero programming feel natural for people with lots of muscle-memory of those languages).
 
 For instance, the following are all acceptable alternative forms of `hello`:
 
