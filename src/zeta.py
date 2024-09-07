@@ -80,7 +80,7 @@ def log_assert(name, a, b: str):
         print(sa)
 
 #------------------------------------------------------------------------------
-# caller: figure out which file/line called us
+# phil call-ins
 
 s_cwd = os.getcwd() + "/src/"
 
@@ -98,7 +98,7 @@ def caller_string() -> str:
     file = frame.filename.replace(s_cwd, '')
     return f"{file}:{frame.lineno}"
 #------------------------------------------------------------------------------
-# file system 
+# file system of a down
 
 # read a file
 def readFile(path: str) -> str:
@@ -106,189 +106,7 @@ def readFile(path: str) -> str:
         return file.read()
 
 #------------------------------------------------------------------------------
-# structure-based parsing and printing!
-# these are the "atoms" out of which parsers are built
-# we store them as dictionaries, so we can use them to parse, print, or do other things
-# but we construct them using functions, so the parser rules are easier to read
-
-# matches a specific keyword
-def keyword(word: str)-> dict:
-    return {'fn': 'keyword', 'value': word, 'caller': caller()}
-
-# matches an indent
-def indent()-> dict:
-    return {'fn': 'indent', 'caller': caller()}
-
-# matches an undent
-def undent()-> dict:
-    return {'fn': 'undent', 'caller': caller()}
-
-# matches a newline (no indent change)
-def newline()-> dict:
-    return {'fn': 'newline', 'caller': caller()}
-
-# matches an alpha-numeric identifier
-def id()-> dict:
-    return {'fn': 'id'}
-
-# labels the result of a rule as being of a certain type (eg "feature", "function")
-def label(s: str, rule: dict)-> dict:
-    return {'fn': 'label', 'label': s, 'rule': rule, 'caller': caller()}
-
-# sets a property in the output AST to the result of the rule
-def set(name: str, rule: dict)-> dict:
-    return {'fn': 'set', 'name': name, 'rule': rule, 'caller': caller()}
-
-# runs each rule in sequence, collects all results into a single AST node
-def sequence(*rules: List[dict])-> dict:
-    return {'fn': 'sequence', 'rules': rules, 'caller': caller()}
-
-# optionally runs the rule, but succeeds even if it doesn't match
-def optional(rule: dict)-> dict:
-    return {'fn': 'optional', 'rule': rule, 'caller': caller()}
-
-# matches one of the list of words (like keyword)
-def enum(*words: List[str])-> dict:
-    return {'fn': 'enum', 'words': words, 'caller': caller()}
-
-# matches any of the sub-rules, or returns the last error
-def any(*rules: List[dict])-> dict:
-    return {'fn': 'any', 'rules': rules, 'caller': caller()}
-
-# matches a list of the same rule, separated and terminated
-def list(rule: dict, sep: str=None, term: str=None)-> dict:
-    return {'fn': 'list', 'rule': rule, 'sep': sep, 'term': term, 'caller': caller()}
-
-# matches an indented block of stuff
-def block(rule: dict)-> dict:
-    return {'fn': 'block', 'rule': rule, 'caller': caller()}
-
-# grabs all lexemes up to one of the terminator strings, skipping brackets and quotes
-def upto(*chars: List[str])-> dict:
-    return {'fn': 'upto', 'chars': chars, 'caller': caller()}
-
-# matches either a thing, or the thing in brackets
-def maybe_bracketed(rule: dict)-> dict:
-    return {'fn': 'maybe_bracketed', 'rule': rule, 'caller': caller()}
-
-#------------------------------------------------------------------------------
-# print a parser rule in a nice way, with links back to source code
-# for debugging parser rules in a sensible, streamlined way
-
-# print a parser rule as a nicely formatted, readable string matching the source code
-def rule_as_string(rule):
-    out = rule_as_string_rec(rule)
-    file = rule['caller'][0]
-    padding = len(file) + 6
-    lines = out.split('**')
-    last_lineno = 0
-    result = " "*padding
-    for i, line in enumerate(lines):
-        ic = line.find(":")
-        lineno = 0
-        indent = 0
-        if ic >= 0:
-            start = line[:ic]
-            parts = start.split("/")
-            lineno = int(parts[0])
-            indent = int(parts[1])
-            line = line[ic+1:]
-        if lineno > last_lineno:
-            file_line = log_grey(f"{file}:{lineno:3}: ")
-            result += f"\n{file_line}" + "    " * indent
-        last_lineno = lineno
-        result += line
-    return result
-
-# recursive routine that prints a rule as a string, with source line numbers embedded in it
-def rule_as_string_rec(rule, indent: int=0, line: int=0) -> str:
-    if isinstance(rule, str): return rule
-    if 'fn' in rule and rule['fn'] == 'label':
-        return f'{rule["label"]} = {rule_as_string_rec(rule["rule"], indent, line)}'
-    out = ''
-    rule_line = rule['caller'][1] if 'caller' in rule else line
-    out += f'**{rule_line}/{indent}:'
-    for key, val in rule.items():
-        if key == 'fn':
-            out += f'{val}('
-        elif key != 'caller': 
-            if isinstance(val, str): 
-                out += f"'{val}', "
-            elif isinstance(val, Tuple):
-                for v in val: 
-                    sub = maybe_rule_as_string(v, indent+1, line)
-                    out += f'{sub}, '
-            elif isinstance(val, dict): 
-                sub = maybe_rule_as_string(val, indent+1, line)
-                out += f'{sub}, '
-    if out.endswith(", ") : out = out[:-2]
-    out += ')'
-    return out
-
-# if the rule is labeled, just return the name, otherwise dive into it
-def maybe_rule_as_string(rule, indent: int=0, line: int=0) -> str:
-    if isinstance(rule, dict) and rule['fn'] == 'label':
-        return rule['label'] + "()"
-    return rule_as_string_rec(rule, indent)
-
-def print_newline(indent: int) -> str:
-    return '\n' + '  ' * indent
-
-#------------------------------------------------------------------------------
-# parse rules for zero
-
-# feature (name) [extends (parent)] { list(function | struct | variable) }
-def feature() -> dict:
-    return label('feature', sequence(
-                keyword('feature'), set('name', id()),
-                optional(sequence(keyword('extends'), set('parent', id()))),
-                block(list(any(function(), struct(), variable())))))
-
-# (on/replaceafter/before) (result) (name) (parameters) { function_body }
-def function() -> dict:
-    return label('function', sequence(
-        set('modifier', enum('on', 'replace', 'after', 'before')),
-        set('result', maybe_bracketed(name_type())),
-        set('assign_op', enum("=", "<<")), 
-        set('name', id()),
-        keyword('('), set('parameters', list(variable(), sep=',', term=')')), keyword(')'),
-        keyword('{'), set('body', function_body()), keyword('}')))
-
-# stand-in for now
-def function_body() -> dict:
-    return {'fn': 'function_body'}
-    
-# struct (name) { list(variable) }
-def struct() -> dict:
-    return label('struct', sequence(
-                keyword('struct'), set('name', id()),
-                block(list(variable))))
-
-# ((name type) | (type:name)) [= value]
-def variable() -> dict:
-    return label('variable', sequence(
-                name_type(),
-                optional(sequence(keyword('='), set('value', constant())))))
-
-def name_type() -> dict:
-    return any(
-            sequence(set('name', id()), keyword(':'), set('type', id())),
-            sequence(set('type', id()), set('name', id())))
-    
-def constant() -> dict:
-    return { "fn": "constant" }
-
-def test_parse_rules():
-    log_assert("rule_as_string",
-        rule_as_string(feature()), """
-             feature = 
-zeta.py:198: sequence(
-zeta.py:199:     keyword('feature'), set('name', id()), 
-zeta.py:200:     optional(sequence(keyword('extends'), set('parent', id()))), 
-zeta.py:201:     block(list(any(function(), struct(), variable()))))
-               """)
-#------------------------------------------------------------------------------
-# Source management
+# return to the source
 
 # Source is a file containing source code
 class Source:
@@ -421,6 +239,10 @@ def is_alphanum(c: str) -> bool:
 def is_alphanum_or_digit(c: str) -> bool:
     return c.isalnum() or c in "_$"
 
+# returns true if (str) is an identifier
+def is_id(val: str):
+    return val[0].isalpha() or val[0] == '_'
+
 # lexer: takes a source and returns a list of lexemes
 class Lexer:
     def __init__(self, source: Source):
@@ -500,56 +322,45 @@ class Lexer:
     def find_eol(self):
         self.iEnd = self.ls.find('\n', self.i)
         if self.iEnd == -1: self.iEnd = len(self.ls)
+
+    def match(self, fn, n_max=None):
+        j_max = (n_max + self.i) if n_max else self.iEnd
+        j = self.i+1
+        while j < j_max and fn(self.ls[j], self.ls[j-1] if j>0 else ''): j += 1
+        return j
     
+    def push(self, j, tag, val=None):
+        self.out += self.string.slice(self.i, j, val)
+        self.i = j
+        if tag: log("{punctuation}", str(self.out[-1]))
+
     def whitespace(self):
         log("{whitespace}")
         self.i += 1
 
     def operator(self, cn):
         j = self.i + 1
-        if cn != '\n' and cn in self.ops:
-            j = self.i + 2
-        self.out += self.string.slice(self.i, j)
-        log("{op}", log_disclose(str(self.out[-1])))
-        self.i = j
+        if cn != '\n' and cn in self.ops: j = self.i + 2
+        self.push(j, "{op}")
 
     def alphanum(self):
-        j = self.i+1
-        while j < self.iEnd and is_alphanum_or_digit(self.ls[j]):
-            j += 1
-        identifier= self.string.slice(self.i, j)
-        self.out += identifier
-        self.i = j
-        log("{alphanum}", str(self.out[-1]))
+        j = self.match(lambda c, cp: is_alphanum_or_digit(c))
+        self.push(j, "{alphanum}")
 
     def number(self):
-        j = self.i+1
-        while j < self.iEnd and self.ls[j].isdigit():
-            j += 1
-        number = self.string.slice(self.i, j)
-        self.out += number
-        self.i = j
-        log("{number}", str(self.out[-1]))
+        j = self.match(lambda c, cp : c.isdigit())
+        self.push(j, "{number}")
 
     def punctuation(self):
-        self.out += self.string.slice(self.i, self.i+1)
-        self.i += 1
-        log("{punctuation}", str(self.out[-1]))
+        self.push(self.i + 1, "{punctuation}")
 
     def string_literal(self):
-        j = self.i+1
-        while j < self.iEnd and (self.ls[j] != '"' or self.ls[j-1] == "\\"):
-            j += 1
-        literal = self.string.slice(self.i, j+1)
-        self.out += literal
-        log("{string}", str(self.out[-1]))
-        self.i = j+1
+        j = self.match(lambda c, cp: c != '"' or cp == "\\")
+        self.push(j+1, "{string}")
 
     def braces(self, c):
         if c == "{":
-            self.out += self.string.slice(self.i, self.i+1, "{indent-brace}")
-            self.i = self.i+1
-            log("{indent-brace}")
+            self.push(self.i+1, "{indent-brace}", "{indent-brace}")
         elif c == "}":
             if len(self.out) > 0 and self.out[-1].val != "{undent-sig}":
                 self.out += self.string.slice(self.i, self.i+1, "{undent-brace}")
@@ -580,7 +391,190 @@ feature Hello extends Main {indent}
   on ( string out$ ) << hello ( ) {indent} 
     out$ << "hello world"
 """)
-    
+
+#------------------------------------------------------------------------------
+# parser atoms
+
+# matches a specific keyword
+def keyword(word: str)-> dict:
+    return {'fn': 'keyword', 'value': word, 'caller': caller()}
+
+# matches an indent
+def indent()-> dict:
+    return {'fn': 'indent', 'caller': caller()}
+
+# matches an undent
+def undent()-> dict:
+    return {'fn': 'undent', 'caller': caller()}
+
+# matches a newline (no indent change)
+def newline()-> dict:
+    return {'fn': 'newline', 'caller': caller()}
+
+# matches an alpha-numeric identifier
+def identifier()-> dict:
+    return {'fn': 'identifier', 'caller': caller()}
+
+# labels the result of a rule as being of a certain type (eg "feature", "function")
+def label(s: str, rule: dict)-> dict:
+    return {'fn': 'label', 'label': s, 'rule': rule, 'caller': caller()}
+
+# sets a property in the output AST to the result of the rule
+def set(name: str, rule: dict)-> dict:
+    return {'fn': 'set', 'name': name, 'rule': rule, 'caller': caller()}
+
+# runs each rule in sequence, collects all results into a single AST node
+def sequence(*rules: List[dict])-> dict:
+    return {'fn': 'sequence', 'rules': rules, 'caller': caller()}
+
+# optionally runs the rule, but succeeds even if it doesn't match
+def optional(rule: dict)-> dict:
+    return {'fn': 'optional', 'rule': rule, 'caller': caller()}
+
+# matches one of the list of words (like keyword)
+def enum(*words: List[str])-> dict:
+    return {'fn': 'enum', 'words': words, 'caller': caller()}
+
+# matches any of the sub-rules, or returns the last error
+def any(*rules: List[dict])-> dict:
+    return {'fn': 'any', 'rules': rules, 'caller': caller()}
+
+# matches a list of the same rule, separated and terminated
+def list(rule: dict, sep: str=None, term: str=None)-> dict:
+    return {'fn': 'list', 'rule': rule, 'sep': sep, 'term': term, 'caller': caller()}
+
+# matches an indented block of stuff
+def block(rule: dict)-> dict:
+    return {'fn': 'block', 'rule': rule, 'caller': caller()}
+
+# grabs all lexemes up to one of the terminator strings, skipping brackets and quotes
+def upto(*chars: List[str])-> dict:
+    return {'fn': 'upto', 'chars': chars, 'caller': caller()}
+
+# matches either a thing, or the thing in brackets
+def maybe_bracketed(rule: dict)-> dict:
+    return {'fn': 'maybe_bracketed', 'rule': rule, 'caller': caller()}
+
+#------------------------------------------------------------------------------
+# print a parser rule in a nice way, with links back to source code
+# for debugging parser rules in a sensible, streamlined way
+
+# print a parser rule as a nicely formatted, readable string matching the source code
+def rule_as_string(rule):
+    out = rule_as_string_rec(rule)
+    file = rule['caller'][0]
+    padding = len(file) + 6
+    lines = out.split('**')
+    last_lineno = 0
+    result = " "*padding
+    for i, line in enumerate(lines):
+        ic = line.find(":")
+        lineno = 0
+        indent = 0
+        if ic >= 0:
+            start = line[:ic]
+            parts = start.split("/")
+            lineno = int(parts[0])
+            indent = int(parts[1])
+            line = line[ic+1:]
+        if lineno > last_lineno:
+            file_line = log_grey(f"{file}:{lineno:3}: ")
+            result += f"\n{file_line}" + "    " * indent
+        last_lineno = lineno
+        result += line
+    return result
+
+# recursive routine that prints a rule as a string, with source line numbers embedded in it
+def rule_as_string_rec(rule, indent: int=0, line: int=0) -> str:
+    if isinstance(rule, str): return rule
+    if 'fn' in rule and rule['fn'] == 'label':
+        return f'{rule["label"]} = {rule_as_string_rec(rule["rule"], indent, line)}'
+    out = ''
+    rule_line = rule['caller'][1] if 'caller' in rule else line
+    out += f'**{rule_line}/{indent}:'
+    for key, val in rule.items():
+        if key == 'fn':
+            out += f'{val}('
+        elif key != 'caller': 
+            if isinstance(val, str): 
+                out += f"'{val}', "
+            elif isinstance(val, Tuple):
+                for v in val: 
+                    sub = maybe_rule_as_string(v, indent+1, line)
+                    out += f'{sub}, '
+            elif isinstance(val, dict): 
+                sub = maybe_rule_as_string(val, indent+1, line)
+                out += f'{sub}, '
+    if out.endswith(", ") : out = out[:-2]
+    out += ')'
+    return out
+
+# if the rule is labeled, just return the name, otherwise dive into it
+def maybe_rule_as_string(rule, indent: int=0, line: int=0) -> str:
+    if isinstance(rule, dict) and rule['fn'] == 'label':
+        return rule['label'] + "()"
+    return rule_as_string_rec(rule, indent)
+
+def print_newline(indent: int) -> str:
+    return '\n' + '  ' * indent
+
+#------------------------------------------------------------------------------
+# parse rules for zero
+
+class Language: pass
+
+class Zero(Language):
+    # feature (name) [extends (parent)] { list(function | struct | variable) }
+    def feature(self) -> dict:
+        return label('feature', sequence(
+                    keyword('feature'), set('name', identifier()),
+                    optional(sequence(keyword('extends'), set('parent', identifier()))),
+                    block(list(any(self.function(), self.struct(), self.variable())))))
+
+    # (on/replaceafter/before) (result) (name) (parameters) { function_body }
+    def function(self) -> dict:
+        return label('function', sequence(
+            set('modifier', enum('on', 'replace', 'after', 'before')),
+            set('result', maybe_bracketed(self.name_type())),
+            set('assign_op', enum("=", "<<")), 
+            set('name', identifier()),
+            keyword('('), set('parameters', list(self.variable(), sep=',', term=')')), keyword(')'),
+            keyword('{'), set('body', self.function_body()), keyword('}')))
+
+    # stand-in for now
+    def function_body(self) -> dict:
+        return {'fn': 'function_body'}
+        
+    # struct (name) { list(variable) }
+    def struct(self) -> dict:
+        return label('struct', sequence(
+                    keyword('struct'), set('name', identifier()),
+                    block(list(self.variable))))
+
+    # ((name type) | (type:name)) [= value]
+    def variable(self) -> dict:
+        return label('variable', sequence(
+                    self.name_type(),
+                    optional(sequence(keyword('='), set('value', self.constant())))))
+
+    def name_type(self) -> dict:
+        return any(
+                sequence(set('name', identifier()), keyword(':'), set('type', identifier())),
+                sequence(set('type', identifier()), set('name', identifier())))
+        
+    def constant(self) -> dict:
+        return { "fn": "constant" }
+
+def test_parse_rules():
+    log_assert("rule_as_string",
+        rule_as_string(Zero().feature()), """
+             feature = 
+zeta.py:198: sequence(
+zeta.py:199:     keyword('feature'), set('name', identifier()), 
+zeta.py:200:     optional(sequence(keyword('extends'), set('parent', identifier()))), 
+zeta.py:201:     block(list(any(function(), struct(), variable()))))
+               """)
+
 #------------------------------------------------------------------------------
 # parsing helpers
 
@@ -673,6 +667,7 @@ def combine_errors(errors: List[Error]) -> Error:
     # now return a new error with the combined expecteds
     latest.expected = expected
     return latest
+
 #------------------------------------------------------------------------------
 # Parser contains a method for each parser atom
 
@@ -680,29 +675,23 @@ class Parser:
     def __init__(self):
         pass
 
-    # matches a specific keyword
     def keyword(self, caller, reader, word: str)-> dict:
         if reader.eof() and word in ['{newline}', '{undent}']: return {} # special case for premature eof
         return {} if reader.match(lambda s: s == word) else Error(f"'{word}'", reader, caller)
 
-    # matches an indent
     def indent(self, caller, reader)-> dict:
         return {} if reader.match(lambda s: s == "{indent}") else Error("{indent}", reader, caller)
 
-    # matches an undent
     def undent(self, caller, reader )-> dict:
         return {} if reader.match(lambda s: s == "{undent}") else Error("{undent}", reader, caller)
     
-    # matches a newline (no indent change)
     def newline(self, caller, reader)-> dict:
         return {} if reader.match(lambda s: s == "{newline}") else Error("{newline}", reader, caller)
     
-    # matches an alpha-numeric identifier
-    def id(self, caller, reader )-> dict:
-        lex = reader.match(lambda s: s.is_id())
+    def identifier(self, caller, reader )-> dict:
+        lex = reader.match(lambda s: is_id(s))
         return [lex] if lex else Error("identifier", reader, caller)
 
-    # labels the result of a rule as being of a certain type (eg "feature", "function")
     def label(self, caller, reader, s: str, parser_fn)-> dict:
         ast = { '_type' : type }
         sub_ast = parser_fn(reader)
@@ -711,23 +700,24 @@ class Parser:
         ast.update(sub_ast)
         return ast
 
-    # sets a property in the output AST to the result of the rule
     def set(self, caller, reader, name: str, parser_fn)-> dict:
         ast = parser_fn(reader)
         if err(ast): return ast
         log("set(", name, "):", ast)
         return { name : ast }
 
-    # runs each rule in sequence, collects all results into a single AST node
+    @log_disable
     def sequence(self, caller, reader, *parser_fns)-> dict:
+        log("sequence")
         ast = {}
+        log("  parser_fns", parser_fns)
         for parser_fn in parser_fns:
             result = parser_fn(reader)
+            log("  result", result)
             if err(result): return result
             ast.update(result)
         return ast
-
-    # optionally runs the rule, but succeeds even if it doesn't match
+    
     def optional(self, caller, reader, parser_fn)-> dict:
         iLex = reader.i
         ast = parser_fn(reader)
@@ -736,7 +726,6 @@ class Parser:
             return ast
         return ast
 
-    # matches one of the list of words (like keyword)
     def enum(self, caller, reader, *words: List[str])-> dict:
         lex = reader.peek()
         if lex and str(lex) in words:
@@ -744,7 +733,6 @@ class Parser:
             return [lex]
         return Error(f"{words}", reader, caller)
 
-    # matches any of the sub-rules, or returns the last error
     def any(self, caller, reader, *parser_fns)-> dict:
         errors = []
         for parse_fn in parser_fns:
@@ -756,25 +744,20 @@ class Parser:
         error = combine_errors(errors)
         return error
 
-    # matches a list of the same rule, separated and terminated
     def list(self, caller, reader, parser_fn, sep: str, term: str)-> dict:
         ast = []
         while True:
-            if str(reader.peek()) == term:
-                reader.advance()
+            if reader.match(lambda s: s == term):
                 break
             sub_ast = parser_fn(reader)
             if err(sub_ast): return sub_ast
             ast.append(sub_ast)
-            next = reader.peek()
-            if str(next) == term:
-                reader.advance()
+            if reader.match(lambda s: s == term):
                 break
-            elif str(next) == sep:
-                reader.advance()
+            elif sep != None and reader.match(lambda s: s == sep):
+                continue
         return ast
 
-    # matches an indented block of stuff
     def block(self, caller, reader, parser_fn)-> dict:
         if reader.match(lambda s: s == "{indent}"):
             ast = parser_fn(reader)
@@ -783,22 +766,19 @@ class Parser:
                 return ast
             return Error("{undent}", reader, caller)
         return Error("{indent}", reader, caller)
-
-    # grabs all lexemes up to one of the terminator strings, skipping brackets and quotes
+    
     def upto(self, caller, reader, *words: List[str])-> dict:
         depth = 0
         out = []
         while True:
-            lex = reader.peek()
-            if not lex: return out
-            if depth ==0 and str(lex) in words: 
-                return out
+            if reader.eof(): return out
+            lex = reader.match(lambda s: s in words)
+            if depth == 0 and lex: return out
             out.append(lex)
             if str(lex) in ["(", "[", "{indent}"]: depth += 1
             elif str(lex) in [")", "]", "{undent}"]: depth -= 1
             reader.advance()
 
-    # matches either a thing, or the thing in brackets
     def maybe_bracketed(self, caller, reader, parser_fn)-> dict:
         open_bracket = reader.match(lambda s: s == "(")
         ast = parser_fn(reader)
@@ -821,14 +801,14 @@ def make_processor(imp, rule: dict):
         if not (key in ['caller', 'fn']):
             if isinstance(val, str) or isinstance(val, LexStr): args.append(val)
             elif isinstance(val, dict): args.append(make_processor(imp, val))
-            elif isinstance(val, List): args.extend([make_processor(imp, v) for v in val])
+            elif isinstance(val, List) or isinstance(val, Tuple): args.extend([make_processor(imp, v) for v in val])
     return lambda reader: method(caller, reader, *args)
 
 @log_enable
 def test_parser():
     source = Source("src/test/Hello.zero.md")
     ls = Lexer(source).lex()
-    fn = keyword("feature")
+    fn = sequence(keyword("feature"), set("name", identifier()), optional(sequence(keyword("extends"), set("parent", identifier()))))
     parser = make_processor(Parser(), fn)
     reader = Reader(ls)
     ast = parser(reader)

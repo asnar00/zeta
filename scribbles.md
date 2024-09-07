@@ -1,7 +1,12 @@
 ᕦ(ツ)ᕤ
 # scribblez
 
-next: let's do some parsing. done Reader and Error, next:
+where we are now: got parser structure in place, tidied up the lexer and moved things around a bit.
+next: get all parser functions tested and the full parse of the test file working properly.
+
+once that is done, we can start on combinations, and then on backends.
+Let's do it!
+
 
 ----------------------------------------
 

@@ -5,19 +5,19 @@ In which we explain the whole feature-modularity thing, again.
 
 ## what
 
-Code is organised into features instead of applications, libraries, and objects.
+The smallest shippable unit of code is the "feature" instead of "library" / "application".
 
 ## why, architectural
 
-It's just better.
+Associating code and data with features instead of objects makes a bunch of stuff easier and better and more performant.
 
 ## why, economic
 
-Less replicated work.
+If you want to add a feature to a piece of commercial software, you can do so without creating a competing piece of commercial software.
 
 ## why, political
 
-Users, not vendors, control which features they run.
+Users, not vendors, control which features they run. Less unmet needs, less dark patterns, more efficiency and joyfulness.
 
 ## how
 
@@ -25,4 +25,4 @@ That's what we're trying to figure out.
 
 ## questions
 
-I'm sure you can think of many.
+So many questions.
