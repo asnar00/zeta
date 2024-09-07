@@ -812,7 +812,9 @@ def test_parser():
     parser = make_processor(Parser(), fn)
     reader = Reader(ls)
     ast = parser(reader)
-    log(ast)
+    log_assert("minimal parser", ast, """
+{'name': [Hello], 'parent': [Main]}
+               """)
 
 
 #------------------------------------------------------------------------------
