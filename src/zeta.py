@@ -48,6 +48,10 @@ def log_clear():
 def log_grey(str) -> str:
     return f'\033[30;1m{str}\033[0m'
 
+# returns a grey-coloured background, white foreground
+def log_grey_background(str) -> str:
+    return f'\033[47;30m{str}\033[0m'
+
 # strips all colour-related codes out of a string
 def log_strip(str) -> str:
     str = re.sub(r'\033\[[0-9;]*m', '', str)
@@ -64,7 +68,7 @@ def log_assert(name, a, b: str):
     sa = log_strip(str(a)).rstrip()
     sb = log_strip(b).rstrip()
     if sb.startswith("\n"): sb = sb[1:]
-    ctx = context()
+    ctx = caller()
     ctx_str = f"{ctx[0]}:{ctx[1]}"
     if sa == sb:
         print(f"{log_grey(ctx_str)} {name}: passed")
@@ -76,21 +80,21 @@ def log_assert(name, a, b: str):
         print(sa)
 
 #------------------------------------------------------------------------------
-# context: figure out which file/line called us
+# caller: figure out which file/line called us
 
 s_cwd = os.getcwd() + "/src/"
 
 # returns the (file, line) of the function that called our caller
-def context():
+def caller():
     frame = inspect.currentframe()
-    frame = inspect.getouterframes(frame)[2]    # [1] would be the call to context(), so...
+    frame = inspect.getouterframes(frame)[2]    # [1] would be the call to caller(), so...
     file = frame.filename.replace(s_cwd, '')    # dunno if we totally need this but 
     return (file, frame.lineno)                 # easier to process this way
 
 # same, but returns a string
-def context_string() -> str:
+def caller_string() -> str:
     frame = inspect.currentframe()
-    frame = inspect.getouterframes(frame)[2]    # [1] would be the call to context(), so...
+    frame = inspect.getouterframes(frame)[2]    # [1] would be the call to caller(), so...
     file = frame.filename.replace(s_cwd, '')
     return f"{file}:{frame.lineno}"
 #------------------------------------------------------------------------------
@@ -109,15 +113,15 @@ def readFile(path: str) -> str:
 
 # matches a specific keyword
 def kw(kw: str)-> dict:
-    return {'fn': 'kw', 'value': kw, 'ctx': context()}
+    return {'fn': 'kw', 'value': kw, 'ctx': caller()}
 
 # matches an indent
 def indent()-> dict:
-    return {'fn': 'indent', 'ctx': context()}
+    return {'fn': 'indent', 'ctx': caller()}
 
 # matches an undent
 def undent()-> dict:
-    return {'fn': 'undent', 'ctx': context()}
+    return {'fn': 'undent', 'ctx': caller()}
 
 # matches an alpha-numeric identifier
 def id()-> dict:
@@ -125,43 +129,43 @@ def id()-> dict:
 
 # labels the result of a rule as being of a certain type (eg "feature", "function")
 def label(s: str, rule: dict)-> dict:
-    return {'fn': 'label', 'label': s, 'rule': rule, 'ctx': context()}
+    return {'fn': 'label', 'label': s, 'rule': rule, 'ctx': caller()}
 
 # sets a property in the output AST to the result of the rule
 def set(name: str, rule: dict)-> dict:
-    return {'fn': 'set', 'name': name, 'rule': rule, 'ctx': context()}
+    return {'fn': 'set', 'name': name, 'rule': rule, 'ctx': caller()}
 
 # runs each rule in sequence, collects all results into a single AST node
 def seq(*rules: List[dict])-> dict:
-    return {'fn': 'seq', 'rules': rules, 'ctx': context()}
+    return {'fn': 'seq', 'rules': rules, 'ctx': caller()}
 
 # optionally runs the rule, but succeeds even if it doesn't match
 def opt(rule: dict)-> dict:
-    return {'fn': 'opt', 'rule': rule, 'ctx': context()}
+    return {'fn': 'opt', 'rule': rule, 'ctx': caller()}
 
 # matches one of the list of words (like keyword)
 def enum(*words: List[str])-> dict:
-    return {'fn': 'enum', 'words': words, 'ctx': context()}
+    return {'fn': 'enum', 'words': words, 'ctx': caller()}
 
 # matches any of the sub-rules, or returns the last error
 def any(*rules: List[dict])-> dict:
-    return {'fn': 'any', 'rules': rules, 'ctx': context()}
+    return {'fn': 'any', 'rules': rules, 'ctx': caller()}
 
 # matches a list of the same rule, separated and terminated
 def list(rule: dict, sep: str=None, term: str=None)-> dict:
-    return {'fn': 'list', 'rule': rule, 'sep': sep, 'term': term, 'ctx': context()}
+    return {'fn': 'list', 'rule': rule, 'sep': sep, 'term': term, 'ctx': caller()}
 
 # matches an indented block of stuff
 def block(rule: dict)-> dict:
-    return {'fn': 'block', 'rule': rule, 'ctx': context()}
+    return {'fn': 'block', 'rule': rule, 'ctx': caller()}
 
 # grabs all lexemes up to one of the terminator strings, skipping brackets and quotes
 def upto(*chars: List[str])-> dict:
-    return {'fn': 'upto', 'chars': chars, 'ctx': context()}
+    return {'fn': 'upto', 'chars': chars, 'ctx': caller()}
 
 # matches either a thing, or the thing in brackets
 def maybe_bracketed(rule: dict)-> dict:
-    return {'fn': 'maybe_bracketed', 'rule': rule, 'ctx': context()}
+    return {'fn': 'maybe_bracketed', 'rule': rule, 'ctx': caller()}
 
 #------------------------------------------------------------------------------
 # print a parser rule in a nice way, with links back to source code
@@ -284,9 +288,9 @@ zeta.py:201:     block(list(any(function(), struct(), variable()))))
 
 # Source is a file containing source code
 class Source:
-    def __init__(self, filename: str):
-        self.filename = filename
-        self.text = readFile(filename)
+    def __init__(self, path: str):
+        self.path = path
+        self.text = readFile(path)
 
     # convert a character index to a file/line/column
     def loc(self, pos: int) -> 'SourceLoc':
@@ -339,6 +343,17 @@ class Lex:
     
     def __repr__(self):
         return self.__str__()
+    
+    def location(self):
+        path = self.source.path if self.source and self.source.path else ""
+        line = 1
+        iCr = 0
+        if self.source:
+            for i in range(0, self.iStart):
+                if self.source.text[i] == '\n': 
+                    iCr = i
+                    line += 1
+        return SourceLoc(path, line, self.iStart - iCr)
     
 # LexStr is a string of lexemes
 class LexStr:
@@ -559,7 +574,143 @@ feature Hello extends Main {indent}
   on ( string out$ ) << hello ( ) {indent} 
     out$ << "hello world"
 """)
+    
+#------------------------------------------------------------------------------
+# parsing...
 
+# Reader is a lex-string and an index
+class Reader:
+    def __init__(self, ls: LexStr):
+        self.ls = ls
+        self.i = 0
+
+    def peek(self) -> Lex:
+        return self.ls[self.i] if self.i < len(self.ls) else None
+    
+    def advance(self):
+        self.i += 1
+
+    def location(self, iLex: int=None) -> SourceLoc:
+        if iLex is None: iLex = self.i
+        if iLex >= len(self.ls): return "EOF"
+        lex = self.ls[iLex]
+        return lex.location()
+    
+# Error just holds a message and a point in the source file
+class Error:
+    def __init__(self, expected: str, reader: Reader, caller):
+        self.caller = caller
+        self.expected = expected
+        self.reader = reader
+        self.iLex = reader.i
+        self.location = reader.location(self.iLex)
+
+    def __str__(self):
+        val = str(self.reader.lexemes[self.iLex]) if self.iLex < len(self.reader.lexemes) else "eof"
+        for iLex in range(self.iLex+1, min(self.iLex+4, len(self.reader.lexemes))):
+            val = val + " " + str(self.reader.lexemes[iLex])
+        out= f"Expected {self.expected} at {self.location}:{self.caller}"
+        return out
+    
+    def show_source(self) -> str:
+        lex = self.reader.lexemes[self.iLex]
+        lenLex = len(str(lex))
+        text = lex.source.text
+        lines = text.split('\n')[:-1]
+        out = ""
+        for i in range(max(0,self.location.line -3), min(self.location.line + 2, len(lines))):
+            line = lines[i]
+            if i == self.location.line-1:
+                before = line[:self.location.column-1]
+                mid = line[self.location.column-1:self.location.column-1+lenLex]
+                after = line[self.location.column-1+lenLex:]
+                out += f"{i+1:3} {before}{log_grey_background(mid)}{after}" + "\n"
+            else:
+                out += f"{i+1:3} {line}" + "\n"
+        return out
+    
+    def is_later_than(self, other):
+        return self.iLex > other.iLex
+
+#------------------------------------------------------------------------------
+# Parser contains a method for each parser atom
+
+class Parser:
+    def __init__(self):
+        pass
+
+    # matches a specific keyword
+    def kw(self, caller, reader, word: str)-> dict:
+        lex = reader.peek()
+        if lex == None and word in ['{newline}', '{undent}']: return {} # special case for premature eof
+        if lex and str(lex) == word:
+            reader.advance()
+            return {}
+        return Error(f"'{word}'", reader, caller)
+
+    # matches an indent
+    def indent(self, caller, reader)-> dict:
+        lex = reader.peek()
+        if lex and str(lex) == '{indent}':
+            reader.advance()
+            return {}
+        return Error("{indent}", reader, caller)
+
+    # matches an undent
+    def undent(self, reader: Reader, )-> dict:
+        pass
+
+    # matches an alpha-numeric identifier
+    def id(self, reader: Reader, )-> dict:
+        pass
+
+    # labels the result of a rule as being of a certain type (eg "feature", "function")
+    def label(self, reader: Reader, s: str, rule: dict)-> dict:
+        pass
+
+    # sets a property in the output AST to the result of the rule
+    def set(self, reader: Reader, name: str, rule: dict)-> dict:
+        pass
+
+    # runs each rule in sequence, collects all results into a single AST node
+    def seq(self, reader: Reader, *rules: List[dict])-> dict:
+        pass
+
+    # optionally runs the rule, but succeeds even if it doesn't match
+    def opt(self, reader: Reader, rule: dict)-> dict:
+       pass
+
+    # matches one of the list of words (like keyword)
+    def enum(self, reader: Reader, *words: List[str])-> dict:
+        pass
+
+    # matches any of the sub-rules, or returns the last error
+    def any(*rules: List[dict])-> dict:
+        pass
+
+    # matches a list of the same rule, separated and terminated
+    def list(rule: dict, sep: str=None, term: str=None)-> dict:
+        pass
+
+    # matches an indented block of stuff
+    def block(rule: dict)-> dict:
+       pass
+
+    # grabs all lexemes up to one of the terminator strings, skipping brackets and quotes
+    def upto(*chars: List[str])-> dict:
+        pass
+
+    # matches either a thing, or the thing in brackets
+    def maybe_bracketed(rule: dict)-> dict:
+        pass
+
+
+#------------------------------------------------------------------------------
+# despatch takes a rule tree and a reader, and parses the lex-string
+
+def despatch_parser(rule: dict, reader: Reader, parser: Parser)-> dict:
+    pass  # this is tomorrow: read the structure, call the right parser methods. go to sleep now.
+    
 #------------------------------------------------------------------------------
 # main, test, etc
 

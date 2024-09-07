@@ -1,6 +1,10 @@
 ᕦ(ツ)ᕤ
 # scribblez
 
+next: let's do some parsing. done Reader and Error, next:
+
+----------------------------------------
+
 Thoughts and stuff (been out ;-)
 
 New name/concept: `vert`. **vert** is the name for the graphical engine / user interface we write, in zero, using zeta. It should have a backend for WebXR and for AVP.
