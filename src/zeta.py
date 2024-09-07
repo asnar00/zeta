@@ -112,16 +112,20 @@ def readFile(path: str) -> str:
 # but we construct them using functions, so the parser rules are easier to read
 
 # matches a specific keyword
-def kw(kw: str)-> dict:
-    return {'fn': 'kw', 'value': kw, 'ctx': caller()}
+def keyword(word: str)-> dict:
+    return {'fn': 'keyword', 'value': word, 'caller': caller()}
 
 # matches an indent
 def indent()-> dict:
-    return {'fn': 'indent', 'ctx': caller()}
+    return {'fn': 'indent', 'caller': caller()}
 
 # matches an undent
 def undent()-> dict:
-    return {'fn': 'undent', 'ctx': caller()}
+    return {'fn': 'undent', 'caller': caller()}
+
+# matches a newline (no indent change)
+def newline()-> dict:
+    return {'fn': 'newline', 'caller': caller()}
 
 # matches an alpha-numeric identifier
 def id()-> dict:
@@ -129,43 +133,43 @@ def id()-> dict:
 
 # labels the result of a rule as being of a certain type (eg "feature", "function")
 def label(s: str, rule: dict)-> dict:
-    return {'fn': 'label', 'label': s, 'rule': rule, 'ctx': caller()}
+    return {'fn': 'label', 'label': s, 'rule': rule, 'caller': caller()}
 
 # sets a property in the output AST to the result of the rule
 def set(name: str, rule: dict)-> dict:
-    return {'fn': 'set', 'name': name, 'rule': rule, 'ctx': caller()}
+    return {'fn': 'set', 'name': name, 'rule': rule, 'caller': caller()}
 
 # runs each rule in sequence, collects all results into a single AST node
-def seq(*rules: List[dict])-> dict:
-    return {'fn': 'seq', 'rules': rules, 'ctx': caller()}
+def sequence(*rules: List[dict])-> dict:
+    return {'fn': 'sequence', 'rules': rules, 'caller': caller()}
 
 # optionally runs the rule, but succeeds even if it doesn't match
-def opt(rule: dict)-> dict:
-    return {'fn': 'opt', 'rule': rule, 'ctx': caller()}
+def optional(rule: dict)-> dict:
+    return {'fn': 'optional', 'rule': rule, 'caller': caller()}
 
 # matches one of the list of words (like keyword)
 def enum(*words: List[str])-> dict:
-    return {'fn': 'enum', 'words': words, 'ctx': caller()}
+    return {'fn': 'enum', 'words': words, 'caller': caller()}
 
 # matches any of the sub-rules, or returns the last error
 def any(*rules: List[dict])-> dict:
-    return {'fn': 'any', 'rules': rules, 'ctx': caller()}
+    return {'fn': 'any', 'rules': rules, 'caller': caller()}
 
 # matches a list of the same rule, separated and terminated
 def list(rule: dict, sep: str=None, term: str=None)-> dict:
-    return {'fn': 'list', 'rule': rule, 'sep': sep, 'term': term, 'ctx': caller()}
+    return {'fn': 'list', 'rule': rule, 'sep': sep, 'term': term, 'caller': caller()}
 
 # matches an indented block of stuff
 def block(rule: dict)-> dict:
-    return {'fn': 'block', 'rule': rule, 'ctx': caller()}
+    return {'fn': 'block', 'rule': rule, 'caller': caller()}
 
 # grabs all lexemes up to one of the terminator strings, skipping brackets and quotes
 def upto(*chars: List[str])-> dict:
-    return {'fn': 'upto', 'chars': chars, 'ctx': caller()}
+    return {'fn': 'upto', 'chars': chars, 'caller': caller()}
 
 # matches either a thing, or the thing in brackets
 def maybe_bracketed(rule: dict)-> dict:
-    return {'fn': 'maybe_bracketed', 'rule': rule, 'ctx': caller()}
+    return {'fn': 'maybe_bracketed', 'rule': rule, 'caller': caller()}
 
 #------------------------------------------------------------------------------
 # print a parser rule in a nice way, with links back to source code
@@ -174,7 +178,7 @@ def maybe_bracketed(rule: dict)-> dict:
 # print a parser rule as a nicely formatted, readable string matching the source code
 def rule_as_string(rule):
     out = rule_as_string_rec(rule)
-    file = rule['ctx'][0]
+    file = rule['caller'][0]
     padding = len(file) + 6
     lines = out.split('**')
     last_lineno = 0
@@ -202,12 +206,12 @@ def rule_as_string_rec(rule, indent: int=0, line: int=0) -> str:
     if 'fn' in rule and rule['fn'] == 'label':
         return f'{rule["label"]} = {rule_as_string_rec(rule["rule"], indent, line)}'
     out = ''
-    rule_line = rule['ctx'][1] if 'ctx' in rule else line
+    rule_line = rule['caller'][1] if 'caller' in rule else line
     out += f'**{rule_line}/{indent}:'
     for key, val in rule.items():
         if key == 'fn':
             out += f'{val}('
-        elif key != 'ctx': 
+        elif key != 'caller': 
             if isinstance(val, str): 
                 out += f"'{val}', "
             elif isinstance(val, Tuple):
@@ -235,20 +239,20 @@ def print_newline(indent: int) -> str:
 
 # feature (name) [extends (parent)] { list(function | struct | variable) }
 def feature() -> dict:
-    return label('feature', seq(
-                kw('feature'), set('name', id()),
-                opt(seq(kw('extends'), set('parent', id()))),
+    return label('feature', sequence(
+                keyword('feature'), set('name', id()),
+                optional(sequence(keyword('extends'), set('parent', id()))),
                 block(list(any(function(), struct(), variable())))))
 
 # (on/replaceafter/before) (result) (name) (parameters) { function_body }
 def function() -> dict:
-    return label('function', seq(
+    return label('function', sequence(
         set('modifier', enum('on', 'replace', 'after', 'before')),
         set('result', maybe_bracketed(name_type())),
         set('assign_op', enum("=", "<<")), 
         set('name', id()),
-        kw('('), set('parameters', list(variable(), sep=',', term=')')), kw(')'),
-        kw('{'), set('body', function_body()), kw('}')))
+        keyword('('), set('parameters', list(variable(), sep=',', term=')')), keyword(')'),
+        keyword('{'), set('body', function_body()), keyword('}')))
 
 # stand-in for now
 def function_body() -> dict:
@@ -256,20 +260,20 @@ def function_body() -> dict:
     
 # struct (name) { list(variable) }
 def struct() -> dict:
-    return label('struct', seq(
-                kw('struct'), set('name', id()),
+    return label('struct', sequence(
+                keyword('struct'), set('name', id()),
                 block(list(variable))))
 
 # ((name type) | (type:name)) [= value]
 def variable() -> dict:
-    return label('variable', seq(
+    return label('variable', sequence(
                 name_type(),
-                opt(seq(kw('='), set('value', constant())))))
+                optional(sequence(keyword('='), set('value', constant())))))
 
 def name_type() -> dict:
     return any(
-            seq(set('name', id()), kw(':'), set('type', id())),
-            seq(set('type', id()), set('name', id())))
+            sequence(set('name', id()), keyword(':'), set('type', id())),
+            sequence(set('type', id()), set('name', id())))
     
 def constant() -> dict:
     return { "fn": "constant" }
@@ -278,9 +282,9 @@ def test_parse_rules():
     log_assert("rule_as_string",
         rule_as_string(feature()), """
              feature = 
-zeta.py:198: seq(
-zeta.py:199:     kw('feature'), set('name', id()), 
-zeta.py:200:     opt(seq(kw('extends'), set('parent', id()))), 
+zeta.py:198: sequence(
+zeta.py:199:     keyword('feature'), set('name', id()), 
+zeta.py:200:     optional(sequence(keyword('extends'), set('parent', id()))), 
 zeta.py:201:     block(list(any(function(), struct(), variable()))))
                """)
 #------------------------------------------------------------------------------
@@ -312,7 +316,7 @@ class SourceLoc:
 
     # we need this so we can just print them
     def __str__(self):
-        return f'{self.source.filename}:{self.lineno}:{self.column}'
+        return f'{self.source.path}:{self.lineno}:{self.column}'
     
     # and this
     def __repr__(self):
@@ -345,15 +349,13 @@ class Lex:
         return self.__str__()
     
     def location(self):
-        path = self.source.path if self.source and self.source.path else ""
         line = 1
         iCr = 0
-        if self.source:
-            for i in range(0, self.iStart):
-                if self.source.text[i] == '\n': 
-                    iCr = i
-                    line += 1
-        return SourceLoc(path, line, self.iStart - iCr)
+        for i in range(0, self.i):
+            if self.source.text[i] == '\n': 
+                iCr = i
+                line += 1
+        return SourceLoc(self.source, line, self.i - iCr)
     
 # LexStr is a string of lexemes
 class LexStr:
@@ -419,143 +421,147 @@ def is_alphanum(c: str) -> bool:
 def is_alphanum_or_digit(c: str) -> bool:
     return c.isalnum() or c in "_$"
 
-# takes a substring (enclosed in a lex) and ... lexes it
-# structure: does it line by line, passing in indent from the last run
-# on each line, counts whitespace, generates whitespace indents/undents, then does the rest of the line
-# braces-based indent/undent checks against the last generated indent/undent token, maintains sense
-# returns a list of lexemes, and the last indent level, allowing multiple substrings to chain properly
-@log_disable
-def lexer_substring(string: Lex, last_indent: int=None) -> Tuple[LexStr, int]:
-    log(string)
-    out = LexStr([])
-    ls = str(string)
-    i = 0
-    ops = "!@#$%^&*-+=.<>?/~|"
-    punct = "()[],;:"
-    safeCount = 1000
-    while i < len(ls):
-        safeCount -=1
-        if safeCount == 0:
-            log("safecount!")
-            exit(0)
-        # count and skip whitespace, handle line ending
-        j = i
-        while j < len(ls) and ls[j] == ' ':
-            j += 1
-        indent = j - i
+# lexer: takes a source and returns a list of lexemes
+class Lexer:
+    def __init__(self, source: Source):
+        self.source = source
+
+    def lex(self):
+        code = extract_code(self.source)
+        out = LexStr([])
+        self.last_indent = None
+        for i in range(0, len(code)):
+            out += self.lex_substring(code[i])
+        return out
+    
+    @log_disable
+    def lex_substring(self, string: Lex) -> LexStr:
+        log(string)
+        self.out = LexStr([])
+        self.string = string
+        self.ls = str(string)
+        self.i = 0
+        self.ops = "!@#$%^&*-+=.<>?/~|"
+        punct = "()[],;:"
+        while self.i < len(self.ls):
+            self.line_start()
+            self.find_eol()
+            # process actual characters up until end of line
+            while self.i < self.iEnd:
+                c = self.ls[self.i]
+                cn = self.ls[self.i+1] if self.i+1 < self.iEnd else ''
+                # note: each case is responsible for advancing "self.i" correctly!!
+                if c == ' ': self.whitespace()
+                elif c in self.ops: self.operator(cn)
+                elif is_alphanum(c): self.alphanum()
+                elif c.isdigit(): self.number()
+                elif c in punct: self.punctuation()
+                elif c == '"': self.string_literal()
+                elif c in "{}": self.braces(c)
+                else:
+                    log(f"lexer error: unhandled character '{c}'")
+                    exit(0)
+            self.i = self.iEnd + 1
+        # now clean up all the indents and undents
+        for lex in self.out:
+            if lex.val.startswith("{indent-"):
+                lex.val = "{indent}"
+            elif lex.val.startswith("{undent-"):
+                lex.val = "{undent}"
+        return self.out
+    
+    # count and skip whitespace, handle line ending
+    def line_start(self): 
+        j = self.i
+        while j < len(self.ls) and self.ls[j] == ' ': j += 1
+        indent = j - self.i
         log("    start:", indent, "spaces")
-        if last_indent != None:
-            if indent > last_indent:
+        if self.last_indent != None:
+            if indent > self.last_indent:
                 # sig-whitespace indent: skip if last was indent-brace
-                if len(out) ==0 or out[-1].val != "{indent-brace}":
+                if len(self.out) ==0 or self.out[-1].val != "{indent-brace}":
                     # if last was ":", remove it
-                    if len(out) > 0 and out[-1].val == ":":
-                        out.lexemes = out.lexemes[:-1]
+                    if len(self.out) > 0 and self.out[-1].val == ":":
+                        self.out.lexemes = self.out.lexemes[:-1]
                         log("--- removing previous ':'")
-                    out += string.slice(i-1, j, '{indent-sig}')
+                    self.out += self.string.slice(self.i-1, j, '{indent-sig}')
                     log("{indent-sigwhite}")
-            elif indent < last_indent:
+            elif indent < self.last_indent:
                 # sig-whitespace undent
                 log("{undent-sig}")
-                out += string.slice(i-1, j, '{undent-sig}')
-            elif indent == last_indent:
+                self.out += self.string.slice(self.i-1, j, '{undent-sig}')
+            elif indent == self.last_indent:
                 # sig-whitespace: no change, give us a newline
                 log("{newline}")
-                out += string.slice(i-1, j, '{newline}')
-        last_indent = indent
-        i = j # now positioned on first non-whitespace
-        # now find end of line
-        iEnd = ls.find('\n', i)
-        if iEnd == -1: iEnd = len(ls)
-        # process actual characters up until end of line
-        while i < iEnd:
-            c = ls[i]
-            cn = ls[i+1] if i+1 < iEnd else ''
-            # each case is responsible for advancing "i" correctly!!
-            # skip whitespace
-            if c == ' ':
-                log("{whitespace}")
-                i += 1
-                continue
-            # operators: match single or double
-            elif c in ops:
-                j = i + 1
-                if cn != '\n' and cn in ops:
-                    j = i + 2
-                out += string.slice(i, j)
-                log("{op}", log_disclose(str(out[-1])))
-                i = j
-            # alpha-numeric: match until non-alphanumeric
-            elif is_alphanum(c):
-                j = i+1
-                while j < iEnd and is_alphanum_or_digit(ls[j]):
-                    j += 1
-                identifier= string.slice(i, j)
-                out += identifier
-                i = j
-                log("{alphanum}", str(out[-1]))
-            # digits
-            elif c.isdigit():
-                j = i+1
-                while j < iEnd and ls[j].isdigit():
-                    j += 1
-                number = string.slice(i, j)
-                out += number
-                i = j
-                log("{number}", str(out[-1]))
-            # punctuation (including brackets)
-            elif c in punct:
-                out += string.slice(i, i+1)
-                i = i+1
-                log("{punctuation}", str(out[-1]))
-            # string literal
-            elif c == '"':
-                j = i+1
-                while j < iEnd and (ls[j] != '"' or ls[j-1] == "\\"):
-                    j += 1
-                literal = string.slice(i, j+1)
-                out += literal
-                log("{string}", str(out[-1]))
-                i = j+1
-            # braces based indent
-            elif c == "{":
-                out += string.slice(i, i+1, "{indent-brace}")
-                i = i+1
-                log("{indent-brace}")
-            # braces-based undent: skip if previous was sig-whitespace indent
-            elif c == "}":
-                if len(out) > 0 and out[-1].val != "{undent-sig}":
-                    out += string.slice(i, i+1, "{undent-brace}")
-                else:
-                    out[-1].val = "{undent-brace}"
-                    log(" --replaced last undent with undent-brace")
-                i = i+1
-            else:
-                log(f"lexer error: unhandled character '{c}'")
-                exit(0)
-        #---- end of while loop
-        i = iEnd + 1
-    # now clean up all the indents and undents
-    for lex in out:
-        if lex.val.startswith("{indent-"):
-            lex.val = "{indent}"
-        elif lex.val.startswith("{undent-"):
-            lex.val = "{undent}"
-    return out, last_indent
+                self.out += self.string.slice(self.i-1, j, '{newline}')
+        self.last_indent = indent
+        self.i = j # now positioned on first non-whitespace
 
-@log_enable
-def lexer(source: Source) -> LexStr:
-    code = extract_code(source)
-    out = LexStr([])
-    last_indent = None
-    for i in range(0, len(code)):
-        ls, last_indent = lexer_substring(code[i], last_indent)
-        out += ls
-    return out
+    def find_eol(self):
+        self.iEnd = self.ls.find('\n', self.i)
+        if self.iEnd == -1: self.iEnd = len(self.ls)
+    
+    def whitespace(self):
+        log("{whitespace}")
+        self.i += 1
+
+    def operator(self, cn):
+        j = self.i + 1
+        if cn != '\n' and cn in self.ops:
+            j = self.i + 2
+        self.out += self.string.slice(self.i, j)
+        log("{op}", log_disclose(str(self.out[-1])))
+        self.i = j
+
+    def alphanum(self):
+        j = self.i+1
+        while j < self.iEnd and is_alphanum_or_digit(self.ls[j]):
+            j += 1
+        identifier= self.string.slice(self.i, j)
+        self.out += identifier
+        self.i = j
+        log("{alphanum}", str(self.out[-1]))
+
+    def number(self):
+        j = self.i+1
+        while j < self.iEnd and self.ls[j].isdigit():
+            j += 1
+        number = self.string.slice(self.i, j)
+        self.out += number
+        self.i = j
+        log("{number}", str(self.out[-1]))
+
+    def punctuation(self):
+        self.out += self.string.slice(self.i, self.i+1)
+        self.i += 1
+        log("{punctuation}", str(self.out[-1]))
+
+    def string_literal(self):
+        j = self.i+1
+        while j < self.iEnd and (self.ls[j] != '"' or self.ls[j-1] == "\\"):
+            j += 1
+        literal = self.string.slice(self.i, j+1)
+        self.out += literal
+        log("{string}", str(self.out[-1]))
+        self.i = j+1
+
+    def braces(self, c):
+        if c == "{":
+            self.out += self.string.slice(self.i, self.i+1, "{indent-brace}")
+            self.i = self.i+1
+            log("{indent-brace}")
+        elif c == "}":
+            if len(self.out) > 0 and self.out[-1].val != "{undent-sig}":
+                self.out += self.string.slice(self.i, self.i+1, "{undent-brace}")
+            else:
+                self.out[-1].val = "{undent-brace}"
+                log(" --replaced last undent with undent-brace")
+            self.i = self.i+1
 
 def test_lexer():
     source = Source("src/test/Hello.zero.md")
-    ls = lexer(source)
+    lexer = Lexer(source)
+    ls = lexer.lex()
     log_assert("lexer", ls, """
 feature Hello extends Main {indent} 
   > hello ( ) {newline} 
@@ -576,7 +582,7 @@ feature Hello extends Main {indent}
 """)
     
 #------------------------------------------------------------------------------
-# parsing...
+# parsing helpers
 
 # Reader is a lex-string and an index
 class Reader:
@@ -590,6 +596,16 @@ class Reader:
     def advance(self):
         self.i += 1
 
+    def eof(self) -> bool:
+        return self.i >= len(self.ls)
+    
+    def match(self, fn) -> Lex:
+        lex = self.peek()
+        if lex and fn(str(lex)):
+            self.advance()
+            return lex
+        return None
+
     def location(self, iLex: int=None) -> SourceLoc:
         if iLex is None: iLex = self.i
         if iLex >= len(self.ls): return "EOF"
@@ -599,21 +615,21 @@ class Reader:
 # Error just holds a message and a point in the source file
 class Error:
     def __init__(self, expected: str, reader: Reader, caller):
-        self.caller = caller
+        self.caller = " " + log_grey(caller[0] + ":" + str(caller[1]))
         self.expected = expected
         self.reader = reader
         self.iLex = reader.i
         self.location = reader.location(self.iLex)
 
     def __str__(self):
-        val = str(self.reader.lexemes[self.iLex]) if self.iLex < len(self.reader.lexemes) else "eof"
-        for iLex in range(self.iLex+1, min(self.iLex+4, len(self.reader.lexemes))):
-            val = val + " " + str(self.reader.lexemes[iLex])
+        val = str(self.reader.ls[self.iLex]) if self.iLex < len(self.reader.ls) else "eof"
+        for iLex in range(self.iLex+1, min(self.iLex+4, len(self.reader.ls))):
+            val = val + " " + str(self.reader.ls[iLex])
         out= f"Expected {self.expected} at {self.location}:{self.caller}"
         return out
     
     def show_source(self) -> str:
-        lex = self.reader.lexemes[self.iLex]
+        lex = self.reader.ls[self.iLex]
         lenLex = len(str(lex))
         text = lex.source.text
         lines = text.split('\n')[:-1]
@@ -631,7 +647,32 @@ class Error:
     
     def is_later_than(self, other):
         return self.iLex > other.iLex
+    
+# return true if (obj) is an error
+def err(obj) -> bool:
+    return isinstance(obj, Error)
 
+# combine multiple errors
+def combine_errors(errors: List[Error]) -> Error:
+    log("combine_errors:")
+    for error in errors:
+        log("  ", error)
+    # first find the latest one
+    latest = errors[0]
+    for error in errors:
+        if error.is_later_than(latest):
+            latest = error
+    # now find all errors at the same point as latest
+    same_point = [latest]
+    for error in errors:
+        if error.iLex == latest.iLex and error != latest:
+            same_point.append(error)
+    # now combine all the 'expecteds' into an "or" string
+    expecteds = [error.expected for error in same_point]
+    expected = " or ".join(expecteds)
+    # now return a new error with the combined expecteds
+    latest.expected = expected
+    return latest
 #------------------------------------------------------------------------------
 # Parser contains a method for each parser atom
 
@@ -640,77 +681,160 @@ class Parser:
         pass
 
     # matches a specific keyword
-    def kw(self, caller, reader, word: str)-> dict:
-        lex = reader.peek()
-        if lex == None and word in ['{newline}', '{undent}']: return {} # special case for premature eof
-        if lex and str(lex) == word:
-            reader.advance()
-            return {}
-        return Error(f"'{word}'", reader, caller)
+    def keyword(self, caller, reader, word: str)-> dict:
+        if reader.eof() and word in ['{newline}', '{undent}']: return {} # special case for premature eof
+        return {} if reader.match(lambda s: s == word) else Error(f"'{word}'", reader, caller)
 
     # matches an indent
     def indent(self, caller, reader)-> dict:
-        lex = reader.peek()
-        if lex and str(lex) == '{indent}':
-            reader.advance()
-            return {}
-        return Error("{indent}", reader, caller)
+        return {} if reader.match(lambda s: s == "{indent}") else Error("{indent}", reader, caller)
 
     # matches an undent
-    def undent(self, reader: Reader, )-> dict:
-        pass
-
+    def undent(self, caller, reader )-> dict:
+        return {} if reader.match(lambda s: s == "{undent}") else Error("{undent}", reader, caller)
+    
+    # matches a newline (no indent change)
+    def newline(self, caller, reader)-> dict:
+        return {} if reader.match(lambda s: s == "{newline}") else Error("{newline}", reader, caller)
+    
     # matches an alpha-numeric identifier
-    def id(self, reader: Reader, )-> dict:
-        pass
+    def id(self, caller, reader )-> dict:
+        lex = reader.match(lambda s: s.is_id())
+        return [lex] if lex else Error("identifier", reader, caller)
 
     # labels the result of a rule as being of a certain type (eg "feature", "function")
-    def label(self, reader: Reader, s: str, rule: dict)-> dict:
-        pass
+    def label(self, caller, reader, s: str, parser_fn)-> dict:
+        ast = { '_type' : type }
+        sub_ast = parser_fn(reader)
+        if err(sub_ast): return sub_ast
+        log("label(", type, "): ", sub_ast)
+        ast.update(sub_ast)
+        return ast
 
     # sets a property in the output AST to the result of the rule
-    def set(self, reader: Reader, name: str, rule: dict)-> dict:
-        pass
+    def set(self, caller, reader, name: str, parser_fn)-> dict:
+        ast = parser_fn(reader)
+        if err(ast): return ast
+        log("set(", name, "):", ast)
+        return { name : ast }
 
     # runs each rule in sequence, collects all results into a single AST node
-    def seq(self, reader: Reader, *rules: List[dict])-> dict:
-        pass
+    def sequence(self, caller, reader, *parser_fns)-> dict:
+        ast = {}
+        for parser_fn in parser_fns:
+            result = parser_fn(reader)
+            if err(result): return result
+            ast.update(result)
+        return ast
 
     # optionally runs the rule, but succeeds even if it doesn't match
-    def opt(self, reader: Reader, rule: dict)-> dict:
-       pass
+    def optional(self, caller, reader, parser_fn)-> dict:
+        iLex = reader.i
+        ast = parser_fn(reader)
+        if err(ast):
+            if ast.iLex == iLex: return {}
+            return ast
+        return ast
 
     # matches one of the list of words (like keyword)
-    def enum(self, reader: Reader, *words: List[str])-> dict:
-        pass
+    def enum(self, caller, reader, *words: List[str])-> dict:
+        lex = reader.peek()
+        if lex and str(lex) in words:
+            reader.advance()
+            return [lex]
+        return Error(f"{words}", reader, caller)
 
     # matches any of the sub-rules, or returns the last error
-    def any(*rules: List[dict])-> dict:
-        pass
+    def any(self, caller, reader, *parser_fns)-> dict:
+        errors = []
+        for parse_fn in parser_fns:
+            iLex = reader.i
+            ast = parse_fn(reader)
+            if not err(ast): return ast
+            errors.append(ast)
+            reader.i = iLex
+        error = combine_errors(errors)
+        return error
 
     # matches a list of the same rule, separated and terminated
-    def list(rule: dict, sep: str=None, term: str=None)-> dict:
-        pass
+    def list(self, caller, reader, parser_fn, sep: str, term: str)-> dict:
+        ast = []
+        while True:
+            if str(reader.peek()) == term:
+                reader.advance()
+                break
+            sub_ast = parser_fn(reader)
+            if err(sub_ast): return sub_ast
+            ast.append(sub_ast)
+            next = reader.peek()
+            if str(next) == term:
+                reader.advance()
+                break
+            elif str(next) == sep:
+                reader.advance()
+        return ast
 
     # matches an indented block of stuff
-    def block(rule: dict)-> dict:
-       pass
+    def block(self, caller, reader, parser_fn)-> dict:
+        if reader.match(lambda s: s == "{indent}"):
+            ast = parser_fn(reader)
+            if err(ast): return ast
+            if reader.match(lambda s: s == "{undent}"):
+                return ast
+            return Error("{undent}", reader, caller)
+        return Error("{indent}", reader, caller)
 
     # grabs all lexemes up to one of the terminator strings, skipping brackets and quotes
-    def upto(*chars: List[str])-> dict:
-        pass
+    def upto(self, caller, reader, *words: List[str])-> dict:
+        depth = 0
+        out = []
+        while True:
+            lex = reader.peek()
+            if not lex: return out
+            if depth ==0 and str(lex) in words: 
+                return out
+            out.append(lex)
+            if str(lex) in ["(", "[", "{indent}"]: depth += 1
+            elif str(lex) in [")", "]", "{undent}"]: depth -= 1
+            reader.advance()
 
     # matches either a thing, or the thing in brackets
-    def maybe_bracketed(rule: dict)-> dict:
-        pass
-
+    def maybe_bracketed(self, caller, reader, parser_fn)-> dict:
+        open_bracket = reader.match(lambda s: s == "(")
+        ast = parser_fn(reader)
+        close_bracket = reader.match(lambda s: s == ")")
+        if (open_bracket and close_bracket) or ((not open_bracket) and (not close_bracket)):
+            return ast
+        return Error("( ... )", reader, caller)
 
 #------------------------------------------------------------------------------
-# despatch takes a rule tree and a reader, and parses the lex-string
+# despatch takes a rule tree and a reader, and returns a parser function
 
-def despatch_parser(rule: dict, reader: Reader, parser: Parser)-> dict:
-    pass  # this is tomorrow: read the structure, call the right parser methods. go to sleep now.
-    
+def make_processor(imp, rule: dict):
+    caller = rule['caller']
+    if 'fn' not in rule: raise Exception(f"no 'fn' in rule {rule}")
+    fn = rule['fn']
+    method = getattr(imp, fn, None)
+    if not method: raise Exception(f"no method {fn} in parser")
+    args = []
+    for key, val in rule.items():
+        if not (key in ['caller', 'fn']):
+            if isinstance(val, str) or isinstance(val, LexStr): args.append(val)
+            elif isinstance(val, dict): args.append(make_processor(imp, val))
+            elif isinstance(val, List): args.extend([make_processor(imp, v) for v in val])
+    return lambda reader: method(caller, reader, *args)
+
+@log_enable
+def test_parser():
+    source = Source("src/test/Hello.zero.md")
+    ls = Lexer(source).lex()
+    fn = keyword("feature")
+    parser = make_processor(Parser(), fn)
+    reader = Reader(ls)
+    ast = parser(reader)
+    log(ast)
+
+
 #------------------------------------------------------------------------------
 # main, test, etc
 
@@ -718,6 +842,7 @@ def test():
     print("test ------------------------------------")
     test_parse_rules()
     test_lexer()
+    test_parser()
 
 def main():
     log_clear()
