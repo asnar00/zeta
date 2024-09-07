@@ -23,8 +23,8 @@ The first thing to do is to declare the feature itself, extending the built-in `
 
 Our new feature is going to implement a function called `hello` that returns "hello world" when called, like this:
 
-    > hello()
-    => "hello world"
+        > hello()
+        => "hello world"
 
 This code snippet defines a *test* : the `>` symbol at the start (mimicking a BASIC prompt from the old microcomputer days) will generate test code on the target platform, and run it. 
 
@@ -32,14 +32,14 @@ The `=>` operator specifies the result that we expect to see; if the result does
 
 We can also just call the function without specifying an expected result; this will just output the result to the console, tagged with the file and line number of the code.
 
-    > hello()
+        > hello()
 
 ## implementation
 
 Now, we'll implement the `hello` function in zero:
 
-    on (out$: string) << hello()
-        out$ << "hello world"
+        on (out$: string) << hello()
+            out$ << "hello world"
 
 Let's unpack this to understand each of the keywords:
 

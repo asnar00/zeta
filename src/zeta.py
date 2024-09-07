@@ -71,9 +71,9 @@ def log_assert(name, a, b: str):
     else:
         print(f"{log_grey(ctx_str)} {name}: failed")
         print("expected:")
-        print(log_disclose(sb))
+        print(sb)
         print("got:")
-        print(log_disclose(sa))
+        print(sa)
 
 #------------------------------------------------------------------------------
 # context: figure out which file/line called us
@@ -542,22 +542,22 @@ def test_lexer():
     source = Source("src/test/Hello.zero.md")
     ls = lexer(source)
     log_assert("lexer", ls, """
-feature Hello extends Main {newline} 
-> hello ( ) {newline} 
-=> "hello world" {newline} 
-> hello ( ) {newline} 
-on ( out$ : string ) << hello ( ) {indent} 
-  out$ << "hello world" {undent} 
-on ( string out$ ) << hello ( ) {indent} 
-  out$ << "hello world" ; {undent} 
-{newline} 
-on ( out$ : string ) << hello ( ) {indent} 
-  out$ << "hello world" ; {undent} 
-{newline} 
-on ( out$ : string ) << hello ( ) {indent} 
-  out$ << "hello world" {undent} 
-on ( string out$ ) << hello ( ) {indent} 
-  out$ << "hello world"
+feature Hello extends Main {indent} 
+  > hello ( ) {newline} 
+  => "hello world" {newline} 
+  > hello ( ) {newline} 
+  on ( out$ : string ) << hello ( ) {indent} 
+    out$ << "hello world" {undent} 
+  on ( string out$ ) << hello ( ) {indent} 
+    out$ << "hello world" ; {undent} 
+  {newline} 
+  on ( out$ : string ) << hello ( ) {indent} 
+    out$ << "hello world" ; {undent} 
+  {newline} 
+  on ( out$ : string ) << hello ( ) {indent} 
+    out$ << "hello world" {undent} 
+  on ( string out$ ) << hello ( ) {indent} 
+    out$ << "hello world"
 """)
 
 #------------------------------------------------------------------------------
