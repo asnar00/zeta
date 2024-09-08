@@ -685,7 +685,7 @@ class Zero(Language):
                 sequence(set('type', identifier()), set('name', identifier())))
         
     def constant(self) -> Dict:
-        return { "fn": "constant" }
+        return upto("{newline}", ",", ";")
 
 @this_is_a_test
 def test_parse_rules():
