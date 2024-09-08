@@ -1,9 +1,11 @@
 ᕦ(ツ)ᕤ
 # Hello
 
-This is a *feature-normal-form* "hello world" program written in `zero`. Feature-normal form (`fnf`) is a self-documenting, human-readable format for reading, writing and running code. 
+This is a *feature-normal-form* "hello world" program written in *zero*, a (very) experimental programming language. 
 
-This file explains `fnf` and the syntax of `zero`, while also providing a test file for the `zeta.py` compiler.
+Feature-normal form (`fnf`) is a self-documenting, human-readable format for reading, writing and running code. 
+
+This file explains `fnf` and introduces the syntax of zero, while also providing a test file for the `zeta.py` compiler.
 
 ## feature modularity
 

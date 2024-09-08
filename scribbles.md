@@ -4,8 +4,12 @@
 where we are now: got parser structure in place, tidied up the lexer and moved things around a bit.
 next: get all parser functions tested and the full parse of the test file working properly.
 
-once that is done, we can start on combinations, and then on backends.
+once that is done, we can start on composition, and then on backends.
 Let's do it!
+
+----------------------------------------
+Aside on interesting thing to think about:
+- if you can interpret as well as compile every backend, then you can do fast-cycle edit/test (just interpret the code you're changing) and then recompile/optimise using the "proper" toolchain when you have time. Best of both worlds, and you can achieve it without exotic toolchains.
 
 
 ----------------------------------------
