@@ -283,8 +283,12 @@ def my_test_raiser(p: str):
 def my_test_bad_func(p: str):
     my_test_raiser(p)
 
-# comment this out to revert to normal exception handling
-sys.excepthook = exception_handler
+# installs our exception handler
+def exception_install_handler():
+    sys.excepthook = exception_handler
+
+# comment this out to revert to normal exception readouts
+exception_install_handler()
 
 # exception readout can't be tested
 # test exception: uncomment the following line to see a test exception trace readout
