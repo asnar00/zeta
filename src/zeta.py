@@ -3,6 +3,7 @@
 # author: asnaroo
 
 from typing import List, Tuple, Union, Dict, Any, Callable
+from typing import get_type_hints
 import inspect
 import os
 import re
@@ -11,6 +12,7 @@ import sys
 
 #------------------------------------------------------------------------------
 # kenny loggings
+
 
 # set if logging is enabled
 s_log: bool = False
@@ -46,6 +48,7 @@ def log_disable(fn):
 def log_clear():
     os.system('clear')  # For Linux/macOS
 
+log_clear()
 # returns a grey-coloured foreground, black background
 def log_grey(str) -> str:
     return f'\033[30;1m{str}\033[0m'
@@ -76,8 +79,8 @@ def log_disclose(str) -> str:
 
 # returns a length-limited string version of anything
 def log_short(obj: Any, maxLen=64) -> str:
-    s = str(obj) if not isinstance(obj, str) else '"' + obj + '"'
-    if s == None: return "None"
+    if obj == None: return "None"
+    s = str(obj) if not isinstance(obj, str) else ( "\"" + obj + "\"" if not obj.startswith("'") else obj)
     m = re.match(r"<__main__\.(\w+)", s)    # if s matches "<__main__.ClassName", return "ClassName"
     if m: s = m.group(1)
     if len(s) <= maxLen: return s
@@ -185,12 +188,76 @@ def caller_get_arg(level: int, arg_name: str) -> Any:
 def caller_exception(e: Exception) -> str:
     # Extract the traceback details from the exception
     tb = traceback.extract_tb(e.__traceback__)
-    
     # Get the last frame (where the exception was raised)
-    last_frame = tb[-1]
+    i_frame = len(tb) - 1
+    last_frame = tb[i_frame]
+    return log_grey(f"{last_frame.filename.replace(s_cwd, '')}:{last_frame.lineno}: ") + log_red("!!! " + str(e))
+
+#------------------------------------------------------------------------------
+# exception handling
+# a better exception readout that's more compact, and shows function parameter values
+
+# Get the function signature with parameter names, types, and values.
+def get_function_signature(func, frame):
+    sig = inspect.signature(func) # Get function's parameter specifications
+    # Get type hints (if any)
+    try:
+        type_hints = get_type_hints(func)
+    except:
+        type_hints = {}
+    # Get local variables from the frame
+    local_vars = frame.f_locals
+    # Build the signature string
+    params = []
+    for name, param in sig.parameters.items():
+        param_type = type_hints.get(name, inspect.Parameter.empty)
+        param_value = local_vars.get(name, inspect.Parameter.empty)
+        param_str = name
+        if param_value is not inspect.Parameter.empty:
+            actual_type = type(param_value).__name__
+            ps = f"{param_value!r}"
+            if param_type is not inspect.Parameter.empty:
+                if actual_type != param_type.__name__:
+                    actual_type = log_red(actual_type)
+                param_str += f": {actual_type}"
+            param_str += f" = {ps}"
+        params.append(param_str)  
+    return ", ".join(params)
+
+# exception handler: called when an exception is raised
+def exception_handler(exc_type, exc_value, exc_traceback):
+    msg = log_red(f"exception: {str(exc_value)!r}") + "\n"
+    frames = []
+    tb = exc_traceback
+    while tb is not None:
+        frame = tb.tb_frame
+        filename = frame.f_code.co_filename.replace(s_cwd, '')
+        function_name = frame.f_code.co_name
+        lineno = tb.tb_lineno
+        
+        # Get the function object
+        func = frame.f_globals.get(function_name)
+        if func is None:
+            # If it's a method, it might be in the local namespace
+            func = frame.f_locals.get(function_name)
+        
+        if func is not None:
+            # Get the function signature
+            try:
+                signature = get_function_signature(func, frame)
+            except:
+                signature = ""
+        else:
+            signature = ""
+        
+        frames.append((filename, lineno, function_name, signature))
+        tb = tb.tb_next
     
-    # Return the file and line number in the desired format
-    return log_grey(f"{last_frame.filename.replace(s_cwd, '')}:{last_frame.lineno}: ") + log_red(str(e))
+    # Print frame information in reverse order
+    for filename, lineno, function_name, signature in reversed(frames):
+        loc = log_grey(f"{filename}:{lineno}: ")
+        msg += (f"{loc}{function_name} ({signature})") + "\n"
+    print(msg)
 
 def my_test_wrapper_func(n: str):
     return my_test_func(n)
@@ -209,7 +276,22 @@ def test_caller():
                                                 zeta.py:...: test_run_all
                                                 zeta.py:...: main
 """)
-    
+
+def my_test_raiser(p: str):
+    raise Exception("oops " + p)
+
+def my_test_bad_func(p: str):
+    my_test_raiser(p)
+
+# comment this out to revert to normal exception handling
+sys.excepthook = exception_handler
+
+# exception readout can't be tested
+# test exception: uncomment the following line to see a test exception trace readout
+@this_is_a_test
+def test_exception():
+    my_test_bad_func("hey")
+
 #------------------------------------------------------------------------------
 # file system of a down
 
@@ -1015,7 +1097,6 @@ def test_zero_grammar():
 # main, test, etc
 
 def main():
-    log_clear()
     print('ᕦ(ツ)ᕤ zeta.py')
     test_run_all()
           
