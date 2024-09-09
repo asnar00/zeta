@@ -13,7 +13,6 @@ import sys
 #------------------------------------------------------------------------------
 # kenny loggings
 
-
 # set if logging is enabled
 s_log: bool = False
 
@@ -292,7 +291,7 @@ exception_install_handler()
 
 # exception readout can't be tested
 # test exception: uncomment the following line to see a test exception trace readout
-@this_is_a_test
+#@this_is_a_test
 def test_exception():
     my_test_bad_func("hey")
 
