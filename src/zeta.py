@@ -50,13 +50,13 @@ def log_clear():
 def log_grey(str) -> str:
     return f'\033[30;1m{str}\033[0m'
 
-# returns red-coloured background, white foreground
+# returns red-coloured foreground, black background
 def log_red(str) -> str:
-    return f'\033[41;30m{str}\033[0m'
+    return f'\033[31;1m{str}\033[0m'
 
-# returns a green-coloured background, white foreground
+# returns a green foreground, black backgroud
 def log_green(str) -> str:
-    return f'\033[42;30m{str}\033[0m'
+    return f'\033[32;1m{str}\033[0m'
 
 # returns a grey-coloured background, white foreground
 def log_grey_background(str) -> str:
