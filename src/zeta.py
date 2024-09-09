@@ -10,22 +10,6 @@ import traceback
 import sys
 
 #------------------------------------------------------------------------------
-# testing testing
-
-s_tests = []
-
-# decorator that wraps a function, adding it to s_tests
-def this_is_a_test(fn):
-    s_tests.append(fn)
-    return fn
-
-def test_run_all():
-    print("test ------------------------------------")
-    global s_tests
-    for test_fn in s_tests:
-        test_fn()
-
-#------------------------------------------------------------------------------
 # kenny loggings
 
 # set if logging is enabled
@@ -70,46 +54,67 @@ def log_grey(str) -> str:
 def log_red(str) -> str:
     return f'\033[41;30m{str}\033[0m'
 
+# returns a green-coloured background, white foreground
+def log_green(str) -> str:
+    return f'\033[42;30m{str}\033[0m'
+
 # returns a grey-coloured background, white foreground
 def log_grey_background(str) -> str:
     return f'\033[47;30m{str}\033[0m'
 
-# strips all colour-related codes out of a string
+# strips all colour-related codes and dynamic things out of a string (so we can compare test results)
 def log_strip(str) -> str:
     str = re.sub(r'\033\[[0-9;]*m', '', str)
-    # also strip out :number:, replace with :...:
-    str = re.sub(r':\d+:', ':..:', str)
-    return str
+    str = re.sub(r':\d+:', ':...:', str) # strip out :number:, replace with :...:
+    str = re.sub(r"0x[0-9a-f]+", "...", str)  # replace any hex-addresses ("0x....") with "..."
+    str = re.sub(r"\n +", "\n", str) # replace (cr followed by multiple spaces) with (cr)
+    return str.strip()
 
 # log_disclose shows CRs and tabs and spaces within a string
 def log_disclose(str) -> str:
     return str.replace('\n', '↩︎\n').replace('\t', '▶︎').replace(' ', '_')
 
-# log_assert checks if two strings are equal, and prints a message if they're not
-def log_assert(name, a, b: str):
-    sa = log_strip(str(a)).rstrip()
-    sb = log_strip(b).rstrip()
+# returns a length-limited string version of anything
+def log_short(obj: Any, maxLen=64) -> str:
+    s = str(obj) if not isinstance(obj, str) else '"' + obj + '"'
+    if s == None: return "None"
+    m = re.match(r"<__main__\.(\w+)", s)    # if s matches "<__main__.ClassName", return "ClassName"
+    if m: s = m.group(1)
+    if len(s) <= maxLen: return s
+    return s[:maxLen] + " " + log_grey("...") + " " + s[-12:]
+
+#------------------------------------------------------------------------------
+# testing testing
+
+s_tests = []
+
+# test_assert checks if two strings are equal, and prints a message if they're not
+def test_assert(name, a, b: str):
+    sa = log_strip(str(a))
+    sb = log_strip(b)
     if sb.startswith("\n"): sb = sb[1:]
     ctx = caller()
     ctx_str = f"{ctx[0]}:{ctx[1]}:"
     if sa == sb:
-        print(f"{log_grey(ctx_str)} {name}: passed")
+        print(f"{log_grey(ctx_str)} {log_green("passed")} {name}")
     else:
-        print(f"{log_grey(ctx_str)} {name}: failed")
+        print(f"{log_grey(ctx_str)} {log_red("failed")} {name}")
         print("expected:")
         print(sb) # or print(log_disclose(sb)) if you want to see CRs and spaces
         print("got:")
         print(sa) # or print(log_disclose(sa)) if you want to see CRs and spaces
 
-# returns a length-limited string version of anything
-def log_short(obj: Any, maxLen=64) -> str:
-    s = str(obj) if not isinstance(obj, str) else '"' + obj + '"'
-    if s == None: return "None"
-    s = re.sub(r"0x[0-9a-f]+", "...", s)  # replace any hex-addresses ("0x....") with "..."
-    m = re.match(r"<__main__\.(\w+)", s)    # if s matches "<__main__.ClassName", return "ClassName"
-    if m: return m.group(1)
-    if len(s) <= maxLen: return s
-    return s[:maxLen] + " " + log_grey("...") + " " + s[-12:]
+# decorator that wraps a function, adding it to s_tests
+def this_is_a_test(fn):
+    s_tests.append(fn)
+    return fn
+
+# run all tests
+def test_run_all():
+    print("test ------------------------------------")
+    global s_tests
+    for test_fn in s_tests:
+        test_fn()
 
 #------------------------------------------------------------------------------
 # phil call-ins: debug helpers to find out who called us, where from, and with what
@@ -195,14 +200,14 @@ def my_test_func(n: str):
 
 @this_is_a_test
 def test_caller():
-    log_assert("caller", my_test_wrapper_func("yo"), """
-zeta.py:..: my_test_func
-                 n: str = "yo"
-zeta.py:..: my_test_wrapper_func
-                 n: str = "yo"
-zeta.py:..: test_caller
-zeta.py:..:  test_run_all
-zeta.py:..: main
+    test_assert("caller", my_test_wrapper_func("yo"), """
+                                                zeta.py:...: my_test_func
+                                                                n: str = "yo"
+                                                zeta.py:...: my_test_wrapper_func
+                                                                n: str = "yo"
+                                                zeta.py:...: test_caller
+                                                zeta.py:...: test_run_all
+                                                zeta.py:...: main
 """)
     
 #------------------------------------------------------------------------------
@@ -218,9 +223,23 @@ def readFile(path: str) -> str:
 
 # Source is a file containing source code
 class Source:
-    def __init__(self, path: str):
-        self.path = path
-        self.text = readFile(path)
+    def __init__(self):
+        self.path = None
+        self.text = None
+    # construct from a path, read text
+    @staticmethod
+    def from_file(path: str) -> 'Source':
+        source = Source()
+        source.path = path
+        source.text = readFile(path)
+        return source
+
+    # construct from a string, bypassing filesystem (for testing)
+    @staticmethod
+    def from_text(text: str) -> 'Source':
+        source = Source()
+        source.text = text
+        return source
 
     # convert a character index to a file/line/column
     def loc(self, pos: int) -> 'SourceLoc':
@@ -242,7 +261,9 @@ class SourceLoc:
 
     # we need this so we can just print them
     def __str__(self):
-        return f'{self.source.path}:{self.lineno}:{self.column}'
+        if self.source.path:
+            return f'{self.source.path}:{self.lineno}:{self.column}'
+        return f'{self.lineno}:{self.column}'
     
     # and this
     def __repr__(self):
@@ -254,10 +275,10 @@ class SourceLoc:
 # Lex is a lexeme: points at Source, has a start/end index, stores the value
 # this lets (value) be different to the source if necessary, eg for smart indents and so on
 class Lex:
-    def __init__(self, source: Source, i: int, j: int, val: str=None):
+    def __init__(self, source: Source, i: int=0, j: int=None, val: str=None):
         self.source = source
         self.i = i
-        self.j = j
+        self.j = j if j else len(source.text)
         self.val = val if val else source.text[i:j]
 
     def set_end(self, j:int):
@@ -298,7 +319,7 @@ class LexStr:
             if lex.val == "{undent}": indent -= 1
             if lex.val in ["{newline}", "{indent}", "{undent}"]:
                 out += "\n" + "  " * indent
-        return out
+        return out.rstrip()
     def __repr__(self):
         return self.__str__()
     def __len__(self):
@@ -322,7 +343,7 @@ class LexStr:
     
 # pulls out all code snippets from a source file; each lex is a snippet
 def extract_code(source: Source) -> LexStr:
-    out = LexStr()
+    out = LexStr([])
     lines = source.text.split('\n')
     if len(lines) > 0 and lines[-1]=='' : lines = lines[:-1]
     iChar = 0
@@ -355,13 +376,13 @@ def is_id(val: str):
 class Lexer:
     def __init__(self, source: Source):
         self.source = source
+        self.code = extract_code(self.source) if source.path else LexStr([Lex(source)])
 
     def lex(self):
-        code = extract_code(self.source)
         out = LexStr([])
         self.last_indent = None
-        for i in range(0, len(code)):
-            out += self.lex_substring(code[i])
+        for i in range(0, len(self.code)):
+            out += self.lex_substring(self.code[i])
         return out
     
     @log_disable
@@ -479,10 +500,10 @@ class Lexer:
 
 @this_is_a_test
 def test_lexer():
-    source = Source("src/test/Hello.zero.md")
+    source = Source.from_file("src/test/Hello.zero.md")
     lexer = Lexer(source)
     ls = lexer.lex()
-    log_assert("lexer", ls, """
+    test_assert("lexer", ls, """
 feature Hello extends Main {indent} 
   > hello ( ) {newline} 
   => "hello world" {newline} 
@@ -502,7 +523,10 @@ feature Hello extends Main {indent}
 """)
 
 #------------------------------------------------------------------------------
-# london grammar atoms
+# grammar rule atoms
+# the 'grammar' is a collection of syntax structured specified using these atoms
+# each 'atom' returns a small structure that defines the atom/rule
+# the idea is to be able to use these rules for parsing and printing
 
 # matches a specific keyword
 def keyword(word: str)-> Dict:
@@ -549,8 +573,8 @@ def any(*rules: List[Dict])-> Dict:
     return {'fn': 'any', 'rules': rules, 'caller': caller()}
 
 # matches a list of the same rule, separated and terminated
-def list(rule: Dict, sep: str=None, term: str=None)-> Dict:
-    return {'fn': 'list', 'rule': rule, 'sep': sep, 'term': term, 'caller': caller()}
+def list(rule: Dict, sep: str=None)-> Dict:
+    return {'fn': 'list', 'rule': rule, 'sep': sep, 'caller': caller()}
 
 # matches an indented block of stuff
 def block(rule: Dict)-> Dict:
@@ -561,7 +585,6 @@ def upto(*chars: List[str])-> Dict:
     return {'fn': 'upto', 'chars': chars, 'caller': caller()}
 
 # matches a thing in brackets
-
 def brackets(rule: Dict) -> Dict:
     return {'fn': 'brackets', 'rule': rule, 'caller': caller()}
             
@@ -634,68 +657,14 @@ def maybe_rule_as_string(rule, indent: int=0, line: int=0) -> str:
 def print_newline(indent: int) -> str:
     return '\n' + '  ' * indent
 
-#------------------------------------------------------------------------------
-# parse rules for zero
-
-class Language: pass
-
-class Zero(Language):
-    # feature (name) [extends (parent)] { list(function | struct | variable) }
-    def feature(self) -> Dict:
-        return label('feature', sequence(
-                    keyword('feature'), set('name', identifier()),
-                    optional(sequence(keyword('extends'), set('parent', identifier()))),
-                    block(list(any(self.function(), self.struct(), self.variable(), self.test())))))
-
-    # ">" blah [ "=>" blah]
-    def test(self) -> Dict:
-        return label("test", sequence(
-                    keyword(">"), set("lhs", upto("{newline}", "=>")),
-                    optional(sequence(keyword("=>"), set("rhs", upto("{newline}"))))))
-    
-    # (on/replaceafter/before) (result) (name) (parameters) { function_body }
-    def function(self) -> Dict:
-        return label('function', sequence(
-            set('modifier', enum('on', 'replace', 'after', 'before')),
-            set('result', maybe_bracketed(self.name_type())),
-            set('assign_op', enum("=", "<<")), 
-            set('name', identifier()),
-            brackets(set('parameters', list(self.variable(), sep=','))),
-            block(set('body', self.function_body()))))
-
-    # stand-in for now
-    def function_body(self) -> Dict:
-        return {'fn': 'function_body'}
-        
-    # struct (name) { list(variable) }
-    def struct(self) -> Dict:
-        return label('struct', sequence(
-                    keyword('struct'), set('name', identifier()),
-                    block(list(self.variable()))))
-
-    # ((name type) | (type:name)) [= value]
-    def variable(self) -> Dict:
-        return label('variable', sequence(
-                    self.name_type(),
-                    optional(sequence(keyword('='), set('value', self.constant())))))
-
-    def name_type(self) -> Dict:
-        return any(
-                sequence(set('name', identifier()), keyword(':'), set('type', identifier())),
-                sequence(set('type', identifier()), set('name', identifier())))
-        
-    def constant(self) -> Dict:
-        return upto("{newline}", ",", ";")
-
 @this_is_a_test
-def test_parse_rules():
-    log_assert("str(rule)",
-        rule_as_string(Zero().feature()), """
-             feature = 
-zeta.py:198: sequence(
-zeta.py:199:     keyword('feature'), set('name', identifier()), 
-zeta.py:200:     optional(sequence(keyword('extends'), set('parent', identifier()))), 
-zeta.py:201:     block(list(any(function(), struct(), variable(), test()))))
+def test_print_rules():
+    rule = sequence(keyword('feature'), set('name', identifier()),
+                    optional(sequence(keyword('extends'), set('parent', identifier()))))
+    test_assert("rule",
+        rule_as_string(rule), """
+zeta.py:...: sequence(keyword('feature'), set('name', identifier()), 
+zeta.py:...:     optional(sequence(keyword('extends'), set('parent', identifier()))))
                """)
 
 #------------------------------------------------------------------------------
@@ -742,8 +711,11 @@ class Error:
         val = str(self.reader.ls[self.iLex]) if self.iLex < len(self.reader.ls) else "eof"
         for iLex in range(self.iLex+1, min(self.iLex+4, len(self.reader.ls))):
             val = val + " " + str(self.reader.ls[iLex])
-        out= f"Expected {self.expected} at {self.location}: {caller_as_string(self.caller)}"
+        out= f"{caller_as_string(self.caller)} Expected {self.expected} at {self.location} "
         return out
+    
+    def __repr__(self):
+        return "[" + self.__str__() + "]"
     
     def show_source(self) -> str:
         lex = self.reader.ls[self.iLex]
@@ -826,19 +798,21 @@ class Parser:
     def set(self, caller, reader, name: str, parser_fn)-> Dict:
         ast = parser_fn(reader)
         if err(ast): return ast
-        log("set(", name, "):", ast)
-        return { name : ast }
-
-    @log_disable
+        maybe_error = ast['_error'] if '_error' in ast else None
+        result= { name : ast }
+        if maybe_error: result['_error'] = maybe_error
+        return result
+    
     def sequence(self, caller, reader, *parser_fns)-> Dict:
-        log("sequence")
         ast = {}
-        log("  parser_fns", parser_fns)
         for parser_fn in parser_fns:
             sub_ast = parser_fn(reader)
-            log("  result", sub_ast)
-            if err(sub_ast): return sub_ast
-            ast.update(sub_ast)
+            if err(sub_ast):
+                if ('_error' in ast): return ast['_error']
+                return sub_ast
+            else:
+                if '_error' in ast: del ast['_error']
+                ast.update(sub_ast)
         return ast
     
     def optional(self, caller, reader, parser_fn)-> Dict:
@@ -854,7 +828,7 @@ class Parser:
         if lex and str(lex) in words:
             reader.advance()
             return [lex]
-        return Error(f"{words}", reader, caller)
+        return Error(f"one of {words}", reader, caller)
 
     def any(self, caller, reader, *parser_fns)-> Dict:
         errors = []
@@ -867,19 +841,17 @@ class Parser:
         error = combine_errors(errors)
         return error
 
-    def list(self, caller, reader, parser_fn, sep: str, term: str)-> Dict:
-        ast = []
-        while True:
-            if reader.match(lambda s: s == term):
-                break
+    def list(self, caller, reader, parser_fn, sep: str)-> Dict:
+        items = []
+        while not (reader.eof()):
             sub_ast = parser_fn(reader)
-            if err(sub_ast): return sub_ast
-            ast.append(sub_ast)
-            if reader.match(lambda s: s == term):
-                break
-            elif sep != None and reader.match(lambda s: s == sep):
-                continue
-        return ast
+            if err(sub_ast):
+                return{ '_list': items, '_error': sub_ast }
+            items.append(sub_ast)
+            if sep != None:
+                if not reader.match(lambda s: s == sep):
+                    return { '_list': items, '_error': Error(f"'{sep}'", reader, caller)}
+        return { '_list': items }
 
     def block(self, caller, reader, parser_fn)-> Dict:
         if reader.match(lambda s: s == "{indent}"):
@@ -925,6 +897,9 @@ def make_parser(imp, rule: Any) -> Callable:
     try:
         if rule == None: return None
         if isinstance(rule, str) or isinstance(rule, LexStr): return rule
+        if isinstance(rule, List) or isinstance(rule, Tuple): 
+            print("rule is list or tuple:", rule)
+            exit(0)
         caller = rule['caller'] if 'caller' in rule else None
         if 'fn' not in rule: raise Exception(f"no 'fn' in rule {rule}")
         fn = rule['fn']
@@ -943,21 +918,99 @@ def make_parser(imp, rule: Any) -> Callable:
         print("problematic rule:")
         rule = caller_get_arg(1, 'rule')
         print(rule_as_string(rule))
-        #print(rule)
         exit(0)
-
 
 @log_enable
 @this_is_a_test
 def test_parser():
-    source = Source("src/test/Hello.zero.md")
+    source = Source.from_file('src/test/Hello.zero.md')
     ls = Lexer(source).lex()
-    fn = Zero().feature()
+    fn = sequence(keyword('feature'), set('name', identifier()),
+                  optional(sequence(keyword('extends'), set('parent', identifier()))))
     parser = make_parser(Parser(), fn)
     reader = Reader(ls)
     ast = parser(reader)
-    print(ast)
+    test_assert("parser", ast, """{'name': [Hello], 'parent': [Main]}""")
 
+def test_parse(fn, text: str) -> LexStr:
+    source = Source.from_text(text)
+    ls = Lexer(source).lex()
+    parser = make_parser(Parser(), fn)
+    reader = Reader(ls)
+    return parser(reader)
+
+# this ensures that sequences containing lists followed by something not in the list, work correctly
+@this_is_a_test
+@log_enable
+def test_sequence_list():
+    fn = sequence(list(enum("a", "b")), keyword("{indent}"))
+    # this should succeed because the list is followed by {indent}
+    test_assert("good_list", test_parse(fn, "a b {"), "{'_list': [[a], [b]]}")
+    # this should fail because the list contains an erroneous item ("c") not in the enum
+    test_assert("bad_list", test_parse(fn, "a b c {"), "zeta.py:946: Expected one of ('a', 'b') at 1:4")
+
+#------------------------------------------------------------------------------
+# parse rules for zero
+
+class Grammar: pass
+
+class Zero(Grammar):
+    # feature (name) [extends (parent)] { list(function | struct | variable) }
+    def feature(self) -> Dict:
+        return label('feature', sequence(
+                    keyword('feature'), set('name', identifier()),
+                    optional(sequence(keyword('extends'), set('parent', identifier()))),
+                    set('components', block(list(any(self.function(), self.struct(), self.variable(), self.test()))))))
+
+    # ">" blah [ "=>" blah]
+    def test(self) -> Dict:
+        return label("test", sequence(
+                    keyword(">"), set("expression", upto("{newline}", "=>")),
+                    optional(sequence(keyword("=>"), set("expected", upto("{newline}"))))))
+    
+    # (on/replaceafter/before) (result) (name) (parameters) { function_body }
+    def function(self) -> Dict:
+        return label('function', sequence(
+            set('modifier', enum('on', 'replace', 'after', 'before')),
+            set('result', maybe_bracketed(self.name_type())),
+            set('assign_op', enum("=", "<<")), 
+            set('signature', self.function_signature()),
+            set('body', block(self.function_body()))))
+
+    # function signature: any sequence of (word/param)
+    def function_signature(self) -> Dict:
+        return list(any(set('word', identifier()), 
+                        set('param', brackets(list(self.variable(), ",")))))
+    
+    # stand-in for now
+    def function_body(self) -> Dict:
+        return upto("{undent}")
+        
+    # struct (name) { list(variable) }
+    def struct(self) -> Dict:
+        return label('struct', sequence(
+                    keyword('struct'), set('name', identifier()),
+                    block(list(self.variable()))))
+
+    # ((name type) | (type:name)) [= value]
+    def variable(self) -> Dict:
+        return label('variable', sequence(
+                    self.name_type(),
+                    optional(sequence(keyword('='), set('value', self.constant())))))
+
+    def name_type(self) -> Dict:
+        return any(
+                sequence(set('name', identifier()), keyword(':'), set('type', identifier())),
+                sequence(set('type', identifier()), set('name', identifier())))
+        
+    def constant(self) -> Dict:
+        return upto("{newline}", ",", ";")
+
+@this_is_a_test
+def test_zero_grammar():
+    zero = Zero()
+    
+    
 #------------------------------------------------------------------------------
 # main, test, etc
 

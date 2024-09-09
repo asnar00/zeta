@@ -1,6 +1,62 @@
 ᕦ(ツ)ᕤ
 # scribblez
 
+Okay so we can now distinguish between:
+
+1- list of correct things terminated by something not in the list
+2- list of correct things containing an incorrect thing
+
+In the latter case, we'll return the lowest error; in the former, we'll succeed.
+Mechanism: attach the error to the result of "list".
+So there's only one list() atom, which is great.
+
+--------------------
+
+
+I'm super enjoying working in python.
+Thinking about rule syntax. Now we have:
+
+    def feature(self) -> Dict:
+        return label('feature', sequence(
+                    keyword('feature'), set('name', identifier()),
+                    optional(sequence(keyword('extends'), set('parent', identifier()))),
+                    block(list(any(self.function(), self.struct(), self.variable(), self.test())))))
+
+This would be nicer as:
+
+    feature = 'feature' (name: str) ?('extends' (parent: str)) 
+                    (body: block(list(component)))
+    
+    component = function | struct | variable | test
+
+    function = (modifier: 'or' | 'replace' | 'after' | 'before')
+                (result: name_and_type)
+    
+    name_and_type = ((name: str) ':' (type: str)) | ((type: str) (name: str))
+    
+And this would write the code for us:
+
+    class feature(entity):
+        name: str
+        parent?: str
+        body: component[]
+    
+    class component(entity):
+        pass
+        
+
+--------------------------------------------------------------
+
+idea: name for company = "doSomething" or "do_something"
+
+    www.do_something.org
+
+from 'slow horses': "If I'm not back in half an hour, do something"
+----
+
+today: messing around with exception handling, faster diagnosis, and so on. Super fun finding a decent workflow examining the python callstack and stuff.
+
+---------------------------------------------
 where we are now: got parser structure in place, tidied up the lexer and moved things around a bit.
 next: get all parser functions tested and the full parse of the test file working properly.
 
