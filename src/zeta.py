@@ -203,6 +203,14 @@ def caller_get_arg(level: int, arg_name: str) -> Any:
     args = inspect.getargvalues(frame.frame)
     return args.locals[arg_name] if arg_name in args.locals else None
 
+def caller_exception(e: Exception) -> str:
+    # Extract the traceback details from the exception
+    tb = traceback.extract_tb(e.__traceback__)
+    # Get the last frame (where the exception was raised)
+    i_frame = len(tb) - 1
+    last_frame = tb[i_frame]
+    return log_grey(f"{last_frame.filename.replace(s_cwd, '')}:{last_frame.lineno}: ") + log_red("!!! " + str(e))
+
 #------------------------------------------------------------------------------
 # exception handling
 # a better exception readout that's more compact, and shows function parameter values
@@ -388,6 +396,8 @@ class SourceLoc:
 #------------------------------------------------------------------------------
 # lexy's midnight runners
 
+s_lex_verbose = False
+
 # Lex is a lexeme: points at Source, has a start/end index, stores the value
 # this lets (value) be different to the source if necessary, eg for smart indents and so on
 class Lex:
@@ -409,6 +419,9 @@ class Lex:
         return self.val
     
     def __repr__(self):
+        global s_lex_verbose
+        if s_lex_verbose:
+            return f"**{self.location().lineno}>>{self.val}"
         return self.__str__()
     
     def location(self):
@@ -806,7 +819,13 @@ class Reader:
         self.i = 0
         self.debug = False
 
+    # skip newlines
+    def skip_newlines(self):
+        while (not self.eof()) and (str(self.ls[self.i]) == '{newline}'): self.i += 1
+
+    # peek, skipping newlines
     def peek(self) -> Lex:
+        self.skip_newlines()
         return self.ls[self.i] if self.i < len(self.ls) else None
     
     def advance(self):
@@ -816,20 +835,26 @@ class Reader:
         return self.i >= len(self.ls)
     
     def match(self, fn) -> Lex:
+        lex = self.peek()
+
         if self.debug:
             print()
-            print(self.ls[self.i : self.i + 4])
-            print(caller_show_level(1, True))
+            loc = self.ls[self.i].location()
+            print(f"{log_grey(loc)}", self.ls[self.i : self.i + 4])
+            print(caller_show_level(1, False))
             i = 1
+            line = ''
             while True:
                 level = caller_show_level(i, False)
                 if level == None or 'parse_debug' in level: break
                 caller = caller_get_arg(i, 'caller')
                 source = caller_source(caller).strip()
-                print(f"{log_grey(caller)} {log_grey(source)}")
+                next = f"{log_grey(caller)} {log_grey(source)}"
+                if next != line: 
+                    print(next)
+                    line = next
                 i += 2
 
-        lex = self.peek()
         if lex and fn(str(lex)):
             if self.debug: print(f"MATCHED")
             self.advance()
@@ -863,7 +888,7 @@ class Error:
         val = str(self.reader.ls[self.iLex]) if self.iLex < len(self.reader.ls) else "eof"
         for iLex in range(self.iLex+1, min(self.iLex+4, len(self.reader.ls))):
             val = val + " " + str(self.reader.ls[iLex])
-        out= f"{self.caller} Expected {self.expected} at {self.location} "
+        out= f"{log_grey(self.caller)} Expected {self.expected} at {self.location} "
         return out
     
     def __repr__(self):
@@ -914,6 +939,7 @@ def combine_errors(errors: List[Error]) -> Error:
     expected = " or ".join(expecteds)
     # now return a new error with the combined expecteds
     latest.expected = expected
+    log("returning:", latest)
     return latest
 
 #------------------------------------------------------------------------------
@@ -953,9 +979,8 @@ class Parser:
     def parse_set(self, caller, reader, name: str, parser_fn)-> AST|Error:
         ast = parser_fn(reader)
         if err(ast): return ast
-        maybe_error = ast['_error'] if '_error' in ast else None
+        if '_list' in ast: ast = ast['_list']
         result= AST({ name : ast })
-        if maybe_error: result['_error'] = maybe_error
         return result
     
     def parse_sequence(self, caller, reader, *parser_fns)-> AST|Error:
@@ -971,9 +996,11 @@ class Parser:
         return ast
     
     def parse_optional(self, caller, reader, parser_fn)-> AST:
+        reader.skip_newlines()
         iLex = reader.i
         ast = parser_fn(reader)
         if err(ast):
+            if reader.debug: print(f"\noptional failed: {ast}")
             if ast.iLex == iLex: return AST({})
             return ast
         return ast
@@ -1022,7 +1049,7 @@ class Parser:
         out = []
         while True:
             if reader.eof(): return out
-            lex = reader.peek()
+            lex = reader.ls[reader.i]
             if depth == 0 and str(lex) in words: return out
             out.append(lex)
             if str(lex) in ["(", "[", "{indent}"]: depth += 1
@@ -1110,64 +1137,70 @@ def test_sequence_list():
     # this should fail because the list contains an erroneous item ("c") not in the enum
     test_assert("bad_list", test_parse(fn, "a b c {"), "zeta.py:946: Expected one of ('a', 'b') at 1:4")
 
-#---------------------------------------------------------------------------------
-# pretty-print the ast, matching line layout to source
+#------------------------------------------------------------------------------
+# pretty-print AST using line numbers from original
 
-def show_ast_rec(ast):
-    iLine = 0
-    if isinstance(ast, List) and len(ast) > 0 and isinstance(ast[0], Lex):
-        iLine = ast[0].location().lineno
-        return f"**{iLine}: " + " ".join([str(lex) for lex in ast])
-    for key, val in ast.items():
-        if isinstance(val, List) and len(val) > 0 and isinstance(val[0], Lex):
-           iLineLex = val[0].location().lineno
-           if iLine ==0 or iLineLex < iLine:
-               iLine = iLineLex
-    line = f"**{iLine}: "
-    for key, val in ast.items():
-        if isinstance(val, str):
-            line += f"{val} ▶︎ "
-        elif isinstance(val, List) and len(val) > 0 and isinstance(val[0], Lex):
-            iLineLex = val[0].location().lineno
-            if iLineLex > iLine:
-                line += f"**{iLineLex}: "
-                iLine = iLineLex
-            line += f"{key}: \""
-            for lex in val:
-                iLineLex = lex.location().lineno
-                if iLineLex > iLine:
-                    line += f"**{iLineLex}: "
-                    iLine = iLineLex
-                line += f"{str(lex)}" + " "
-            if line[-1]==' ': line = line[:-1]
-            line += "\" "
-        elif isinstance(val, List) and (len(val) == 0 or not (isinstance(val[0], Lex))):
-            line += f"{key}: [ "
-            for i, subitem in enumerate(val):
-                line += f"{show_ast_rec(subitem)}"
-                if i < len(val)-1: line += ", "
-            line += "] "
-    return line
+def insert_cr_before_label(text):
+    pass
 
-def show_ast(ast, source: Source =None):
-    file = source.path.replace(s_cwd, '') if source and source.path else ""
-    if err(ast): return ast
-    out = show_ast_rec(ast)
-    outlines = out.split("**")[1:]
-    result = []
-    for line in outlines:
-        ic = line.find(":")
-        iLine = int(line[:ic])
-        line = line[ic+2:]
-        if iLine >= len(result):
-            result += [""] * (iLine - len(result) + 1)
-        result[iLine] += line
-    res = ""
-    for i, line in enumerate(result):
-        if i > 0 and (line != '' or result[i-1] != ''):
-            loc = log_grey(f"{file}:{i}:")
-            res += f"{loc} {line}" + "\n"
-    return res
+@log_disable
+def pretty_print_ast(ast, filename:str=""):
+    log()
+    global s_lex_verbose
+    s_lex_verbose = True
+    ast = str(ast)
+    log(ast)
+    log()
+
+    def split_ast(ast:str) -> List[Tuple[int, str]]: # split wherever you find "label:", index with line numbers
+        log("split_ast")
+        split_ast = re.sub(r"'(\w+)':\s*", r"\n'\1': ", ast).split("\n")
+        lines = []
+        for line in split_ast:
+            pattern = r'\*\*(\d+)>>'
+            matches = re.findall(pattern, line)
+            numbers = [int(match) for match in matches]
+            lowest_number = min(numbers) if numbers else 0
+            cleaned = re.sub(pattern, '', line)
+            log("   ", lowest_number, ":", cleaned)
+            lines.append((lowest_number, cleaned))
+        return lines
+
+    def combine(lines): # given an array of lines with 0: or n:, combine into one
+        linenos = [line[0] for line in lines if line[0] != 0]
+        minline = min(linenos) if linenos else 0
+        content = "".join([line[1] for line in lines])
+        return (minline, content)
+    
+    def find_next_type(lines, i=0): # returns the index of the next line containing '_type'
+        lineno = 0
+        for i in range(i, len(lines)):
+            if lines[i][0] != 0:
+                lineno = lines[i][0]
+                break
+        for j in range(i, len(lines)):
+            if "_type" in lines[j][1] or lines[j][0]>lineno:
+                return j
+        return len(lines)
+    
+    lines = split_ast(ast)
+    log()
+    i_type = 0
+    all_combined = []
+    while i_type < len(lines):
+        i_next_type = find_next_type(lines, i_type+1)
+        combined = combine(lines[i_type:i_next_type])
+        log(combined[0], ":", combined[1])
+        all_combined.append(combined)
+        i_type = i_next_type
+
+    log()
+    out = ""
+    for c in all_combined:
+        loc = log_grey(f"{filename}:{c[0]}:")
+        out += f"{loc} {c[1]}\n"
+    log(out)
+    return out
 
 #------------------------------------------------------------------------------
 # parse rules for zero
@@ -1181,9 +1214,7 @@ class Zero(Grammar):
                     keyword('feature'), set('name', identifier()),
                     optional(sequence(keyword('extends'), set('parent', identifier()))),
                     set('components', 
-                        debug(block(
-                            list(
-                                self.component()))))))
+                        block(list(self.component())))))
 
     def component(self) -> Rule:
         return any(self.function(), self.struct(), self.variable(), self.test())
@@ -1191,8 +1222,11 @@ class Zero(Grammar):
     # ">" blah [ "=>" blah]
     def test(self) -> Rule:
         return label('test', sequence(
-                    keyword(">"), set("expression", upto("{newline}", "{undent}", "=>")),
-                    optional(sequence(keyword("=>"), set("expected", upto("{newline}", "{undent}"))))))
+                    keyword(">"), 
+                    set("expression", upto("{newline}", "{undent}", "=>")),
+                    optional(sequence(
+                        keyword("=>"), 
+                        set("result", upto("{newline}", "{undent}"))))))
     
     # (on/replaceafter/before) (result) (name) (parameters) { function_body }
     def function(self) -> Rule:
@@ -1234,14 +1268,22 @@ class Zero(Grammar):
 
 @this_is_a_test
 def test_zero_grammar():
-    print("test_zero_grammar:")
+    filename = "src/test/Hello.zero.md"
     zero = Zero()
-    source = Source.from_file("src/test/Hello.zero.md")
+    source = Source.from_file(filename)
     lexer = Lexer(source)
     ls = lexer.lex()
     parser = make_parser(Parser(), zero.feature())
-    ast = parser(Reader(ls))
-    print(show_ast(ast))
+    reader = Reader(ls)
+    ast = parser(reader)
+    result = pretty_print_ast(ast, filename)
+    test_assert("zero_grammar", result, """
+src/test/Hello.zero.md:22: {'_type': 'feature', 'name': [Hello], 'parent': [Main], 'components': [{
+src/test/Hello.zero.md:28: '_type': 'test', 'expression': [hello, (, )], 
+src/test/Hello.zero.md:29: 'result': ["hello world"]}, {'_type': 'test', 'expression': [hello, (, )]}, {
+src/test/Hello.zero.md:43: '_type': 'function', 'modifier': [on], 'result': {'name': [out$], 'type': [string]}, 'assign_op': [<<], 'signature': [{'word': [hello]}, {'param': []}], 
+src/test/Hello.zero.md:44: 'body': [out$, <<, "hello world"]}]}
+                """)
     
 #------------------------------------------------------------------------------
 # main, test, etc
