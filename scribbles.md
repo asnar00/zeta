@@ -4,15 +4,17 @@
 OK so! all parsing tests based on the single test/Hello.zero.md file now pass. Super cool.
 Things that are good about this:
 
-1- call stack introspection ROCKS
-2- exception handling / reporting ROCKS
-3- parser debugger is AMAZING
-4- structure-based parser is super powerful
-5- layout-agnostic lexer/parser works a treat
-6- the test-assert system is FABULOUS
+- call stack introspection ROCKS
+- exception handling / reporting ROCKS
+- parser debugger is AMAZING
+- structure-based parser is super powerful
+- layout-agnostic lexer/parser works a treat
+- the test-assert system is FABULOUS
+- I figured out lists and errors in partial things, kinda
 
 Things I'm unhappy about:
-1- there's some weirdness around LexStr vs List[Lex] still (LexStr() does weird shit)
+- there's some weirdness around LexStr vs List[Lex] still (LexStr() does weird shit)
+- want to do more work on partial-parsing, eg. body etc
 
 The next step is to get hello world running properly with a typescript/deno backend.
 So let's get on with that!
