@@ -25,7 +25,7 @@ The first thing to do is to declare the feature itself, extending the built-in `
 
 Our new feature is going to implement a function called `hello` that returns "hello world" when called, like this:
 
-        > hello()
+        > hello() 
         => "hello world"
 
 This code snippet defines a *test* : the `>` symbol at the start (mimicking a BASIC prompt from the old microcomputer days) will generate test code on the target platform, and run it. 

@@ -77,9 +77,9 @@ def log_disclose(str) -> str:
     return str.replace('\n', '↩︎\n').replace('\t', '▶︎').replace(' ', '_')
 
 # returns a length-limited string version of anything
-def log_short(obj: Any, maxLen=64) -> str:
+def log_short(obj: Any, maxLen=32) -> str:
     if obj == None: return "None"
-    s = str(obj) if not isinstance(obj, str) else ( "\"" + obj + "\"" if not obj.startswith("'") else obj)
+    s = str(obj)
     m = re.match(r"<__main__\.(\w+)", s)    # if s matches "<__main__.ClassName", return "ClassName"
     if m: s = m.group(1)
     if len(s) <= maxLen: return s
@@ -108,6 +108,12 @@ def test_assert(name, a, b: str):
 
 # decorator that wraps a function, adding it to s_tests
 def this_is_a_test(fn):
+    s_tests.append(fn)
+    return fn
+
+# decorator that wraps a function, making it the only test (if we're focusing)
+def this_is_the_only_test(fn):
+    s_tests.clear()
     s_tests.append(fn)
     return fn
 
@@ -198,6 +204,8 @@ def caller_exception(e: Exception) -> str:
 
 # Get the function signature with parameter names, types, and values.
 def get_function_signature(func, frame):
+    if inspect.ismethod(func):
+        func = func.__func__
     sig = inspect.signature(func) # Get function's parameter specifications
     # Get type hints (if any)
     try:
@@ -215,6 +223,7 @@ def get_function_signature(func, frame):
         if param_value is not inspect.Parameter.empty:
             actual_type = type(param_value).__name__
             ps = f"{param_value!r}"
+            ps = log_short(ps)
             if param_type is not inspect.Parameter.empty:
                 if actual_type != param_type.__name__:
                     actual_type = log_red(actual_type)
@@ -237,8 +246,14 @@ def exception_handler(exc_type, exc_value, exc_traceback):
         # Get the function object
         func = frame.f_globals.get(function_name)
         if func is None:
-            # If it's a method, it might be in the local namespace
             func = frame.f_locals.get(function_name)
+            if func is None and 'self' in frame.f_locals:
+                # It might be a method called on self
+                instance = frame.f_locals['self']
+                func = getattr(instance.__class__, function_name, None)
+                if func:
+                    func = func.__get__(instance, instance.__class__)  # Bind the method
+        
         
         if func is not None:
             # Get the function signature
@@ -254,6 +269,9 @@ def exception_handler(exc_type, exc_value, exc_traceback):
     
     # Print frame information in reverse order
     for filename, lineno, function_name, signature in reversed(frames):
+        if function_name.startswith("wrapper"): continue
+        if function_name.startswith("<lambda>"): continue
+        if function_name.startswith("<module>"): continue
         loc = log_grey(f"{filename}:{lineno}: ")
         msg += (f"{loc}{function_name} ({signature})") + "\n"
     print(msg)
@@ -267,13 +285,13 @@ def my_test_func(n: str):
 @this_is_a_test
 def test_caller():
     test_assert("caller", my_test_wrapper_func("yo"), """
-                                                zeta.py:...: my_test_func
-                                                                n: str = "yo"
-                                                zeta.py:...: my_test_wrapper_func
-                                                                n: str = "yo"
-                                                zeta.py:...: test_caller
-                                                zeta.py:...: test_run_all
-                                                zeta.py:...: main
+                            zeta.py:...: my_test_func
+                            n: str = yo
+                            zeta.py:...: my_test_wrapper_func
+                            n: str = yo
+                            zeta.py:...: test_caller
+                            zeta.py:...: test_run_all
+                            zeta.py:...: main
 """)
 
 def my_test_raiser(p: str):
@@ -399,7 +417,7 @@ class LexStr:
         out = ""
         indent = 0
         for lex in self.lexemes:
-            out += str(lex) + " "
+            out += log_disclose(str(lex)) + " "
             if lex.val == "{indent}": indent += 1
             if lex.val == "{undent}": indent -= 1
             if lex.val in ["{newline}", "{indent}", "{undent}"]:
@@ -525,7 +543,9 @@ class Lexer:
             elif indent < self.last_indent:
                 # sig-whitespace undent
                 log("{undent-sig}")
-                self.out += self.string.slice(self.i-1, j, '{undent-sig}')
+                nUndents = (self.last_indent - indent) // 4
+                for i in range(0, nUndents):
+                    self.out += self.string.slice(self.i-1, j, '{undent-sig}')
             elif indent == self.last_indent:
                 # sig-whitespace: no change, give us a newline
                 log("{newline}")
@@ -590,21 +610,22 @@ def test_lexer():
     ls = lexer.lex()
     test_assert("lexer", ls, """
 feature Hello extends Main {indent} 
-  > hello ( ) {newline} 
-  => "hello world" {newline} 
-  > hello ( ) {newline} 
-  on ( out$ : string ) << hello ( ) {indent} 
-    out$ << "hello world" {undent} 
-  on ( string out$ ) << hello ( ) {indent} 
-    out$ << "hello world" ; {undent} 
-  {newline} 
-  on ( out$ : string ) << hello ( ) {indent} 
-    out$ << "hello world" ; {undent} 
-  {newline} 
-  on ( out$ : string ) << hello ( ) {indent} 
-    out$ << "hello world" {undent} 
-  on ( string out$ ) << hello ( ) {indent} 
-    out$ << "hello world"
+> hello ( ) {newline} 
+=> "hello_world" {newline} 
+> hello ( ) {newline} 
+on ( out$ : string ) << hello ( ) {indent} 
+out$ << "hello_world" {undent} 
+{undent} 
+on ( string out$ ) << hello ( ) {indent} 
+out$ << "hello_world" ; {undent} 
+{newline} 
+on ( out$ : string ) << hello ( ) {indent} 
+out$ << "hello_world" ; {undent} 
+{newline} 
+on ( out$ : string ) << hello ( ) {indent} 
+out$ << "hello_world" {undent} 
+on ( string out$ ) << hello ( ) {indent} 
+out$ << "hello_world"
 """)
 
 #------------------------------------------------------------------------------
@@ -683,6 +704,7 @@ def maybe_bracketed(rule: Dict)-> Dict:
 
 # print a rule as a nicely formatted, readable string matching the source code
 def rule_as_string(rule):
+    if rule == None: return "None"
     out = rule_as_string_rec(rule)
     file = rule['caller'][0]
     padding = len(file) + 6
@@ -710,6 +732,7 @@ def rule_as_string(rule):
 
 # recursive routine that prints a rule as a string, with source line numbers embedded in it
 def rule_as_string_rec(rule, indent: int=0, line: int=0) -> str:
+    if rule is None: return "None"
     if isinstance(rule, str): return rule
     if 'fn' in rule and rule['fn'] == 'label':
         return f'{rule["label"]} = {rule_as_string_rec(rule["rule"], indent, line)}'
@@ -748,8 +771,8 @@ def test_print_rules():
                     optional(sequence(keyword('extends'), set('parent', identifier()))))
     test_assert("rule",
         rule_as_string(rule), """
-zeta.py:...: sequence(keyword('feature'), set('name', identifier()), 
-zeta.py:...:     optional(sequence(keyword('extends'), set('parent', identifier()))))
+zeta.py:747: sequence(keyword('feature'), set('name', identifier()), 
+zeta.py:748:     optional(sequence(keyword('extends'), set('parent', identifier()))))
                """)
 
 #------------------------------------------------------------------------------
@@ -782,6 +805,13 @@ class Reader:
         if iLex >= len(self.ls): return "EOF"
         lex = self.ls[iLex]
         return lex.location()
+    
+    def source(self) -> Source:
+        return self.ls[0].source
+    
+    def __str__(self):
+        return str(self.ls[self.i:self.i + 3])
+    def __repr__(self): return self.__str__()
     
 # Error just holds a message and a point in the source file
 class Error:
@@ -827,6 +857,7 @@ def err(obj) -> bool:
     return isinstance(obj, Error)
 
 # combine multiple errors
+@log_disable
 def combine_errors(errors: List[Error]) -> Error:
     log("combine_errors:")
     for error in errors:
@@ -855,32 +886,31 @@ class Parser:
     def __init__(self):
         pass
 
-    def keyword(self, caller, reader, word: str)-> Dict:
+    def parse_keyword(self, caller, reader, word: str)-> Dict:
         if reader.eof() and word in ['{newline}', '{undent}']: return {} # special case for premature eof
         return {} if reader.match(lambda s: s == word) else Error(f"'{word}'", reader, caller)
 
-    def indent(self, caller, reader)-> Dict:
+    def parse_indent(self, caller, reader)-> Dict:
         return {} if reader.match(lambda s: s == "{indent}") else Error("{indent}", reader, caller)
 
-    def undent(self, caller, reader )-> Dict:
+    def parse_undent(self, caller, reader )-> Dict:
         return {} if reader.match(lambda s: s == "{undent}") else Error("{undent}", reader, caller)
     
-    def newline(self, caller, reader)-> Dict:
+    def parse_newline(self, caller, reader)-> Dict:
         return {} if reader.match(lambda s: s == "{newline}") else Error("{newline}", reader, caller)
     
-    def identifier(self, caller, reader )-> Dict:
+    def parse_identifier(self, caller, reader )-> Dict:
         lex = reader.match(lambda s: is_id(s))
         return [lex] if lex else Error("identifier", reader, caller)
 
-    def label(self, caller, reader, s: str, parser_fn)-> Dict:
-        ast = { '_type' : type }
+    def parse_label(self, caller, reader, label: str, parser_fn)-> Dict:
+        ast = { '_type' : label }
         sub_ast = parser_fn(reader)
         if err(sub_ast): return sub_ast
-        log("label(", type, "): ", sub_ast)
         ast.update(sub_ast)
         return ast
 
-    def set(self, caller, reader, name: str, parser_fn)-> Dict:
+    def parse_set(self, caller, reader, name: str, parser_fn)-> Dict:
         ast = parser_fn(reader)
         if err(ast): return ast
         maybe_error = ast['_error'] if '_error' in ast else None
@@ -888,7 +918,7 @@ class Parser:
         if maybe_error: result['_error'] = maybe_error
         return result
     
-    def sequence(self, caller, reader, *parser_fns)-> Dict:
+    def parse_sequence(self, caller, reader, *parser_fns)-> Dict:
         ast = {}
         for parser_fn in parser_fns:
             sub_ast = parser_fn(reader)
@@ -900,7 +930,7 @@ class Parser:
                 ast.update(sub_ast)
         return ast
     
-    def optional(self, caller, reader, parser_fn)-> Dict:
+    def parse_optional(self, caller, reader, parser_fn)-> Dict:
         iLex = reader.i
         ast = parser_fn(reader)
         if err(ast):
@@ -908,14 +938,14 @@ class Parser:
             return ast
         return ast
 
-    def enum(self, caller, reader, *words: List[str])-> Dict:
+    def parse_enum(self, caller, reader, *words: List[str])-> Dict:
         lex = reader.peek()
         if lex and str(lex) in words:
             reader.advance()
             return [lex]
         return Error(f"one of {words}", reader, caller)
 
-    def any(self, caller, reader, *parser_fns)-> Dict:
+    def parse_any(self, caller, reader, *parser_fns)-> Dict:
         errors = []
         for parse_fn in parser_fns:
             iLex = reader.i
@@ -926,10 +956,11 @@ class Parser:
         error = combine_errors(errors)
         return error
 
-    def list(self, caller, reader, parser_fn, sep: str)-> Dict:
+    def parse_list(self, caller, reader, parser_fn, sep: str)-> Dict:
         items = []
         while not (reader.eof()):
             sub_ast = parser_fn(reader)
+            print(show_ast(sub_ast, reader.source()))
             if err(sub_ast):
                 return{ '_list': items, '_error': sub_ast }
             items.append(sub_ast)
@@ -938,7 +969,7 @@ class Parser:
                     return { '_list': items, '_error': Error(f"'{sep}'", reader, caller)}
         return { '_list': items }
 
-    def block(self, caller, reader, parser_fn)-> Dict:
+    def parse_block(self, caller, reader, parser_fn)-> Dict:
         if reader.match(lambda s: s == "{indent}"):
             ast = parser_fn(reader)
             if err(ast): return ast
@@ -947,7 +978,7 @@ class Parser:
             return Error("{undent}", reader, caller)
         return Error("{indent}", reader, caller)
     
-    def upto(self, caller, reader, *words: List[str])-> Dict:
+    def parse_upto(self, caller, reader, *words: List[str])-> Dict:
         depth = 0
         out = []
         while True:
@@ -959,7 +990,7 @@ class Parser:
             elif str(lex) in [")", "]", "{undent}"]: depth -= 1
             reader.advance()
 
-    def brackets(self, caller, reader, parser_fn) -> Dict:
+    def parse_brackets(self, caller, reader, parser_fn) -> Dict:
         open_bracket = reader.match(lambda s: s == "(")
         ast = parser_fn(reader)
         close_bracket = reader.match(lambda s: s == ")")
@@ -967,7 +998,7 @@ class Parser:
             return ast
         return Error("( ... )", reader, caller)
 
-    def maybe_bracketed(self, caller, reader, parser_fn)-> Dict:
+    def parse_maybe_bracketed(self, caller, reader, parser_fn)-> Dict:
         open_bracket = reader.match(lambda s: s == "(")
         ast = parser_fn(reader)
         close_bracket = reader.match(lambda s: s == ")")
@@ -988,7 +1019,7 @@ def make_parser(imp, rule: Any) -> Callable:
         caller = rule['caller'] if 'caller' in rule else None
         if 'fn' not in rule: raise Exception(f"no 'fn' in rule {rule}")
         fn = rule['fn']
-        method = getattr(imp, fn, None)
+        method = getattr(imp, "parse_" + fn, None)
         if not method: raise Exception(f"no method '{fn}' in {imp.__class__.__name__}")
         args = []
         for key, val in rule.items():
@@ -1034,6 +1065,65 @@ def test_sequence_list():
     # this should fail because the list contains an erroneous item ("c") not in the enum
     test_assert("bad_list", test_parse(fn, "a b c {"), "zeta.py:946: Expected one of ('a', 'b') at 1:4")
 
+#---------------------------------------------------------------------------------
+# pretty-print the ast, matching line layout to source
+
+def show_ast_rec(ast):
+    #iLine = 0
+    #if isinstance(ast, List) and len(ast) > 0 and isinstance(ast[0], Lex):
+    #    iLine = ast[0].location().lineno
+    #    return f"**{iLine}: " + " ".join([str(lex) for lex in ast])
+    for key, val in ast.items():
+        if isinstance(val, List) and len(val) > 0 and isinstance(val[0], Lex):
+           iLineLex = val[0].location().lineno
+           if iLine ==0 or iLineLex < iLine:
+               iLine = iLineLex
+    line = f"**{iLine}: "
+    for key, val in ast.items():
+        if isinstance(val, str):
+            line += f"{val} ▶︎ "
+        elif isinstance(val, List) and len(val) > 0 and isinstance(val[0], Lex):
+            iLineLex = val[0].location().lineno
+            if iLineLex > iLine:
+                line += f"**{iLineLex}: "
+                iLine = iLineLex
+            line += f"{key}: \""
+            for lex in val:
+                iLineLex = lex.location().lineno
+                if iLineLex > iLine:
+                    line += f"**{iLineLex}: "
+                    iLine = iLineLex
+                line += f"{str(lex)}" + " "
+            if line[-1]==' ': line = line[:-1]
+            line += "\" "
+        elif isinstance(val, List) and (len(val) == 0 or not (isinstance(val[0], Lex))):
+            line += f"{key}: [ "
+            for i, subitem in enumerate(val):
+                line += f"{show_ast_rec(subitem)}"
+                if i < len(val)-1: line += ", "
+            line += "] "
+    return line
+
+def show_ast(ast, source: Source =None):
+    file = source.path.replace(s_cwd, '') if source and source.path else ""
+    if err(ast): return ast
+    out = show_ast_rec(ast)
+    outlines = out.split("**")[1:]
+    result = []
+    for line in outlines:
+        ic = line.find(":")
+        iLine = int(line[:ic])
+        line = line[ic+2:]
+        if iLine >= len(result):
+            result += [""] * (iLine - len(result) + 1)
+        result[iLine] += line
+    res = ""
+    for i, line in enumerate(result):
+        if i > 0 and (line != '' or result[i-1] != ''):
+            loc = log_grey(f"{file}:{i}:")
+            res += f"{loc} {line}" + "\n"
+    return res
+
 #------------------------------------------------------------------------------
 # parse rules for zero
 
@@ -1045,13 +1135,20 @@ class Zero(Grammar):
         return label('feature', sequence(
                     keyword('feature'), set('name', identifier()),
                     optional(sequence(keyword('extends'), set('parent', identifier()))),
-                    set('components', block(list(any(self.function(), self.struct(), self.variable(), self.test()))))))
+                    set('components', 
+                        block(
+                            list(
+                                self.component(), "{newline}")))))
 
+    def component(self) -> Dict:
+        return any(self.function(), self.struct(), self.variable(), self.test())
+    
     # ">" blah [ "=>" blah]
     def test(self) -> Dict:
-        return label("test", sequence(
-                    keyword(">"), set("expression", upto("{newline}", "=>")),
-                    optional(sequence(keyword("=>"), set("expected", upto("{newline}"))))))
+        return label('test', sequence(
+                    keyword(">"), set("expression", upto("{newline}", "{undent}", "=>")),
+                    optional(keyword("{newline}")),
+                    optional(sequence(keyword("=>"), set("expected", upto("{newline}", "{undent}"))))))
     
     # (on/replaceafter/before) (result) (name) (parameters) { function_body }
     def function(self) -> Dict:
@@ -1094,6 +1191,14 @@ class Zero(Grammar):
 @this_is_a_test
 def test_zero_grammar():
     zero = Zero()
+    source = Source.from_file("src/test/Hello.zero.md")
+    lexer = Lexer(source)
+    ls = lexer.lex()
+    print(ls)
+    parser = make_parser(Parser(), zero.feature())
+    ast = parser(Reader(ls))
+    print(show_ast(ast))
+    
     
     
 #------------------------------------------------------------------------------
