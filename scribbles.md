@@ -1,6 +1,14 @@
 ᕦ(ツ)ᕤ
 # scribblez
 
+"slow is smooth, smooth is fast" => means you have to know when it's "not smooth".
+
+a bug that makes you scratch your head for multiple hours / days is "not smooth"
+
+when you find a bug that makes you scratch your head like this, it's because the system isn't showing you, clearly, the information you need to understand the problem.
+
+So what we're going to do now is to make debugging parser problems smooth. It's about the workflow, not just the theory.
+
 -------------
 Okay so we can now distinguish between:
 
