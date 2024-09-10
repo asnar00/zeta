@@ -55,7 +55,7 @@ The `<<` operator (called "push", loosely inspired by C++'s stream operator) pus
 
 We'll look at streams in more detail in future examples. For now, just think of a stream as an array of items. In this case, a stream of type `string` is just the stand-in for a console.
 
-## layout agnostic
+## layout agnosticism
 
 You'll notice that the layout of this code uses significant whitespace like python, but without the traditional `:` at the end of the declaration line. 
 

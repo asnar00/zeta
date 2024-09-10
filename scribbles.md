@@ -1,6 +1,24 @@
 ᕦ(ツ)ᕤ
 # scribblez
 
+OK so! all parsing tests based on the single test/Hello.zero.md file now pass. Super cool.
+Things that are good about this:
+
+1- call stack introspection ROCKS
+2- exception handling / reporting ROCKS
+3- parser debugger is AMAZING
+4- structure-based parser is super powerful
+5- layout-agnostic lexer/parser works a treat
+6- the test-assert system is FABULOUS
+
+Things I'm unhappy about:
+1- there's some weirdness around LexStr vs List[Lex] still (LexStr() does weird shit)
+
+The next step is to get hello world running properly with a typescript/deno backend.
+So let's get on with that!
+
+---------------------------
+
 "slow is smooth, smooth is fast" => means you have to know when it's "not smooth".
 
 a bug that makes you scratch your head for multiple hours / days is "not smooth"

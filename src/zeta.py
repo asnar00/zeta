@@ -12,7 +12,7 @@ import sys
 import dis
 
 #------------------------------------------------------------------------------
-# kenny loggings
+# logging
 
 # set if logging is enabled
 s_log: bool = False
@@ -87,7 +87,7 @@ def log_short(obj: Any, maxLen=32) -> str:
     return s[:maxLen] + " " + log_grey("...") + " " + s[-12:]
 
 #------------------------------------------------------------------------------
-# testing testing
+# testing
 
 s_tests = []
 
@@ -111,12 +111,6 @@ def this_is_a_test(fn):
     s_tests.append(fn)
     return fn
 
-# decorator that wraps a function, making it the only test (if we're focusing)
-def this_is_the_only_test(fn):
-    s_tests.clear()
-    s_tests.append(fn)
-    return fn
-
 # run all tests
 def test_run_all():
     print("test ------------------------------------")
@@ -125,7 +119,7 @@ def test_run_all():
         test_fn()
 
 #------------------------------------------------------------------------------
-# phil call-ins: debug helpers to find out who called us, where from, and with what
+# call-stack introspection
 
 s_cwd = os.getcwd() + "/src/"
 
@@ -167,6 +161,7 @@ def caller_show(maxLevels: int = None, verbose: bool = True) -> str:
 def pad(str, maxlen):
     return str + " " * max(0, (maxlen - len(str)))
 
+# shows a single level of the callstack (0 is the caller of this function), including function-params
 def caller_show_level(level: int, verbose: bool = True) -> str:
     level = level + 1
     # get stack frame at (level) levels above us
@@ -193,6 +188,7 @@ def caller_show_level(level: int, verbose: bool = True) -> str:
             out += log_short(arg_value, 48)
     return out.rstrip()
 
+# finds the argument value from a function higher up in the call-stack
 def caller_get_arg(level: int, arg_name: str) -> Any:
     level = level + 1
     frame = inspect.currentframe()
@@ -203,17 +199,17 @@ def caller_get_arg(level: int, arg_name: str) -> Any:
     args = inspect.getargvalues(frame.frame)
     return args.locals[arg_name] if arg_name in args.locals else None
 
-def caller_exception(e: Exception) -> str:
+#------------------------------------------------------------------------------
+# exception handling
+
+# prints a short exception message including a clickable line number
+def exception_message(e: Exception) -> str:
     # Extract the traceback details from the exception
     tb = traceback.extract_tb(e.__traceback__)
     # Get the last frame (where the exception was raised)
     i_frame = len(tb) - 1
     last_frame = tb[i_frame]
     return log_grey(f"{last_frame.filename.replace(s_cwd, '')}:{last_frame.lineno}: ") + log_red("!!! " + str(e))
-
-#------------------------------------------------------------------------------
-# exception handling
-# a better exception readout that's more compact, and shows function parameter values
 
 # Get the function signature with parameter names, types, and values.
 def get_function_signature(func, frame):
@@ -298,14 +294,14 @@ def my_test_func(n: str):
 @this_is_a_test
 def test_caller():
     test_assert("caller", my_test_wrapper_func("yo"), """
-                            zeta.py:...: my_test_func
-                            n: str = yo
-                            zeta.py:...: my_test_wrapper_func
-                            n: str = yo
-                            zeta.py:...: test_caller
-                            zeta.py:...: test_run_all
-                            zeta.py:...: main
-""")
+        zeta.py:...: my_test_func
+        n: str = yo
+        zeta.py:...: my_test_wrapper_func
+        n: str = yo
+        zeta.py:...: test_caller
+        zeta.py:...: test_run_all
+        zeta.py:...: main
+    """)
 
 def my_test_raiser(p: str):
     raise Exception("oops " + p)
@@ -327,7 +323,7 @@ def test_exception():
     my_test_bad_func("hey")
 
 #------------------------------------------------------------------------------
-# file system of a down
+# file system
 
 s_file_cache = {}  # maps filename => text
 
@@ -343,7 +339,7 @@ def readFile(path: str) -> str:
     return text
 
 #------------------------------------------------------------------------------
-# return to the source
+# source code management
 
 # Source is a file containing source code
 class Source:
@@ -394,7 +390,7 @@ class SourceLoc:
         return self.__str__()
 
 #------------------------------------------------------------------------------
-# lexy's midnight runners
+# lexer
 
 s_lex_verbose = False
 
@@ -635,36 +631,36 @@ def test_lexer():
     lexer = Lexer(source)
     ls = lexer.lex()
     test_assert("lexer", ls, """
-feature Hello extends Main {indent} 
-> hello ( ) {newline} 
-=> "hello_world" {newline} 
-> hello ( ) {newline} 
-on ( out$ : string ) << hello ( ) {indent} 
-out$ << "hello_world" {undent} 
-{undent} 
-on ( string out$ ) << hello ( ) {indent} 
-out$ << "hello_world" ; {undent} 
-{newline} 
-on ( out$ : string ) << hello ( ) {indent} 
-out$ << "hello_world" ; {undent} 
-{newline} 
-on ( out$ : string ) << hello ( ) {indent} 
-out$ << "hello_world" {undent} 
-on ( string out$ ) << hello ( ) {indent} 
-out$ << "hello_world"
-""")
+        feature Hello extends Main {indent} 
+        > hello ( ) {newline} 
+        => "hello_world" {newline} 
+        > hello ( ) {newline} 
+        on ( out$ : string ) << hello ( ) {indent} 
+        out$ << "hello_world" {undent} 
+        {undent} 
+        on ( string out$ ) << hello ( ) {indent} 
+        out$ << "hello_world" ; {undent} 
+        {newline} 
+        on ( out$ : string ) << hello ( ) {indent} 
+        out$ << "hello_world" ; {undent} 
+        {newline} 
+        on ( out$ : string ) << hello ( ) {indent} 
+        out$ << "hello_world" {undent} 
+        on ( string out$ ) << hello ( ) {indent} 
+        out$ << "hello_world"
+    """)
 
 #------------------------------------------------------------------------------
-# grammar rule atoms
-# the 'grammar' is a collection of syntax structured specified using these atoms
-# each 'atom' returns a small structure that defines the atom/rule
-# the idea is to be able to use these rules for parsing and printing
+# grammar atoms
 
+# an Rule is an atomic component of a grammar rule
 class Rule(dict):
     pass
 
+# there follows a list of grammar atoms:
+
 # matches a specific keyword
-def keyword(word: str)-> Dict:
+def keyword(word: str)-> Rule:
     return Rule({'fn': 'keyword', 'value': word, 'caller': caller()})
 
 # matches an indent
@@ -803,11 +799,10 @@ def print_newline(indent: int) -> str:
 def test_print_rules():
     rule = sequence(keyword('feature'), set('name', identifier()),
                     optional(sequence(keyword('extends'), set('parent', identifier()))))
-    test_assert("rule",
-        rule_as_string(rule), """
-zeta.py:747: sequence(keyword('feature'), set('name', identifier()), 
-zeta.py:748:     optional(sequence(keyword('extends'), set('parent', identifier()))))
-               """)
+    test_assert("rule", rule_as_string(rule), """
+        zeta.py:747: sequence(keyword('feature'), set('name', identifier()), 
+        zeta.py:748:     optional(sequence(keyword('extends'), set('parent', identifier()))))
+    """)
 
 #------------------------------------------------------------------------------
 # parsing helpers
@@ -828,16 +823,19 @@ class Reader:
         self.skip_newlines()
         return self.ls[self.i] if self.i < len(self.ls) else None
     
+    # move one lex forward 
     def advance(self):
         self.i += 1
 
+    # true if we're at the end
     def eof(self) -> bool:
         return self.i >= len(self.ls)
     
+    # match a single lexeme with any function
     def match(self, fn) -> Lex:
         lex = self.peek()
 
-        if self.debug:
+        if self.debug: # print everything we know about the current state
             print()
             loc = self.ls[self.i].location()
             print(f"{log_grey(loc)}", self.ls[self.i : self.i + 4])
@@ -862,18 +860,21 @@ class Reader:
         if self.debug: print("no match")
         return None
 
+    # return the source-code location of the current lexeme
     def location(self, iLex: int=None) -> SourceLoc:
         if iLex is None: iLex = self.i
         if iLex >= len(self.ls): return "EOF"
         lex = self.ls[iLex]
         return lex.location()
     
-    def source(self) -> Source:
-        return self.ls[0].source
-    
     def __str__(self):
         return str(self.ls[self.i:self.i + 3])
+    
     def __repr__(self): return self.__str__()
+
+    def state(self):
+        loc = self.ls[self.i].location()
+        return f"{log_grey(loc)} {self.ls[self.i : self.i + 4]}"
     
 # Error just holds a message and a point in the source file
 class Error:
@@ -894,6 +895,7 @@ class Error:
     def __repr__(self):
         return "[" + self.__str__() + "]"
     
+    # shows the error and the surrounding source code
     def show_source(self) -> str:
         lex = self.reader.ls[self.iLex]
         lenLex = len(str(lex))
@@ -1039,7 +1041,7 @@ class Parser:
         if reader.match(lambda s: s == "{indent}"):
             ast = parser_fn(reader)
             if err(ast): return ast
-            if reader.match(lambda s: s == "{undent}"):
+            if reader.match(lambda s: s == "{undent}") or reader.eof(): # tolerate premature eof in this case
                 return ast
             return Error("{undent}", reader, caller)
         return Error("{indent}", reader, caller)
@@ -1079,7 +1081,7 @@ class Parser:
         return result
 
 #------------------------------------------------------------------------------
-# despatch takes a rule tree and a reader, and returns a parser function
+# make_parser takes a rule atom tree and a reader, and returns a parser function
 
 def make_parser(imp, rule: Any) -> Callable:
     try:
@@ -1102,7 +1104,7 @@ def make_parser(imp, rule: Any) -> Callable:
                     args.append(make_parser(imp, val))
         return lambda reader: method(caller, reader, *args)
     except Exception as e:
-        print(caller_exception(e))
+        print(exception_message(e))
         print("problematic rule:")
         rule = caller_get_arg(1, 'rule')
         print(rule_as_string(rule))
@@ -1138,17 +1140,16 @@ def test_sequence_list():
     test_assert("bad_list", test_parse(fn, "a b c {"), "zeta.py:946: Expected one of ('a', 'b') at 1:4")
 
 #------------------------------------------------------------------------------
-# pretty-print AST using line numbers from original
-
-def insert_cr_before_label(text):
-    pass
+# pretty-print AST using clickable file/line numbers from original source code
 
 @log_disable
-def pretty_print_ast(ast, filename:str=""):
+def show_ast(ast, filename:str=""):
+    if err(ast): return ast
     log()
     global s_lex_verbose
     s_lex_verbose = True
     ast = str(ast)
+    s_lex_verbose = False
     log(ast)
     log()
 
@@ -1276,15 +1277,37 @@ def test_zero_grammar():
     parser = make_parser(Parser(), zero.feature())
     reader = Reader(ls)
     ast = parser(reader)
-    result = pretty_print_ast(ast, filename)
-    test_assert("zero_grammar", result, """
-src/test/Hello.zero.md:22: {'_type': 'feature', 'name': [Hello], 'parent': [Main], 'components': [{
-src/test/Hello.zero.md:28: '_type': 'test', 'expression': [hello, (, )], 
-src/test/Hello.zero.md:29: 'result': ["hello world"]}, {'_type': 'test', 'expression': [hello, (, )]}, {
-src/test/Hello.zero.md:43: '_type': 'function', 'modifier': [on], 'result': {'name': [out$], 'type': [string]}, 'assign_op': [<<], 'signature': [{'word': [hello]}, {'param': []}], 
-src/test/Hello.zero.md:44: 'body': [out$, <<, "hello world"]}]}
-                """)
-    
+    ast = show_ast(ast, filename)
+    test_assert("zero_feature", ast, """
+        src/test/Hello.zero.md:22: {'_type': 'feature', 'name': [Hello], 'parent': [Main], 'components': [{
+        src/test/Hello.zero.md:28: '_type': 'test', 'expression': [hello, (, )], 
+        src/test/Hello.zero.md:29: 'result': ["hello world"]}, {'_type': 'test', 'expression': [hello, (, )]}, {
+        src/test/Hello.zero.md:43: '_type': 'function', 'modifier': [on], 'result': {'name': [out$], 'type': [string]}, 'assign_op': [<<], 'signature': [{'word': [hello]}, {'param': []}], 
+        src/test/Hello.zero.md:44: 'body': [out$, <<, "hello world"]}]}
+    """)
+
+    function_parser = make_parser(Parser(), zero.function())
+    ast = show_ast(function_parser(reader), filename)
+    test_assert("zero_function_cpp", ast, """
+        src/test/Hello.zero.md:68: {'_type': 'function', 'modifier': [on], 'result': {'type': [string], 'name': [out$]}, 'assign_op': [<<], 'signature': [{'word': [hello]}, {'param': []}], 
+        src/test/Hello.zero.md:69: 'body': [out$, <<, "hello world", ;]}
+    """)
+    ast = show_ast(function_parser(reader), filename)
+    test_assert("zero_function_ts", ast, """
+        src/test/Hello.zero.md:74: {'_type': 'function', 'modifier': [on], 'result': {'name': [out$], 'type': [string]}, 'assign_op': [<<], 'signature': [{'word': [hello]}, {'param': []}], 
+        src/test/Hello.zero.md:75: 'body': [out$, <<, "hello world", ;]}
+    """)
+    ast = show_ast(function_parser(reader), filename)
+    test_assert("zero_function_py", ast, """
+        src/test/Hello.zero.md:80: {'_type': 'function', 'modifier': [on], 'result': {'name': [out$], 'type': [string]}, 'assign_op': [<<], 'signature': [{'word': [hello]}, {'param': []}], 
+        src/test/Hello.zero.md:81: 'body': [out$, <<, "hello world"]}
+    """)
+    ast = show_ast(function_parser(reader), filename)
+    test_assert("zero_function_blended", ast, """
+        src/test/Hello.zero.md:85: {'_type': 'function', 'modifier': [on], 'result': {'type': [string], 'name': [out$]}, 'assign_op': [<<], 'signature': [{'word': [hello]}, {'param': []}], 
+        src/test/Hello.zero.md:86: 'body': [out$, <<, "hello world"]}
+    """)
+
 #------------------------------------------------------------------------------
 # main, test, etc
 
