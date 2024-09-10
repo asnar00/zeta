@@ -57,7 +57,7 @@ We'll look at streams in more detail in future examples. For now, just think of 
 
 ## layout agnosticism
 
-You'll notice that the layout of this code uses significant whitespace like python, but without the traditional `:` at the end of the declaration line. 
+Notice that the layout of this code uses significant whitespace like python, but without the traditional `:` at the end of the declaration line. 
 
 The zeta parser is *layout-agnostic* - it accepts code written according to the conventions of multiple languages. (the goal is to make zero programming feel natural for people with lots of muscle-memory of those languages).
 
