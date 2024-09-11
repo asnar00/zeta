@@ -1,5 +1,6 @@
 ᕦ(ツ)ᕤ
 # scribblez
+"slow is smooth, smooth is fast"
 
 This morning:
 printing works!
