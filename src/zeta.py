@@ -106,7 +106,7 @@ def test_assert(name, a, b: str):
     else:
         print(f"{log_grey(ctx)} {log_red("failed")} {name}")
         print("expected:")
-        print(sb) # or print(log_disclose(sb)) if you want to see CRs and spaces
+        print(log_grey(sb)) # or print(log_disclose(sb)) if you want to see CRs and spaces
         print("got:")
         print(sa) # or print(log_disclose(sa)) if you want to see CRs and spaces
 
@@ -356,7 +356,9 @@ def write_file(path: str, text: str):
 class Source:
     def __init__(self):
         self.path = None
-        self.text = None
+        self.text = ""
+        self.source_map = []
+
     # construct from a path, read text
     @staticmethod
     def from_file(path: str) -> 'Source':
@@ -382,6 +384,7 @@ class Source:
                 startLine = pos
         column = (pos - startLine) + 1
         return SourceLoc(self, lineno, column)
+    
 
 # SourceLoc is a location in a source file (file/line/column), all 1-based
 class SourceLoc:
@@ -423,12 +426,12 @@ class Lex:
         return result
 
     def __str__(self):
-        return self.val
-    
-    def __repr__(self):
         global s_lex_verbose
         if s_lex_verbose:
             return f"**{self.location().lineno}>>{self.val}"
+        return self.val
+    
+    def __repr__(self):
         return self.__str__()
     
     def location(self):
@@ -508,6 +511,14 @@ def is_alphanum_or_digit(c: str) -> bool:
 def is_id(val: str):
     return val[0].isalpha() or val[0] == '_'
 
+# returns true if (str) is an operator
+def is_operator(val: str):
+    return val in "!@#$%^&*-+=.<>?/~|"
+
+# returns true if (str) is a punctuation character
+def is_punctuation(val: str):
+    return val in "()[],;:"
+
 # lexer: takes a source and returns a list of lexemes
 class Lexer:
     def __init__(self, source: Source):
@@ -528,8 +539,6 @@ class Lexer:
         self.string = string
         self.ls = str(string)
         self.i = 0
-        self.ops = "!@#$%^&*-+=.<>?/~|"
-        punct = "()[],;:"
         while self.i < len(self.ls):
             self.line_start()
             self.find_eol()
@@ -539,10 +548,10 @@ class Lexer:
                 cn = self.ls[self.i+1] if self.i+1 < self.iEnd else ''
                 # note: each case is responsible for advancing "self.i" correctly!!
                 if c == ' ': self.whitespace()
-                elif c in self.ops: self.operator(cn)
+                elif is_operator(c): self.operator(cn)
                 elif is_alphanum(c): self.alphanum()
                 elif c.isdigit(): self.number()
-                elif c in punct: self.punctuation()
+                elif is_punctuation(c): self.punctuation()
                 elif c == '"': self.string_literal()
                 elif c in "{}": self.braces(c)
                 else:
@@ -607,7 +616,7 @@ class Lexer:
 
     def operator(self, cn):
         j = self.i + 1
-        if cn != '\n' and cn in self.ops: j = self.i + 2
+        if cn != '\n' and is_operator(cn): j = self.i + 2
         self.push(j, "{op}")
 
     def alphanum(self):
@@ -777,7 +786,6 @@ def rule_as_string_rec(rule, indent: int=0, line: int=0) -> str:
     if 'fn' in rule and rule['fn'] == 'label':
         return f'{rule["label"]} = {rule_as_string_rec(rule["rule"], indent, line)}'
     out = ''
-
     rule_line = caller_line(rule['caller']) if 'caller' in rule else line
     out += f'**{rule_line}/{indent}:'
     for key, val in rule.items():
@@ -802,9 +810,6 @@ def maybe_rule_as_string(rule, indent: int=0, line: int=0) -> str:
     if isinstance(rule, Rule) and rule['fn'] == 'label':
         return rule['label'] + "()"
     return rule_as_string_rec(rule, indent)
-
-def print_newline(indent: int) -> str:
-    return '\n' + '  ' * indent
 
 @this_is_a_test
 def test_print_rules():
@@ -927,33 +932,36 @@ class Error:
     def is_later_than(self, other):
         return self.iLex > other.iLex
     
+    # combine multiple errors
+    @staticmethod
+    @log_disable
+    def combine(errors: List['Error']) -> 'Error':
+        log("combine_errors:")
+        for error in errors:
+            log("  ", error)
+        # first find the latest one
+        latest = errors[0]
+        for error in errors:
+            if error.is_later_than(latest):
+                latest = error
+        # now find all errors at the same point as latest
+        same_point = [latest]
+        for error in errors:
+            if error.iLex == latest.iLex and error != latest:
+                same_point.append(error)
+        # now combine all the 'expecteds' into an "or" string
+        expecteds = [error.expected for error in same_point]
+        expected = " or ".join(expecteds)
+        # now return a new error with the combined expecteds
+        latest.expected = expected
+        log("returning:", latest)
+        return latest
+    
 # return true if (obj) is an error
 def err(obj) -> bool:
     return isinstance(obj, Error)
 
-# combine multiple errors
-@log_disable
-def combine_errors(errors: List[Error]) -> Error:
-    log("combine_errors:")
-    for error in errors:
-        log("  ", error)
-    # first find the latest one
-    latest = errors[0]
-    for error in errors:
-        if error.is_later_than(latest):
-            latest = error
-    # now find all errors at the same point as latest
-    same_point = [latest]
-    for error in errors:
-        if error.iLex == latest.iLex and error != latest:
-            same_point.append(error)
-    # now combine all the 'expecteds' into an "or" string
-    expecteds = [error.expected for error in same_point]
-    expected = " or ".join(expecteds)
-    # now return a new error with the combined expecteds
-    latest.expected = expected
-    log("returning:", latest)
-    return latest
+
 
 #------------------------------------------------------------------------------
 # Parser contains a method for each parser atom
@@ -964,6 +972,33 @@ class AST(dict):
 class Parser:
     def __init__(self):
         pass
+
+    def make(self, rule: Any) -> Callable:
+        try:
+            if rule == None: return None
+            if isinstance(rule, str) or isinstance(rule, LexStr): return rule
+            if isinstance(rule, List) or isinstance(rule, Tuple): 
+                print("rule is list or tuple:", rule)
+                exit(0)
+            caller = rule['caller'] if 'caller' in rule else None
+            if 'fn' not in rule: raise Exception(f"no 'fn' in rule {rule}")
+            fn = rule['fn']
+            method = getattr(self, "parse_" + fn, None)
+            if not method: raise Exception(f"no method '{fn}' in {self.__class__.__name__}")
+            args = []
+            for key, val in rule.items():
+                if not (key in ['caller', 'fn']):
+                    if isinstance(val, List) or isinstance(val, Tuple): 
+                        args.extend([self.make(v) for v in val])
+                    else:
+                        args.append(self.make(val))
+            return lambda reader: method(caller, reader, *args)
+        except Exception as e:
+            print(exception_message(e))
+            print("problematic rule:")
+            rule = caller_get_arg(1, 'rule')
+            print(rule_as_string(rule))
+            exit(0)
 
     def parse_keyword(self, caller, reader, word: str)-> AST|Error:
         if reader.eof() and word in ['{newline}', '{undent}']: return {} # special case for premature eof
@@ -978,9 +1013,9 @@ class Parser:
     def parse_newline(self, caller, reader)-> AST|Error:
         return AST({}) if reader.match(lambda s: s == "{newline}") else Error("{newline}", reader, caller)
     
-    def parse_identifier(self, caller, reader )-> List[Lex]|Error:
+    def parse_identifier(self, caller, reader )-> LexStr|Error:
         lex = reader.match(lambda s: is_id(s))
-        return [lex] if lex else Error("identifier", reader, caller)
+        return LexStr([lex]) if lex else Error("identifier", reader, caller)
 
     def parse_label(self, caller, reader, label: str, parser_fn)-> AST|Error:
         ast = AST({ '_type' : label })
@@ -1018,11 +1053,11 @@ class Parser:
             return ast
         return ast
 
-    def parse_enum(self, caller, reader, *words: List[str])-> List[Lex]|Error:
+    def parse_enum(self, caller, reader, *words: List[str])-> LexStr|Error:
         lex = reader.peek()
         if lex and str(lex) in words:
             reader.advance()
-            return [lex]
+            return LexStr([lex])
         return Error(f"one of {words}", reader, caller)
 
     def parse_any(self, caller, reader, *parser_fns)-> AST:
@@ -1033,7 +1068,7 @@ class Parser:
             if not err(ast): return ast
             errors.append(ast)
             reader.i = iLex
-        error = combine_errors(errors)
+        error = Error.combine(errors)
         return error
 
     def parse_list(self, caller, reader, parser_fn, sep: str)-> AST:
@@ -1043,7 +1078,7 @@ class Parser:
             if err(sub_ast):
                 return{ '_list': items, '_error': sub_ast }
             items.append(sub_ast)
-            if sep != None:
+            if sep != None and sep != "{newline}":
                 if not reader.match(lambda s: s == sep):
                     return { '_list': items, '_error': Error(f"'{sep}'", reader, caller)}
         return { '_list': items }
@@ -1057,14 +1092,14 @@ class Parser:
             return Error("{undent}", reader, caller)
         return Error("{indent}", reader, caller)
     
-    def parse_upto(self, caller, reader, *words: List[str])-> List[Lex]|Error:
+    def parse_upto(self, caller, reader, *words: List[str])-> LexStr|Error:
         depth = 0
-        out = []
+        out = LexStr([])
         while True:
             if reader.eof(): return out
             lex = reader.ls[reader.i]
             if depth == 0 and str(lex) in words: return out
-            out.append(lex)
+            out += lex
             if str(lex) in ["(", "[", "{indent}"]: depth += 1
             elif str(lex) in [")", "]", "{undent}"]: depth -= 1
             reader.advance()
@@ -1092,34 +1127,7 @@ class Parser:
         return result
 
 #------------------------------------------------------------------------------
-# make_parser takes a rule atom tree and a reader, and returns a parser function
-
-def make_parser(imp, rule: Any) -> Callable:
-    try:
-        if rule == None: return None
-        if isinstance(rule, str) or isinstance(rule, LexStr): return rule
-        if isinstance(rule, List) or isinstance(rule, Tuple): 
-            print("rule is list or tuple:", rule)
-            exit(0)
-        caller = rule['caller'] if 'caller' in rule else None
-        if 'fn' not in rule: raise Exception(f"no 'fn' in rule {rule}")
-        fn = rule['fn']
-        method = getattr(imp, "parse_" + fn, None)
-        if not method: raise Exception(f"no method '{fn}' in {imp.__class__.__name__}")
-        args = []
-        for key, val in rule.items():
-            if not (key in ['caller', 'fn']):
-                if isinstance(val, List) or isinstance(val, Tuple): 
-                    args.extend([make_parser(imp, v) for v in val])
-                else:
-                    args.append(make_parser(imp, val))
-        return lambda reader: method(caller, reader, *args)
-    except Exception as e:
-        print(exception_message(e))
-        print("problematic rule:")
-        rule = caller_get_arg(1, 'rule')
-        print(rule_as_string(rule))
-        exit(0)
+# test the parser
 
 @log_enable
 @this_is_a_test
@@ -1128,15 +1136,15 @@ def test_parser():
     ls = Lexer(source).lex()
     fn = sequence(keyword('feature'), set('name', identifier()),
                   optional(sequence(keyword('extends'), set('parent', identifier()))))
-    parser = make_parser(Parser(), fn)
+    parser = Parser().make(fn)
     reader = Reader(ls)
     ast = parser(reader)
-    test_assert("parser", ast, """{'name': [Hello], 'parent': [Main]}""")
+    test_assert("parser", ast, """{'name': Hello, 'parent': Main}""")
 
 def test_parse(fn, text: str) -> LexStr:
     source = Source.from_text(text)
     ls = Lexer(source).lex()
-    parser = make_parser(Parser(), fn)
+    parser = Parser().make(fn)
     reader = Reader(ls)
     return parser(reader)
 
@@ -1146,7 +1154,7 @@ def test_parse(fn, text: str) -> LexStr:
 def test_sequence_list():
     fn = sequence(list(enum("a", "b")), keyword("{indent}"))
     # this should succeed because the list is followed by {indent}
-    test_assert("good_list", test_parse(fn, "a b {"), "{'_list': [[a], [b]]}")
+    test_assert("good_list", test_parse(fn, "a b {"), "{'_list': [a, b]}")
     # this should fail because the list contains an erroneous item ("c") not in the enum
     test_assert("bad_list", test_parse(fn, "a b c {"), "zeta.py:946: Expected one of ('a', 'b') at 1:4")
 
@@ -1226,7 +1234,7 @@ class Zero(Grammar):
                     keyword('feature'), set('name', identifier()),
                     optional(sequence(keyword('extends'), set('parent', identifier()))),
                     set('components', 
-                        block(list(self.component())))))
+                        block(list(self.component(), sep="{newline}")))))
 
     def component(self) -> Rule:
         return any(self.function(), self.struct(), self.variable(), self.test())
@@ -1261,7 +1269,7 @@ class Zero(Grammar):
     # struct (name) { list(variable) }
     def struct(self) -> Rule:
         return label('struct', sequence(
-                    keyword('struct'), set('name', identifier()),
+                    set('modifier', enum('struct', 'extends')), set('name', identifier()),
                     block(list(self.variable()))))
 
     # ((name type) | (type:name)) [= value]
@@ -1285,139 +1293,359 @@ def test_zero_grammar():
     source = Source.from_file(filename)
     lexer = Lexer(source)
     ls = lexer.lex()
-    parser = make_parser(Parser(), zero.feature())
+    parser = Parser().make(zero.feature())
     reader = Reader(ls)
     ast = parser(reader)
     ast = show_ast(ast, filename)
     test_assert("zero_feature", ast, """
-        src/test/Hello.zero.md:22: {'_type': 'feature', 'name': [Hello], 'parent': [Main], 'components': [{
-        src/test/Hello.zero.md:28: '_type': 'test', 'expression': [hello, (, )], 
-        src/test/Hello.zero.md:29: 'result': ["hello world"]}, {'_type': 'test', 'expression': [hello, (, )]}, {
-        src/test/Hello.zero.md:43: '_type': 'function', 'modifier': [on], 'result': {'name': [out$], 'type': [string]}, 'assign_op': [<<], 'signature': [{'word': [hello]}, {'param': []}], 
-        src/test/Hello.zero.md:44: 'body': [out$, <<, "hello world"]}]}
+        src/test/Hello.zero.md:...: {'_type': 'feature', 'name': Hello, 'parent': Main, 'components': [{
+        src/test/Hello.zero.md:...: '_type': 'test', 'expression': hello ( ), 
+        src/test/Hello.zero.md:...: 'result': "hello_world"}, {'_type': 'test', 'expression': hello ( )}, {
+        src/test/Hello.zero.md:...: '_type': 'function', 'modifier': on, 'result': {'name': out$, 'type': string}, 'assign_op': <<, 'signature': [{'word': hello}, {'param': []}], 
+        src/test/Hello.zero.md:...: 'body': out$ << "hello_world"}]}
     """)
 
-    function_parser = make_parser(Parser(), zero.function())
+    function_parser = Parser().make(zero.function())
     function_ast_cpp = show_ast(function_parser(reader), filename)
     test_assert("zero_function_cpp", function_ast_cpp, """
-        src/test/Hello.zero.md:68: {'_type': 'function', 'modifier': [on], 'result': {'type': [string], 'name': [out$]}, 'assign_op': [<<], 'signature': [{'word': [hello]}, {'param': []}], 
-        src/test/Hello.zero.md:69: 'body': [out$, <<, "hello world", ;]}
+        src/test/Hello.zero.md:...: {'_type': 'function', 'modifier': on, 'result': {'type': string, 'name': out$}, 'assign_op': <<, 'signature': [{'word': hello}, {'param': []}], 
+        src/test/Hello.zero.md:...: 'body': out$ << "hello_world" ;}
     """)
     function_ast_ts = show_ast(function_parser(reader), filename)
     test_assert("zero_function_ts", function_ast_ts, """
-        src/test/Hello.zero.md:74: {'_type': 'function', 'modifier': [on], 'result': {'name': [out$], 'type': [string]}, 'assign_op': [<<], 'signature': [{'word': [hello]}, {'param': []}], 
-        src/test/Hello.zero.md:75: 'body': [out$, <<, "hello world", ;]}
+        src/test/Hello.zero.md:...: {'_type': 'function', 'modifier': on, 'result': {'name': out$, 'type': string}, 'assign_op': <<, 'signature': [{'word': hello}, {'param': []}], 
+        src/test/Hello.zero.md:...: 'body': out$ << "hello_world" ;}
     """)
     function_ast_py = show_ast(function_parser(reader), filename)
     test_assert("zero_function_py", function_ast_py, """
-        src/test/Hello.zero.md:80: {'_type': 'function', 'modifier': [on], 'result': {'name': [out$], 'type': [string]}, 'assign_op': [<<], 'signature': [{'word': [hello]}, {'param': []}], 
-        src/test/Hello.zero.md:81: 'body': [out$, <<, "hello world"]}
+        src/test/Hello.zero.md:...: {'_type': 'function', 'modifier': on, 'result': {'name': out$, 'type': string}, 'assign_op': <<, 'signature': [{'word': hello}, {'param': []}], 
+        src/test/Hello.zero.md:...: 'body': out$ << "hello_world"}
     """)
     function_ast_blended = show_ast(function_parser(reader), filename)
     test_assert("zero_function_blended", function_ast_blended, """
-        src/test/Hello.zero.md:85: {'_type': 'function', 'modifier': [on], 'result': {'type': [string], 'name': [out$]}, 'assign_op': [<<], 'signature': [{'word': [hello]}, {'param': []}], 
-        src/test/Hello.zero.md:86: 'body': [out$, <<, "hello world"]}
+        src/test/Hello.zero.md:...: {'_type': 'function', 'modifier': on, 'result': {'type': string, 'name': out$}, 'assign_op': <<, 'signature': [{'word': hello}, {'param': []}], 
+        src/test/Hello.zero.md:...: 'body': out$ << "hello_world"}
     """)
+
+#------------------------------------------------------------------------------
+# system management utilities
+
+class System:
+    # runs a shell command, optionally processes output+errors line by line, returns collected output
+    @staticmethod
+    def run_process(cmd: List[str], processFn=(lambda x: x)) -> str:
+        collected_output = ""
+        process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+
+        # Helper function to process and log output
+        def process_output(stream, append_to):
+            nonlocal collected_output
+            while True:
+                line = stream.readline()
+                if line:
+                    processed_line = processFn(line).strip()
+                    log(processed_line)
+                    append_to.append(processed_line + '\n')
+                else:
+                    break
+
+        # Using lists to collect output as strings are immutable
+        stdout_output = []
+        stderr_output = []
+
+        # Start threads to handle stdout and stderr
+        stdout_thread = Thread(target=process_output, args=(process.stdout, stdout_output))
+        stderr_thread = Thread(target=process_output, args=(process.stderr, stderr_output))
+
+        stdout_thread.start()
+        stderr_thread.start()
+        stdout_thread.join()
+        stderr_thread.join()
+
+        # Collect final outputs
+        collected_output = ''.join(stdout_output) + ''.join(stderr_output)
+        return collected_output
+
+    # returns the correct shell config file path depending on the shell in use
+    @staticmethod
+    def get_shell_config_file():
+        shell = os.environ.get('SHELL', '')
+        home = os.path.expanduser('~')
+        if 'zsh' in shell:
+            return os.path.join(home, '.zshrc')
+        elif 'bash' in shell:
+            return os.path.join(home, '.bash_profile')
+        else:
+            return os.path.join(home, '.profile')
+
+    # ensures that new_path is added to the PATH variable
+    @staticmethod
+    def update_PATH(new_path):
+        shell_config = System.get_shell_config_file()
+        path_entry = f'export PATH="{new_path}:$PATH"'
+        
+        # Check if path already exists in the file
+        with open(shell_config, "r") as f:
+            content = f.read()
+            if new_path in content:
+                log(f"PATH entry for {new_path} already exists in {shell_config}")
+                return
+
+        # If not, append it to the file
+        with open(shell_config, "a") as f:
+            f.write(f'\n{path_entry}\n')
+        
+        log(f"Updated {shell_config} with new PATH entry: {new_path}")
+
+        # Source the shell configuration file
+        source_command = f"source {shell_config}"
+        subprocess.run(source_command, shell=True, executable="/bin/bash")
+        
+        # Update current environment
+        os.environ["PATH"] = f"{new_path}:{os.environ['PATH']}"
+
+#------------------------------------------------------------------------------
+# Printer helpers
+
+# Writer is the counterpart to Reader: it writes out to a Source file
+class Writer:
+    def __init__(self, source: Source, indent_char: str="{"):
+        self.source = source
+        self.indent_char = indent_char
+        self.undent_char = "}" if indent_char == "{" else ""
+        self.indent_level = 0
+        self.line_start = True
+
+    def write(self, out: str|LexStr) -> bool:
+        if isinstance(out, LexStr):
+            for lex in out:
+                self.source.source_map.append((len(self.source.text), lex.location()))
+                self.space(str(lex)[0])
+                self.source.text += str(lex)
+                self.line_start = False
+        else:
+            if out == '{newline}': return self.newline()
+            self.space(str(out)[0])
+            self.source.text += out
+            self.line_start = False
+        return True
+
+    def indent(self):
+        self.indent_level += 1
+        if self.indent_char != '': 
+            c = self.source.text[-1] if len(self.source.text) > 0 else ''
+            if c != ' ': self.source.text += ' '
+            self.write(self.indent_char)
+        self.newline()
+        return True
+
+    def undent(self):
+        self.indent_level -= 1
+        self.newline()
+        if self.undent_char != "":
+            self.write(self.undent_char)
+        return True
+    
+    def newline(self):
+        self.source.text += "\n" + "    " * self.indent_level
+        self.line_start = True
+        return True
+    
+    def get_position(self):
+        return len(self.source.text)
+    
+    def restore_position(self, pos: int):
+        self.source.text = self.source.text[:pos]
+        self.source.source_map = [x for x in self.source.source_map if x[0] < pos]
+        return True
+    
+    def space(self, next: str): # print a space if required to separate next from prev
+        if len(self.source.text) ==0 or self.line_start == True: return
+        c = self.source.text[-1]
+        space_needed = is_alphanum_or_digit(c) or is_alphanum_or_digit(next) or is_operator(next) or is_operator(c)
+        if space_needed: self.source.text += " "
+
+
+#------------------------------------------------------------------------------
+# Printer
+
+# Printer prints out an AST using grammar rules
+class Printer:
+    def __init__(self):
+        pass
+
+    def make(self, rule: Any) -> Callable:
+        try:
+            if rule == None: return None
+            if isinstance(rule, str) or isinstance(rule, LexStr): return rule
+            if isinstance(rule, List) or isinstance(rule, Tuple): 
+                print("rule is list or tuple:", rule)
+                exit(0)
+            caller = rule['caller'] if 'caller' in rule else None
+            if 'fn' not in rule: raise Exception(f"no 'fn' in rule {rule}")
+            fn = rule['fn']
+            method = getattr(self, "print_" + fn, None)
+            if not method: raise Exception(f"no method '{fn}' in {self.__class__.__name__}")
+            args = []
+            for key, val in rule.items():
+                if not (key in ['caller', 'fn']):
+                    if isinstance(val, List) or isinstance(val, Tuple): 
+                        args.extend([self.make(v) for v in val])
+                    else:
+                        args.append(self.make(val))
+            return lambda writer, ast: method(caller, writer, ast, *args)
+        except Exception as e:
+            print(exception_message(e))
+            print("problematic rule:")
+            rule = caller_get_arg(1, 'rule')
+            print(rule_as_string(rule))
+            exit(0)
+
+    def print_keyword(self, caller, writer, ast: AST, word: str) -> bool:
+        return writer.write(word)
+
+    def print_indent(self, caller, writer, ast: AST) -> bool:
+        return writer.indent()
+
+    def print_undent(self, caller, writer, ast: AST) -> bool:
+        return writer.undent()
+
+    def print_newline(self, caller, writer, ast: AST) -> bool:
+        return writer.newline()
+
+    def print_identifier(self, caller, writer, ast: AST|LexStr) -> bool:
+        return writer.write(ast) if isinstance(ast, LexStr) else False
+
+    def print_label(self, caller, writer, ast: AST, label: str, printer_fn: Callable) -> bool:
+        if (not isinstance(ast, AST)) or (not '_type' in ast) or (ast['_type'] != label): 
+            return False
+        return printer_fn(writer, ast)
+
+    def print_set(self, caller, writer, ast: AST, name: str, printer_fn: Callable) -> bool:
+        if not name in ast:
+            return False
+        return printer_fn(writer, ast[name])
+
+    def print_sequence(self, caller, writer, ast: AST, *printer_fns: List[Callable]):
+        for printer_fn in printer_fns:
+            success = printer_fn(writer, ast)
+            if not success: 
+                return False
+        return True
+
+    def print_optional(self, caller, writer, ast: AST, printer_fn: Callable):
+        pos = writer.get_position()
+        success = printer_fn(writer, ast)
+        if not success:
+            writer.restore_position(pos)
+        return True
+    
+    def print_enum(self, caller, writer, ast: AST|LexStr, *words: List[str]) -> bool:
+        return writer.write(ast) if isinstance(ast, LexStr) and str(ast) in words else False
+    
+    def print_any(self, caller, writer, ast: AST, *printer_fns: List[Callable]) -> bool:
+        pos = writer.get_position()
+        for printer_fn in printer_fns:
+            if printer_fn(writer, ast):
+                return True
+            writer.restore_position(pos)
+        return False
+
+    def print_list(self, caller, writer, ast: AST, printer_fn: Callable, sep: str) -> bool:
+        for i, item in enumerate(ast):
+            printer_fn(writer, item)
+            if sep:
+                if (i < len(ast) - 1): writer.write(sep)
+        return True
+    
+    def print_block(self, caller, writer, ast: AST, printer_fn: Callable) -> bool:
+        writer.indent()
+        success = printer_fn(writer, ast)
+        writer.undent()
+        return True
+    
+    def print_upto(self, caller, writer, ast: AST, *words: List[str]) -> bool:
+        if isinstance(ast, LexStr):
+            writer.write(ast)
+            return True
+        return False
+    
+    def print_brackets(self, caller, writer, ast: AST, printer_fn: Callable) -> bool:
+        pos = writer.get_position()
+        writer.write("(")
+        success = printer_fn(writer, ast)
+        if not success:
+            writer.restore_position(pos)
+            return False
+        writer.write(")")
+        return True
+    
+    def print_maybe_bracketed(self, caller, writer, ast: AST, printer_fn: Callable) -> bool:
+        return self.print_brackets(caller, writer, ast, printer_fn)
+    
+    def print_debug(self, caller, writer, ast: AST, printer_fn: Callable) -> bool:
+        return printer_fn(self, writer, ast)
+
+@this_is_a_test
+def test_printer():
+    log("test_printer")
+    ast = parse_zero("src/test/Hello.zero.md")
+    source_out = Source()
+    writer = Writer(source_out, indent_char="{") # braces for indents
+    printer = Printer().make(Zero().feature())
+    printer(writer, ast)
+    test_assert("zero_print", source_out.text, """
+        feature Hello extends Main {
+            > hello () => "hello world"
+            > hello ()
+            on ( out$ : string ) << hello () {
+                out$ << "hello world"
+            }
+        }
+    """)
+    source_out_py = Source()
+    writer = Writer(source_out_py, indent_char=":") # python-style indents
+    printer(writer, ast)
+    test_assert("zero_print_py", source_out_py.text, """
+        feature Hello extends Main :
+            > hello () => "hello world"
+            > hello ()
+            on ( out$ : string ) << hello () :
+                out$ << "hello world"
+    """)
+    source_out_blended = Source()
+    writer = Writer(source_out_blended, indent_char="") # supercool blended indents
+    printer(writer, ast)
+    test_assert("zero_print_blended", source_out_blended.text, """
+          feature Hello extends Main
+    > hello () => "hello world"
+    > hello ()
+    on ( out$ : string ) << hello ()
+        out$ << "hello world"
+          """)
+    exit(0)
 
 #------------------------------------------------------------------------------
 # target languages
 
+# Language represents a target programming language, eg. typescript / C++ / Python / Swift
 class Language:
     def ext(self): pass
 
 class Typescript(Language):
     def ext(self): return "ts"
-    def output(self, name: str, ast: AST) -> str:
-        return f"""
-            // ᕦ(ツ)ᕤ
-            // {name}.ts
-            // generated by zeta.py
-
-            function main() {{
-                console.log(`ᕦ(ツ)ᕤ ${{name}}.ts`)
-            }}
-
-            main();
-            """
+    def feature(self) -> Rule:
+        return label('feature', sequence(
+                    keyword('class'), set('name', identifier()),
+                    keyword('extends'), set('parent', identifier()),
+                    block(list(self.component()))))
     
-#------------------------------------------------------------------------------
-# system management utilities
-
-# runs a shell command, optionally processes output+errors line by line, returns collected output
-def runProcess(cmd: List[str], processFn=(lambda x: x)) -> str:
-    collected_output = ""
-    process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-
-    # Helper function to process and log output
-    def process_output(stream, append_to):
-        nonlocal collected_output
-        while True:
-            line = stream.readline()
-            if line:
-                processed_line = processFn(line).strip()
-                log(processed_line)
-                append_to.append(processed_line + '\n')
-            else:
-                break
-
-    # Using lists to collect output as strings are immutable
-    stdout_output = []
-    stderr_output = []
-
-    # Start threads to handle stdout and stderr
-    stdout_thread = Thread(target=process_output, args=(process.stdout, stdout_output))
-    stderr_thread = Thread(target=process_output, args=(process.stderr, stderr_output))
-
-    stdout_thread.start()
-    stderr_thread.start()
-    stdout_thread.join()
-    stderr_thread.join()
-
-    # Collect final outputs
-    collected_output = ''.join(stdout_output) + ''.join(stderr_output)
-    return collected_output
-
-# returns the correct shell config file path depending on the shell in use
-def get_shell_config_file():
-    shell = os.environ.get('SHELL', '')
-    home = os.path.expanduser('~')
-    if 'zsh' in shell:
-        return os.path.join(home, '.zshrc')
-    elif 'bash' in shell:
-        return os.path.join(home, '.bash_profile')
-    else:
-        return os.path.join(home, '.profile')
-
-# ensures that new_path is added to the PATH variable
-def update_PATH(new_path):
-    shell_config = get_shell_config_file()
-    path_entry = f'export PATH="{new_path}:$PATH"'
-    
-    # Check if path already exists in the file
-    with open(shell_config, "r") as f:
-        content = f.read()
-        if new_path in content:
-            log(f"PATH entry for {new_path} already exists in {shell_config}")
-            return
-
-    # If not, append it to the file
-    with open(shell_config, "a") as f:
-        f.write(f'\n{path_entry}\n')
-    
-    log(f"Updated {shell_config} with new PATH entry: {new_path}")
-
-    # Source the shell configuration file
-    source_command = f"source {shell_config}"
-    subprocess.run(source_command, shell=True, executable="/bin/bash")
-    
-    # Update current environment
-    os.environ["PATH"] = f"{new_path}:{os.environ['PATH']}"
+    def component(self): pass
 
 #------------------------------------------------------------------------------
-# backends
+# target backends
 
-# a BackEnd should contain all the code needed to install, setup, test and run projects
-# for a specific language or runtime
+# a Backend represents a specific target platform or runtime, eg. Deno, Node.js, etc
 
 class Backend:
     def install(self) -> bool: pass
@@ -1472,7 +1700,7 @@ class Deno(Backend):
                 log(result.stdout)
                 # Update PATH
                 deno_path = os.path.expanduser("~/.deno/bin")
-                update_PATH(deno_path)
+                System.update_PATH(deno_path)
                 log("Deno installation completed and PATH updated.")
                 return True
             except subprocess.CalledProcessError as e:
@@ -1542,7 +1770,7 @@ class Deno(Backend):
             return f"Error: File not found: {filename}", ""
         try:
             cmd = ['deno', 'run', '--allow-all', filename, *options]
-            return runProcess(cmd, processFn)
+            return System.run_process(cmd, processFn)
         except FileNotFoundError:
             raise
             return "Error: Deno is not installed or not in the system PATH.", ""
@@ -1573,7 +1801,7 @@ def parse_zero(filename: str) -> AST:
     source = Source.from_file(filename)
     lexer = Lexer(source)
     ls = lexer.lex()
-    parser = make_parser(Parser(), Zero().feature())
+    parser = Parser().make(Zero().feature())
     reader = Reader(ls)
     ast = parser(reader)
     log(show_ast(ast, filename))
@@ -1630,9 +1858,10 @@ def test_deno():
     #backend.setup()
     ast = parse_zero(filename)
     code = generate_code(language, context_name, ast)
+    print(code)
     save_code(language, backend, context_name, code)
     output = test_code(language, backend, context_name)
-    
+   
 #------------------------------------------------------------------------------
 # main, test, etc
 

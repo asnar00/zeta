@@ -1,6 +1,15 @@
 ᕦ(ツ)ᕤ
 # scribblez
 
+This morning:
+printing works!
+test_printer uses the zero grammar to output the ast created by parsing the text file, and it's correct!
+It works for either "{" or ":" or blended indent styles (you have to set it in the Writer)
+there's a bunch of little issues to do with spacing, but those are easy to modify later.
+and in fact probably won't be the same for every language.
+
+-------------------------
+
 OK so! all parsing tests based on the single test/Hello.zero.md file now pass. Super cool.
 Things that are good about this:
 
