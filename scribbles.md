@@ -2,6 +2,24 @@
 # scribblez
 "slow is smooth, smooth is fast"
 
+-----------
+
+
+- pedal to the metal getting deno/typescript working to point of noob.org website.
+- client will run on avp via webxr, but also work on mobile and laptop form factors.
+
+foray to into native AVP programming / swift.
+First impressions: NOT good. Trying to get and set the scroll position of a window - something that should be as simple as calling a function - is a nightmare of what can only be called bureaucracy. Their API is a fucking disaster.
+What's worse is that LLM-based coding doesn't work, because LLMs aren't trained on the Apple documentation, or Swift. So they suggest code that just plain doesn't work. Compared to the vscode/llm experience, it's like being bombed back to the stone ages.
+This again brings me back to the central hypothesis of zero, which is that simplicity => amenability to LLM coding => better performance with small models at the edge.
+Even more important to push forward now.
+Also, a cool demo of multi-threaded WebASM out there (particle stuff).
+
+so the correct technical direction is the zero => webXR/webGPU route.
+no need to look at native- it's a pile of shite.
+
+--------------------------
+
 This morning:
 printing works!
 test_printer uses the zero grammar to output the ast created by parsing the text file, and it's correct!
@@ -80,8 +98,12 @@ And this would write the code for us:
         parent?: str
         body: component[]
     
-    class component(entity):
-        pass
+    parse_feature(...) => 
+    print_feature(...) => 
+
+Hm ok that's quite an interesting idea. Maybe even simpler.
+
+    class Keyword
         
 
 --------------------------------------------------------------
