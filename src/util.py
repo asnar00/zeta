@@ -127,6 +127,7 @@ def this_is_the_active_test(fn):
 # run all tests
 def test_run_all():
     global s_tests_verbose
+    global s_n_tests_failed
     s_n_tests_failed = 0
     if s_tests_verbose:
         print("test ------------------------------------")

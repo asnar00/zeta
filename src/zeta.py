@@ -131,6 +131,99 @@ class Lex:
     
 # lexer: reads source and produces lexemes
 def lexer(source: Source) -> List[Lex]:
+    # naive lexer just does a straight lex
+    def naive_lexer(source: Source) -> List[Lex]:
+        ls = []
+        specs = [ ('num', r'\d+(\.\d*)?'),                  # integer or decimal number
+                    ('id', r'[A-Za-z_][A-Za-z0-9_$]*'),     # identifiers
+                    ('str', r'"(?:\\.|[^"\\])*"'),          # string literals with support for escaped quotes
+                    ('op', r'[-+=%^<>/?|&]{1,2}'),          # operators, and double-operators
+                    ('punc', r'[(){}\[\],.;:]'),            # punctuation
+                    ('line', r'(^[ ]+)|(\n[ ]*)'),          # line-start plus 0 or more spaces
+                    ('skip', r'[ ]+')]                      # spaces
+        patterns = '|'.join('(?P<%s>%s)' % pair for pair in specs)
+        regex = re.compile(patterns)
+        pos = 0
+        while pos < len(source.code):
+            m = regex.match(source.code, pos)
+            if not m: raise Exception(f'unexpected character "{source.code[pos]}" at {log_short(source.code[pos:])}')
+            if len(m.group()) == 0: raise Exception(f'empty match at {log_short(source.code[pos:])}')
+            type = m.lastgroup
+            val = m.group()
+            if (type != 'skip'):
+                if type == 'line':
+                    ls.append(Lex(source, pos, val.replace("\n", "↩︎\n").replace(" ", "_"), type))
+                else:
+                    ls.append(Lex(source, pos, val, type))
+            pos += len(val)
+        return ls
+
+    # replaces all 'line' lexemes with the appropriate ws-indent/undent/newline lexemes
+    def insert_ws_indents(ls: List[Lex]) -> List[Lex]:
+        ols = []
+        last_indent = 0
+        for lex in ls:
+            if lex.type == "line":
+                indent = len(lex.val) // 4
+                if indent > last_indent:
+                    if len(ols) > 0 and ols[-1].val == ":": ols.pop()
+                    for i in range(indent - last_indent):
+                        ols.append(Lex(lex.source, lex.pos, "ws-indent", "line"))
+                elif indent < last_indent:
+                    for i in range(last_indent - indent):
+                        ols.append(Lex(lex.source, lex.pos, "ws-undent", "line"))
+                else:
+                    ols.append(Lex(lex.source, lex.pos, "ws-newline", "line"))
+                last_indent = indent
+            else:
+                ols.append(lex)
+        return ols
+
+    # ensures that any braces / semicolons are handled properly for cpp/ts/etc
+    def handle_braces(ls: List[Lex]) -> List[Lex]:
+        ols = []
+        i = 0
+        while i < len(ls):
+            lex = ls[i]
+            if lex.val == "{":      # add an indent, remove all subsequent ws-indents
+                ols.append(Lex(lex.source, lex.pos, ":indent", "line"))
+                i += 1
+                while i < len(ls) and ls[i].val.startswith("ws-") : i += 1
+                i -= 1
+            elif lex.val == "}":    # add an undent, remove all previous ws-undents
+                while len(ols) > 0 and ols[-1].val.startswith("ws-"): ols.pop()
+                ols.append(Lex(lex.source, lex.pos, ":undent", "line"))
+            elif lex.val == ";":
+                ols.append(Lex(lex.source, lex.pos, ":newline", "line"))
+            else:
+                ols.append(lex)
+            i += 1
+        return ols
+
+    # replace all 'ws-' tags with normal tags
+    def finalise_indents(ls: List[Lex]) -> List[Lex]:
+        for lex in ls:
+            if lex.val.startswith("ws-"):
+                lex.val = ":" + lex.val[3:]
+        return ls
+
+    # get rid of any newlines that sit next to indents or undents
+    def filter_newlines(ls: List[Lex]) -> List[Lex]:
+        ols = []
+        i = 0
+        while i < len(ls):
+            lex = ls[i]
+            if lex.val == ":newline":
+                preceding_is_ndent = (i > 0 and ls[i-1].val in [":indent", ":undent"])
+                following_is_ndent = (i < (len(ls)-1) and ls[i+1].val in [":indent", ":undent"])
+                if preceding_is_ndent or following_is_ndent: pass
+                else:
+                    ols.append(lex)
+            else:
+                ols.append(lex)
+            i += 1
+        return ols
+    
     ls = naive_lexer(source)
     ls = insert_ws_indents(ls)
     ls = handle_braces(ls)
@@ -138,99 +231,6 @@ def lexer(source: Source) -> List[Lex]:
     ls = filter_newlines(ls)
     return ls
 
-# naive lexer just does a straight lex
-def naive_lexer(source: Source) -> List[Lex]:
-    ls = []
-    specs = [ ('num', r'\d+(\.\d*)?'),                  # integer or decimal number
-                ('id', r'[A-Za-z_][A-Za-z0-9_$]*'),     # identifiers
-                ('str', r'"(?:\\.|[^"\\])*"'),          # string literals with support for escaped quotes
-                ('op', r'[-+=%^<>/?|&]{1,2}'),          # operators, and double-operators
-                ('punc', r'[(){}\[\],.;:]'),            # punctuation
-                ('line', r'(^[ ]+)|(\n[ ]*)'),          # line-start plus 0 or more spaces
-                ('skip', r'[ ]+')]                      # spaces
-    patterns = '|'.join('(?P<%s>%s)' % pair for pair in specs)
-    regex = re.compile(patterns)
-    pos = 0
-    while pos < len(source.code):
-        m = regex.match(source.code, pos)
-        if not m: raise Exception(f'unexpected character "{source.code[pos]}" at {log_short(source.code[pos:])}')
-        if len(m.group()) == 0: raise Exception(f'empty match at {log_short(source.code[pos:])}')
-        type = m.lastgroup
-        val = m.group()
-        if (type != 'skip'):
-            if type == 'line':
-                ls.append(Lex(source, pos, val.replace("\n", "↩︎\n").replace(" ", "_"), type))
-            else:
-                ls.append(Lex(source, pos, val, type))
-        pos += len(val)
-    return ls
-
-# replaces all 'line' lexemes with the appropriate ws-indent/undent/newline lexemes
-def insert_ws_indents(ls: List[Lex]) -> List[Lex]:
-    ols = []
-    last_indent = 0
-    for lex in ls:
-        if lex.type == "line":
-            indent = len(lex.val) // 4
-            if indent > last_indent:
-                if len(ols) > 0 and ols[-1].val == ":": ols.pop()
-                for i in range(indent - last_indent):
-                    ols.append(Lex(lex.source, lex.pos, "ws-indent", "line"))
-            elif indent < last_indent:
-                for i in range(last_indent - indent):
-                    ols.append(Lex(lex.source, lex.pos, "ws-undent", "line"))
-            else:
-                ols.append(Lex(lex.source, lex.pos, "ws-newline", "line"))
-            last_indent = indent
-        else:
-            ols.append(lex)
-    return ols
-
-# ensures that any braces / semicolons are handled properly for cpp/ts/etc
-def handle_braces(ls: List[Lex]) -> List[Lex]:
-    ols = []
-    i = 0
-    while i < len(ls):
-        lex = ls[i]
-        if lex.val == "{":      # add an indent, remove all subsequent ws-indents
-            ols.append(Lex(lex.source, lex.pos, ":indent", "line"))
-            i += 1
-            while i < len(ls) and ls[i].val.startswith("ws-") : i += 1
-            i -= 1
-        elif lex.val == "}":    # add an undent, remove all previous ws-undents
-            while len(ols) > 0 and ols[-1].val.startswith("ws-"): ols.pop()
-            ols.append(Lex(lex.source, lex.pos, ":undent", "line"))
-        elif lex.val == ";":
-            ols.append(Lex(lex.source, lex.pos, ":newline", "line"))
-        else:
-            ols.append(lex)
-        i += 1
-    return ols
-
-# replace all 'ws-' tags with normal tags
-def finalise_indents(ls: List[Lex]) -> List[Lex]:
-    for lex in ls:
-        if lex.val.startswith("ws-"):
-            lex.val = ":" + lex.val[3:]
-    return ls
-
-# get rid of any newlines that sit next to indents or undents
-def filter_newlines(ls: List[Lex]) -> List[Lex]:
-    ols = []
-    i = 0
-    while i < len(ls):
-        lex = ls[i]
-        if lex.val == ":newline":
-            preceding_is_ndent = (i > 0 and ls[i-1].val in [":indent", ":undent"])
-            following_is_ndent = (i < (len(ls)-1) and ls[i+1].val in [":indent", ":undent"])
-            if preceding_is_ndent or following_is_ndent: pass
-            else:
-                ols.append(lex)
-        else:
-            ols.append(lex)
-        i += 1
-    return ols
-    
 #--------------------------------------------------------------------------------------------------
 # Grammar
 
@@ -259,7 +259,7 @@ def test_grammar_atoms():
     variable_decl = keyword("variable")
     test_decl = keyword("test")
     component_decl = any(function_decl, struct_decl, variable_decl, test_decl)
-    body_decl = sequence(keyword(":indent"), list(component_decl), keyword(":undent"))
+    body_decl = block(list(component_decl))
     source = Source(code="""
 {
     function
@@ -285,6 +285,7 @@ class Reader:
         return self.ls[self.pos] if not self.eof() else None
     def advance(self): self.pos += 1
     def eof(self): return self.pos >= len(self.ls)
+    def len(self): return len(self.ls)
     def skip(self):
         while not self.eof() and self.ls[self.pos].val == ':newline': self.advance()
     def match(self, fn):
@@ -445,17 +446,17 @@ class upto(Atom):
             elif str(lex) in [")", "]", ":undent"]: depth -= 1
             reader.advance()
 
-def block(atom: Atom) -> Atom:
-    return sequence(keyword(":indent"), atom, keyword(":undent"))
-
-def brackets(atom: Atom) -> Atom:
-    return sequence(keyword("("), atom, keyword(")"))
-
-def indent() -> Atom:
-    return keyword(":indent")
-
-def undent() -> Atom:
-    return keyword(":undent")
+# matches a block of code
+class block(Atom):
+    def __init__(self, atom: Atom, start = ":indent", end = ":undent"): self.caller = caller(); self.start = start; self.end = end; self.atom = atom
+    def parse(self, reader: Reader) -> AST:
+        if not reader.match(lambda lex: lex.val == self.start): return Error(self.start, self.caller, reader)
+        ast = self.atom.parse(reader)
+        error = ast['_error'] if '_error' in ast else None
+        if not reader.match(lambda lex: lex.val == self.end): 
+            return error if error else Error(self.end, self.caller, reader)
+        if error: del ast['_error']
+        return ast
 
 #--------------------------------------------------------------------------------------------------
 # Zero grammar
