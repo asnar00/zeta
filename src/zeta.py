@@ -131,6 +131,15 @@ class Lex:
     
 # lexer: reads source and produces lexemes
 def lexer(source: Source) -> List[Lex]:
+    ls = naive_lexer(source)
+    ls = insert_ws_indents(ls)
+    ls = handle_braces(ls)
+    ls = finalise_indents(ls)
+    ls = filter_newlines(ls)
+    return ls
+
+# naive lexer just does a straight lex
+def naive_lexer(source: Source) -> List[Lex]:
     ls = []
     specs = [ ('num', r'\d+(\.\d*)?'),                  # integer or decimal number
                 ('id', r'[A-Za-z_][A-Za-z0-9_$]*'),     # identifiers
@@ -154,10 +163,6 @@ def lexer(source: Source) -> List[Lex]:
             else:
                 ls.append(Lex(source, pos, val, type))
         pos += len(val)
-    ls = insert_ws_indents(ls)
-    ls = handle_braces(ls)
-    ls = finalise_indents(ls)
-    ls = filter_newlines(ls)
     return ls
 
 # replaces all 'line' lexemes with the appropriate ws-indent/undent/newline lexemes
