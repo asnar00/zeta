@@ -2,6 +2,24 @@
 # scribblez
 "slow is smooth, smooth is fast"
 
+ok: print tests now all work correctly. This nice, because it's ... FRIDAY!
+Actually we did Fresh Every Friday yesterday, so today's day 2 of zeta2.
+We now have a bidirectional parsing / printing system that runs about 1100 lines of code.
+Split into util.py (all the scaffolding for the development workflow) = 375 lines, 640 lines for parser.
+
+Source system is much simpler.
+need to make the source map work correctly on write;
+and set the output indent type for the writer.
+
+What next? Maybe take the current contents of zeta.py and call them parser.py?
+Then zeta.py can focus on the language grammars. Also we should continue with the modular backend/language approach, because that is totally a legitimate concern if we want it to be acceptable.
+
+Simplifications:
+- we could make the lexer a lot simpler by knowing the code layout before we start
+- Writer is way too large and convoluted RN; should be as small and simple as Reader
+
+
+
 -----------
 
 

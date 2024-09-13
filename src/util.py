@@ -98,7 +98,8 @@ def test(name, a, b: str = None):
     ctx = caller()
     sa = log_strip(str(a))
     if not b:
-        print(f"{log_grey(ctx)} {name}\n{a}")
+        print(f"{log_grey(ctx)} {name}")
+        print(f"{a}")
         return
     sb = log_strip(b)
     if sb.startswith("\n"): sb = sb[1:]
