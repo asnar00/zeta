@@ -9,14 +9,24 @@ from parser import *
 #--------------------------------------------------------------------------------------------------
 # zero grammar
 
-@this_is_a_test
+@this_is_the_test
 def test_zero():
     log("test_zero")
     zero = Zero()
-    test("variable", parse(zero.variable(), "x"), """{'_type': 'variable', 'name': x}""")
-    test("constant", parse(zero.constant(), "123"), """{'_type': 'constant', 'value': 123}""")
-    test("constant", parse(zero.constant(), '"abc\"'), """{'_type': 'constant', 'value': "abc"}""")
-    test("param_call", parse(zero.param_call(), "a"), """{'value': {'_type': 'variable', 'name': a}}""")
+    test("variable", parse(zero.variable(), "x"), """
+         {'_type': 'variable', 'name': x}                       """)
+    test("constant_num", parse(zero.constant(), "123"), """
+         {'_type': 'constant', 'value': 123}                    """)
+    test("constant_str", parse(zero.constant(), '"abc\"'), """
+         {'_type': 'constant', 'value': "abc"}                  """)
+    test("param_call_var", parse(zero.param_call(), "a"), """
+         {'value': {'_type': 'variable', 'name': a}}            """)
+    test("param_call_str", parse(zero.param_call(), "str = \"hello world\""), """
+        {'name': str, 'value': {'_type': 'constant', 'value': \"hello world\"}} """)
+    test("param_call_num", parse(zero.param_call(), "index = 123"), """
+        {'name': index, 'value': {'_type': 'constant', 'value': 123}} """)
+    
+    
 
 class Zero(Language):
     def ext(self): return ".zero.md"
@@ -65,11 +75,11 @@ class Zero(Language):
 
     def function_call(self): return list(any(
             set("word", any(identifier(), operator())),
-            set("params", list(self.param_call(), ","))))
+            set("params", brackets(list(self.param_call(), ",")))))
     
-    def param_call(self): return debug(sequence(
+    def param_call(self): return sequence(
             optional(sequence(set("name", identifier()), keyword("="))), 
-            set("value", recurse(self.expression))))
+            set("value", recurse(self.expression)))
     
     def constant(self): return label("constant", set("value", any(match_type("num"), match_type("str"))))
 
