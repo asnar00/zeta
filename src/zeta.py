@@ -9,9 +9,9 @@ from parser import *
 #--------------------------------------------------------------------------------------------------
 # zero grammar
 
-@this_is_the_test
+@this_is_a_test
 def test_zero():
-    print("test_zero")
+    log("test_zero")
 
 class Zero(Language):
     def ext(self): return ".zero.md"
@@ -40,7 +40,7 @@ class Zero(Language):
             sequence(set("type", identifier()), set("name", identifier())))
     
     def signature(self): return brackets(list(any(
-            set("word", identifier()),
+            set("word", any(identifier(), self.operator())),
             set("params", list(self.variable_decl(), ",")))))
 
     def variable_decl(self): return sequence(
@@ -58,7 +58,7 @@ class Zero(Language):
     def expression(self): return any(self.constant(), self.variable(), self.function_call())
 
     def function_call(self): return list(any(
-            set("word", identifier()),
+            set("word", any(identifier(), self.operator())),
             set("params", list(self.param_call(), ","))))
     
     def param_call(self): return sequence(
@@ -68,6 +68,8 @@ class Zero(Language):
     def constant(self): return any(match_type("num"), match_type("str"))
 
     def variable(self): return identifier()
+
+    def operator(self): return match_type("op")
 
 #--------------------------------------------------------------------------------------------------
 
