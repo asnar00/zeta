@@ -1,7 +1,7 @@
 # ᕦ(ツ)ᕤ
 # zeta.py
 # author: asnaroo
-# zero to everything
+# zero to anything
 
 from util import *
 from parser import *
