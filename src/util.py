@@ -16,6 +16,10 @@ import sys
 # set if logging is enabled
 s_log: bool = False
 
+# returns True if logging is enabled
+def log_enabled() -> bool:
+    return s_log
+
 # log: prints stuff if logging is enabled
 def log(*args):
     if s_log:
@@ -42,6 +46,13 @@ def log_disable(fn):
         s_log = old_log
         return result
     return wrapper
+
+# turns logging on or off, returns previous logging state
+def log_set(on: bool) -> bool:
+    global s_log
+    old_log = s_log
+    s_log = on
+    return old_log
 
 # clear the log : handy because we're constantly re-running
 def log_clear():

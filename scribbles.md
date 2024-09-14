@@ -2,6 +2,53 @@
 # scribblez
 "slow is smooth, smooth is fast"
 
+error handling strategy:
+instead of returning an error, return an AST with ['_error': Error(x)]
+err(AST) => returns ast['_error'] or None;
+
+keyword(X) => either {} or { _error: expected x }
+identifier(X) => either [Lex] or { _error: expected lex_type id }
+list(X) => { _list: [a, b, c], _error: blah }
+optional(X) => either X or { partials, _error: whatever }
+
+let's see how this would work in the case of
+
+
+    test("param_call", parse(zero.param_call(), "a"))
+
+with the relevant parse rules being:
+
+    def expression(self): return any(self.constant(), self.variable(), self.function_call())
+
+    def function_call(self): return list(any(
+            set("word", any(identifier(), self.operator())),
+            set("params", list(self.param_call(), ","))))
+    
+    def param_call(self): return debug(sequence(
+            optional(sequence(set("name", identifier()), keyword("="))), 
+            set("value", recurse(self.expression))))
+    
+    def constant(self): return any(match_type("num"), match_type("str"))
+
+    def variable(self): return identifier()
+
+    def operator(self): return match_type("op")
+
+what should happen is:
+
+    optional returns { word: "a", _error: "expected keyword =' } and RESETS reader to start.
+
+-----
+general idea: when coding, instead of breaking to doom-scroll, switch to something big that you need to read, eg. the RISC-V ISA design document.
+make a reading list of big stuff that you have open that you can flip to.
+a good quality of such reading material is that it inspires you to return to writing code.
+
+---
+putting in debug tooling !!! turns out to always be necessary!
+figuring out a proper strategy for passing errors around.
+
+---
+
 ok: print tests now all work correctly. This nice, because it's ... FRIDAY!
 Actually we did Fresh Every Friday yesterday, so today's day 2 of zeta2.
 We now have a bidirectional parsing / printing system that runs about 1100 lines of code.
@@ -17,7 +64,6 @@ Then zeta.py can focus on the language grammars. Also we should continue with th
 Simplifications:
 - we could make the lexer a lot simpler by knowing the code layout before we start
 - Writer is way too large and convoluted RN; should be as small and simple as Reader
-
 
 
 -----------

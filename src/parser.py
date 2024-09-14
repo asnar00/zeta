@@ -137,7 +137,7 @@ def lexer(source: Source) -> List[Lex]:
         specs = [ ('num', r'\d+(\.\d*)?'),                  # integer or decimal number
                     ('id', r'[A-Za-z_][A-Za-z0-9_$\[\]]*'), # identifiers
                     ('str', r'"(?:\\.|[^"\\])*"'),          # string literals with support for escaped quotes
-                    ('op', r'[-+=%^<>/?|&]{1,2}'),          # operators, and double-operators
+                    ('op', r'[-+=%^<>/?|&#\\]{1,2}'),       # operators, and double-operators
                     ('punc', r'[(){}\[\],.;:]'),            # punctuation
                     ('line', r'(^[ ]+)|(\n[ ]*)'),          # line-start plus 0 or more spaces
                     ('skip', r'[ ]+')]                      # spaces
@@ -247,14 +247,14 @@ def test_grammar():
     
     # test parsing
     
-    feature_ast = parse(feature_decl, Source(code = "feature Hello extends Main"))
+    feature_ast = parse(feature_decl, "feature Hello extends Main")
     test("parse_feature_decl", feature_ast, "{'_type': 'feature', 'name': Hello, 'parent': Main}")
 
-    bad_list_ast = parse(list(enum("a", "b")), Source(code = "a b c"))
-    test("parse_bad_list", bad_list_ast, "{'_list': [a, b], '_error': expected one of ('a', 'b') at :1:5}")
+    bad_list_ast = parse(list(enum("a", "b")),  "a b c")
+    test("parse_bad_list", bad_list_ast, "{'_list': [a, b], '_error': parser.py:...: expected one of ('a', 'b') at :...:5}")
 
     good_list_decl = sequence(list(enum("a", "b")), keyword("end"))
-    good_list_ast = parse(good_list_decl, Source(code = "a b end"))
+    good_list_ast = parse(good_list_decl, "a b end")
     test("parse_good_list", good_list_ast, """{'_list': [a, b]}""")
 
     function_decl = label("function", keyword("function"))
@@ -263,25 +263,25 @@ def test_grammar():
     test_decl = label("test", keyword("test"))
     component_decl = any(function_decl, struct_decl, variable_decl, test_decl)
     body_decl = block(list(component_decl))
-    source = Source(code="""
+    source = """
 {
     function
     struct
     variable
     test
 }    
-    """)
+"""
     block_ast = parse(body_decl, source)
     test("parse_body_decl", block_ast, """
 {'_list': [{'_type': 'function'}, {'_type': 'struct'}, {'_type': 'variable'}, {'_type': 'test'}]}
 """)
 
     # test printing
-    test("print_feature_decl", print_ast(feature_decl, feature_ast).code, "feature Hello extends Main")
-    test("print_good_list", print_ast(good_list_decl, good_list_ast).code, """
+    test("print_feature_decl", print_ast(feature_decl, feature_ast), "feature Hello extends Main")
+    test("print_good_list", print_ast(good_list_decl, good_list_ast), """
 a
 b end""")
-    test("print_block", print_ast(body_decl, block_ast).code, """
+    test("print_block", print_ast(body_decl, block_ast), """
 {
     function
     struct
@@ -291,17 +291,20 @@ b end""")
 """)
     
 
-def parse(atom: 'Atom', source: Source) -> 'AST':
+def parse(atom: 'Atom', code: str) -> 'AST':
+    source = Source(code = code)
     ls = lexer(source)
     reader = Reader(ls)
+    old_log = log_set(False)
     ast = atom.parse(reader)
+    log_set(old_log)
     return ast
 
 def print_ast(atom: 'Atom', ast: 'AST') -> Source:
     source = Source(code = "")
     writer = Writer(source)
     atom.print(writer, ast)
-    return source
+    return source.code
 
 # Reader reads forward in the list of lexemes
 class Reader:
@@ -323,13 +326,15 @@ class Reader:
         return None
     def location(self):
         return self.peek().location() if not self.eof() else "eof"
+    def show(self):
+        return str(self.ls[self.pos:self.pos + 6])
     
 # Error holds a message and a point in the source file
 class Error:
     def __init__(self, expected, caller, reader):
         self.expected = expected; self.caller = caller; self.reader = reader; self.pos = reader.pos
     def __str__(self):
-        return f"expected {self.expected} at {self.reader.location()}"
+        return f"{log_grey(self.caller)} expected {self.expected} at {self.reader.location()}"
     def __repr__(self): return str(self)
     def is_later_than(self, other):
         return self.pos > other.pos
@@ -447,19 +452,62 @@ class AST(Dict):
 # ideally we should find a better way of doing this, but it's the most concise way for now
     
 class Atom:
-    def parse(self, reader: Reader): raise Exception(f"{self.__class__.__name__}.parse() not implemented")
-    def print(self, writer: Writer, ast: AST): raise Exception(f"{self.__class__.__name__}.print() not implemented")
+    indent = 0
+    lines = []
+    def parse(self, reader: Reader): # with turn-off-and-onable logging using the debug Atom
+        if log_enabled():
+            self.line_index = len(Atom.lines)
+            Atom.lines.append(self.log_parse(reader))
+        Atom.indent += 1
+        result =  self._parse(reader)
+        Atom.indent -= 1
+        if log_enabled():
+            Atom.lines[self.line_index] += f" -> {result}"
+        return result
+    
+    def print(self, writer: Writer, ast: AST): 
+        return self._print(writer, ast)
+    
+    def log_parse(self, reader):
+        vs = vars(self)
+        params = ''
+        for key, val in vs.items():
+            if key != 'caller' and not key.startswith('atom') and not key=='line_index': # yuck
+                ps = str(val)
+                if ps.startswith("<bound method"):
+                    ps = ps[14:ps.find(" of ")]
+                params += ps + ", "
+        if params.endswith(", "): params = params[:-2]
+        return f"{log_grey(self.caller)} {" " * Atom.indent}{self.__class__.__name__}({str(params)}) at {reader.show()}"
 
+# debug() turns on debugging for the entire sub-tree
+class debug(Atom):
+    def __init__(self, atom: Atom): self.caller = caller(); self.atom = atom
+    def _parse(self, reader: Reader) -> AST:
+        old_log = log_set(True)
+        Atom.lines = []
+        ast = self.atom.parse(reader)
+        print(f"{log_grey(self.caller)} parser debug trace:")
+        for line in Atom.lines:
+            print(line)
+        log_set(old_log)
+        return ast
+    def _print(self, writer: Writer, ast: AST) -> bool:
+        old_log = log_set(True)
+        success = self.atom.print(writer, ast)
+        log_set(old_log)
+        return success
+    
 # adds "_type" : (name) to the start of the AST, labeling it as a node of a specific type
 class label(Atom):
     def __init__(self, name, atom) : self.caller = caller(); self.name = name; self.atom = atom
-    def parse(self, reader: Reader):
+    def _parse(self, reader: Reader):
         ast = AST({ "_type" : self.name })
         sub_ast = self.atom.parse(reader)
         if err(sub_ast): return sub_ast
         ast.update(sub_ast)
         return ast
-    def print(self, writer: Writer, ast: AST):
+    def _print(self, writer: Writer, ast: AST):
         if (not isinstance(ast, AST)) or (not '_type' in ast) or (ast['_type'] != self.name):
             return False
         return self.atom.print(writer, ast)
@@ -467,38 +515,50 @@ class label(Atom):
 # matches a lex of a given type
 class match_type(Atom):
     def __init__(self, type_name): self.caller = caller(); self.type_name = type_name
-    def parse(self, reader: Reader) -> AST:
+    def _parse(self, reader: Reader) -> AST:
         return reader.match(lambda lex: lex.type == self.type_name) or Error(f"type {self.type_name}", self.caller, reader)
-    def print(self, writer: Writer, ast) -> bool:
+    def _print(self, writer: Writer, ast) -> bool:
         return writer.write([ast]) if isinstance(ast, Lex) and ast.type == self.type_name else False
 
 # matches a keyword, returns an empty AST
 class keyword(Atom):
     def __init__(self, val): self.caller = caller(); self.val = val
-    def parse(self, reader: Reader) -> AST:
+    def _parse(self, reader: Reader) -> AST:
         if reader.match(lambda lex: lex.val == self.val): return {}
         return Error(self.val, self.caller, reader)
-    def print(self, writer: Writer, ast: AST) -> bool:
+    def _print(self, writer: Writer, ast: AST) -> bool:
         return writer.write(self.val)
 
 # matches an identifier, returns the lexeme
 class identifier(Atom):
     def __init__(self): self.caller = caller()
-    def parse(self, reader: Reader):
+    def _parse(self, reader: Reader):
         lex = reader.match(lambda lex: lex.type == "id")
         return lex if lex else Error("identifier", self.caller, reader)
-    def print(self, writer: Writer, ast: AST) -> bool:
+    def _print(self, writer: Writer, ast: AST) -> bool:
+        return writer.write([ast])
+    
+# matches an operator, returns the lexeme
+class operator(Atom):
+    def __init__(self): self.caller = caller()
+    def _parse(self, reader: Reader):
+        lex = reader.match(lambda lex: lex.type == "op")
+        return lex if lex else Error("operator", self.caller, reader)
+    def _print(self, writer: Writer, ast: AST) -> bool:
         return writer.write([ast])
 
 # optionally matches something, returns an error if it happened after the current read position
 class optional(Atom):
     def __init__(self, atom): self.caller = caller(); self.atom = atom
-    def parse(self, reader: Reader) -> AST:
+    def _parse(self, reader: Reader) -> AST:
         reader.skip()
         pos = reader.pos
         ast = self.atom.parse(reader)
-        return AST({}) if (err(ast) and ast.pos == pos) else ast
-    def print(self, writer: Writer, ast: AST):
+        if err(ast):
+            reader.pos = pos
+            return {}
+        return ast
+    def _print(self, writer: Writer, ast: AST):
         pos = writer.get_position()
         success = self.atom.print(writer, ast)
         if not success:
@@ -508,18 +568,18 @@ class optional(Atom):
 # sets a property of the AST to the result of parsing (atom)
 class set(Atom):
     def __init__(self, name, atom): self.caller = caller(); self.name = name; self.atom = atom
-    def parse(self, reader: Reader) -> AST:
+    def _parse(self, reader: Reader) -> AST:
         sub_ast = self.atom.parse(reader)
         if err(sub_ast): return sub_ast
         return AST({ self.name : sub_ast })
-    def print(self, writer: Writer, ast: AST) -> bool:
+    def _print(self, writer: Writer, ast: AST) -> bool:
         if not self.name in ast: return False
         return self.atom.print(writer, ast[self.name])
     
 # matches a sequence of atoms, combines all results into a single AST node
 class sequence(Atom):
     def __init__(self, *atoms): self.caller = caller(); self.atoms = atoms
-    def parse(self, reader: Reader) -> AST:
+    def _parse(self, reader: Reader) -> AST:
         ast = AST({})
         for atom in self.atoms:
             sub_ast = atom.parse(reader)
@@ -530,7 +590,7 @@ class sequence(Atom):
                 if '_error' in ast: del ast['_error']
                 ast.update(sub_ast)
         return ast
-    def print(self, writer: Writer, ast: AST) -> bool:
+    def _print(self, writer: Writer, ast: AST) -> bool:
         for atom in self.atoms:
             success = atom.print(writer, ast)
             if not success: return False
@@ -539,7 +599,7 @@ class sequence(Atom):
 # matches any of one or more atom types, returns the first one that succeeds
 class any(Atom):
     def __init__(self, *atoms): self.caller = caller(); self.atoms = atoms
-    def parse(self, reader: Reader) -> AST:
+    def _parse(self, reader: Reader) -> AST:
         errors = []
         for atom in self.atoms:
             pos = reader.pos
@@ -549,7 +609,7 @@ class any(Atom):
             errors.append(ast)
             reader.pos = pos
         return combine_errors(errors)
-    def print(self, writer: Writer, ast: AST) -> bool:
+    def _print(self, writer: Writer, ast: AST) -> bool:
         pos = writer.get_position()
         for atom in self.atoms:
             if atom.print(writer, ast): return True
@@ -559,7 +619,7 @@ class any(Atom):
 # matches a list of zero or more of the same atom, optionally separated by a string
 class list(Atom):
     def __init__(self, atom, sep: str=None): self.caller = caller(); self.atom = atom; self.sep = sep
-    def parse(self, reader: Reader) -> AST:
+    def _parse(self, reader: Reader) -> AST:
         items = []
         safe_count = 10
         while not reader.eof():
@@ -573,7 +633,7 @@ class list(Atom):
                 if not reader.match(lambda lex: lex.val == self.sep):
                     return { '_list': items, '_error': Error(f"'{self.sep}'", self.caller, reader)}
         return { '_list': items }
-    def print(self, writer: Writer, ast: AST) -> bool:
+    def _print(self, writer: Writer, ast: AST) -> bool:
         items = ast['_list']
         for i, item in enumerate(items):
             self.atom.print(writer, item)
@@ -586,16 +646,16 @@ class list(Atom):
 # matches one of a list of words, returns the lexeme
 class enum(Atom):
     def __init__(self, *words): self.caller = caller(); self.words = words
-    def parse(self, reader: Reader) -> AST:
+    def _parse(self, reader: Reader) -> AST:
         lex = reader.match(lambda lex: lex.val in self.words)
         return lex if lex else Error(f"one of {self.words}", self.caller, reader)
-    def print(self, writer: Writer, ast: AST) -> bool:
+    def _print(self, writer: Writer, ast: AST) -> bool:
         return writer.write([ast]) if isinstance(ast, Lex) and ast.val in self.words else False
     
 # matches forward until it finds one of (words), but outside braces/brackets
 class upto(Atom):
     def __init__(self, *words): self.caller = caller(); self.words = words
-    def parse(self, reader: Reader) -> AST:
+    def _parse(self, reader: Reader) -> AST:
         depth = 0
         out = []
         while True:
@@ -606,7 +666,7 @@ class upto(Atom):
             if str(lex) in ["(", "[", ":indent"]: depth += 1
             elif str(lex) in [")", "]", ":undent"]: depth -= 1
             reader.advance()
-    def print(self, writer: Writer, ast: AST) -> bool:
+    def _print(self, writer: Writer, ast: AST) -> bool:
         if isinstance(ast, List):
             writer.write(ast)
             return True
@@ -615,7 +675,7 @@ class upto(Atom):
 # matches a block of code
 class block(Atom):
     def __init__(self, atom: Atom, start = ":indent", end = ":undent"): self.caller = caller(); self.start = start; self.end = end; self.atom = atom
-    def parse(self, reader: Reader) -> AST:
+    def _parse(self, reader: Reader) -> AST:
         if not reader.match(lambda lex: lex.val == self.start): return Error(self.start, self.caller, reader)
         ast = self.atom.parse(reader)
         error = ast['_error'] if '_error' in ast else None
@@ -623,7 +683,7 @@ class block(Atom):
             return error if error else Error(self.end, self.caller, reader)
         if error: del ast['_error']
         return ast
-    def print(self, writer: Writer, ast: AST) -> bool:
+    def _print(self, writer: Writer, ast: AST) -> bool:
         writer.write(self.start)
         success = self.atom.print(writer, ast)
         writer.write(self.end)
@@ -632,6 +692,14 @@ class block(Atom):
 # brackets: for convenience. Todo: caller() won't work right
 def brackets(atom: Atom): return block(atom, "(", ")")
 
+# recurse() stores a function that returns an atom, and calls it only when needed
+class recurse(Atom):
+    def __init__(self, func): self.caller = caller(); self.func = func
+    def _parse(self, reader: Reader) -> AST:
+        return self.func().parse(reader)
+    def _print(self, writer: Writer, ast: AST) -> bool:
+        return self.func().print(writer, ast)
+    
 #--------------------------------------------------------------------------------------------------
 # base classes for language and backend
 

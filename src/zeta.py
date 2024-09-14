@@ -12,6 +12,11 @@ from parser import *
 @this_is_a_test
 def test_zero():
     log("test_zero")
+    zero = Zero()
+    test("variable", parse(zero.variable(), "x"), """{'_type': 'variable', 'name': x}""")
+    test("constant", parse(zero.constant(), "123"), """{'_type': 'constant', 'value': 123}""")
+    test("constant", parse(zero.constant(), '"abc\"'), """{'_type': 'constant', 'value': "abc"}""")
+    test("param_call", parse(zero.param_call(), "a"), """{'value': {'_type': 'variable', 'name': a}}""")
 
 class Zero(Language):
     def ext(self): return ".zero.md"
@@ -22,6 +27,7 @@ class Zero(Language):
             set("name", identifier()),
             optional(sequence(keyword("extends"), set("parent", identifier()))),
             block(list(self.component()))))
+    
     def component(self): return any(self.test(), self.function(), self.struct(), self.local_variable())
 
     def test(self): return label("test", sequence(
@@ -55,21 +61,19 @@ class Zero(Language):
     def maybe_new_variable(self): return any(
             self.name_type(), set("name", identifier()))
     
-    def expression(self): return any(self.constant(), self.variable(), self.function_call())
+    def expression(self): return any(self.variable(), self.constant(), self.function_call())
 
     def function_call(self): return list(any(
-            set("word", any(identifier(), self.operator())),
+            set("word", any(identifier(), operator())),
             set("params", list(self.param_call(), ","))))
     
-    def param_call(self): return sequence(
+    def param_call(self): return debug(sequence(
             optional(sequence(set("name", identifier()), keyword("="))), 
-            set("value", self.expression()))
+            set("value", recurse(self.expression))))
     
-    def constant(self): return any(match_type("num"), match_type("str"))
+    def constant(self): return label("constant", set("value", any(match_type("num"), match_type("str"))))
 
-    def variable(self): return identifier()
-
-    def operator(self): return match_type("op")
+    def variable(self): return label("variable", set("name", identifier()))
 
 #--------------------------------------------------------------------------------------------------
 
