@@ -1,5 +1,5 @@
 # ᕦ(ツ)ᕤ
-# zeta.py
+# parser.py
 # author: asnaroo
 # zero to anything
 
@@ -135,7 +135,7 @@ def lexer(source: Source) -> List[Lex]:
     def naive_lexer(source: Source) -> List[Lex]:
         ls = []
         specs = [ ('num', r'\d+(\.\d*)?'),                  # integer or decimal number
-                    ('id', r'[A-Za-z_][A-Za-z0-9_$]*'),     # identifiers
+                    ('id', r'[A-Za-z_][A-Za-z0-9_$\[\]]*'), # identifiers
                     ('str', r'"(?:\\.|[^"\\])*"'),          # string literals with support for escaped quotes
                     ('op', r'[-+=%^<>/?|&]{1,2}'),          # operators, and double-operators
                     ('punc', r'[(){}\[\],.;:]'),            # punctuation
@@ -463,6 +463,14 @@ class label(Atom):
         if (not isinstance(ast, AST)) or (not '_type' in ast) or (ast['_type'] != self.name):
             return False
         return self.atom.print(writer, ast)
+    
+# matches a lex of a given type
+class match_type(Atom):
+    def __init__(self, type_name): self.caller = caller(); self.type_name = type_name
+    def parse(self, reader: Reader) -> AST:
+        return reader.match(lambda lex: lex.type == self.type_name) or Error(f"type {self.type_name}", self.caller, reader)
+    def print(self, writer: Writer, ast) -> bool:
+        return writer.write([ast]) if isinstance(ast, Lex) and ast.type == self.type_name else False
 
 # matches a keyword, returns an empty AST
 class keyword(Atom):
@@ -620,6 +628,9 @@ class block(Atom):
         success = self.atom.print(writer, ast)
         writer.write(self.end)
         return success
+    
+# brackets: for convenience. Todo: caller() won't work right
+def brackets(atom: Atom): return block(atom, "(", ")")
 
 #--------------------------------------------------------------------------------------------------
 # base classes for language and backend

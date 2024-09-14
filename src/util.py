@@ -1,5 +1,5 @@
 # ᕦ(ツ)ᕤ
-# log.py
+# util.py
 # author: asnaroo
 # proper logging, call-stack inspection, exception handling, testing, file system
 
@@ -121,7 +121,7 @@ def this_is_a_test(fn):
     return fn
 
 # decorator that you use on the current active test (that you're working on)
-def this_is_the_active_test(fn):
+def this_is_the_test(fn):
     global s_active_test
     s_active_test = fn
 
