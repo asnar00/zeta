@@ -155,7 +155,11 @@ def test_run_all():
         s_log = True
         s_tests_verbose = True
         s_active_test()
-    
+
+# set test verbosity
+def test_verbose(on: bool):
+    global s_tests_verbose
+    s_tests_verbose = on
 
 #------------------------------------------------------------------------------
 # call-stack introspection

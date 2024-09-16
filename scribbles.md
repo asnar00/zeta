@@ -2,6 +2,57 @@
 # scribblez
 "slow is smooth, smooth is fast"
 
+okay, back to el drawing boardo.
+
+Let's start with expressions:
+
+Terminals:
+`<x>` means "lex of type x"
+`"x"` means keyword "x"
+`|` means "or"
+`?()` means "optional"
+`*` means "zero or more"
+`name:type` means 'bind the result of parsing `type` to variable `name`
+
+    expression = constant
+               | variable
+               | brackets
+               | operation
+               | function
+
+    constant = <number> | <string>
+
+    brackets = "(" exp:expression ")"
+
+    operation = lhs:expression <operator> rhs:expression
+
+    function = name:<identifier> "(" params:parameters ")"
+
+    parameters = (parameter ",")*
+
+    parameter = ?(name:<identifier> "=") val:expression
+
+So when we have something like:
+
+    a + b
+
+We need some kind of parser map that maps (type) => list(rule, index)
+
+so for this grammar:
+
+    <number> => (constant, 0)
+    "(" => (brackets, 0), (function, 1)
+    "," => (parameters, 0)
+    "=" => (parameter, 0)
+
+and we also have to do this for the higher-level ones, so
+
+    expression => (brackets, 1), (operation, 0), (operation, 2), (parameter, 1)
+
+
+
+
+-------------------------------
 error handling strategy:
 instead of returning an error, return an AST with ['_error': Error(x)]
 err(AST) => returns ast['_error'] or None;
