@@ -30,7 +30,7 @@ test_grammar_spec = """
 def test_grammar_setup():
     log("test_grammar_setup")
 
-    test("grammar_setup", setup_grammar(test_grammar_spec), """
+    test("grammar_setup", Grammar(test_grammar_spec), """
 expression = OneOf(Ref("constant"), Ref("variable"), Ref("brackets"), Ref("operation"), Ref("function"))
 constant = OneOf(Type("number"), Type("string"))
 variable = name:Type("identifier")
@@ -90,9 +90,23 @@ class Ref(Term):
 #--------------------------------------------------------------------------------------------------
 # Grammar
 
+class Rule:
+    def __init__(self, name = "", terms = []):
+        self.name = name
+        self.terms = terms
+    def __str__(self):
+        return self.name + " = " + ", ".join([str(term) for term in self.terms])
+    def __repr__(self): return str(self)
+
+
 class Grammar:
-    def __init__(self):
-        self.rules = {}
+    def __init__(self, grammar_spec: str):
+        self.rules = {}         # name => Rule
+        self.keyword_map = {}   # word => List[List[Rule]]
+        self.type_map = {}      # type => List[List[Rule]]
+        self.rule_map = {}      # rule_name => List[List[Rule]]
+        self.setup(grammar_spec)
+        self.setup_map()
 
     def __str__(self):
         out = ""
@@ -102,23 +116,93 @@ class Grammar:
     
     def __repr__(self): return str(self)
 
-class Rule:
-    def __init__(self, name = "", terms = []):
-        self.name = name
-        self.terms = terms
-    def __str__(self):
-        return self.name + " = " + ", ".join([str(term) for term in self.terms])
-    def __repr__(self): return str(self)
+    # parse a grammar spec (text) 
+    def setup(self, gs: str):
+        lines = gs.split("\n")
+        lines = [line.strip() for line in lines]
+        lines = [line for line in lines if line]
+        for line in lines:
+            rule = parse_rule(line)
+            self.rules[rule.name] = rule
 
-def setup_grammar(gs: str):
-    lines = gs.split("\n")
-    lines = [line.strip() for line in lines]
-    lines = [line for line in lines if line]
-    grammar = Grammar()
-    for line in lines:
-        rule = parse_rule(line)
-        grammar.rules[rule.name] = rule
-    return grammar
+    # find all rules that accept (lex) at position (i_term)
+    def find_terminal_rules(self, lex: Lex, i_term: int) -> List[Rule]:
+        if lex.val in self.keyword_map:
+            if i_term >= len(self.keyword_map[lex.val]): return []
+            return (self.keyword_map[lex.val])[i_term]
+        elif lex.type in self.type_map:
+            if i_term >= len(self.type_map[lex.type]): return []
+            return (self.type_map[lex.type])[i_term]
+        return []
+    
+    # find rules that accept some ast(rule_name) in position i_term
+    def find_nonterminal_rules(self, rule_name: str, i_term: int) -> List[Rule]:
+        if rule_name in self.rule_map:
+            if i_term >= len(self.rule_map[rule_name]): return []
+            return (self.rule_map[rule_name])[i_term]
+        return []
+    
+    # process the grammar to build a fast map from (type/keyword/rule) => (rule, i_term)
+    def setup_map(self):
+        for rule in self.rules.values():
+            for i, term in enumerate(rule.terms):
+                key_terms = self.find_key_terms(term)
+                for key_term in key_terms:
+                    if isinstance(key_term, Keyword):
+                        self.update_list(self.keyword_map, key_term.word, i, rule)
+                    elif isinstance(key_term, Type):
+                        self.update_list(self.type_map, key_term.type_name, i, rule)
+                    elif isinstance(key_term, Ref):
+                        self.update_list(self.rule_map, key_term.name, i, rule)
+        self.add_nodal_rules()
+
+    # where a rule maps to a single nodal rule, transfer its maps
+    def add_nodal_rules(self):
+        for rule_name, rules in self.rule_map.items():
+            # does this map to a nodal rule?
+            if len(rules) == 1 and len(rules[0]) == 1:
+                rule = rules[0][0]
+                if self.is_nodal_rule(rule):
+                    self.rule_map[rule_name] = self.rule_map[rule.name]
+
+    # returns true if the rule is "nodal" - is a OneOf with only one term
+    def is_nodal_rule(self, rule: Rule) -> bool:
+        return len(rule.terms) == 1 and isinstance(rule.terms[0], OneOf)
+    
+    def update_list(self, m: Dict, key: str, index: int, rule: Rule):
+        if key not in m: m[key] = []
+        if len(m[key]) <= index:
+            n_add = (index + 1) - len(m[key])
+            m[key] += [[] for _ in range(n_add)]
+        m[key][index].append(rule)
+
+    def find_key_terms(self, term: Term) -> List[Term]:
+        if isinstance(term, Type): return [term]
+        elif isinstance(term, Keyword): return [term]
+        elif isinstance(term, OneOf): 
+            key_terms = []
+            for t in term.terms:
+                key_terms += self.find_key_terms(t)
+            return key_terms
+        elif isinstance(term, Optional): return [self.find_key_terms(term.term)]
+        elif isinstance(term, ZeroOrMore): 
+            key_terms = self.find_key_terms(term.term)
+            if term.sep: key_terms += [term.sep]
+            return key_terms
+        elif isinstance(term, Ref): return [term]
+        return term
+    
+    def show_map(self, m: Dict):
+        out = ""
+        for key, rules in m.items():
+            out += f"{key} => "
+            for i, rule_list in enumerate(rules):
+                if len(rule_list) > 0:
+                    for rule in rule_list:
+                        full_match = "*" if len(rule.terms) == 1 else ""
+                        out += f"{full_match}{rule.name}:{i} "
+            out += "\n"
+        log(out)
 
 def parse_rule(line: str):
     name, rhs = line.split(" = ")
