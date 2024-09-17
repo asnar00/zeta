@@ -93,6 +93,8 @@ def log_short(obj: Any, maxLen=32) -> str:
     s = str(obj)
     m = re.match(r"<__main__\.(\w+)", s)    # if s matches "<__main__.ClassName", return "ClassName"
     if m: s = m.group(1)
+    m = re.match(r"<(\w+).(\w+) object", s)
+    if m: s = f"{m.group(2)}(..)"
     if len(s) <= maxLen: return s
     return s[:maxLen] + " " + log_grey("...") + " " + s[-12:]
 

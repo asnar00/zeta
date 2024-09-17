@@ -12,23 +12,37 @@ import re
 #--------------------------------------------------------------------------------------------------
 # Grammar: a collection of Rules, each made of cross-referencing Terms
 
-@this_is_the_test
-def test_grammar():
-    log("test_grammar")
-    grammar = """
-        expression = (constant | variable | brackets | operation | function)
-        constant = (<number> | <string>)
-        variable = <identifier>
-        brackets = "(" expr:expression ")"
-        operation = (prefix | infix | postfix)
-        prefix = operator:<operator> expr:expression
-        infix = left:expression operator:<operator> right:expression
-        postfix = expr:expression operator:<operator>
-        function = name:<identifier> "(" args:(argument ,)* ")"
-        argument = (argument_name)? value:expression
-        argument_name = <identifier> "="
-        """
-    test("parse_grammar", parse_grammar(grammar))
+test_grammar_spec = """
+    expression = (constant | variable | brackets | operation | function)
+    constant = (<number> | <string>)
+    variable = name:<identifier>
+    brackets = "(" expr:expression ")"
+    operation = (prefix | infix | postfix)
+    prefix = operator:<operator> expr:expression
+    infix = left:expression operator:<operator> right:expression
+    postfix = expr:expression operator:<operator>
+    function = name:<identifier> "(" args:(argument ,)* ")"
+    argument = (argument_name)? value:expression
+    argument_name = name:<identifier> "="
+    """
+
+@this_is_a_test
+def test_grammar_setup():
+    log("test_grammar_setup")
+
+    test("grammar_setup", setup_grammar(test_grammar_spec), """
+expression = OneOf(Ref("constant"), Ref("variable"), Ref("brackets"), Ref("operation"), Ref("function"))
+constant = OneOf(Type("number"), Type("string"))
+variable = name:Type("identifier")
+brackets = Keyword("("), expr:Ref("expression"), Keyword(")")
+operation = OneOf(Ref("prefix"), Ref("infix"), Ref("postfix"))
+prefix = operator:Type("operator"), expr:Ref("expression")
+infix = left:Ref("expression"), operator:Type("operator"), right:Ref("expression")
+postfix = expr:Ref("expression"), operator:Type("operator")
+function = name:Type("identifier"), Keyword("("), args:ZeroOrMore(Ref("argument"), ","), Keyword(")")
+argument = Optional(Ref("argument_name")), value:Ref("expression")
+argument_name = name:Type("identifier"), Keyword("=")
+         """)
 
 #--------------------------------------------------------------------------------------------------
 # Terms
@@ -36,7 +50,11 @@ def test_grammar():
 class Term:
     def __init__(self):
         self.set_variable = None
+        self.term_in_rules = []
     def var(self): return f"{self.set_variable}:" if self.set_variable else ""
+    def __repr__(self): return str(self)
+    def add_rule(self, rule, iTerm: int):
+        self.term_in_rules.append((rule, iTerm))
     
 class Terminal(Term): pass
 
@@ -48,18 +66,22 @@ class Keyword(Terminal):
     def __init__(self, word): super().__init__(); self.word = word
     def __str__(self): return f"{self.var()}Keyword(\"{self.word}\")"
 
-class Any(Term):
-    def __init__(self, atoms: List[Term]): super().__init__(); self.atoms = atoms
+class OneOf(Term):
+    def __init__(self, terms: List[Term]): super().__init__(); self.terms = terms
     def __str__(self):
-        return f"{self.var()}Any(" + ", ".join([str(term) for term in self.atoms]) + ")"
+        return f"{self.var()}OneOf(" + ", ".join([str(term) for term in self.terms]) + ")"
 
 class Optional(Term):
     def __init__(self, term: Term): super().__init__(); self.term = term
     def __str__(self): return f"{self.var()}Optional({self.term})"
 
 class ZeroOrMore(Term):
-    def __init__(self, term: Term, sep: str=""): super().__init__(); self.term = term; self.sep = sep
-    def __str__(self): return f"{self.var()}ZeroOrMore({self.term}, \"{self.sep}\")"
+    def __init__(self, term: Term, sep: str=""): 
+        super().__init__()
+        self.term = term; self.sep = Keyword(sep) if sep else None
+    def __str__(self): 
+        sep = f", \"{self.sep.word}\"" if self.sep else ""
+        return f"{self.var()}ZeroOrMore({self.term}{sep})"
 
 class Ref(Term):
     def __init__(self, name): super().__init__(); self.name = name
@@ -88,7 +110,7 @@ class Rule:
         return self.name + " = " + ", ".join([str(term) for term in self.terms])
     def __repr__(self): return str(self)
 
-def parse_grammar(gs: str):
+def setup_grammar(gs: str):
     lines = gs.split("\n")
     lines = [line.strip() for line in lines]
     lines = [line for line in lines if line]
@@ -99,7 +121,6 @@ def parse_grammar(gs: str):
     return grammar
 
 def parse_rule(line: str):
-    log("parse_rule", line)
     name, rhs = line.split(" = ")
     term_strs = split_terms(rhs.strip())
     terms = [parse_term(term_str) for term_str in term_strs]
@@ -171,7 +192,7 @@ def try_parse_any(term_str: str) -> Term:
     if m:
         options = m.group(1).split(" | ")
         log("options:", options)
-        return Any([parse_term(option) for option in options])
+        return OneOf([parse_term(option) for option in options])
     
 # match (t)?
 def try_parse_optional(term_str: str) -> Term:
