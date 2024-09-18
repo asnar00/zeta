@@ -533,6 +533,7 @@ def try_parse_rule_name(term_str: str) -> Term:
     
 #--------------------------------------------------------------------------------------------------
 # Partial represents a partially matched rule
+
 class Partial:
     def __init__(self, rule: Rule, first_item):
         self.rule = rule        # rule that we're trying to match
@@ -549,7 +550,7 @@ class Partial:
         if self.is_matched(): ms = log_green(ms)
         return ms
     def __repr__(self): return str(self)
-    def get_ast(self): return { self.rule.name: self.ast }
+    def get_ast(self): return { f"_{self.rule.name}": self.ast }
     def set_item_at(self, i_term: int, item: Union[Lex, 'Partial']):
         term = self.rule.terms[i_term]
         if isinstance(item, Partial): item = item.get_ast()
@@ -707,10 +708,10 @@ def test_parser():
     log("test_parser")
     p = Parser(test_grammar_spec)
     log("--------------------------------------------------------------------------")
-    test("parse_variable", p.parse("a"), """{'variable': {'name': a}}""")
+    test("parse_variable", p.parse("a"), """{'_variable': {'name': a}}""")
     log("--------------------------------------------------------------------------")
-    test("parse_postfix", p.parse("a!"), """{'postfix': {'expr': {'variable': {'name': a}}, 'operator': !}}""")
+    test("parse_postfix", p.parse("a!"), """{'_postfix': {'expr': {'_variable': {'name': a}}, 'operator': !}}""")
     log("--------------------------------------------------------------------------")
-    test("parse_infix", p.parse("a + b"), """{'infix': {'left': {'variable': {'name': a}}, 'operator': +, 'right': {'variable': {'name': b}}}}""")
+    test("parse_infix", p.parse("a + b"), """{'_infix': {'left': {'_variable': {'name': a}}, 'operator': +, 'right': {'_variable': {'name': b}}}}""")
     log("--------------------------------------------------------------------------")
-    test("parse_argument", p.parse("a=2"), """{'argument': {'variable': {'name': a}, 'value': {'constant': 2}}}""")
+    test("parse_argument", p.parse("a=2"), """{'_argument': {'_variable': {'name': a}, 'value': {'_constant': 2}}}""")
