@@ -604,9 +604,21 @@ class PartialStack:
         return out.strip() + "\n"
     def find_oldest_matched(self) -> Partial:
         for level in self.levels:
-            for pm in level:
-                if pm.is_matched(): return pm
+            best= self.find_best_match(level)
+            if best: return best
         return None
+    def find_best_match(self, level: List[Partial]) -> Partial:
+        best_pm = None
+        best_n_holes = 10000
+        for pm in level:
+            if pm.is_matched():
+                n_holes = 0
+                for i, item in enumerate(pm.matched):
+                    if not item or item == []: n_holes += 1
+                if n_holes < best_n_holes:
+                    best_pm = pm
+                    best_n_holes = n_holes
+        return best_pm
 
 #-------------------------------------------------------------------------------------------------
 # Parser does the work
@@ -730,5 +742,5 @@ def test_parser():
     log("--------------------------------------------------------------------------")
     test("parse_infix", p.parse("a + b"), """{'_infix': {'left': {'_variable': {'name': a}}, 'operator': +, 'right': {'_variable': {'name': b}}}}""")
     log("--------------------------------------------------------------------------")
-    test("parse_argument", p.parse("a=2"), """{'_argument': {'arg_name': a, 'value': {'_constant': 2}}}""")
-    #test("parse", p.parse("func(2)"))
+    test("parse_argument", p.parse("a=2"), """{'_argument': {'name': {'_arg_name': a}, 'value': {'_constant': 2}}}""")
+    
