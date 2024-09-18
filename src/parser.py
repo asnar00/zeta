@@ -233,7 +233,7 @@ def lexer(source: Source) -> List[Lex]:
 
 test_grammar_spec = """
     expression = (constant | variable | brackets | operation | function)
-    constant = (<number> | <string>)
+    constant = value:(<number> | <string>)
     variable = name:<identifier>
     brackets = "(" expr:expression ")"
     operation = (prefix | infix | postfix)
@@ -251,7 +251,7 @@ def test_grammar_setup():
 
     test("grammar_setup", Grammar(test_grammar_spec), """
 expression = OneOf(Ref("constant"), Ref("variable"), Ref("brackets"), Ref("operation"), Ref("function"))
-constant = OneOf(Type("number"), Type("string"))
+constant = value:OneOf(Type("number"), Type("string"))
 variable = name:Type("identifier")
 brackets = Keyword("("), expr:Ref("expression"), Keyword(")")
 operation = OneOf(Ref("prefix"), Ref("infix"), Ref("postfix"))
@@ -550,8 +550,9 @@ class Partial:
         return ms
     def __repr__(self): return str(self)
     def get_ast(self): return { self.rule.name: self.ast }
-    def set_item_at(self, i_term: int, item: Union[Lex, Dict]):
+    def set_item_at(self, i_term: int, item: Union[Lex, 'Partial']):
         term = self.rule.terms[i_term]
+        if isinstance(item, Partial): item = item.get_ast()
         if isinstance(term, ZeroOrMore):
             self.matched[i_term].append(item)
         else:
@@ -658,18 +659,21 @@ class Parser:
         for pm in stack.levels[level]:
             if not pm.is_matched(): ppms.append(pm)
             else:
-                rules = self.grammar.find_rules(pm.rule, 0)
-                if len(rules) > 0:
-                    for rule in rules: ppms.append(Partial(rule, pm.get_ast()))
+                new_pms = self.find_new_pms(pm)
+                if len(new_pms) > 0:
+                    ppms += new_pms
                 else: ppms.append(pm)
         stack.replace(level, ppms)
 
-    # find new partials for a lexeme
-    def find_new_pms(self, lex: Lex) -> List[Partial]:
+    # find new partials for a lexeme or partial
+    def find_new_pms(self, lex: Lex|Partial) -> List[Partial]:
         pms = []
-        rules = self.grammar.find_rules(lex, 0)
-        for rule in rules:
-            pms.append(Partial(rule, lex))
+        to_find = lex if isinstance(lex, Lex) else lex.rule
+        rules = self.grammar.find_rules(to_find, 0)
+        for rule in rules: pms.append(Partial(rule, lex))
+        rules_1 = self.grammar.find_rules(to_find, 1)
+        rules_1 = [rule for rule in rules_1 if rule.terms[0].is_optional()]
+        for rule in rules_1: pms.append(Partial(rule, lex))
         return pms
     
     # show partials
@@ -705,3 +709,5 @@ def test_parser():
     test("parse_postfix", p.parse("a!"), """{'postfix': {'expr': {'variable': {'name': a}}, 'operator': !}}""")
     log("--------------------------------------------------------------------------")
     test("parse_infix", p.parse("a + b"), """{'infix': {'left': {'variable': {'name': a}}, 'operator': +, 'right': {'variable': {'name': b}}}}""")
+    log("--------------------------------------------------------------------------")
+    test("parse_argument", p.parse("a=2"), """{'argument': {'value': {'constant': {'value': 2}}}}""")
