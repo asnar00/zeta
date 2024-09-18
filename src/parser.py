@@ -233,7 +233,7 @@ def lexer(source: Source) -> List[Lex]:
 
 test_grammar_spec = """
     expression = (constant | variable | brackets | operation | function)
-    constant = value:(<number> | <string>)
+    constant = (<number> | <string>)
     variable = name:<identifier>
     brackets = "(" expr:expression ")"
     operation = (prefix | infix | postfix)
@@ -555,11 +555,14 @@ class Partial:
         if isinstance(item, Partial): item = item.get_ast()
         if isinstance(term, ZeroOrMore):
             self.matched[i_term].append(item)
+            self.i_term = i_term
         else:
             self.matched[i_term] = item
-            self.i_term += 1
+            self.i_term = i_term + 1
         if term.variable: 
             self.ast[term.variable] = self.matched[i_term]
+        else:
+            self.ast = self.matched[i_term]
     def is_matched(self) -> bool:
         return (self.n_matched() == len(self.rule.terms))
     def n_matched(self) -> int:
@@ -710,4 +713,4 @@ def test_parser():
     log("--------------------------------------------------------------------------")
     test("parse_infix", p.parse("a + b"), """{'infix': {'left': {'variable': {'name': a}}, 'operator': +, 'right': {'variable': {'name': b}}}}""")
     log("--------------------------------------------------------------------------")
-    test("parse_argument", p.parse("a=2"), """{'argument': {'value': {'constant': {'value': 2}}}}""")
+    test("parse_argument", p.parse("a=2"), """{'argument': {'variable': {'name': a}, 'value': {'constant': 2}}}""")
