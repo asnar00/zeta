@@ -241,8 +241,8 @@ test_grammar_spec = """
     infix = left:expression operator:<operator> right:expression
     postfix = expr:expression operator:<operator>
     function = name:<identifier> "(" args:(argument ,)* ")"
-    argument = (arg_name)? value:expression
-    arg_name = name:<identifier> "="
+    argument = name:(arg_name)? value:expression
+    arg_name = <identifier> "="
     """
 
 @this_is_a_test
@@ -259,8 +259,8 @@ prefix = operator:Type("operator"), expr:Ref("expression")
 infix = left:Ref("expression"), operator:Type("operator"), right:Ref("expression")
 postfix = expr:Ref("expression"), operator:Type("operator")
 function = name:Type("identifier"), Keyword("("), args:ZeroOrMore(Ref("argument"), ","), Keyword(")")
-argument = Optional(Ref("arg_name")), value:Ref("expression")
-arg_name = name:Type("identifier"), Keyword("=")
+argument = Optional(name:Ref("arg_name")), value:Ref("expression")
+arg_name = Type("identifier"), Keyword("=")
          """)
 
 #--------------------------------------------------------------------------------------------------
@@ -313,6 +313,14 @@ class Rule:
     def __str__(self):
         return self.name + " = " + ", ".join([str(term) for term in self.terms])
     def __repr__(self): return str(self)
+    def is_singular(self): # returns i_term if the rule has only one unnamed non-keyword term
+        n_unnamed = 0
+        i_term = None
+        for i, term in enumerate(self.terms):
+            if (not term.variable) and (not isinstance(term, Keyword)): 
+                i_term = i
+                n_unnamed += 1
+        return i_term if n_unnamed == 1 else None
 
 class Grammar:
     def __init__(self, grammar_spec: str):
@@ -322,6 +330,7 @@ class Grammar:
         self.rule_map = {}      # rule_name => List[List[Rule]]
         self.setup(grammar_spec)
         self.setup_map()
+        self.show_map(self.rule_map)
 
     def __str__(self):
         out = ""
@@ -407,7 +416,7 @@ class Grammar:
             for t in term.terms:
                 key_terms += self.find_key_terms(t)
             return key_terms
-        elif isinstance(term, Optional): return [self.find_key_terms(term.term)]
+        elif isinstance(term, Optional): return self.find_key_terms(term.term)
         elif isinstance(term, ZeroOrMore): 
             key_terms = self.find_key_terms(term.term)
             if term.sep: key_terms += [term.sep]
@@ -535,22 +544,29 @@ def try_parse_rule_name(term_str: str) -> Term:
 # Partial represents a partially matched rule
 
 class Partial:
-    def __init__(self, rule: Rule, first_item):
+    def __init__(self, rule: Rule, i_term: int, first_item): # first_item is either a Lex or a Partial
         self.rule = rule        # rule that we're trying to match
         self.matched = []       # list of matched terms
-        self.ast = {}           # the ast we're building
         for term in rule.terms:
             if isinstance(term, ZeroOrMore): self.matched.append([])
             else: self.matched.append(None)
-        self.i_term = 0
-        self.set_item_at(0, first_item)
+        self.i_term = i_term
+        self.set_item_at(i_term, first_item)
     def __str__(self):
-        ast = str(self.get_ast()).replace("'", "")
-        ms = f"{self.i_term}/{len(self.rule.terms)} {ast}"
+        ms = f"{self.i_term}/{len(self.rule.terms)} {self.rule.name}"
         if self.is_matched(): ms = log_green(ms)
+        ms += f" {log_grey(str(self.matched).replace("'",""))}"
         return ms
     def __repr__(self): return str(self)
-    def get_ast(self): return { f"_{self.rule.name}": self.ast }
+    def get_ast(self): 
+        i_singular_term = self.rule.is_singular()
+        if i_singular_term != None: val = self.matched[i_singular_term]
+        else:
+            val = {}
+            for i, term in enumerate(self.rule.terms):
+                if term.variable:
+                    val[term.variable] = self.matched[i]
+        return { "_" + self.rule.name: val }
     def set_item_at(self, i_term: int, item: Union[Lex, 'Partial']):
         term = self.rule.terms[i_term]
         if isinstance(item, Partial): item = item.get_ast()
@@ -560,10 +576,6 @@ class Partial:
         else:
             self.matched[i_term] = item
             self.i_term = i_term + 1
-        if term.variable: 
-            self.ast[term.variable] = self.matched[i_term]
-        else:
-            self.ast = self.matched[i_term]
     def is_matched(self) -> bool:
         return (self.n_matched() == len(self.rule.terms))
     def n_matched(self) -> int:
@@ -612,10 +624,15 @@ class Parser:
 
         for i, lex in enumerate(ls):
             log(f"\n{i}: {lex.type} '{lex.val}'")
-            self.promote_matched(stack, -1)
+
+            self.promote_matched(stack)
+
             self.try_match(stack, lex)
+
             new_pms = self.find_new_pms(lex)
             stack.push(new_pms)
+
+
             self.try_reduce(stack)
             log(stack)
 
@@ -656,28 +673,27 @@ class Parser:
         return ppms
 
     # promote any matched partials to a list of partials
-    def promote_matched(self, stack: PartialStack, level: int):
-        if level < 0: level += len(stack.levels)
-        if level < 0 or level >= len(stack.levels): return
-        ppms = []
-        for pm in stack.levels[level]:
-            if not pm.is_matched(): ppms.append(pm)
-            else:
-                new_pms = self.find_new_pms(pm)
-                if len(new_pms) > 0:
-                    ppms += new_pms
-                else: ppms.append(pm)
-        stack.replace(level, ppms)
+    def promote_matched(self, stack: PartialStack):
+        for level in range(len(stack.levels)-1, -1, -1):
+            ppms = []
+            for pm in stack.levels[level]:
+                if not pm.is_matched(): ppms.append(pm)
+                else:
+                    new_pms = self.find_new_pms(pm)
+                    if len(new_pms) > 0:
+                        ppms += new_pms
+                    else: ppms.append(pm)
+            stack.replace(level, ppms)
 
     # find new partials for a lexeme or partial
-    def find_new_pms(self, lex: Lex|Partial) -> List[Partial]:
+    def find_new_pms(self, item: Lex|Partial) -> List[Partial]:
         pms = []
-        to_find = lex if isinstance(lex, Lex) else lex.rule
+        to_find = item if isinstance(item, Lex) else item.rule
         rules = self.grammar.find_rules(to_find, 0)
-        for rule in rules: pms.append(Partial(rule, lex))
+        for rule in rules: pms.append(Partial(rule, 0, item))
         rules_1 = self.grammar.find_rules(to_find, 1)
         rules_1 = [rule for rule in rules_1 if rule.terms[0].is_optional()]
-        for rule in rules_1: pms.append(Partial(rule, lex))
+        for rule in rules_1: pms.append(Partial(rule, 1, item))
         return pms
     
     # show partials
@@ -692,7 +708,7 @@ class Parser:
         term = pm.rule.terms[pm.i_term]
         if pm.i_term < (len(pm.rule.terms) - 1) and \
             term.is_optional():
-            if self.can_match_at(self.i_term + 1, item, pm):
+            if self.can_match_at(pm.i_term + 1, item, pm):
                 return pm.i_term + 1
         return None
     
@@ -714,4 +730,5 @@ def test_parser():
     log("--------------------------------------------------------------------------")
     test("parse_infix", p.parse("a + b"), """{'_infix': {'left': {'_variable': {'name': a}}, 'operator': +, 'right': {'_variable': {'name': b}}}}""")
     log("--------------------------------------------------------------------------")
-    test("parse_argument", p.parse("a=2"), """{'_argument': {'_variable': {'name': a}, 'value': {'_constant': 2}}}""")
+    test("parse_argument", p.parse("a=2"), """{'_argument': {'arg_name': a, 'value': {'_constant': 2}}}""")
+    #test("parse", p.parse("func(2)"))
