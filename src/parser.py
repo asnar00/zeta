@@ -330,7 +330,6 @@ class Grammar:
         self.rule_map = {}      # rule_name => List[List[Rule]]
         self.setup(grammar_spec)
         self.setup_map()
-        self.show_map(self.rule_map)
 
     def __str__(self):
         out = ""
@@ -666,7 +665,6 @@ class Parser:
                 i_term = self.can_match(matched_pm.rule, pm)
                 if i_term:
                     pm.set_item_at(i_term, matched_pm.get_ast())
-            
     
     # run through the stack and try and match the lexeme to each partial
     def try_match(self, stack: PartialStack, item):
