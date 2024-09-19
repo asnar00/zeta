@@ -248,7 +248,6 @@ test_grammar_spec = """
 @this_is_a_test
 def test_grammar_setup():
     log("test_grammar_setup")
-
     test("grammar_setup", Grammar(test_grammar_spec), """
 expression = OneOf(Ref("constant"), Ref("variable"), Ref("brackets"), Ref("operation"), Ref("function"))
 constant = OneOf(Type("number"), Type("string"))
@@ -590,10 +589,6 @@ class Partial:
 class PartialStack:
     def __init__(self):
         self.levels = []
-    def push(self, pms: List[Partial]):
-        self.levels.append(pms)
-    def replace(self, level, pms: List[Partial]):
-        self.levels[level] = pms
     def __str__(self):
         out = "stack:\n"
         for i, level in enumerate(self.levels):
@@ -686,12 +681,12 @@ class Parser:
                     if len(new_pms) > 0:
                         ppms += new_pms
                     else: ppms.append(pm)
-            stack.replace(level, ppms)
+            stack.levels[level] = ppms
 
     # find new pms from lex, add to stack if any
     def create_new_from_lex(self, stack: PartialStack, lex: Lex):
         new_pms = self.find_new_pms(lex)
-        if len(new_pms) > 0: stack.push(new_pms)
+        if len(new_pms) > 0: stack.levels.append(new_pms)
 
     # find new partials for a lexeme or partial
     def find_new_pms(self, item: Lex|Partial) -> List[Partial]:
