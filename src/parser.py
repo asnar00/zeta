@@ -615,14 +615,41 @@ class Parser:
         for i, lex in enumerate(ls):
             #log(f"{i}: {lex.type} '{lex.val}'")
 
+            self.evict(stack, lex)
             self.promote_matched(stack)
             self.try_match(stack, lex)
             self.create_new_from_lex(stack, lex)
             self.try_reduce(stack)
-            #log(stack)
 
         result = self.find_oldest_matched(stack)
         return result.get_ast() if result else {}
+    
+    # evict all items in the stack expecting a lex that don't match the new one
+    def evict(self, stack: PartialStack, lex: Lex):
+        for i, level in enumerate(stack.levels):
+            ppms = []
+            for pm in level:
+                if self.should_evict(pm, lex):
+                    continue
+                else: ppms.append(pm)
+            stack.levels[i] = ppms
+        stack.levels = [level for level in stack.levels if len(level) > 0]
+
+    # should we evict this partial? yes if it's expecting a lex that doesn't match
+    def should_evict(self, pm: Partial, lex: Lex) -> bool:
+        if pm.i_term >= len(pm.rule.terms): return False
+        result= self.should_evict_at(pm, lex, pm.i_term)
+        if not result and pm.rule.terms[pm.i_term].is_optional() and pm.i_term < len(pm.rule.terms) - 1:
+            result = self.should_evict_at(pm, lex, pm.i_term+1)
+        return result
+    
+    # true if (i_term) expects a lex, and it doesn't match
+    def should_evict_at(self, pm: Partial, lex: Lex, i_term: int) -> bool:
+        term = pm.rule.terms[i_term]
+        if not (isinstance(term, Keyword) or isinstance(term, Type)): return False            
+        i_term_match = self.can_match_at(i_term, lex, pm)
+        if i_term_match == None: return True
+        return False
     
     # start from the first level and work towards the end
     def find_oldest_matched(self, stack) -> Partial:
@@ -722,7 +749,7 @@ class Parser:
 
 #--------------------------------------------------------------------------------------------------
 
-@this_is_a_test
+@this_is_the_test
 def test_parser():
     log("test_parser")
     p = Parser(test_grammar_spec)

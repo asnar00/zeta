@@ -2,6 +2,9 @@
 # scribblez
 "slow is smooth, smooth is fast"
 
+let's look at eviction
+------
+
 doing pretty well: a good methodology is to start with the simplest test, then gradually make them more complex. test-first method! 
 making progress gradually. 
 ---------------------------------------------
