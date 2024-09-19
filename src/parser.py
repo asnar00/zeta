@@ -251,7 +251,7 @@ def test_grammar_setup():
 
     test("grammar_setup", Grammar(test_grammar_spec), """
 expression = OneOf(Ref("constant"), Ref("variable"), Ref("brackets"), Ref("operation"), Ref("function"))
-constant = value:OneOf(Type("number"), Type("string"))
+constant = OneOf(Type("number"), Type("string"))
 variable = name:Type("identifier")
 brackets = Keyword("("), expr:Ref("expression"), Keyword(")")
 operation = OneOf(Ref("prefix"), Ref("infix"), Ref("postfix"))
@@ -259,7 +259,7 @@ prefix = operator:Type("operator"), expr:Ref("expression")
 infix = left:Ref("expression"), operator:Type("operator"), right:Ref("expression")
 postfix = expr:Ref("expression"), operator:Type("operator")
 function = name:Type("identifier"), Keyword("("), args:ZeroOrMore(Ref("argument"), ","), Keyword(")")
-argument = Optional(name:Ref("arg_name")), value:Ref("expression")
+argument = name:Optional(Ref("arg_name")), value:Ref("expression")
 arg_name = Type("identifier"), Keyword("=")
          """)
 
@@ -310,6 +310,7 @@ class Rule:
     def __init__(self, name = "", terms : List[Term] = []):
         self.name = name
         self.terms = terms
+        self.i_singular = self.is_singular()
     def __str__(self):
         return self.name + " = " + ", ".join([str(term) for term in self.terms])
     def __repr__(self): return str(self)
@@ -558,7 +559,7 @@ class Partial:
         return ms
     def __repr__(self): return str(self)
     def get_ast(self): 
-        i_singular_term = self.rule.is_singular()
+        i_singular_term = self.rule.i_singular
         if i_singular_term != None: val = self.matched[i_singular_term]
         else:
             val = {}
@@ -601,11 +602,41 @@ class PartialStack:
                 out += f"{pm}\n     "
             out += "\n"
         return out.strip() + "\n"
-    def find_oldest_matched(self) -> Partial:
-        for level in self.levels:
+
+
+#-------------------------------------------------------------------------------------------------
+# Parser does the work
+
+class Parser:
+    def __init__(self, grammar_spec):
+        self.grammar = Grammar(grammar_spec)
+
+    # parse: read lexemes, return an AST
+    def parse(self, code: str) -> Dict:
+        ls = lexer(Source(code = code))
+        #log("parsing", ls)
+        stack = PartialStack()
+
+        for i, lex in enumerate(ls):
+            #log(f"{i}: {lex.type} '{lex.val}'")
+
+            self.promote_matched(stack)
+            self.try_match(stack, lex)
+            self.create_new_from_lex(stack, lex)
+            self.try_reduce(stack)
+            #log(stack)
+
+        result = self.find_oldest_matched(stack)
+        return result.get_ast() if result else {}
+    
+    # start from the first level and work towards the end
+    def find_oldest_matched(self, stack) -> Partial:
+        for level in stack.levels:
             best= self.find_best_match(level)
             if best: return best
         return None
+    
+    # find the match with the least holes
     def find_best_match(self, level: List[Partial]) -> Partial:
         best_pm = None
         best_n_holes = 10000
@@ -618,37 +649,6 @@ class PartialStack:
                     best_pm = pm
                     best_n_holes = n_holes
         return best_pm
-
-#-------------------------------------------------------------------------------------------------
-# Parser does the work
-
-class Parser:
-    def __init__(self, grammar_spec):
-        self.grammar = Grammar(grammar_spec)
-
-    # parse: read lexemes, return an AST
-    def parse(self, code: str) -> Dict:
-
-        ls = lexer(Source(code = code))
-        log("parsing", ls)
-        stack = PartialStack()
-
-        for i, lex in enumerate(ls):
-            log(f"\n{i}: {lex.type} '{lex.val}'")
-
-            self.promote_matched(stack)
-
-            self.try_match(stack, lex)
-
-            new_pms = self.find_new_pms(lex)
-            stack.push(new_pms)
-
-
-            self.try_reduce(stack)
-            log(stack)
-
-        result = stack.find_oldest_matched()
-        return result.get_ast() if result else {}
     
     # try and reduce the stack: for each match, try and match it further back
     def try_reduce(self, stack: PartialStack):
@@ -661,28 +661,21 @@ class Parser:
     def try_reduce_level(self, stack: PartialStack, start_level: int, matched_pm: Partial):
         if start_level < 0: return
         for level in range(start_level, -1, -1):
-            for pm in stack.levels[level]:
-                i_term = self.can_match(matched_pm.rule, pm)
-                if i_term:
-                    pm.set_item_at(i_term, matched_pm.get_ast())
+            self.try_match_pms(stack.levels[level], matched_pm)
     
     # run through the stack and try and match the lexeme to each partial
     def try_match(self, stack: PartialStack, item):
         for level in range(len(stack.levels)):
-            pms = stack.levels[level]
-            stack.levels[level] = self.try_match_pms(pms, item)
+            self.try_match_pms(stack.levels[level], item)
 
-    # try and match a lexeme to a list of partials
-    def try_match_pms(self, pms: List[Partial], item) -> List[Partial]:
-        ppms = []
+    # try and match a lexeme/partial to a list of partials
+    def try_match_pms(self, pms: List[Partial], item):
         for pm in pms:
             i_term = self.can_match(item, pm)
             if i_term:
                 pm.set_item_at(i_term, item)
-            ppms.append(pm)
-        return ppms
 
-    # promote any matched partials to a list of partials
+    # promote: replace a matched partial with a list of partials that start with it
     def promote_matched(self, stack: PartialStack):
         for level in range(len(stack.levels)-1, -1, -1):
             ppms = []
@@ -694,6 +687,11 @@ class Parser:
                         ppms += new_pms
                     else: ppms.append(pm)
             stack.replace(level, ppms)
+
+    # find new pms from lex, add to stack if any
+    def create_new_from_lex(self, stack: PartialStack, lex: Lex):
+        new_pms = self.find_new_pms(lex)
+        if len(new_pms) > 0: stack.push(new_pms)
 
     # find new partials for a lexeme or partial
     def find_new_pms(self, item: Lex|Partial) -> List[Partial]:
@@ -712,12 +710,13 @@ class Parser:
         for pm in pms:
             log("   ", pm)
 
-    def can_match(self, item: Union[Lex|Rule], pm) -> int: # if can match, return term index
+     # if can match, return term index
+    def can_match(self, item: Union[Lex|Partial], pm) -> int:
+        if isinstance(item, Partial): item = item.rule
         if pm.i_term >= len(pm.rule.terms): return None
         if self.can_match_at(pm.i_term, item, pm): return pm.i_term
         term = pm.rule.terms[pm.i_term]
-        if pm.i_term < (len(pm.rule.terms) - 1) and \
-            term.is_optional():
+        if pm.i_term < (len(pm.rule.terms) - 1) and term.is_optional():
             if self.can_match_at(pm.i_term + 1, item, pm):
                 return pm.i_term + 1
         return None
@@ -726,19 +725,18 @@ class Parser:
         rules = self.grammar.find_rules(item, i_term)
         return pm.rule in rules
 
-
 #--------------------------------------------------------------------------------------------------
 
-@this_is_the_test
+@this_is_a_test
 def test_parser():
     log("test_parser")
     p = Parser(test_grammar_spec)
-    log("--------------------------------------------------------------------------")
+    #log("--------------------------------------------------------------------------")
     test("parse_variable", p.parse("a"), """{'_variable': {'name': a}}""")
-    log("--------------------------------------------------------------------------")
+    #log("--------------------------------------------------------------------------")
     test("parse_postfix", p.parse("a!"), """{'_postfix': {'expr': {'_variable': {'name': a}}, 'operator': !}}""")
-    log("--------------------------------------------------------------------------")
+    #log("--------------------------------------------------------------------------")
     test("parse_infix", p.parse("a + b"), """{'_infix': {'left': {'_variable': {'name': a}}, 'operator': +, 'right': {'_variable': {'name': b}}}}""")
-    log("--------------------------------------------------------------------------")
+    #log("--------------------------------------------------------------------------")
     test("parse_argument", p.parse("a=2"), """{'_argument': {'name': {'_arg_name': a}, 'value': {'_constant': 2}}}""")
     
