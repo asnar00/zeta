@@ -614,9 +614,9 @@ class Parser:
 
         for i, lex in enumerate(ls):
             #log(f"{i}: {lex.type} '{lex.val}'")
-
             self.evict(stack, lex)
             self.promote_matched(stack)
+            self.try_reduce(stack)
             self.try_match(stack, lex)
             self.create_new_from_lex(stack, lex)
             self.try_reduce(stack)
@@ -761,4 +761,5 @@ def test_parser():
     test("parse_infix", p.parse("a + b"), """{'_infix': {'left': {'_variable': {'name': a}}, 'operator': +, 'right': {'_variable': {'name': b}}}}""")
     #log("--------------------------------------------------------------------------")
     test("parse_argument", p.parse("a=2"), """{'_argument': {'name': {'_arg_name': a}, 'value': {'_constant': 2}}}""")
-    
+    #log("--------------------------------------------------------------------------")
+    test("parse_function", p.parse("hello(person)"), """{'_function': {'name': hello, 'args': [{'_argument': {'name': None, 'value': {'_variable': {'name': person}}}}]}}""")
