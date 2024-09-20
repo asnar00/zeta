@@ -60,6 +60,7 @@ class Source:
         elif self.code and not self.text: self.setup_map()
 
     def extract_code(self):
+        log("extracting code")
         lines = self.text.split('\n')
         if lines[-1] == '': lines.pop()
         self.map = [] # line number to line in original text
@@ -609,17 +610,18 @@ class Parser:
     # parse: read lexemes, return an AST
     def parse(self, code: str) -> Dict:
         ls = lexer(Source(code = code))
-        #log("parsing", ls)
+        log("parsing", ls)
         stack = PartialStack()
 
         for i, lex in enumerate(ls):
-            #log(f"{i}: {lex.type} '{lex.val}'")
+            log(f"{i}: {lex.type} '{lex.val}'")
             self.evict(stack, lex)
             self.promote_matched(stack)
             self.try_reduce(stack)
             self.try_match(stack, lex)
             self.create_new_from_lex(stack, lex)
             self.try_reduce(stack)
+            log("stack", stack)
 
         result = self.find_oldest_matched(stack)
         return result.get_ast() if result else {}
@@ -749,17 +751,15 @@ class Parser:
 
 #--------------------------------------------------------------------------------------------------
 
-@this_is_the_test
+@this_is_a_test
 def test_parser():
     log("test_parser")
     p = Parser(test_grammar_spec)
-    #log("--------------------------------------------------------------------------")
+    test("parse_constant", p.parse("1.0"), """{'_constant': 1.0}""")
     test("parse_variable", p.parse("a"), """{'_variable': {'name': a}}""")
-    #log("--------------------------------------------------------------------------")
+    test("parse_brackets", p.parse("(a)"), """{'_brackets': {'expr': {'_variable': {'name': a}}}}""")
     test("parse_postfix", p.parse("a!"), """{'_postfix': {'expr': {'_variable': {'name': a}}, 'operator': !}}""")
-    #log("--------------------------------------------------------------------------")
     test("parse_infix", p.parse("a + b"), """{'_infix': {'left': {'_variable': {'name': a}}, 'operator': +, 'right': {'_variable': {'name': b}}}}""")
-    #log("--------------------------------------------------------------------------")
     test("parse_argument", p.parse("a=2"), """{'_argument': {'name': {'_arg_name': a}, 'value': {'_constant': 2}}}""")
-    #log("--------------------------------------------------------------------------")
     test("parse_function", p.parse("hello(person)"), """{'_function': {'name': hello, 'args': [{'_argument': {'name': None, 'value': {'_variable': {'name': person}}}}]}}""")
+   

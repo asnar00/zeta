@@ -2,7 +2,12 @@
 # scribblez
 "slow is smooth, smooth is fast"
 
-let's look at eviction
+Improved test workflow:
+logging sends output to a string (s_log)
+if a test passes, we chuck away the log
+if it fails, we print the current contents of the log and clear it.
+
+
 ------
 
 doing pretty well: a good methodology is to start with the simplest test, then gradually make them more complex. test-first method! 

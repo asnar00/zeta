@@ -14,51 +14,70 @@ import sys
 # logging
 
 # set if logging is enabled
-s_log: bool = False
+s_log_enabled: bool = True
+
+# actual log output
+s_log = ""
 
 # returns True if logging is enabled
 def log_enabled() -> bool:
-    return s_log
+    return s_log_enabled
 
 # log: prints stuff if logging is enabled
 def log(*args):
-    if s_log:
-        print(*args)
+    if s_log_enabled:
+        # print args to a string instead of the output
+        s = ""
+        for a in args:
+            s += str(a) + " "
+        # add it to the global s_log string
+        global s_log
+        s_log += s + "\n"
+
+# clear
+def log_clear():
+    global s_log
+    s_log = ""
+
+# flush: print, then clear
+def log_flush():
+    global s_log
+    print(s_log)
+    s_log = ""
 
 # log_enable is a decorator that turns on logging within a function
 def log_enable(fn):
     def wrapper(*args, **kwargs):
-        global s_log
-        old_log = s_log
-        s_log = True
+        global s_log_enabled
+        old_log = s_log_enabled
+        s_log_enabled = True
         result = fn(*args, **kwargs)
-        s_log = old_log
+        s_log_enabled = old_log
         return result
     return wrapper
 
 # log_disable is a decorator that turns off logging within a function
 def log_disable(fn):
     def wrapper(*args, **kwargs):
-        global s_log
-        old_log = s_log
-        s_log = False
+        global s_log_enabled
+        old_log = s_log_enabled
+        s_log_enabled = False
         result = fn(*args, **kwargs)
-        s_log = old_log
+        s_log_enabled = old_log
         return result
     return wrapper
 
 # turns logging on or off, returns previous logging state
 def log_set(on: bool) -> bool:
-    global s_log
-    old_log = s_log
-    s_log = on
+    global s_log_enabled
+    old_log = s_log_enabled
+    s_log_enabled = on
     return old_log
 
-# clear the log : handy because we're constantly re-running
-def log_clear():
+# startup: clears the log, call once at startup
+def log_startup():
     os.system('clear')  # For Linux/macOS
 
-log_clear()
 # returns a grey-coloured foreground, black background
 def log_grey(str) -> str:
     return f'\033[30;1m{str}\033[0m'
@@ -106,7 +125,7 @@ s_active_test = None
 s_tests_verbose = False
 s_n_tests_failed = 0
 
-# test_assert checks if two strings are equal, and prints a message if they're not
+# test_assert checks if two strings are equal, and flushes the log if they're not
 def test(name, a, b: str = None):
     ctx = caller()
     sa = log_strip(str(a))
@@ -117,16 +136,20 @@ def test(name, a, b: str = None):
     sb = log_strip(b)
     if sb.startswith("\n"): sb = sb[1:]
     if sa == sb:
+        log_clear()
         if s_tests_verbose: print(f"{log_grey(ctx)} {log_green("passed")} {name}")
     else:
         global s_n_tests_failed
         s_n_tests_failed += 1
         print(f"{log_grey(ctx)} {log_red("failed")} {name}")
-        print("expected:")
+        print("\nexpected:")
         print(log_grey(sb)) # or print(log_disclose(sb)) if you want to see CRs and spaces
-        print("got:")
+        print("\ngot:")
         print(sa) # or print(log_disclose(sa)) if you want to see CRs and spaces
-
+        print("\n----------------------------------------------------------------\nlog:")
+        log_flush()
+        print("----------------------------------------------------------------\n")
+        
 # decorator that wraps a function, adding it to s_tests
 def this_is_a_test(fn):
     global s_tests
@@ -153,8 +176,8 @@ def test_run_all():
         if s_n_tests_failed == 0:
             print(log_green("all tests passed."))
     if s_active_test:
-        global s_log
-        s_log = True
+        global s_log_enabled
+        s_log_enabled = True
         s_tests_verbose = True
         s_active_test()
 
@@ -388,5 +411,5 @@ def write_file(path: str, text: str):
 #------------------------------------------------------------------------------
 # startup
 
-log_clear()
+log_startup()
 exception_install_handler()
