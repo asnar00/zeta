@@ -16,6 +16,9 @@ import sys
 # set if logging is enabled
 s_log_enabled: bool = True
 
+# indent level
+s_log_indent = 0
+
 # actual log output
 s_log = ""
 
@@ -27,7 +30,7 @@ def log_enabled() -> bool:
 def log(*args):
     if s_log_enabled:
         # print args to a string instead of the output
-        s = ""
+        s = "  " * s_log_indent
         for a in args:
             s += str(a) + " "
         # add it to the global s_log string
@@ -44,6 +47,16 @@ def log_flush():
     global s_log
     print(s_log)
     s_log = ""
+
+# log_indent is a decorator that increases indent level within a function
+def log_indent(fn):
+    def wrapper(*args, **kwargs):
+        global s_log_indent
+        s_log_indent += 1
+        result = fn(*args, **kwargs)
+        s_log_indent -= 1
+        return result
+    return wrapper
 
 # log_enable is a decorator that turns on logging within a function
 def log_enable(fn):
@@ -132,6 +145,10 @@ def test(name, a, b: str = None):
     if not b:
         print(f"{log_grey(ctx)} {name}")
         print(f"{a}")
+        print("\n----------------------------------------------------------------\nlog:")
+        log_flush()
+        print("----------------------------------------------------------------\n")
+        
         return
     sb = log_strip(b)
     if sb.startswith("\n"): sb = sb[1:]
@@ -180,6 +197,7 @@ def test_run_all():
         s_log_enabled = True
         s_tests_verbose = True
         s_active_test()
+    log_flush()
 
 # set test verbosity
 def test_verbose(on: bool):
@@ -308,6 +326,7 @@ def get_function_signature(func, frame):
 
 # exception handler: called when an exception is raised
 def exception_handler(exc_type, exc_value, exc_traceback):
+    log_flush()
     msg = log_red(f"exception: {str(exc_value)!r}") + "\n"
     frames = []
     tb = exc_traceback

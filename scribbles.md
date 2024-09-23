@@ -2,6 +2,37 @@
 # scribblez
 "slow is smooth, smooth is fast"
 
+
+We expect an expression. So there are certain things we can't be.
+
+    expression = (constant | variable | brackets | operation | function)
+    constant = (<number> | <string>)
+    variable = <identifier>
+    brackets = "(" expr:expression ")"
+    operation = (prefix | infix | postfix)
+    prefix = operator:<operator> expr:expression
+    infix = left:expression operator:<operator> right:expression
+    postfix = expr:expression operator:<operator>
+    function = name:<identifier> "(" arguments:(argument ,)* ")"
+    argument = name:(arg_name)? value:expression
+    arg_name = <identifier> "="
+
+Our strategy moving forward is:
+
+- "ratchet" of tests, proceeding from simplest to most complex
+
+- "compute everything from first principles, live" : move things into pre-compute as it becomes obvious what you need.
+
+=> initially, just lex/rule => [tir]
+
+Let's think about indices as a nice way to do things. Store lex-index in the lexeme.
+
+
+
+
+-------------------------------
+
+
 Improved test workflow:
 logging sends output to a string (s_log)
 if a test passes, we chuck away the log
