@@ -105,7 +105,11 @@ def log_green(str) -> str:
 
 # returns a grey-coloured background, white foreground
 def log_grey_background(str) -> str:
-    return f'\033[47;30m{str}\033[0m'
+    return f'\033[100m\033[30m{str}\033[0m'
+    #return f'\033[47;30m{str}\033[0m'
+
+def log_green_background(str) -> str:
+    return f"\033[42m\033[30m{str}\033[0m"
 
 # strips all colour-related codes and dynamic things out of a string (so we can compare test results)
 def log_strip(str) -> str:

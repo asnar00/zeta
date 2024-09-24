@@ -464,19 +464,6 @@ class Grammar:
 
 #--------------------------------------------------------------------------------------------------
 
-@this_is_the_test
-def test_parser():
-    log("test_parser")
-
-    p = Parser(test_grammar_spec)
-    test("constant", p.parse("1.0"), """{'constant': 1.0}""")
-    test("variable", p.parse("a"), """{'variable': a}""")
-    test("function_incomplete", p.parse("f("), """{'error': 'expected function.arguments'}""")
-    test("postfix", p.parse("a +"), """{'postfix': {'expr': {'variable': a}, 'operator': +}}""")
-    test("infix", p.parse("a + b"), """{'infix': {'left': {'variable': a}, 'operator': +, 'right': {'variable': b}}}""")
-
-#--------------------------------------------------------------------------------------------------
-
  # Term In Rule : term (i_term) of (rule)
 class TIR:
     def __init__(self, rule: Rule, i_term: int): self.rule = rule; self.i_term = i_term
@@ -490,7 +477,9 @@ class TIR:
 
 # maps any lex-val ("x"), type (<x>) or rule-name (X) to a list of TIRs
 class RuleMap:
+    s_rule_map = None
     def __init__(self, grammar: Grammar):
+        RuleMap.s_rule_map = self
         self.grammar = grammar
         self.map = {}
         for rule in grammar.rules.values():
@@ -536,6 +525,27 @@ class RuleMap:
                     for parent_tir in parent_tirs:
                         self.add(rule.name, parent_tir)
 
+    
+        
+    # given an item, look at the map and return all possible tirs
+    @staticmethod
+    def find_tirs(item: Union[Lex, 'Partial']) -> List[TIR]:
+        if isinstance(item, Lex): return RuleMap.s_rule_map.get(item)
+        elif isinstance(item, Partial): return RuleMap.s_rule_map.get(item.tir.rule)
+        else: raise Exception("invalid item in find_tirs")
+
+    @staticmethod
+    def find_start_tirs(item: Union[Lex, 'Partial']) -> List[TIR]:
+        tirs = RuleMap.find_tirs(item)
+        start_tirs = [tir for tir in tirs if tir.i_term == 0]
+        # tolerate one start-item that's Optional/ZeroOrMore (todo: tolerate more)
+        first_tirs = [tir for tir in tirs if tir.i_term == 1]
+        for tir in first_tirs:
+            term = tir.prev().term()
+            if isinstance(term, Optional) or isinstance(term, ZeroOrMore):
+                start_tirs.append(tir)
+        return start_tirs
+
     def show(self):
         for key, tirs in self.map.items():
             log(key, "=>", tirs)
@@ -568,27 +578,161 @@ class Partial:
                 if item == None: items += ". "
                 else: items += str(item) + " "
         return f"({rule_name}{log_grey(range)} {log_grey(items)})"
+    
+    # check to see if all terms that need to be, have been matched
     def is_matched(self):
         for i_term, term in enumerate(self.tir.rule.terms):
             if not(isinstance(term, Optional) or isinstance(term, ZeroOrMore)) \
                 and self.items[i_term] == None:
                 return False
         return True
+    
+    # return the AST for this partial
     def get_ast(self):
         if len(self.items) == 1:
             return { self.tir.rule.name: self.items[0] }
         ast = {}
         rule = self.tir.rule
-        log("get_ast", rule, len(rule.terms))
         for i in range(len(rule.terms)):
             term = rule.terms[i]
             item = self.items[i]
             if isinstance(item, Partial): item = item.get_ast()
-            ast.update({ term.variable: item })
+            if not isinstance(term, Keyword): ast.update({ term.variable: item })
         return { self.tir.rule.name: ast }
+    
+    # number of lexemes in the partial match
     def length(self): 
         if self.from_lex_index == None: return 0
-        return self.to_lex_index - self.from_lex_index
+        return (self.to_lex_index - self.from_lex_index) + 1
+    
+    # check if the lexeme fits within the partial's lex range
+    def check_lex_range(self, item) -> Tuple[int, int]:
+        from_index, to_index = Partial.get_lex_range(item)
+        if self.to_lex_index == None: return from_index, to_index
+        if self.to_lex_index + 1 == from_index:
+            return self.from_lex_index, to_index
+        return None, None
+    
+    # get the lex range for a lexeme or partial
+    @staticmethod
+    def get_lex_range(item) -> Tuple[int, int]:
+        if isinstance(item, Lex): return item.index, item.index
+        return item.from_lex_index, item.to_lex_index
+    
+    # create new partials for any rules that start with this item
+    @staticmethod
+    def new_partials(item:Union[Lex, 'Partial']) -> List['Partial']:
+        tirs = RuleMap.find_start_tirs(item)
+        new_partials = [Partial.new_partial(tir, item) for tir in tirs]
+        return new_partials
+    
+    # create a new partial for an item at position (tir)
+    @staticmethod
+    def new_partial(tir: TIR, item: Union[Lex, 'Partial']) -> 'Partial':
+        p = Partial(tir)
+        p.add_item_to_partial_at(item, tir)
+        return p
+    
+    # add a newly matched item to a partial; return None if failed
+    def add_item_to_partial(self, item: Union[Lex, 'Partial']):
+        matched_tir = self.can_add_item_to_partial(item)
+        return self.add_item_to_partial_at(item, matched_tir) if matched_tir else None
+
+    # can we add an item to a partial? if so, return the tir, otherwise None
+    def can_add_item_to_partial(self, item: Union[Lex, 'Partial']) -> TIR|None:
+        matched_tir = self.find_matched_tir_at(item, self.tir)
+        if not matched_tir: return None
+        from_lex_index, to_lex_index = self.check_lex_range(item)
+        if to_lex_index == None: return None
+        return matched_tir
+
+    # add a new item to a partial at a known tir
+    def add_item_to_partial_at(self, item: Union[Lex, 'Partial'], tir: TIR):
+        term = tir.term()
+        if isinstance(term, ZeroOrMore):
+            self.items[tir.i_term].append(item)    # add to list
+        else:
+            self.items[tir.i_term] = item          # set item, step
+            self.tir = tir.next()                  # step forward one
+        from_lex_index, to_lex_index = self.check_lex_range(item)
+        if self.from_lex_index == None: self.from_lex_index = from_lex_index
+        self.to_lex_index = to_lex_index
+        return self
+        
+    # find the term after or at tir that matches item
+    def find_matched_tir_at(self, item: Union[Lex, 'Partial'], tir: TIR) -> TIR|None:
+        if tir.end(): return None
+        tirs = RuleMap.find_tirs(item)
+        matched_tir = tir if tir in tirs else None
+        term = tir.term()
+        if isinstance(term, Optional):
+            if not matched_tir: 
+                return self.find_matched_tir_at(item, tir.next())
+        elif isinstance(term, ZeroOrMore):
+            if not matched_tir: 
+                return self.find_matched_tir_at(item, tir.next())
+            expecting_separator = (len(self.items[tir.i_term]) % 2) == 0
+            is_separator = isinstance(item, Lex) and item.val == term.sep.word
+            separator_ok = (expecting_separator == is_separator)
+            return matched_tir if separator_ok else None
+        else:
+            return matched_tir
+        
+     
+    # the "old" debug view
+    @staticmethod
+    def show_old(label, partials: List['Partial']) -> str:
+        out = label 
+        if len(partials) > 0:
+            out += "\n  " + "\n  ".join([str(p) for p in partials]) + "\n"
+        else: out+= "[]"
+        log(out)
+
+    # the "new" debug view
+    @staticmethod
+    def show(label, partials, ls):
+        max_len = 0
+        for rule in RuleMap.s_rule_map.grammar.rules.values():
+            max_len = max(max_len, len(rule.name) + 3)
+
+        def pad(s, n, col_fn):
+            w = ((max_len * n) - len(s))
+            start = " " * (w // 2)
+            end = " " * (w - (w//2))
+            return col_fn(start + s + end) + " "
+        
+        log(label)
+        out = ""
+        for lex in ls:
+            out += pad(lex.val, 1, log_grey_background)
+        log(out)
+        for p in partials:
+            out = ""
+            pos = p.from_lex_index * (max_len+1)
+            length = p.length()
+            back = log_green_background if p.is_matched() else log_grey_background
+            out += (" " * pos) + pad(p.tir.rule.name, length, back) 
+            log("\n" + out + (" " * max_len) + log_grey(str(p.get_ast())))
+
+
+        log_flush()
+
+
+        
+    
+
+#--------------------------------------------------------------------------------------------------
+
+@this_is_the_test
+def test_parser():
+    log("test_parser")
+
+    p = Parser(test_grammar_spec)
+    test("constant", p.parse("1.0"), """{'constant': 1.0}""")
+    test("variable", p.parse("a"), """{'variable': a}""")
+    test("function_incomplete", p.parse("f("), """{'error': 'expected function.arguments'}""")
+    test("postfix", p.parse("a +"), """{'postfix': {'expr': {'variable': a}, 'operator': +}}""")
+    test("infix", p.parse("a + b"), """{'infix': {'left': {'variable': a}, 'operator': +, 'right': {'variable': b}}}""")
 
 #--------------------------------------------------------------------------------------------------
 # Parser does the work
@@ -599,17 +743,13 @@ class Parser:
         self.map = RuleMap(self.grammar)
 
     def parse(self, code: str):
-        ls = lexer(Source(code = code))
+        self.ls = lexer(Source(code = code))
         partials = []
-        for lex in ls:
+        for lex in self.ls:
             log("------------------------")
             partials = self.remove_old_partials(lex, partials)
-            self.show("partials:", partials)
-
-            log(f'\nnext lex: {lex.type} "{lex.val}"')
-
+            Partial.show("partials:", partials, self.ls)
             partials = self.add_lex(lex, partials)
-
             partials = self.reduce(partials)
 
         return self.result(partials)
@@ -627,34 +767,34 @@ class Parser:
             # see if m fits anywhere in unmatched
             if not self.try_match(m, unmatched):
                 new_matched.append(m)
-                new_unmatched += self.new_partials(m)
+                new_unmatched += Partial.new_partials(m)
         out_partials = new_matched + new_unmatched + unmatched
-        self.show("reduce:", out_partials)
+        Partial.show("reduce:", out_partials, self.ls)
         return out_partials
     
     # try to match a partial in a set of partials
     def try_match(self, p: Partial, partials: List[Partial]) -> bool:
         result = False
         for p2 in partials:
-            if self.add_item_to_partial(p, p2):
+            if p2.add_item_to_partial(p):
                 result = True
         return result
     
     # add a lexeme to a set of partials
     def add_lex(self, lex: Lex, partials: List[Partial]) -> List[Partial]:
-        new_partials = self.new_partials(lex) + self.try_match_lex(lex, partials)
-        self.show("add_lex:", new_partials)
+        new_partials = Partial.new_partials(lex) + self.try_match_lex(lex, partials)
+        Partial.show("add_lex:", new_partials, self.ls)
         return new_partials
     
     # add lex to each partial tht can accept it
     def try_match_lex(self, lex: Lex, partials: List[Partial]) -> List[Partial]:
         for p in partials:
-            self.add_item_to_partial(lex, p)
+            p.add_item_to_partial(lex)
         return partials
     
     # result returns nothing for now
     def result(self, partials: List[Partial]) -> Dict:
-        self.show("result", partials)
+        Partial.show("result", partials, self.ls)
         matched, unmatched = self.separate_partials(partials)
         longest_matched = self.find_longest_partial(matched)
         longest_unmatched = self.find_longest_partial(unmatched)
@@ -693,104 +833,12 @@ class Parser:
             else: unmatched.append(p)
         return matched, unmatched
     
-
-    
-    def show(self, label, partials: List[Partial]) -> str:
-        out = label 
-        if len(partials) > 0:
-            out += "\n  " + "\n  ".join([str(p) for p in partials]) + "\n"
-        else: out+= "[]"
-        log(out)
-    
-    # create new partials for any rules that start with this item
-    def new_partials(self, item: Lex|Partial) -> List[Partial]:
-        tirs = self.find_start_tirs(item)
-        new_partials = [self.new_partial(tir, item) for tir in tirs]
-        return new_partials
-    
-    # create a new partial for an item at position (tir)
-    def new_partial(self, tir: TIR, item: Lex|Partial) -> Partial:
-        p = Partial(tir)
-        self.add_item_to_partial_at(item, p, tir)
-        return p
-
-    # add a newly matched item to a partial; return None if failed
-    def add_item_to_partial(self, item: Lex|Partial, p: Partial) -> Partial:
-        matched_tir = self.can_add_item_to_partial(item, p)
-        if not matched_tir: return None
-        return self.add_item_to_partial_at(item, p, matched_tir)
-    
-    # can we add an item to a partial? if so, return the tir, otherwise None
-    def can_add_item_to_partial(self, item: Lex|Partial, p: Partial) -> TIR|None:
-        matched_tir = self.find_matched_tir_at(item, p, p.tir)
-        if not matched_tir: return None
-        from_lex_index, to_lex_index = self.check_lex_range(item, p)
-        if to_lex_index == None: return None
-        return matched_tir
-
-    # add a new item to a partial at a known tir
-    def add_item_to_partial_at(self, item: Lex|Partial, p: Partial, tir: TIR) -> Partial:
-        term = tir.term()
-        if isinstance(term, ZeroOrMore):
-            p.items[tir.i_term].append(item)    # add to list
-        else:
-            p.items[tir.i_term] = item          # set item, step
-            p.tir = tir.next()                  # step forward one
-        from_lex_index, to_lex_index = self.check_lex_range(item, p)
-        if p.from_lex_index == None: p.from_lex_index = from_lex_index
-        p.to_lex_index = to_lex_index
-        return p
-        
-    # find the term after or at tir that matches item
-    def find_matched_tir_at(self, item: Lex|Partial, p: Partial, tir: TIR) -> TIR|None:
-        if tir.end(): return None
-        tirs = self.find_tirs(item)
-        matched_tir = tir if tir in tirs else None
-        term = tir.term()
-        if isinstance(term, Optional):
-            if not matched_tir: 
-                return self.find_matched_tir_at(item, p, tir.next())
-        elif isinstance(term, ZeroOrMore):
-            if not matched_tir: 
-                return self.find_matched_tir_at(item, p, tir.next())
-            expecting_separator = (len(p.items[tir.i_term]) % 2) == 0
-            is_separator = isinstance(item, Lex) and item.val == term.sep.word
-            separator_ok = (expecting_separator == is_separator)
-            return matched_tir if separator_ok else None
-        else:
-            return matched_tir
-        
-    # find all rules that might start with (item)
-    def find_start_tirs(self, item: Lex|Partial) -> List[TIR]:
-        tirs = self.find_tirs(item)
-        start_tirs = [tir for tir in tirs if tir.i_term == 0]
-        # tolerate one start-item that's Optional/ZeroOrMore (todo: tolerate more)
-        first_tirs = [tir for tir in tirs if tir.i_term == 1]
-        for tir in first_tirs:
-            term = tir.prev().term()
-            if isinstance(term, Optional) or isinstance(term, ZeroOrMore):
-                start_tirs.append(tir)
-        return start_tirs
-        
-    # given an item, look at the map and return all possible tirs
-    def find_tirs(self, item: Lex|Partial) -> List[TIR]:
-        if isinstance(item, Lex): return self.map.get(item)
-        elif isinstance(item, Partial): return self.map.get(item.tir.rule)
-        else: raise Exception("invalid item in find_tirs")
-
-    # check if the lexeme fits within the partial's lex range
-    def check_lex_range(self, item: Lex|Partial, p: Partial) -> Tuple[int, int]:
-        from_index, to_index = self.get_lex_range(item)
-        if p.to_lex_index == None: return from_index, to_index
-        if p.to_lex_index + 1 == from_index:
-            return p.from_lex_index, to_index
-        return None, None
-    
-    # get the lex range for a lexeme or partial
-    def get_lex_range(self, item: Lex|Partial) -> Tuple[int, int]:
-        if isinstance(item, Lex): return item.index, item.index
-        return item.from_lex_index, item.to_lex_index
+    #-------------------------------------------------------------------------
+    # tools
 
 
-        
     
+
+
+
+   
