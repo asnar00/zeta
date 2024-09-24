@@ -833,10 +833,6 @@ class Parser:
             else: unmatched.append(p)
         return matched, unmatched
     
-    #-------------------------------------------------------------------------
-    # tools
-
-
     
 
 
