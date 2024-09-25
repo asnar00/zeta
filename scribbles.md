@@ -2,8 +2,88 @@
 # scribblez
 "slow is smooth, smooth is fast"
 
+refinement of the "fresh every day" principle:
+at some point, some aspect of a design becomes "ingrained", i.e. it's the same every time, doesn't improve much.
+at this point, abstract it out into a section that doesn't get rewritten.
+Eg. in the parser, we're experimenting with a bunch of stuff, but there's a core of display/match/meta-stuff that congeals out.
+So grammar-dependent lookups now go into MetaGrammar, which means we can just keep using them and refining them, while trying different parse strategies.
+Works for me!
 
-We expect an expression. So there are certain things we can't be.
+
+-----
+
+There's a generic problem with accessing "background context" variables.
+Eg. the grammar, rule-map, and so on. You either have to pass them into functions, or use them as a "global" state. Neither is the right scope. Feature-scope maybe is right? But even that's not so great. You sort of want to be able to access them and not care where they come from.
+
+Eg. "which class" when booking airline ticket (in fact all the other options)
+
+In the parser, it's "display column width" for all the little display routines, or grammar, or rule-map.
+----
+
+OK so let's review where we are.
+
+We have a system in place to collapse the array-of-matches nicely in place.
+We have shown that collapsing in the right places reduces things properly.
+We've demonstrated the power of good visualisation to improve the understanding of the problem.
+
+And *THIS* ladies and gentlemen is something new and exciting and cool, right?
+Visualisation of data structures.
+Kind of obvious when you think about it: it's "helping you to see".
+
+I think this is an important "realisation" : write the visualisation of the data structure first, and have the system just use it instead of "print".
+
+VR is perfect for this, right? What does a VR-native development environment look like?
+
+=> this is what we need to build. HURRY UP!
+
+First, we need a way to draw layer X of a Match.
+Let's do that! We just need to scoop out Layer X and that's fine!
+
+
+--------------------------------
+
+The "neighbour-match-check" idea definitely has merit, but I'm too tired RN.
+Continue tomorrow.
+
+The algorithm is something like:
+
+1. there's precedence between operators and lexemes.
+   eg. keywords override type, eg. "=" overrides <operator>
+2. we detect "shadowing", eg. infix shadows postfix and prefix
+   if there's ever an overlap between shadowing rules, the bigger one wins.
+   incomplete shadowers prevent matching fully-matched shadowed rules
+   ; eg. incomplete infix overrides complete prefix, until proof of opposite is received.
+    eg: what definite lexemes come after expressions in the rules?
+        hint: it's the closing ")" in function and brackets.
+3. you run through in precedence order, and pick one winner or none.
+4. if there's a winner, you reduce it (combine columns), regen the list, and move on
+5. you do multiple passes until you can't reduce further
+6. analyse the result to print an error.
+
+So in our example, the first pass would be:
+
+    - arg_name "n="
+    - brackets "(6)"
+    - infix "a + (6)"
+    - argument "n= a + (6)"
+    - function "f(n=a+(6))"
+
+We can do something reasonably dastardly by representing the tir-lists as a bit-mask,
+with a bit set for each index that this thing matches. That is extremely cunning,
+because you can just take the logical "and" of the bitmask with the shifted mask of the next column.
+
+There's a little detail needed to handle optionals and lists, but basically... should be nice.
+
+
+
+This is potentially a *very* nice parser, super fast and with some very nice properties.
+
+
+
+
+
+    but the grammar doesn't tell us about precedence.
+    we clearly need it though... 
 
     expression = (constant | variable | brackets | operation | function)
     constant = (<number> | <string>)
@@ -17,6 +97,46 @@ We expect an expression. So there are certain things we can't be.
     argument = name:(arg_name)? value:expression
     arg_name = <identifier> "="
 
+Bottom-up approach: generate a list of possibles for each one.
+
+    a               +               b
+    constant:-
+    variable:0
+    brackets:1
+    operation:-
+    prefix:2
+    infix:0,2
+    postfix:0
+    function:0,2
+    argument:1
+    arg_name:0
+
+
+But the point is, that list is fixed according to the type of the lexeme, and there's only a finite number of rulenames, types and keywords.
+So the square of N is going to be pretty small, so we can store pairs in a lookup.
+
+    f               (               x               )
+
+
+
+    f               (               v               =               x               )
+    constant:-
+    variable:0
+    brackets:1
+    operation:-
+    prefix:2
+    infix:0,2
+    postfix:0
+    function:0,2
+    argument:1
+    arg_name:0
+
+
+
+
+
+-------------------------------------------------------
+
 Our strategy moving forward is:
 
 - "ratchet" of tests, proceeding from simplest to most complex
@@ -26,6 +146,21 @@ Our strategy moving forward is:
 => initially, just lex/rule => [tir]
 
 Let's think about indices as a nice way to do things. Store lex-index in the lexeme.
+
+Tired now, so heading to bed. However:
+
+I quite like the idea of doing "pairs"
+
+    f(      => function
+    a+      => postfix/infix with 'variable'
+    a=      => argument (name)
+
+    <identifier> <operator> => postfix/infix :2
+    <number> <operator> => postfix/infix:2
+    <string> operator => postfix/infix:2
+    <identifier> "(" => function:2
+
+
 
 
 

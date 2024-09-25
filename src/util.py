@@ -89,6 +89,7 @@ def log_set(on: bool) -> bool:
 
 # startup: clears the log, call once at startup
 def log_startup():
+    print("\033[0m")    # reset all colours
     os.system('clear')  # For Linux/macOS
 
 # returns a grey-coloured foreground, black background

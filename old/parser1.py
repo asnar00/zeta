@@ -255,7 +255,7 @@ def test_grammar_setup():
     test("grammar_setup", Grammar(test_grammar_spec), """
 expression = OneOf(Ref("constant"), Ref("variable"), Ref("brackets"), Ref("operation"), Ref("function"))
 constant = OneOf(Type("number"), Type("string"))
-variable = Type("identifier")
+variable = name:Type("identifier")
 brackets = Keyword("("), expr:Ref("expression"), Keyword(")")
 operation = OneOf(Ref("prefix"), Ref("infix"), Ref("postfix"))
 prefix = operator:Type("operator"), expr:Ref("expression")
@@ -488,12 +488,17 @@ class RuleMap:
         self.add_transitives()
     
     def add_term(self, tir: TIR, term: Term):
-        if isinstance(term, Type): self.add(f'<{term.type}>', tir)
-        elif isinstance(term, Keyword): self.add(f'"{term.word}"', tir)
-        elif isinstance(term, Ref): self.add(term.rule_name, tir)
+        if isinstance(term, Type):
+            self.add(f'<{term.type}>', tir)
+        elif isinstance(term, Keyword):
+            self.add(f'"{term.word}"', tir)
+        elif isinstance(term, Ref):
+            self.add(term.rule_name, tir)
         elif isinstance(term, OneOf):
-            for subterm in term.terms: self.add_term(tir, subterm)
-        elif isinstance(term, Optional): self.add_term(tir, term.term)
+            for subterm in term.terms:
+                self.add_term(tir, subterm)
+        elif isinstance(term, Optional):
+            self.add_term(tir, term.term)
         elif isinstance(term, ZeroOrMore):
             self.add_term(tir, term.term)
             if term.sep: self.add_term(tir, term.sep)
@@ -520,239 +525,316 @@ class RuleMap:
                     for parent_tir in parent_tirs:
                         self.add(rule.name, parent_tir)
 
+    
+        
+    # given an item, look at the map and return all possible tirs
+    @staticmethod
+    def find_tirs(item: Union[Lex, 'Partial']) -> List[TIR]:
+        if isinstance(item, Lex): return RuleMap.s_rule_map.get(item)
+        elif isinstance(item, Partial): return RuleMap.s_rule_map.get(item.tir.rule)
+        else: raise Exception("invalid item in find_tirs")
 
-#--------------------------------------------------------------------------------------------------
-# Parser helpers : these should gradually stabilise, even if the parser gets rewritten a bunch
+    @staticmethod
+    def find_start_tirs(item: Union[Lex, 'Partial']) -> List[TIR]:
+        tirs = RuleMap.find_tirs(item)
+        start_tirs = [tir for tir in tirs if tir.i_term == 0]
+        # tolerate one start-item that's Optional/ZeroOrMore (todo: tolerate more)
+        first_tirs = [tir for tir in tirs if tir.i_term == 1]
+        for tir in first_tirs:
+            term = tir.prev().term()
+            if isinstance(term, Optional) or isinstance(term, ZeroOrMore):
+                start_tirs.append(tir)
+        return start_tirs
 
-# Match is a rule, a list of lexemes, and a list of sub-matches
-class Match:
-    def __init__(self, ls: List[Lex] =[], rule: Rule = None, matches: List['Match'] = []):
-        self.ls = ls
-        self.rule = rule
-        self.matches = matches
-        self.bitmask_list = []
-    def __str__(self): return " ".join([str(lex) for lex in self.ls])
+    def show(self):
+        for key, tirs in self.map.items():
+            log(key, "=>", tirs)
+
+
+# Partial Match
+class Partial:
+    def __init__(self, tir: TIR):
+        self.tir = tir                  # "open" term we're expecting
+        self.from_lex_index = None      # index of the lexeme that started this partial
+        self.to_lex_index = None        # index of the last lexeme in this partial
+        self.items = []                 # list of items in this partial 
+        for term in self.tir.rule.terms:
+            if isinstance(term, ZeroOrMore): self.items.append([])
+            else: self.items.append(None)
     def __repr__(self): return str(self)
-    def pos(self): return self.ls[0].index if len(self.ls) > 0 else 0
-    def length(self): return len(self.ls)
-    def n_layers(self) -> int:
-        n = 0
-        for match in self.matches:
-            n = max(n, match.n_layers())
-        return n + 1
-    def get_layer(self, i_layer: int, i_this_layer: int=0) -> List['Match']:
-        if i_layer == i_this_layer: return [self]
-        if i_layer > i_this_layer:
-            out = []
-            for m in self.matches:
-                out += m.get_layer(i_layer, i_this_layer + 1)
-            return out
+    def __str__(self):
+        rule_name = self.tir.rule.name
+        matched = self.is_matched()
+        if matched: rule_name = log_green(rule_name)
+        items = [str(item) for item in self.items]
+        range = f"[{self.from_lex_index}-{self.to_lex_index}]" if self.from_lex_index != None else ""
+        items = ""
+        for i, item in enumerate(self.items):
+            # if item is a List: iterate through it
+            if isinstance(item, list):
+                if len(item) == 0: items += ". "
+                else: items += f"[{', '.join([str(i) for i in item])}] "
+            else:
+                if item == None: items += ". "
+                else: items += str(item) + " "
+        return f"({rule_name}{log_grey(range)} {log_grey(items)})"
     
-# grammar-dependent information, abstracted out of the parser
-# lex => bitmask_list (one bit per term per rule)
-class MetaGrammer:
-    def __init__(self, grammar_spec: str):
-        self.grammar = Grammar(grammar_spec)
-        self.rule_map = RuleMap(self.grammar)
-        self.rule_name_to_int = {rule.name: i for i, rule in enumerate(self.grammar.rules.values())}
-        self.rule_names = [rule.name for rule in self.grammar.rules.values()]
-        self.bitmask_lists = {}
-        for key in self.rule_map.map.keys():
-            self.bitmask_lists[key] = self.compute_bitmask_list(key)
+    # check to see if all terms that need to be, have been matched
+    def is_matched(self):
+        for i_term, term in enumerate(self.tir.rule.terms):
+            if not(isinstance(term, Optional) or isinstance(term, ZeroOrMore)) \
+                and self.items[i_term] == None:
+                return False
+        return True
     
-    def compute_bitmask_list(self, key:str) -> List[int]:
-        n_rules = len(self.grammar.rules)
-        tirs = self.rule_map.map[key]
-        singular_rule_names = [tir.rule.name for tir in tirs if len(tir.rule.terms) == 1]
-        singular_tirs = []
-        for rule_name in singular_rule_names:
-            singular_tirs += self.rule_map.get(self.grammar.rules[rule_name])
-        tirs += singular_tirs
-        bitmask_list = [0 for i in range(n_rules)]
-        for tir in tirs:
-            i_rule = self.rule_name_to_int[tir.rule.name]
-            bitmask_list[i_rule] |= (1 << tir.i_term)
-        for tir in singular_tirs:
-            i_rule = self.rule_name_to_int[tir.rule.name]
-            bitmask_list[i_rule] |= (1 << 9)                # set a special bit to indicate this was a singular rule-match
-        return bitmask_list
+    # return the AST for this partial
+    def get_ast(self):
+        if len(self.items) == 1:
+            return { self.tir.rule.name: self.items[0] }
+        ast = {}
+        rule = self.tir.rule
+        for i in range(len(rule.terms)):
+            term = rule.terms[i]
+            item = self.items[i]
+            if isinstance(item, Partial): item = item.get_ast()
+            if not isinstance(term, Keyword): ast.update({ term.variable: item })
+        return { self.tir.rule.name: ast }
     
-    # given a match, return the bitmask list
-    def get_bitmask_list(self, match: Match) -> List[int]:
-        if match.rule:
-            if match.rule.name in self.bitmask_lists: return self.bitmask_lists[match.rule.name]   
+    # number of lexemes in the partial match
+    def length(self): 
+        if self.from_lex_index == None: return 0
+        return (self.to_lex_index - self.from_lex_index) + 1
+    
+    # check if the lexeme fits within the partial's lex range
+    def check_lex_range(self, item) -> Tuple[int, int]:
+        from_index, to_index = Partial.get_lex_range(item)
+        if self.to_lex_index == None: return from_index, to_index
+        if self.to_lex_index + 1 == from_index:
+            return self.from_lex_index, to_index
+        return None, None
+    
+    # get the lex range for a lexeme or partial
+    @staticmethod
+    def get_lex_range(item) -> Tuple[int, int]:
+        if isinstance(item, Lex): return item.index, item.index
+        return item.from_lex_index, item.to_lex_index
+    
+    # create new partials for any rules that start with this item
+    @staticmethod
+    def new_partials(item:Union[Lex, 'Partial']) -> List['Partial']:
+        tirs = RuleMap.find_start_tirs(item)
+        new_partials = [Partial.new_partial(tir, item) for tir in tirs]
+        return new_partials
+    
+    # create a new partial for an item at position (tir)
+    @staticmethod
+    def new_partial(tir: TIR, item: Union[Lex, 'Partial']) -> 'Partial':
+        p = Partial(tir)
+        p.add_item_to_partial_at(item, tir)
+        return p
+    
+    # add a newly matched item to a partial; return None if failed
+    def add_item_to_partial(self, item: Union[Lex, 'Partial']):
+        matched_tir = self.can_add_item_to_partial(item)
+        return self.add_item_to_partial_at(item, matched_tir) if matched_tir else None
+
+    # can we add an item to a partial? if so, return the tir, otherwise None
+    def can_add_item_to_partial(self, item: Union[Lex, 'Partial']) -> TIR|None:
+        matched_tir = self.find_matched_tir_at(item, self.tir)
+        if not matched_tir: return None
+        from_lex_index, to_lex_index = self.check_lex_range(item)
+        if to_lex_index == None: return None
+        return matched_tir
+
+    # add a new item to a partial at a known tir
+    def add_item_to_partial_at(self, item: Union[Lex, 'Partial'], tir: TIR):
+        term = tir.term()
+        if isinstance(term, ZeroOrMore):
+            self.items[tir.i_term].append(item)    # add to list
         else:
-            item = match.ls[0]
-            if f'"{item.val}"' in self.bitmask_lists: return self.bitmask_lists[f'"{item.val}"']
-            if f'<{item.type}>' in self.bitmask_lists: return self.bitmask_lists[f'<{item.type}>']
-        raise("unknown lex/rule")
-    
-    # given a bitmask list, see if any rule is completely matched
-    def find_matched_rule(self, bitmask_list: List[int]) -> Rule:
-        for i_rule, bitmask in enumerate(bitmask_list):
-            rule_name = self.rule_names[i_rule]
-            rule = self.grammar.rules[rule_name]
-            n_terms = len(rule.terms)
-            if bitmask == (1 << n_terms) - 1:
-                return rule
-    
-
-class MatchDisplay:
-    def __init__(self, grammar: Grammar):
-        self.rule_names = [rule.name for rule in grammar.rules.values()]
-
-    def width(self): return 12
-
-    def pad(self, s, max_len, fn = None):
-        padding = max_len - len(s)
-        str = (" "*(padding//2)) + s + (" "*(padding-(padding//2)))
-        return str if not fn else fn(str)
-
-    def show_matches_single_layer(self, ms: List[Match]):
-        out = ""
-        pos = 0
-        for i_match, match in enumerate(ms):
-            if match.rule:
-                n_spaces = match.pos() - pos
-                pos = match.pos() + match.length()
-                out += " "*((self.width()+1)*n_spaces)
-                bg_fn = log_green_background
-                out += self.pad(match.rule.name, self.width()*match.length()+(match.length()-1), bg_fn) + " "
-        return out
-    
-    def show_matches(self, ms: List[Match]):
-        # compute max number of layers
-        n_layers = 0
-        for match in ms:
-            n_layers = max(n_layers, match.n_layers())
-        out = ""
-        for i_layer in range(n_layers):
-            layer_ms = []
-            for match in ms: layer_ms += match.get_layer((n_layers-1) -i_layer)
-            out += self.show_matches_single_layer(layer_ms) + "\n\n"
-        return out
-            
-
-    def show(self, ms: List[Match]):
-        ls = []
-        for m in ms: ls += m.ls
-
-        out = ""
-        for i in range(0, len(ls)):
-            out += log_grey(str(i)) + ":" + " "*14
+            self.items[tir.i_term] = item          # set item, step
+            self.tir = tir.next()                  # step forward one
+        from_lex_index, to_lex_index = self.check_lex_range(item)
+        if self.from_lex_index == None: self.from_lex_index = from_lex_index
+        self.to_lex_index = to_lex_index
+        return self
+        
+    # find the term after or at tir that matches item
+    def find_matched_tir_at(self, item: Union[Lex, 'Partial'], tir: TIR) -> TIR|None:
+        if tir.end(): return None
+        tirs = RuleMap.find_tirs(item)
+        matched_tir = tir if tir in tirs else None
+        term = tir.term()
+        if isinstance(term, Optional):
+            if not matched_tir: 
+                return self.find_matched_tir_at(item, tir.next())
+        elif isinstance(term, ZeroOrMore):
+            if not matched_tir: 
+                return self.find_matched_tir_at(item, tir.next())
+            expecting_separator = (len(self.items[tir.i_term]) % 2) == 0
+            is_separator = isinstance(item, Lex) and item.val == term.sep.word
+            separator_ok = (expecting_separator == is_separator)
+            return matched_tir if separator_ok else None
+        else:
+            return matched_tir
+        
+     
+    # the "old" debug view
+    @staticmethod
+    def show_old(label, partials: List['Partial']) -> str:
+        out = label 
+        if len(partials) > 0:
+            out += "\n  " + "\n  ".join([str(p) for p in partials]) + "\n"
+        else: out+= "[]"
         log(out)
 
+    # the "new" debug view
+    @staticmethod
+    def show(label, partials, ls):
+        max_len = 0
+        for rule in RuleMap.s_rule_map.grammar.rules.values():
+            max_len = max(max_len, len(rule.name) + 3)
+
+        def pad(s, n, col_fn):
+            w = ((max_len * n) - len(s))
+            start = " " * (w // 2)
+            end = " " * (w - (w//2))
+            return col_fn(start + s + end) + " "
+        
+        log(label)
         out = ""
         for lex in ls:
-            out += self.pad(str(lex), self.width(), log_grey_background) + " "
-        log(out + "\n")
+            out += pad(lex.val, 1, log_grey_background)
+        log(out)
+        for p in partials:
+            out = ""
+            pos = p.from_lex_index * (max_len+1)
+            length = p.length()
+            back = log_green_background if p.is_matched() else log_grey_background
+            out += (" " * pos) + pad(p.tir.rule.name, length, back) 
+            log("\n" + out + (" " * max_len) + log_grey(str(p.get_ast())))
 
-        
-        log(self.show_matches(ms))
-        log(self.show_rules(ms))
-        return
 
-    def show_rules(self, ms: List[Match]) -> str:
-        # get grammar rule names in an array
-        out = ""
-        for i_rule in range(len(self.rule_names)):
-            pos = 0
-            for i_match, match in enumerate(ms):
-                n_spaces = match.pos() - pos
-                pos = match.pos() + match.length() + 1
-                out += " "*((self.width()+1)*n_spaces)
-                bitmask = match.bitmask_list[i_rule]
-                bitmask_prev = ms[i_match-1].bitmask_list[i_rule] if i_match > 0 else 0
-                bitmask_next = ms[i_match+1].bitmask_list[i_rule] if i_match < len(ms)-1 else 0
-                
-                prev_match = self.in_sequence(bitmask_prev, bitmask)
-                next_match = self.in_sequence(bitmask, bitmask_next)
-                highlight = prev_match or next_match
-                bg_fn = log_grey_background if highlight else None
-                stir = self.str_bitmask(bitmask, self.rule_names[i_rule])
-                out += self.pad(stir, self.width()*match.length()+(match.length()-1), bg_fn) + " "
-            out += "\n"
-        return out
+        log_flush()
 
-    def str_bitmask(self, bitmask: int, rule_name: str) -> str:
-        if bitmask==0: return "•"
-        out = rule_name + ":"
-        for i in range(0, 8):
-            out += (str(i)+",") if (bitmask & (1 << i)) > 0 else ""
-        if out.endswith(","): out = out[:-1]
-        if bitmask & (1 << 9): out += "~"
-        return out
-            
-    def in_sequence(self, bitmask_a: int, bitmask_b: int) -> bool:
-        return (bitmask_a & (bitmask_b >> 1)) > 0
 
-#--------------------------------------------------------------------------------------------------
-# Parser itself
-
-class Parser:
-    def __init__(self, grammar_spec: str = test_grammar_spec):
-        self.mg = MetaGrammer(grammar_spec)
-        self.md = MatchDisplay(self.mg.grammar)
-        
-    def parse(self, code: str):
-        ls = lexer(Source(code = code))
-        ms = [self.match_from_lex(lex) for lex in ls]
-
-        collapse_list = [
-            (6, 8, "brackets"),
-            (2, 3, "arg_name"),
-            (3, 5, "infix"),
-            (2, 3, "argument"),
-            (4, 4, "argument"),
-            (2, 4, "argument"),
-            (0, 3, "function")
-        ]
-
-        for start, end, rule_name in collapse_list[0:7]:
-            ms = self.collapse(ms, start, end, rule_name)
-
-        return self.show(ms)
         
     
-    def collapse(self, matches: List[Match], i_from: int, i_to: int, new_rule_name: str) -> Match:
-        new_rule = self.mg.grammar.rules[new_rule_name]
-        sub_matches = matches[i_from:i_to+1]
-        new_match = self.match_from_rule(new_rule, sub_matches)
-        matches = matches[:i_from] + [new_match] + matches[i_to+1:]
-        return matches
-    
-    def match_from_lex(self, lex: Lex): 
-        match= Match([lex])
-        match.bitmask_list = self.mg.get_bitmask_list(match)
-        return match
-
-    def match_from_rule(self, rule: Rule, matches: List['Match']):
-        ls = []
-        for match in matches:
-            ls += match.ls
-        # if we're matching a rule that was promoted from a singular, set the singular
-        for match in matches:
-            if match.rule == None:
-                i_rule = self.mg.rule_name_to_int[rule.name]
-                special = (match.bitmask_list[i_rule] & (1 << 9)) > 0
-                if special: # set the rule to the one that promoted us
-                    match.rule = self.mg.find_matched_rule(match.bitmask_list)
-        match = Match(ls, rule, matches)
-        match.bitmask_list = self.mg.get_bitmask_list(match)
-        return match
-    
-    def show(self, matches: List[Match]):
-        self.md.show(matches)
-        return matches
-
-
-        
-            
 
 #--------------------------------------------------------------------------------------------------
 
 @this_is_the_test
 def test_parser():
     log("test_parser")
-    p = Parser()
-    p.parse("f(n = a + (6), y)")
+
+    p = Parser(test_grammar_spec)
+    test("constant", p.parse("1.0"), """{'constant': 1.0}""")
+    test("variable", p.parse("a"), """{'variable': a}""")
+    test("function_incomplete", p.parse("f("), """{'error': 'expected function.arguments'}""")
+    test("postfix", p.parse("a +"), """{'postfix': {'expr': {'variable': a}, 'operator': +}}""")
+    test("infix", p.parse("a + b"), """{'infix': {'left': {'variable': a}, 'operator': +, 'right': {'variable': b}}}""")
+
+#--------------------------------------------------------------------------------------------------
+# Parser does the work
+
+class Parser:
+    def __init__(self, grammar_spec):
+        self.grammar = Grammar(grammar_spec)
+        self.map = RuleMap(self.grammar)
+
+    def parse(self, code: str):
+        self.ls = lexer(Source(code = code))
+        partials = []
+        for lex in self.ls:
+            log("------------------------")
+            partials = self.remove_old_partials(lex, partials)
+            Partial.show("partials:", partials, self.ls)
+            partials = self.add_lex(lex, partials)
+            partials = self.reduce(partials)
+
+        return self.result(partials)
+    
+    # remove all partials whose to_index is less than the lex index
+    def remove_old_partials(self, lex: Lex, partials: List[Partial]) -> List[Partial]:
+        return [p for p in partials if p.to_lex_index == None or p.to_lex_index >= lex.index-1]
+    
+    # reduce partials to remove any that are fully matched
+    def reduce(self, partials: List[Partial]) -> List[Partial]:
+        matched, unmatched = self.separate_partials(partials)
+        new_matched = []
+        new_unmatched = []
+        for m in matched:
+            # see if m fits anywhere in unmatched
+            if not self.try_match(m, unmatched):
+                new_matched.append(m)
+                new_unmatched += Partial.new_partials(m)
+        out_partials = new_matched + new_unmatched + unmatched
+        Partial.show("reduce:", out_partials, self.ls)
+        return out_partials
+    
+    # try to match a partial in a set of partials
+    def try_match(self, p: Partial, partials: List[Partial]) -> bool:
+        result = False
+        for p2 in partials:
+            if p2.add_item_to_partial(p):
+                result = True
+        return result
+    
+    # add a lexeme to a set of partials
+    def add_lex(self, lex: Lex, partials: List[Partial]) -> List[Partial]:
+        new_partials = Partial.new_partials(lex) + self.try_match_lex(lex, partials)
+        Partial.show("add_lex:", new_partials, self.ls)
+        return new_partials
+    
+    # add lex to each partial tht can accept it
+    def try_match_lex(self, lex: Lex, partials: List[Partial]) -> List[Partial]:
+        for p in partials:
+            p.add_item_to_partial(lex)
+        return partials
+    
+    # result returns nothing for now
+    def result(self, partials: List[Partial]) -> Dict:
+        Partial.show("result", partials, self.ls)
+        matched, unmatched = self.separate_partials(partials)
+        longest_matched = self.find_longest_partial(matched)
+        longest_unmatched = self.find_longest_partial(unmatched)
+        log("longest matched:", longest_matched)
+        if longest_matched and (longest_unmatched == None or \
+                                longest_matched.length() >= longest_unmatched.length()):
+            return longest_matched.get_ast()
+        return { "error" : self.error_message(longest_unmatched) }
+    
+    # error message given a set of unmatched partials
+    def error_message(self, p: Partial) -> str:
+        msg = "expected "
+        term = p.tir.term()
+        msg += p.tir.rule.name
+        if term.variable: msg += "." + term.variable
+        if msg.endswith(", "): msg = msg[:-2]
+        return msg
+    
+    # find the longest partial
+    def find_longest_partial(self, partials: List[Partial]) -> Partial:
+        if len(partials) == 1: return partials[0]
+        longest_length = partials[0].length()
+        longest = partials[0]
+        for p in partials[1:]:
+            if p.length() > longest_length:
+                longest_length = p.length()
+                longest = p
+        return longest
+    
+    # separate partials into matched and unmatched
+    def separate_partials(self, partials: List[Partial]) -> Tuple[List[Partial], List[Partial]]:
+        matched = []
+        unmatched = []
+        for p in partials:
+            if p.is_matched(): matched.append(p)
+            else: unmatched.append(p)
+        return matched, unmatched
+    
+    
+
+
+
+   
