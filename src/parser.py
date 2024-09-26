@@ -117,7 +117,7 @@ next
 
 # lexeme: stores value and type, and also position within the source
 class Lex:
-    def __init__(self, source: Source, pos: int, val: str, type: str, index: int):
+    def __init__(self, source: Source, pos: int, val: str, type: str, index: int=0):
         self.source = source; self.pos = pos; self.val = val; self.type = type; self.index = index
     def __str__(self):
         return self.val
@@ -236,523 +236,417 @@ def lexer(source: Source) -> List[Lex]:
 # Grammar: a collection of Rules, each made of cross-referencing Terms
 
 test_grammar_spec = """
-    expression = (constant | variable | brackets | operation | function)
-    constant = (<number> | <string>)
-    variable = <identifier>
-    brackets = "(" expr:expression ")"
-    operation = (prefix | infix | postfix)
-    prefix = operator:<operator> expr:expression
-    infix = left:expression operator:<operator> right:expression
-    postfix = expr:expression operator:<operator>
-    function = name:<identifier> "(" arguments:(argument ,)* ")"
-    argument = name:(arg_name)? value:expression
-    arg_name = <identifier> "="
+    expression := ...
+    constant < expression := ...
+    number < constant := <number>
+    string < constant := <string>
+    variable < expression := <identifier>
+    brackets < expression := "(" expr:expression ")"
+    operation < expression := ...
+    prefix < operation := operator:<operator> expr:expression
+    infix < operation := left:expression operator:<operator> right:expression
+    postfix < operation := expr:expression operator:<operator>
+    function < expression := name:<identifier> "(" parameters:expression*, ")"
     """
 
-@this_is_a_test
-def test_grammar_setup():
-    log("test_grammar_setup")
-    test("grammar_setup", Grammar(test_grammar_spec), """
-expression = OneOf(Ref("constant"), Ref("variable"), Ref("brackets"), Ref("operation"), Ref("function"))
-constant = OneOf(Type("number"), Type("string"))
-variable = Type("identifier")
-brackets = Keyword("("), expr:Ref("expression"), Keyword(")")
-operation = OneOf(Ref("prefix"), Ref("infix"), Ref("postfix"))
-prefix = operator:Type("operator"), expr:Ref("expression")
-infix = left:Ref("expression"), operator:Type("operator"), right:Ref("expression")
-postfix = expr:Ref("expression"), operator:Type("operator")
-function = name:Type("identifier"), Keyword("("), arguments:ZeroOrMore(Ref("argument"), ","), Keyword(")")
-argument = name:Optional(Ref("arg_name")), value:Ref("expression")
-arg_name = Type("identifier"), Keyword("=")
-         """)
-
-#--------------------------------------------------------------------------------------------------
-# Terms
-
+# Term represents a rule term
 class Term:
-    def __init__(self):
-        self.variable = None                # sets variable in the AST if present
+    def __init__(self, val: str, var: str="", dec: str="", sep: str=""):
+        self.val = val      # either <type>, "keyword", or rule
+        self.var = var      # variable name, or "" if none
+        self.dec = dec      # decorator: "opt" or "list"
+        self.sep = sep      # separator if list
+    def __str__(self):
+        out = self.val
+        if self.dec == "list": out += f"*{self.sep}"
+        elif self.dec == "opt": out += "?"
+        if self.var: out = f"{self.var}:{out}"
+        return out
     def __repr__(self): return str(self)
-    def var(self): return f"{self.variable}:" if self.variable else ""
-    def is_optional(self): return isinstance(self, Optional) or isinstance(self, ZeroOrMore)
-    
-class Terminal(Term): pass
+    def keyword(self) -> str|None: return self.val if self.val.startswith('"') else None
+    def type(self) -> str|None: return self.val if self.val.startswith("<") else None
+    def rule(self) -> str|None: return self.val if (not self.keyword() and not self.type()) else None
+    def is_optional(self) -> bool: return self.dec == "opt"
+    def is_list(self) -> bool: return self.dec == "list"
+    def separator(self) -> str: return f'"{self.sep}"'
 
-class Type(Terminal):
-    def __init__(self, type: str): super().__init__(); self.type = type
-    def __str__(self): return f"{self.var()}Type(\"{self.type}\")"
-
-class Keyword(Terminal):
-    def __init__(self, word: str): super().__init__(); self.word = word
-    def __str__(self): return f"{self.var()}Keyword(\"{self.word}\")"
-
-class OneOf(Term):
-    def __init__(self, terms: List[Term]): super().__init__(); self.terms = terms
-    def __str__(self): return f"{self.var()}OneOf(" + ", ".join([str(term) for term in self.terms]) + ")"
-
-class Optional(Term):
-    def __init__(self, term: Term): super().__init__(); self.term = term
-    def __str__(self): return f"{self.var()}Optional({self.term})"
-
-class ZeroOrMore(Term):
-    def __init__(self, term: Term, sep: str=""): 
-        super().__init__()
-        self.term = term; self.sep = Keyword(sep) if sep else None
-    def __str__(self): 
-        sep = f", \"{self.sep.word}\"" if self.sep else ""
-        return f"{self.var()}ZeroOrMore({self.term}{sep})"
-
-class Ref(Term):
-    def __init__(self, rule_name): super().__init__(); self.rule_name = rule_name
-    def __str__(self): return f"{self.var()}Ref(\"{self.rule_name}\")"
-
-#--------------------------------------------------------------------------------------------------
-# Grammar
-
+# Rule is a grammar rule
 class Rule:
-    def __init__(self, name = "", terms : List[Term] = []):
+    def __init__(self, name: str, parent: 'Rule', terms: List[Term]):
         self.name = name
+        self.parent = parent
+        self.children = []
+        if self.parent: self.parent.children.append(self)
         self.terms = terms
-        self.i_singular = self.is_singular()
+        self.initials = []          # all terminals (keyword/type) that might start this
+        self.terminators = []       # all terminals (keyword/type) that might follow this
+        self.leaves = []            # children that don't have children (recursed down)
+        self.i_fixed_points = []    # i_term for each term that's a fixed-point
     def __str__(self):
-        return self.name + " = " + ", ".join([str(term) for term in self.terms])
+        out = self.name
+        if self.parent: out += f" < {self.parent.name}"
+        out += " := "
+        out += " ".join([str(t) for t in self.terms]) if len(self.terms)>0 else "..."
+        return out
     def __repr__(self): return str(self)
-    def is_singular(self): # returns i_term if the rule has only one unnamed non-keyword term
-        n_unnamed = 0
-        i_term = None
-        for i, term in enumerate(self.terms):
-            if (not term.variable) and (not isinstance(term, Keyword)): 
-                i_term = i
-                n_unnamed += 1
-        return i_term if n_unnamed == 1 else None
-    def is_nodal(self) -> bool: # true if the rule is a single OneOf of multiple Refs
-        if len(self.terms) != 1: return False
-        if not isinstance(self.terms[0], OneOf): return False
-        for term in self.terms[0].terms:
-            if not isinstance(term, Ref): return False
-        return True
+    def is_abstract(self): return len(self.terms) == 0
+    def add_initial(self, initial): 
+        self.initials.append(initial)
+        if self.parent: self.parent.add_initial(initial)
+    def add_terminators(self, terminators):
+        for t in terminators:
+            if not t in self.terminators: self.terminators.append(t)
+        for c in self.children:
+            c.add_terminators(terminators)
+    def compute_leaves(self) -> List['Rule']:
+        if len(self.children) == 0: return [self]
+        leaves = []
+        for c in self.children: leaves += c.compute_leaves()
+        return leaves
+    
 
+# singleton grammar just because it makes things easier (see "context problem")
+s_grammar = None 
 
+# Grammar is a list of rules
 class Grammar:
-    def __init__(self, grammar_spec: str):
-        self.rules = {}         # name => Rule
-        self.keyword_map = {}   # word => List[List[Rule]]
-        self.type_map = {}      # type => List[List[Rule]]
-        self.rule_map = {}      # rule_name => List[List[Rule]]
-        self.setup(grammar_spec)
-
+    def __init__(self, rules: List[Rule]):
+        self.rules = rules
+        # map rule name to rule
+        self.rule_dict = {rule.name: rule for rule in self.rules}
+        self.compute_meta_stuff()
+        global s_grammar
+        s_grammar = self
     def __str__(self):
-        out = ""
-        for rule in self.rules.values():
-            out += f"{rule}\n"
-        return out
-    
+        return "\n".join([str(r) for r in self.rules])
     def __repr__(self): return str(self)
-
-    # parse a grammar spec (text) 
-    def setup(self, gs: str):
-        lines = gs.split("\n")
-        lines = [line.strip() for line in lines]
-        lines = [line for line in lines if line]
-        for line in lines:
-            rule = self.parse_rule(line)
-            self.rules[rule.name] = rule
-
-    def parse_rule(self, line: str):
-        name, rhs = line.split(" = ")
-        term_strs = self.split_terms(rhs.strip())
-        terms = [self.parse_term(term_str) for term_str in term_strs]
-        return Rule(name, terms)
-
-    def split_terms(self, rhs: str) -> List[str]:
-        bracket_level = 0
-        term = ""
-        terms: List[str] = []
-        for i, c in enumerate(rhs):
-            cp = rhs[i-1] if i > 0 else ""
-            cn = rhs[i+1] if i < len(rhs) - 1 else ""
-            quotes = cp == '"' and cn == '"'
-            if c == "(" and not quotes: bracket_level += 1
-            elif c == ")" and not quotes: bracket_level -= 1
-            if bracket_level == 0 and c == " ":
-                terms.append(term)
-                term = ""
-            else:
-                term += c
-        if term != "": terms.append(term)
-        terms = [term for term in terms if term.strip()]
-        return terms
-
     @log_disable
-    def parse_term(self, term_str: str) -> Term:
-        result = self.try_parse_set(term_str) or \
-                self.try_parse_type(term_str) or \
-                self.try_parse_keyword(term_str) or \
-                self.try_parse_optional(term_str) or \
-                self.try_parse_zero_or_more(term_str) or \
-                self.try_parse_any(term_str) or \
-                self.try_parse_rule_name(term_str)
-        return result
+    def compute_meta_stuff(self):
+        self.compute_initials()
+        self.compute_terminators()
+        self.compute_leaves()
+        self.compute_fixed_points()
+    @log_disable
+    def compute_initials(self):
+        log("compute_initials()")
+        for rule in self.rules:
+            if len(rule.terms) == 0: continue
+            term0 = rule.terms[0]
+            initial = term0.keyword() or term0.type()
+            if initial: rule.add_initial(initial)
+        for rule in self.rules:
+            log(f"  {rule.name}: {rule.initials}")
+    def compute_terminators(self):
+        log("compute_terminators")
+        for rule in self.rules:
+            for i_term, term in enumerate(rule.terms):
+                term_rule = term.rule()
+                if term_rule == None: continue
+                next_initials = []
+                if term.is_list(): next_initials.append(term.separator())
+                if (i_term+1) < len(rule.terms):
+                    next_term = rule.terms[i_term+1]
+                    next_terminal = next_term.keyword() or next_term.type()
+                    if next_terminal: next_initials.append(next_terminal)
+                    next_term_rule = next_term.rule()
+                    if next_term_rule: next_initials += next_term_rule.initials
+                    if next_term.is_list() or next_term.is_optional():
+                        if (i_term+2) < len(rule.terms):
+                            next_next_term = rule.terms[i_term+2]
+                            next_next_term_rule = next_next_term.rule()
+                            if next_next_term_rule: next_initials += next_next_term_rule.initials
+                else:
+                    next_initials.append("<eof>")
+                self.rule_dict[term_rule].add_terminators(next_initials)
+        for rule in self.rules:
+            log(f"  {rule.name}: {rule.terminators}")
+    def compute_leaves(self):
+        log("compute_leaves()")
+        for rule in self.rules:
+            rule.leaves = rule.compute_leaves()
+        for rule in self.rules:
+            log(f"{rule.name}: {[leaf.name for leaf in rule.leaves]}")
+    def compute_fixed_points(self):
+        log("compute_fixed_points")
+        for rule in self.rules:
+            rule.i_fixed_points = []
+            for i_term, term in enumerate(rule.terms):
+                if term.keyword() or term.type():
+                    rule.i_fixed_points.append(i_term)
+        for rule in self.rules:
+            log(f"{rule.name}: {rule.i_fixed_points}")
 
-    # match var:anything
-    def try_parse_set(self, term_str: str) -> Term:
-        # does it match variable_name:anything?
-        m = re.match(r"(\w+):(.+)", term_str)
-        if m:
-            variable_name = m.group(1)
-            rhs = m.group(2).strip()
-            log("variable_name", variable_name)
-            term = self.parse_term(rhs)
-            term.variable = variable_name
-            return term
 
-    # match <type_name>
-    def try_parse_type(self, term_str: str) -> Term:
-        # does it match <something> ?
-        m = re.match(r"<(\w+)>", term_str)
-        if m:
-            type_name = m.group(1)
-            log("type_name", type_name)
-            return Type(type_name)
+# OK, everything is super lightweight, let's keep it that way.
+def grammar_from_spec(spec: str) -> Grammar:
+    rule_dict = {}
+    lines = spec.strip().split("\n")
+    rules = []
+    for line in lines:
+        parts = line.split(" := ")
+        lhs = parts[0].strip()
+        rhs = parts[1].strip()
+        lhs_parts = lhs.split(" < ")
+        rule_name = lhs_parts[0].strip()
+        parent_name = lhs_parts[1].strip() if len(lhs_parts) > 1 else None
+        terms = []
+        if rhs != "...":
+            term_strs = [t.strip() for t in rhs.split(" ")]
+            for term_str in term_strs:
+                term_parts = term_str.split(":")
+                var = term_parts[0] if len(term_parts) == 2 else ""
+                val = term_parts[-1]
+                dec = ""
+                sep = ""
+                if '*' in val:
+                    ic = val.find('*')
+                    sep = val[ic+1:].replace("*", "")
+                    val = val[:ic]
+                    dec = "list"
+                elif val.endswith("?"):
+                    val = val[:-1]
+                    dec = "opt"
+                term = Term(val, var, dec, sep)
+                terms.append(term)
+        parent = rule_dict[parent_name] if parent_name else None
+        rule = Rule(rule_name, parent, terms)
+        rules.append(rule)
+        rule_dict[rule_name] = rule
+    grammar = Grammar(rules)
+    return grammar
 
-    # match "word"
-    def try_parse_keyword(self, term_str: str) -> Term:
-        m = re.match(r'\"(.+)\"', term_str)
-        if m:
-            keyword = m.group(1)
-            log("keyword", keyword)
-            return Keyword(keyword)
+@this_is_a_test
+def test_parser():
+    grammar = grammar_from_spec(test_grammar_spec)
+    test("grammar", grammar, """
+expression := ...
+constant < expression := ...
+number < constant := <number>
+string < constant := <string>
+variable < expression := <identifier>
+brackets < expression := "(" expr:expression ")"
+operation < expression := ...
+prefix < operation := operator:<operator> expr:expression
+infix < operation := left:expression operator:<operator> right:expression
+postfix < operation := expr:expression operator:<operator>
+function < expression := name:<identifier> "(" parameters:expression*, ")"
+         """)
     
-    # match (t0 | t1 | t2 | ...)
-    def try_parse_any(self, term_str: str) -> Term:
-        # use a regexp to extract t0 .. etc
-        m = re.match(r"\((.+)\)", term_str)
-        if m:
-            options = m.group(1).split(" | ")
-            log("options:", options)
-            return OneOf([self.parse_term(option) for option in options])
-    
-    # match (t)?
-    def try_parse_optional(self, term_str: str) -> Term:
-        # use a regexp to extract t
-        m = re.match(r"\((.+)\)\?", term_str)
-        if m:
-            option = m.group(1)
-            log("optional", option)
-            return Optional(self.parse_term(option))
-    
-    # match (..)*
-    def try_parse_zero_or_more(self, term_str: str) -> Term:
-        # use a regexp to extract t
-        m = re.match(r"\((.+)\)\*", term_str)
-        if m:
-            option = m.group(1)
-            log("zero_or_more", option)
-            parts = option.split(" ")
-            name = parts[0]
-            sep = parts[1] if len(parts) > 1 else ""
-            return ZeroOrMore(self.parse_term(name), sep)
-    
-    # match rule name
-    def try_parse_rule_name(self, term_str: str) -> Term:
-        # regexp match alpha name
-        m = re.match(r"(\w+)", term_str)
-        if m:
-            rule_name = m.group(1)
-            log("rule_name", rule_name)
-            return Ref(rule_name)
-
 #--------------------------------------------------------------------------------------------------
+# Parser baby
 
- # Term In Rule : term (i_term) of (rule)
-class TIR:
-    def __init__(self, rule: Rule, i_term: int): self.rule = rule; self.i_term = i_term
-    def __str__(self): return f"{self.rule.name}:{self.i_term}"
-    def __repr__(self): return str(self)
-    def __eq__(self, other): return self.rule == other.rule and self.i_term == other.i_term
-    def term(self): return self.rule.terms[self.i_term]
-    def end(self): return self.i_term >= len(self.rule.terms)
-    def next(self): return TIR(self.rule, self.i_term + 1)
-    def prev(self): return TIR(self.rule, self.i_term - 1)
-
-# maps any lex-val ("x"), type (<x>) or rule-name (X) to a list of TIRs
-class RuleMap:
-    s_rule_map = None
-    def __init__(self, grammar: Grammar):
-        RuleMap.s_rule_map = self
-        self.grammar = grammar
-        self.map = {}
-        for rule in grammar.rules.values():
-            for i, term in enumerate(rule.terms):
-                self.add_term(TIR(rule, i), term)
-        self.add_transitives()
-    
-    def add_term(self, tir: TIR, term: Term):
-        if isinstance(term, Type): self.add(f'<{term.type}>', tir)
-        elif isinstance(term, Keyword): self.add(f'"{term.word}"', tir)
-        elif isinstance(term, Ref): self.add(term.rule_name, tir)
-        elif isinstance(term, OneOf):
-            for subterm in term.terms: self.add_term(tir, subterm)
-        elif isinstance(term, Optional): self.add_term(tir, term.term)
-        elif isinstance(term, ZeroOrMore):
-            self.add_term(tir, term.term)
-            if term.sep: self.add_term(tir, term.sep)
-    
-    def add(self, key, val):
-        if not key in self.map: self.map[key] = [val]
-        else: self.map[key].append(val)
-
-    def get(self, item: Lex|Rule) -> List[TIR]:
-        if isinstance(item, Lex):
-            return self.map.get(f'"{item.val}"', []) + \
-                   self.map.get(f'<{item.type}>', [])
-        elif isinstance(item, Rule):
-            return self.map.get(item.name, [])
-        
-    def add_transitives(self):
-        for rule in self.grammar.rules.values():
-            tirs = self.get(rule)
-            if len(tirs) == 1:
-                parent_rule = tirs[0].rule
-                if parent_rule.is_nodal():
-                    self.map[rule.name] = []
-                    parent_tirs = self.get(parent_rule)
-                    for parent_tir in parent_tirs:
-                        self.add(rule.name, parent_tir)
-
-
-#--------------------------------------------------------------------------------------------------
-# Parser helpers : these should gradually stabilise, even if the parser gets rewritten a bunch
-
-# Match is a rule, a list of lexemes, and a list of sub-matches
-class Match:
-    def __init__(self, ls: List[Lex] =[], rule: Rule = None, matches: List['Match'] = []):
-        self.ls = ls
+# an AST node
+class Node:
+    def __init__(self, ls: List[Lex], rule: Rule=None, children: List['Node'] = []):
         self.rule = rule
-        self.matches = matches
-        self.bitmask_list = []
-    def __str__(self): return " ".join([str(lex) for lex in self.ls])
+        self.ls = ls
+        self.children = children
+    def __str__(self): return f"{self.rule_name()+":" if self.rule else ""}{self.ls_str()}"
     def __repr__(self): return str(self)
-    def pos(self): return self.ls[0].index if len(self.ls) > 0 else 0
-    def length(self): return len(self.ls)
-    def n_layers(self) -> int:
-        n = 0
-        for match in self.matches:
-            n = max(n, match.n_layers())
-        return n + 1
-    def get_layer(self, i_layer: int, i_this_layer: int=0) -> List['Match']:
-        if i_layer == i_this_layer: return [self]
-        if i_layer > i_this_layer:
-            out = []
-            for m in self.matches:
-                out += m.get_layer(i_layer, i_this_layer + 1)
-            return out
-    
-# grammar-dependent information, abstracted out of the parser
-# lex => bitmask_list (one bit per term per rule)
-class MetaGrammer:
-    def __init__(self, grammar_spec: str):
-        self.grammar = Grammar(grammar_spec)
-        self.rule_map = RuleMap(self.grammar)
-        self.rule_name_to_int = {rule.name: i for i, rule in enumerate(self.grammar.rules.values())}
-        self.rule_names = [rule.name for rule in self.grammar.rules.values()]
-        self.bitmask_lists = {}
-        for key in self.rule_map.map.keys():
-            self.bitmask_lists[key] = self.compute_bitmask_list(key)
-    
-    def compute_bitmask_list(self, key:str) -> List[int]:
-        n_rules = len(self.grammar.rules)
-        tirs = self.rule_map.map[key]
-        singular_rule_names = [tir.rule.name for tir in tirs if len(tir.rule.terms) == 1]
-        singular_tirs = []
-        for rule_name in singular_rule_names:
-            singular_tirs += self.rule_map.get(self.grammar.rules[rule_name])
-        tirs += singular_tirs
-        bitmask_list = [0 for i in range(n_rules)]
-        for tir in tirs:
-            i_rule = self.rule_name_to_int[tir.rule.name]
-            bitmask_list[i_rule] |= (1 << tir.i_term)
-        for tir in singular_tirs:
-            i_rule = self.rule_name_to_int[tir.rule.name]
-            bitmask_list[i_rule] |= (1 << 9)                # set a special bit to indicate this was a singular rule-match
-        return bitmask_list
-    
-    # given a match, return the bitmask list
-    def get_bitmask_list(self, match: Match) -> List[int]:
-        if match.rule:
-            if match.rule.name in self.bitmask_lists: return self.bitmask_lists[match.rule.name]   
-        else:
-            item = match.ls[0]
-            if f'"{item.val}"' in self.bitmask_lists: return self.bitmask_lists[f'"{item.val}"']
-            if f'<{item.type}>' in self.bitmask_lists: return self.bitmask_lists[f'<{item.type}>']
-        raise("unknown lex/rule")
-    
-    # given a bitmask list, see if any rule is completely matched
-    def find_matched_rule(self, bitmask_list: List[int]) -> Rule:
-        for i_rule, bitmask in enumerate(bitmask_list):
-            rule_name = self.rule_names[i_rule]
-            rule = self.grammar.rules[rule_name]
-            n_terms = len(rule.terms)
-            if bitmask == (1 << n_terms) - 1:
-                return rule
-    
-
-class MatchDisplay:
-    def __init__(self, grammar: Grammar):
-        self.rule_names = [rule.name for rule in grammar.rules.values()]
-
-    def width(self): return 12
-
-    def pad(self, s, max_len, fn = None):
-        padding = max_len - len(s)
-        str = (" "*(padding//2)) + s + (" "*(padding-(padding//2)))
-        return str if not fn else fn(str)
-
-    def show_matches_single_layer(self, ms: List[Match]):
+    def ls_str(self): return '"' + " ".join(str(lex) for lex in self.ls) + '"'
+    def rule_name(self): return self.rule.name if self.rule else ""
+    def length(self) -> int: return len(self.ls)
+    def pos(self) -> int: return self.ls[0].index
+    def count_layers(self, i_layer:int = 1) -> int:
+        if len(self.children) == 0: return i_layer
+        return max([c.count_layers(i_layer+1) for c in self.children])
+    def get_layer(self, i_layer:int, this_layer:int=0) -> List['Node']:
+        if this_layer == i_layer: return [self]
+        return [c for c in self.children for c in c.get_layer(i_layer, this_layer+1)]
+    s_dw = 16       # display width
+    def display(self):
+        n_layers = self.count_layers()
         out = ""
-        pos = 0
-        for i_match, match in enumerate(ms):
-            if match.rule:
-                n_spaces = match.pos() - pos
-                pos = match.pos() + match.length()
-                out += " "*((self.width()+1)*n_spaces)
-                bg_fn = log_green_background
-                out += self.pad(match.rule.name, self.width()*match.length()+(match.length()-1), bg_fn) + " "
-        return out
-    
-    def show_matches(self, ms: List[Match]):
-        # compute max number of layers
-        n_layers = 0
-        for match in ms:
-            n_layers = max(n_layers, match.n_layers())
-        out = ""
-        for i_layer in range(n_layers):
-            layer_ms = []
-            for match in ms: layer_ms += match.get_layer((n_layers-1) -i_layer)
-            out += self.show_matches_single_layer(layer_ms) + "\n\n"
-        return out
-            
-
-    def show(self, ms: List[Match]):
-        ls = []
-        for m in ms: ls += m.ls
-
-        out = ""
-        for i in range(0, len(ls)):
-            out += log_grey(str(i)) + ":" + " "*14
-        log(out)
-
-        out = ""
-        for lex in ls:
-            out += self.pad(str(lex), self.width(), log_grey_background) + " "
-        log(out + "\n")
-
-        
-        log(self.show_matches(ms))
-        log(self.show_rules(ms))
-        return
-
-    def show_rules(self, ms: List[Match]) -> str:
-        # get grammar rule names in an array
-        out = ""
-        for i_rule in range(len(self.rule_names)):
+        for i_layer in range(0, n_layers):
+            nodes = self.get_layer(i_layer)
             pos = 0
-            for i_match, match in enumerate(ms):
-                n_spaces = match.pos() - pos
-                pos = match.pos() + match.length() + 1
-                out += " "*((self.width()+1)*n_spaces)
-                bitmask = match.bitmask_list[i_rule]
-                bitmask_prev = ms[i_match-1].bitmask_list[i_rule] if i_match > 0 else 0
-                bitmask_next = ms[i_match+1].bitmask_list[i_rule] if i_match < len(ms)-1 else 0
-                
-                prev_match = self.in_sequence(bitmask_prev, bitmask)
-                next_match = self.in_sequence(bitmask, bitmask_next)
-                highlight = prev_match or next_match
-                bg_fn = log_grey_background if highlight else None
-                stir = self.str_bitmask(bitmask, self.rule_names[i_rule])
-                out += self.pad(stir, self.width()*match.length()+(match.length()-1), bg_fn) + " "
+            for node in nodes:
+                while pos < node.pos(): out += self.pad("", 1); pos += 1
+                bg_fn = log_green_background if node.rule else log_grey_background
+                out += self.pad(str(node), node.length(), bg_fn)
+                pos += node.length()
             out += "\n"
-        return out
+        log(out)
+    def pad(self, s: str, n: int, bg_fn=None) -> str:
+        padding = ((n * (Node.s_dw-1)) + (n-1)) - len(s)
+        p0 = padding // 2
+        p1 = padding - p0
+        str = (" " * p0) + s + (" "*p1)
+        if bg_fn: str = bg_fn(str)
+        return str + " "
 
-    def str_bitmask(self, bitmask: int, rule_name: str) -> str:
-        if bitmask==0: return "•"
-        out = rule_name + ":"
-        for i in range(0, 8):
-            out += (str(i)+",") if (bitmask & (1 << i)) > 0 else ""
-        if out.endswith(","): out = out[:-1]
-        if bitmask & (1 << 9): out += "~"
-        return out
-            
-    def in_sequence(self, bitmask_a: int, bitmask_b: int) -> bool:
-        return (bitmask_a & (bitmask_b >> 1)) > 0
+@log_disable
+# returns True if the lex matches any of the match-strings (<type>, "keyword", rule)
+def match_lex(lex: Lex, match_strs: List[str]) -> bool:
+    log("match_lex", lex, lex.type, match_strs)
+    for match_str in match_strs:
+        if match_str.startswith("<"): return lex.type == match_str[1:-1]
+        elif match_str.startswith('"'): return lex.val == match_str[1:-1]
+        elif match_str == lex.val: return lex.val == match_str
+    return False
 
-#--------------------------------------------------------------------------------------------------
-# Parser itself
+# scans forward from position (i_lex) in ls to find the next fixed-point; returns index or -1
+@log_disable
+def next_fixed_point(ls: List[Lex], i_lex: int, match_strs: List[str]) -> int:
+    log("next_fixed_point", i_lex, ls[i_lex:], match_strs)
+    bracket_level = 0
+    open = "([{:indent"
+    close = ")]}:undent"
+    while i_lex < len(ls):
+        lex = ls[i_lex]
+        if bracket_level == 0:
+            if match_lex(lex, match_strs): return i_lex
+        if lex.val in open: 
+            bracket_level += 1
+            log( " open bracket")
+        elif lex.val in close: 
+            bracket_level -= 1
+            log(" close bracket")
+        i_lex += 1
+    if "<eof>" in match_strs: 
+        log("matched <eof>")
+        return i_lex
+    return -1
 
-class Parser:
-    def __init__(self, grammar_spec: str = test_grammar_spec):
-        self.mg = MetaGrammer(grammar_spec)
-        self.md = MatchDisplay(self.mg.grammar)
-        
-    def parse(self, code: str):
-        ls = lexer(Source(code = code))
-        ms = [self.match_from_lex(lex) for lex in ls]
+# tries to parse a list of terms in a lex-string, one by one
+@log_indent
+def try_parse_term_list(terms: List[Term], ls: List[Lex]) -> Node:
+    log("try_parse_term_list", terms, ls)
+    return None
 
-        collapse_list = [
-            (6, 8, "brackets"),
-            (2, 3, "arg_name"),
-            (3, 5, "infix"),
-            (2, 3, "argument"),
-            (4, 4, "argument"),
-            (2, 4, "argument"),
-            (0, 3, "function")
-        ]
+# tries to parse a concrete rule by identifying fixed-points (terminal lexes) in terms
+@log_indent
+def try_parse_concrete(rule, ls):
+    log("try_parse_concrete", rule.name, ls)
+    i_lex = 0
+    i_lex_fixed = []
+    # scan forward in the lex string to find all fixed points, store their indices
+    for i_fixed in range(0, len(rule.i_fixed_points)):
+        i_term_fixed = rule.i_fixed_points[i_fixed]
+        term_fixed = rule.terms[i_term_fixed]
+        match_strs = [term_fixed.keyword() or term_fixed.type()]
+        log("i_term", i_term_fixed, "=>", match_strs)
+        i_lex_next = next_fixed_point(ls, i_lex, match_strs)
+        log("i_lex_next", i_lex_next)
+        if i_lex_next == -1: return None
+        i_lex_fixed.append(i_lex_next)
+        i_lex = i_lex_next + 1
+    # now check that the following lex is one of the terminators for this rule
+    log("terminators:", rule.terminators)
+    i_lex_next = next_fixed_point(ls, i_lex, rule.terminators)
+    log("i_lex_next", i_lex_next)
+    if i_lex_next == -1: return None
+    # we have to check whether there's any terms afer the last fixed-term
+    if rule.i_fixed_points[-1] == len(rule.terms) - 1:
+        if (i_lex_next - i_lex_fixed[-1]) > 1:
+            log("extra terms after last fixed-point! returning None")
+            return None
+    i_lex_fixed.append(i_lex_next)
+    # at this point, we know we're looking at this rule! any errors are further down
+    node = Node(ls[:i_lex_next], rule)
+    log("i_lex_fixed", i_lex_fixed, [ls[i] for i in i_lex_fixed[:-1]])
+    log("i_fixed_points", rule.i_fixed_points)
+    i_lex = 0
+    i_term = 0
+    for i in range(0, len(rule.i_fixed_points)):
+        prev_ls = ls[i_lex:i_lex_fixed[i]]
+        prev_terms = rule.terms[i_term:rule.i_fixed_points[i]]
 
-        for start, end, rule_name in collapse_list[0:7]:
-            ms = self.collapse(ms, start, end, rule_name)
+        if len(prev_ls) > 0:
+            log("  prev_ls", prev_ls)
+            log("  prev_terms", prev_terms)
+            node.children.append(try_parse_term_list(prev_terms, prev_ls))
 
-        return self.show(ms)
-        
+        fixed_ls = ls[i_lex_fixed[i]:i_lex_fixed[i]+1]
+        fixed_term = rule.terms[rule.i_fixed_points[i]]
+        log("  fixed_ls", [str(lex) for lex in fixed_ls])
+        log("  fixed_term", fixed_term)
+
+        node.children.append(Node(fixed_ls))
+
+        i_term = rule.i_fixed_points[i] + 1
+        i_lex = i_lex_fixed[i] + 1
+
+    end_ls = ls[i_lex_fixed[-1]:i_lex_next]
+    end_terms = rule.terms[rule.i_fixed_points[-1]+1:]
+    if len(end_ls) > 0:
+        log("  end_ls", end_ls)
+        log("  end_terms", end_terms)
+        node.children.append(try_parse_term_list(end_terms, end_ls))
+
+    log("node:", node)
+    log("children:", node.children)
+    return node
+
+# tries to parse an abstract rule (eg. expression: one that has only children, and no terms)
+@log_indent
+def try_parse_abstract(rule: Rule, ls: List[Lex]) -> Node:
+    log("try_parse_abstract", rule.name, ls)
+    leaves = [leaf for leaf in rule.leaves if match_lex(ls[0], leaf.initials)]
+    log("  leaves:", [leaf.name for leaf in leaves])
+    nodes = [try_parse(leaf, ls) for leaf in leaves]
+    nodes = [node for node in nodes if node]
+    log("nodes:", nodes)
+    if len(nodes) != 1: return None
+    return nodes[0]
+
+# tries to parse any rule in a lex-string
+def try_parse(rule: Rule, ls: List[Lex]) -> Node:
+    log("try_parse", rule.name, ls)
+    if rule.is_abstract():      # eg. expression or operation
+        return try_parse_abstract(rule, ls)
+    else:
+        return try_parse_concrete(rule, ls)
     
-    def collapse(self, matches: List[Match], i_from: int, i_to: int, new_rule_name: str) -> Match:
-        new_rule = self.mg.grammar.rules[new_rule_name]
-        sub_matches = matches[i_from:i_to+1]
-        new_match = self.match_from_rule(new_rule, sub_matches)
-        matches = matches[:i_from] + [new_match] + matches[i_to+1:]
-        return matches
-    
-    def match_from_lex(self, lex: Lex): 
-        match= Match([lex])
-        match.bitmask_list = self.mg.get_bitmask_list(match)
-        return match
-
-    def match_from_rule(self, rule: Rule, matches: List['Match']):
-        ls = []
-        for match in matches:
-            ls += match.ls
-        # if we're matching a rule that was promoted from a singular, set the singular
-        for match in matches:
-            if match.rule == None:
-                i_rule = self.mg.rule_name_to_int[rule.name]
-                special = (match.bitmask_list[i_rule] & (1 << 9)) > 0
-                if special: # set the rule to the one that promoted us
-                    match.rule = self.mg.find_matched_rule(match.bitmask_list)
-        match = Match(ls, rule, matches)
-        match.bitmask_list = self.mg.get_bitmask_list(match)
-        return match
-    
-    def show(self, matches: List[Match]):
-        self.md.show(matches)
-        return matches
-
-
-        
-            
-
-#--------------------------------------------------------------------------------------------------
+def parse(code: str) -> dict:
+    ls = lexer(Source(code = code))
+    node = try_parse(s_grammar.rule_dict["expression"], ls)
+    return node
 
 @this_is_the_test
 def test_parser():
     log("test_parser")
-    p = Parser()
-    p.parse("f(n = a + (6), y)")
+    grammar = grammar_from_spec(test_grammar_spec)
+    log(parse("f(a = x+(6-y))"))
+
+
+"""
+ok so. We want to think about this new approach we're talking about:
+let's call it the "fixed-point" approach.
+
+The idea is that within every rule term-sequence, there are "fixed points" that can be definitely identified.
+You do an "next-outer" scan forward in the lex stream until you find one of those fixed points;
+then try to match the interior.
+
+You also, for each rule, compute a "termination-set".
+eg. for variable: you see where it occurs in each rule, look at what comes after.
+rule.terminators = []
+
+if you see "expression" followed by ")", then ")" gets added to the terminators of all children of expression.
+So the first thing is to go figure out all the children.
+
+So for example: you would try "brackets" as follows:
+
+    we find a "(" -> great, it's a bracket.
+    scan forward to the next fixed-point (")") generating a lex-range.
+    hand that to the parser for "expression". 
+
+similarly "variable":
+
+    you look for an identifier -> great, that's good.
+    the terminator set would be anything that follows "expression" in the rules.
+
+So: let's consider what the algorithm is:
+
+    "try_parse(rule) at lex (i_lex)"
+
+and we start with "expression" at lex 0
+
+    expression has no terms, but has children; so let's get all children-that-don't-have-children.
+
+    that's one thing: get_leaf_children. let's pre-compute that.
+
+    a + (b + c)
+
+    identifier followed by an operator 
+"""

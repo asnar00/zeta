@@ -29,17 +29,20 @@ convenience:
 ## arrays
 
     int a[] = [ 0 .. 10 ]               : [ 0, 1, ..., 9 ]
-    int b[] = [ 1 .= 10 ]               : [ 1, 2, ..., 10 ]
+    int b[] = [ 1 .. =10 ]              : [ 1, 2, ..., 10 ]
     int c[] = a[] + b[]                 : map '+'
     int d[] = a[] + 1                   : map '+' with singular value
     int sum = a[] + _                   : reduce using '+'
-    int e[] = a[] where _ & 1 == 0      : filter
+    int e[] = a[] : _ & 1 == 0          : filter
+    int s[] = a[>]                      : sort (descending)
 
     int f[] = a[] << b[]                : concatenate
     int g[] = a[] << 1                  : concatenate singular value
     int h[] = a[ 0 .. 5 ]               : slice (0-5 non-incl)
-    int j[] = a[ 0 .= 5 ]               : since (0-5 inclusive)
+    int j[] = a[ 0 .= 5 ]               : slice (0-5 inclusive)
+    int k[] = a[ 0 ]                    : slice (0-0 inclusive) *returns array*
     
 ## streams
 
-    
+    int a$ << [ 10 .. =1 ] @ 1 hz        : one per second
+

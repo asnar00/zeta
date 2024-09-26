@@ -2,6 +2,113 @@
 # scribblez
 "slow is smooth, smooth is fast"
 
+What's next:
+
+    try_parse_term_list(terms, ls)
+
+and then of course we have to figure out what to do with a + b; i.e. we have the single one done, but there's more left, so what next? It will be something like:
+
+    "we have variable, followed by "+", so the next thing to try parsing is infix/prefix/etc".
+
+So that's how we do it! Get on with it!
+
+----
+
+end of day notes:
+new approach called the "fixed-point" approach seems to be much more tractable.
+as in, I understand it!
+The idea is: identify the terms that are "fixed-points", i.e. resolve to single lexemes.
+I guess you'd call them "terminals" in normal parser lingo.
+Use the idea of the "scan-forward-until-outer-match" from the previous parser,
+where you run forward, tracking bracket-level, until you match a target lex (by type/val) at bracket-0 level.
+To this, we add the idea of "terminators": lexemes that occur *after* the end of the rule.
+We have an initial compute-phase that runs through and figures out initials, fixed-points, and terminators for each rule.
+
+The other idea is to replace the expression = constant | variable | ...
+with the idea of inheritance, so we say
+
+    expression := ...
+    constant < expression := ...
+    number < constant := <number>
+    string < constant := <string>
+    variable < expression := name:<identifier>
+
+    and so on. So we have proper parent/children relationships between rules, which really helps.
+
+We've simplified the definition of a term as either keyword/type/rule, with optional opt/list/sep "decorators". This means there's only one class of term, and there's no recursion at the level of the Term class. So much simpler than before.
+
+
+--------------------------
+
+New approach to grammar specification: extensible.
+
+    expression := ...
+    constant < expression := ...
+    number < constant := <number>
+    string < constant := <string>
+    variable < expression := <identifier>
+    brackets < expression := "(" expr:expression ")"
+    operation < expression := ...
+    prefix < operation := operator:<operator> expr:expression
+    infix < operation := left:expression operator:<operator> right:expression
+    postfix < operation := expr:expression operator:<operator>
+    function < expression := name:<identifier> "(" parameters:expression*, ")"
+
+This gets rid of multiple Term types; there's now just one. Much simpler.
+
+-----------------------------
+
+
+okay so just think about argument for a second.
+
+    expression = (constant | variable | brackets | operation | function)
+    constant = (<number> | <string>)
+    variable = <identifier>
+    brackets = "(" expr:expression ")"
+    operation = (prefix | infix | postfix)
+    prefix = operator:<operator> expr:expression
+    infix = left:expression operator:<operator> right:expression
+    postfix = expr:expression operator:<operator>
+    function = name:<identifier> "(" arguments:(argument,)* ")"
+    argument = name:(arg_name)? value:expression
+    arg_name = <identifier> "="
+
+
+So there is definitely this idea of the tree:
+
+    expect "expression"
+
+    "f" => {!variable:0, !argument:1, infix:0, function:0, arg_name:0}
+
+    so we open a hypothesis for each of these (a run!)
+
+    expression:0
+        !variable:0
+        infix:0
+        function:0
+        !argument:1
+        arg_name:1
+
+Now, if we hit it with an "eof", only completely matched items that promote to their parent are allowed. So we need "can x promote to y" map, not a problem.
+
+    expression:0
+        !variable:0     => return variable:0
+
+At this point, overshadowing isn't a thing yet, because we've only matched one item. So it's possible that it's a postfix. So overshadowing is premature here, we shouldn't apply it.
+
+
+
+
+
+
+
+
+need a new strategy to find runs.
+stay in your lanes!
+but we have the right mechanics now.
+tomorrow.
+---
+
 refinement of the "fresh every day" principle:
 at some point, some aspect of a design becomes "ingrained", i.e. it's the same every time, doesn't improve much.
 at this point, abstract it out into a section that doesn't get rewritten.
@@ -78,12 +185,6 @@ There's a little detail needed to handle optionals and lists, but basically... s
 
 This is potentially a *very* nice parser, super fast and with some very nice properties.
 
-
-
-
-
-    but the grammar doesn't tell us about precedence.
-    we clearly need it though... 
 
     expression = (constant | variable | brackets | operation | function)
     constant = (<number> | <string>)
