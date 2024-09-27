@@ -2,6 +2,19 @@
 # scribblez
 "slow is smooth, smooth is fast"
 
+Aside: how to speed up the scan-forward thing.
+Do a bracket-scan. For each open-bracket, store the jump amount forward to the closing bracket.
+That way, you can step right forward *instantly* without having to scan.
+I LIKE IT SO MUCH.
+
+do a bracket-scan. It's a fucking optimisation, but it's a really fucking great one.
+
+It's super easy to figure it out, as well.
+
+OK this is good, but let's do it after we figure out the complete parse.
+
+------
+
 What's next:
 
     try_parse_term_list(terms, ls)

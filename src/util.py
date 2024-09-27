@@ -358,6 +358,28 @@ def exception_handler(exc_type, exc_value, exc_traceback):
                 signature = get_function_signature(func, frame)
             except:
                 signature = ""
+                
+
+            # handle decorated functions
+            if signature == "args, kwargs":
+                # This is likely a decorated function, so let's inspect the actual arguments
+                arg_info = inspect.getargvalues(frame)
+                
+                # Reconstruct a more informative signature
+                arg_strings = []
+                for arg in arg_info.args:
+                    value = arg_info.locals[arg]
+                    arg_strings.append(f"{arg}:{type(value).__name__} = {log_short(repr(value))}")
+                
+                if arg_info.varargs:
+                    varargs = arg_info.locals[arg_info.varargs]
+                    arg_strings.append(f"*{arg_info.varargs}:{type(varargs).__name__} = {log_short(repr(varargs))}")
+                
+                if arg_info.keywords:
+                    kwargs = arg_info.locals[arg_info.keywords]
+                    arg_strings.append(f"**{arg_info.keywords}:{type(kwargs).__name__} = {log_short(repr(kwargs))}")
+                
+                signature = ", ".join(arg_strings)
         else:
             signature = ""
         

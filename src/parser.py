@@ -252,10 +252,10 @@ test_grammar_spec = """
 # Term represents a rule term
 class Term:
     def __init__(self, val: str, var: str="", dec: str="", sep: str=""):
-        self.val = val      # either <type>, "keyword", or rule
-        self.var = var      # variable name, or "" if none
-        self.dec = dec      # decorator: "opt" or "list"
-        self.sep = sep      # separator if list
+        self.val = val          # either <type>, "keyword", or rule
+        self.var = var          # variable name, or "" if none
+        self.dec = dec          # decorator: "opt" or "list"
+        self.sep = sep          # separator if list
     def __str__(self):
         out = self.val
         if self.dec == "list": out += f"*{self.sep}"
@@ -268,7 +268,8 @@ class Term:
     def rule(self) -> str|None: return self.val if (not self.keyword() and not self.type()) else None
     def is_optional(self) -> bool: return self.dec == "opt"
     def is_list(self) -> bool: return self.dec == "list"
-    def separator(self) -> str: return f'"{self.sep}"'
+    def separator(self) -> str: return f'"{self.sep}"' if self.sep else None
+    def is_fixed_point(self) -> bool: return self.keyword() or self.type()
 
 # Rule is a grammar rule
 class Rule:
@@ -281,7 +282,6 @@ class Rule:
         self.initials = []          # all terminals (keyword/type) that might start this
         self.terminators = []       # all terminals (keyword/type) that might follow this
         self.leaves = []            # children that don't have children (recursed down)
-        self.i_fixed_points = []    # i_term for each term that's a fixed-point
     def __str__(self):
         out = self.name
         if self.parent: out += f" < {self.parent.name}"
@@ -303,6 +303,18 @@ class Rule:
         leaves = []
         for c in self.children: leaves += c.compute_leaves()
         return leaves
+    def get_initials(self):
+        out = []
+        for initial in self.initials:
+            for key in initial.keys():
+                out.append(key)
+        return out
+    def get_terminators(self):
+        out = []
+        for terminator in self.terminators:
+            for key in terminator.keys():
+                out.append(key)
+        return out
     
 
 # singleton grammar just because it makes things easier (see "context problem")
@@ -325,15 +337,13 @@ class Grammar:
         self.compute_initials()
         self.compute_terminators()
         self.compute_leaves()
-        self.compute_fixed_points()
-    @log_disable
     def compute_initials(self):
         log("compute_initials()")
         for rule in self.rules:
             if len(rule.terms) == 0: continue
             term0 = rule.terms[0]
             initial = term0.keyword() or term0.type()
-            if initial: rule.add_initial(initial)
+            if initial: rule.add_initial({ initial: (rule, 0) })
         for rule in self.rules:
             log(f"  {rule.name}: {rule.initials}")
     def compute_terminators(self):
@@ -342,22 +352,22 @@ class Grammar:
             for i_term, term in enumerate(rule.terms):
                 term_rule = term.rule()
                 if term_rule == None: continue
-                next_initials = []
-                if term.is_list(): next_initials.append(term.separator())
+                terminators = []        # array of { match: (rule, i_term) }
+                if term.is_list(): terminators.append({ term.separator() : (rule, i_term) })
                 if (i_term+1) < len(rule.terms):
                     next_term = rule.terms[i_term+1]
                     next_terminal = next_term.keyword() or next_term.type()
-                    if next_terminal: next_initials.append(next_terminal)
+                    if next_terminal: terminators.append({ next_terminal : (rule, i_term+1) })
                     next_term_rule = next_term.rule()
-                    if next_term_rule: next_initials += next_term_rule.initials
+                    if next_term_rule: terminators += next_term_rule.initials
                     if next_term.is_list() or next_term.is_optional():
                         if (i_term+2) < len(rule.terms):
                             next_next_term = rule.terms[i_term+2]
                             next_next_term_rule = next_next_term.rule()
-                            if next_next_term_rule: next_initials += next_next_term_rule.initials
+                            if next_next_term_rule: terminators += next_next_term_rule.initials
                 else:
-                    next_initials.append("<eof>")
-                self.rule_dict[term_rule].add_terminators(next_initials)
+                    terminators.append({ "<eof>" : (rule, len(rule.terms))})
+                self.rule_dict[term_rule].add_terminators(terminators)
         for rule in self.rules:
             log(f"  {rule.name}: {rule.terminators}")
     def compute_leaves(self):
@@ -366,16 +376,6 @@ class Grammar:
             rule.leaves = rule.compute_leaves()
         for rule in self.rules:
             log(f"{rule.name}: {[leaf.name for leaf in rule.leaves]}")
-    def compute_fixed_points(self):
-        log("compute_fixed_points")
-        for rule in self.rules:
-            rule.i_fixed_points = []
-            for i_term, term in enumerate(rule.terms):
-                if term.keyword() or term.type():
-                    rule.i_fixed_points.append(i_term)
-        for rule in self.rules:
-            log(f"{rule.name}: {rule.i_fixed_points}")
-
 
 # OK, everything is super lightweight, let's keep it that way.
 def grammar_from_spec(spec: str) -> Grammar:
@@ -437,31 +437,36 @@ function < expression := name:<identifier> "(" parameters:expression*, ")"
 
 # an AST node
 class Node:
-    def __init__(self, ls: List[Lex], rule: Rule=None, children: List['Node'] = []):
+    def __init__(self, ls: List[Lex] = None, rule: Rule=None, children: List['Node'] =None, list:str=None):
         self.rule = rule
-        self.ls = ls
-        self.children = children
-    def __str__(self): return f"{self.rule_name()+":" if self.rule else ""}{self.ls_str()}"
+        self.ls = ls if ls else []
+        self.children = children if children else []
+        self.list = list
+    def __str__(self): 
+        if self.list: return f"[" + ", ".join(str(c) for c in self.children) + "]"
+        return f"{self.rule_name()+": " if self.rule else ""}{self.ls_str()}"
     def __repr__(self): return str(self)
     def ls_str(self): return '"' + " ".join(str(lex) for lex in self.ls) + '"'
     def rule_name(self): return self.rule.name if self.rule else ""
     def length(self) -> int: return len(self.ls)
-    def pos(self) -> int: return self.ls[0].index
+    def is_empty(self) -> bool: return len(self.ls) == 0
+    def pos(self) -> int: return self.ls[0].index if len(self.ls) > 0 else None
     def count_layers(self, i_layer:int = 1) -> int:
         if len(self.children) == 0: return i_layer
         return max([c.count_layers(i_layer+1) for c in self.children])
     def get_layer(self, i_layer:int, this_layer:int=0) -> List['Node']:
         if this_layer == i_layer: return [self]
         return [c for c in self.children for c in c.get_layer(i_layer, this_layer+1)]
-    s_dw = 16       # display width
+    s_dw = 14       # display width
     def display(self):
         n_layers = self.count_layers()
         out = ""
         for i_layer in range(0, n_layers):
-            nodes = self.get_layer(i_layer)
+            nodes = self.get_layer(n_layers - 1 - i_layer)
             pos = 0
             for node in nodes:
-                while pos < node.pos(): out += self.pad("", 1); pos += 1
+                node_pos = node.pos() if node.length() > 0 else pos
+                while pos < node_pos: out += self.pad("", 1); pos += 1
                 bg_fn = log_green_background if node.rule else log_grey_background
                 out += self.pad(str(node), node.length(), bg_fn)
                 pos += node.length()
@@ -480,12 +485,12 @@ class Node:
 def match_lex(lex: Lex, match_strs: List[str]) -> bool:
     log("match_lex", lex, lex.type, match_strs)
     for match_str in match_strs:
-        if match_str.startswith("<"): return lex.type == match_str[1:-1]
-        elif match_str.startswith('"'): return lex.val == match_str[1:-1]
-        elif match_str == lex.val: return lex.val == match_str
+        if match_str.startswith("<") and lex.type == match_str[1:-1]: return True
+        elif match_str.startswith('"') and lex.val == match_str[1:-1]: return True
+        elif match_str == lex.val : return True
     return False
 
-# scans forward from position (i_lex) in ls to find the next fixed-point; returns index or -1
+# scans forward from position (i_lex) in ls to find the next fixed-point; returns index or None
 @log_disable
 def next_fixed_point(ls: List[Lex], i_lex: int, match_strs: List[str]) -> int:
     log("next_fixed_point", i_lex, ls[i_lex:], match_strs)
@@ -495,7 +500,11 @@ def next_fixed_point(ls: List[Lex], i_lex: int, match_strs: List[str]) -> int:
     while i_lex < len(ls):
         lex = ls[i_lex]
         if bracket_level == 0:
-            if match_lex(lex, match_strs): return i_lex
+            log("trying to match", lex, "against", match_strs)
+            if match_lex(lex, match_strs): 
+                log("  succeeded")
+                return i_lex
+            else: log("  failed!")
         if lex.val in open: 
             bracket_level += 1
             log( " open bracket")
@@ -506,147 +515,177 @@ def next_fixed_point(ls: List[Lex], i_lex: int, match_strs: List[str]) -> int:
     if "<eof>" in match_strs: 
         log("matched <eof>")
         return i_lex
-    return -1
-
-# tries to parse a list of terms in a lex-string, one by one
-@log_indent
-def try_parse_term_list(terms: List[Term], ls: List[Lex]) -> Node:
-    log("try_parse_term_list", terms, ls)
     return None
 
-# tries to parse a concrete rule by identifying fixed-points (terminal lexes) in terms
+# tries to parse a term (possibly list or opt) in a lex-string, returns it as a single node
 @log_indent
-def try_parse_concrete(rule, ls):
-    log("try_parse_concrete", rule.name, ls)
+def parse_term(term: Term, ls: List[Lex]) -> Node:
+    log("parse_term:", term, "<=", ls)
+    result = None
+    if term.is_list(): result= parse_list_term(term, ls)
+    elif term.is_optional(): result= parse_term_opt(term, ls)
+    else: result= parse_rule(s_grammar.rule_dict[term.rule()], ls)
+    log(" returning:", result)
+    return result
+
+# tries to parse a list term (a single term that matches zero or more times)
+# returns a single node with each matched one in it (possibly zero)
+@log_indent
+def parse_list_term(term: Term, ls: List[Lex]) -> Node:
+    log("parse_list_term:", term, "<=", ls)
+    log("separator:", term.separator())
+    nodes = []
     i_lex = 0
-    i_lex_fixed = []
-    # scan forward in the lex string to find all fixed points, store their indices
-    for i_fixed in range(0, len(rule.i_fixed_points)):
-        i_term_fixed = rule.i_fixed_points[i_fixed]
-        term_fixed = rule.terms[i_term_fixed]
-        match_strs = [term_fixed.keyword() or term_fixed.type()]
-        log("i_term", i_term_fixed, "=>", match_strs)
-        i_lex_next = next_fixed_point(ls, i_lex, match_strs)
-        log("i_lex_next", i_lex_next)
-        if i_lex_next == -1: return None
-        i_lex_fixed.append(i_lex_next)
+    terminators = [term.separator()]
+    while i_lex < len(ls):
+        i_lex_next = next_fixed_point(ls, i_lex, terminators)
+        if i_lex_next == None:
+            i_lex_next = len(ls)
+        node = parse_rule(s_grammar.rule_dict[term.rule()], ls[i_lex:i_lex_next])
+        nodes.append(node)
+        if i_lex_next < len(ls) and match_lex(ls[i_lex_next], [term.separator()]):
+            nodes.append(Node(ls[i_lex_next:i_lex_next+1], None))
         i_lex = i_lex_next + 1
-    # now check that the following lex is one of the terminators for this rule
-    log("terminators:", rule.terminators)
-    i_lex_next = next_fixed_point(ls, i_lex, rule.terminators)
-    log("i_lex_next", i_lex_next)
-    if i_lex_next == -1: return None
-    # we have to check whether there's any terms afer the last fixed-term
-    if rule.i_fixed_points[-1] == len(rule.terms) - 1:
-        if (i_lex_next - i_lex_fixed[-1]) > 1:
-            log("extra terms after last fixed-point! returning None")
-            return None
-    i_lex_fixed.append(i_lex_next)
-    # at this point, we know we're looking at this rule! any errors are further down
-    node = Node(ls[:i_lex_next], rule)
-    log("i_lex_fixed", i_lex_fixed, [ls[i] for i in i_lex_fixed[:-1]])
-    log("i_fixed_points", rule.i_fixed_points)
+    result= Node(ls[:i_lex], None, nodes, "list")
+    log(" returning:", result)
+    return result
+
+# tries to parse a list of terms in a lex-string, one by one
+@log_disable
+def parse_terms(terms: List[Term], ls: List[Lex]) -> List[Node]:
+    log("parse_terms", terms, "<=", ls)
     i_lex = 0
-    i_term = 0
-    for i in range(0, len(rule.i_fixed_points)):
-        prev_ls = ls[i_lex:i_lex_fixed[i]]
-        prev_terms = rule.terms[i_term:rule.i_fixed_points[i]]
+    nodes = []
+    for term in terms:
+        node = parse_term(term, ls[i_lex:])
+        if node == None: raise Exception("parse_term returned None at {ls[i_lex].location()}")
+        i_lex += node.length()
+        nodes.append(node)
+        if i_lex >= len(ls): break # we're done :-)
+    log(" returning:", nodes)
+    return nodes
 
-        if len(prev_ls) > 0:
-            log("  prev_ls", prev_ls)
-            log("  prev_terms", prev_terms)
-            node.children.append(try_parse_term_list(prev_terms, prev_ls))
 
-        fixed_ls = ls[i_lex_fixed[i]:i_lex_fixed[i]+1]
-        fixed_term = rule.terms[rule.i_fixed_points[i]]
-        log("  fixed_ls", [str(lex) for lex in fixed_ls])
-        log("  fixed_term", fixed_term)
+# returns list of lexeme-indices if we can match all fixed-points and terminator of a rule in a lex-string
+@log_disable
+def can_match_rule(rule: Rule, ls: List[Lex]) -> List[int]:
+    i_lex = 0
+    fixed_lexes = []
+    for term in rule.terms:
+        if term.is_fixed_point():
+            i_lex_next = next_fixed_point(ls, i_lex, [term.val])
+            if i_lex_next == None: 
+                log(" returning None: failed to find fixed-point")
+                return None
+            fixed_lexes.append(i_lex_next)
+            i_lex = i_lex_next + 1
+    terminators = rule.get_terminators()
+    i_lex_next = next_fixed_point(ls, i_lex, terminators)
+    if i_lex_next == None: return None
+    if rule.terms[-1].is_fixed_point() and i_lex_next > i_lex+1: 
+        log(" returning None: extra lexes found after end!")
+        return None
+    fixed_lexes.append(i_lex_next)
+    return fixed_lexes
 
-        node.children.append(Node(fixed_ls))
+# tries to parse a concrete rule by identifying fixed-points (terminal lexes) in terms
+# optionally, pass in an already-matched first-node
+@log_indent
+def parse_concrete(rule: Rule, ls: List[Lex], first_node:Node = None) -> Node:
+    log("parse_concrete:", rule.name, "<=", ls)
 
-        i_term = rule.i_fixed_points[i] + 1
-        i_lex = i_lex_fixed[i] + 1
+    i_fixed_lexes = can_match_rule(rule, ls)
+    if i_fixed_lexes == None: 
+        log(" returning None: can't match fixed points")
+        return None
+    
+    log("matched fixed points for rule:", rule.name, i_fixed_lexes)
+    children = []
+    i_lex = 0
+    for i_term, term in enumerate(rule.terms):
+        if term.is_fixed_point():
+            lex_node = Node(ls[i_fixed_lexes[0]:i_fixed_lexes[0]+1], None) # pure lex node
+            #log("adding lex_node:", lex_node)
+            children.append(lex_node)
+            i_lex = i_fixed_lexes[0] + 1
+            i_fixed_lexes = i_fixed_lexes[1:]       # step to the next lex
+        else:
+            lex_range = ls[i_lex:i_fixed_lexes[0]]
+            i_lex = i_fixed_lexes[0]
+            log("try and match term", term, "in", lex_range)
+            if len(lex_range) == 0 and first_node:
+                node = first_node
+            else:
+                node = parse_term(term, lex_range)
+            if node:
+                #log("adding parsed node:", node)
+                children.append(node)
+            log("matched term:", node)
 
-    end_ls = ls[i_lex_fixed[-1]:i_lex_next]
-    end_terms = rule.terms[rule.i_fixed_points[-1]+1:]
-    if len(end_ls) > 0:
-        log("  end_ls", end_ls)
-        log("  end_terms", end_terms)
-        node.children.append(try_parse_term_list(end_terms, end_ls))
-
-    log("node:", node)
-    log("children:", node.children)
-    return node
+    result= Node(ls[0:i_lex], rule, children)
+    if first_node: result.ls = first_node.ls + result.ls
+    log(" returning:", result)
+    return result
 
 # tries to parse an abstract rule (eg. expression: one that has only children, and no terms)
 @log_indent
-def try_parse_abstract(rule: Rule, ls: List[Lex]) -> Node:
-    log("try_parse_abstract", rule.name, ls)
-    leaves = [leaf for leaf in rule.leaves if match_lex(ls[0], leaf.initials)]
-    log("  leaves:", [leaf.name for leaf in leaves])
-    nodes = [try_parse(leaf, ls) for leaf in leaves]
-    nodes = [node for node in nodes if node]
-    log("nodes:", nodes)
-    if len(nodes) != 1: return None
-    return nodes[0]
+def parse_abstract(rule: Rule, ls: List[Lex]) -> Node:
+    log("parse_abstract:", rule.name, "<=", ls)
+    leaves = [leaf for leaf in rule.leaves if match_lex(ls[0], leaf.get_initials())]
+    log("  matching leaves:", [leaf.name for leaf in leaves])
+    node = None
+    for leaf in leaves:
+        node = parse_rule(leaf, ls)
+        if node: break
+    if node == None:
+        log(" returning None: couldn't find a leaf that matched")
+        return None
+    if node.length() == len(ls):
+        log(" returning:", node)
+        return node
+    
+    return parse_remaining(rule, ls, node.length(), node)
+
+@log_disable
+def parse_remaining(rule: Rule, ls: List[Lex], i_lex_start: int, first_node: Node) -> Node:
+    log(f"parse_remaining: {rule.name}: ({first_node}) <= {ls[i_lex_start:]}")
+
+    # find all rule/terms that might follow the one we just matched
+    terminators = [t for t in rule.terminators if match_lex(ls[i_lex_start], list(t.keys()))]
+    for t in terminators:                           # this is ugly, make it nicer
+        key = list(t.keys())[0]                     # eg. <operator>
+        val = list(t.values())[0]                   # eg. (infix, 1)
+        rule = val[0]                               # eg. infix
+        i_term = val[1]                             # eg. 1
+        log(" ", key, f"{rule.name}:{i_term}")
+        higher_node = parse_concrete(rule, ls[i_lex_start:], first_node)    # pass in the extra thingy
+        if higher_node != None:
+            if higher_node.length() < len(ls):
+                return parse_remaining(rule, ls, higher_node.length(), higher_node)
+            log(" returning:", higher_node)
+            return higher_node
+    log(" returning None")
+    return None
 
 # tries to parse any rule in a lex-string
-def try_parse(rule: Rule, ls: List[Lex]) -> Node:
-    log("try_parse", rule.name, ls)
-    if rule.is_abstract():      # eg. expression or operation
-        return try_parse_abstract(rule, ls)
-    else:
-        return try_parse_concrete(rule, ls)
-    
+@log_indent
+def parse_rule(rule: Rule, ls: List[Lex]) -> Node:
+    log("parse_rule:", rule.name, "<=", ls)
+    result = parse_abstract(rule, ls) if rule.is_abstract() else parse_concrete(rule, ls)
+    log(" returning:", result)
+    return result
+
+@log_indent
 def parse(code: str) -> dict:
     ls = lexer(Source(code = code))
-    node = try_parse(s_grammar.rule_dict["expression"], ls)
+    node = parse_rule(s_grammar.rule_dict["expression"], ls)
     return node
 
 @this_is_the_test
 def test_parser():
     log("test_parser")
     grammar = grammar_from_spec(test_grammar_spec)
-    log(parse("f(a = x+(6-y))"))
+    result = parse("f()")
+    log()
+    result.display()
 
-
-"""
-ok so. We want to think about this new approach we're talking about:
-let's call it the "fixed-point" approach.
-
-The idea is that within every rule term-sequence, there are "fixed points" that can be definitely identified.
-You do an "next-outer" scan forward in the lex stream until you find one of those fixed points;
-then try to match the interior.
-
-You also, for each rule, compute a "termination-set".
-eg. for variable: you see where it occurs in each rule, look at what comes after.
-rule.terminators = []
-
-if you see "expression" followed by ")", then ")" gets added to the terminators of all children of expression.
-So the first thing is to go figure out all the children.
-
-So for example: you would try "brackets" as follows:
-
-    we find a "(" -> great, it's a bracket.
-    scan forward to the next fixed-point (")") generating a lex-range.
-    hand that to the parser for "expression". 
-
-similarly "variable":
-
-    you look for an identifier -> great, that's good.
-    the terminator set would be anything that follows "expression" in the rules.
-
-So: let's consider what the algorithm is:
-
-    "try_parse(rule) at lex (i_lex)"
-
-and we start with "expression" at lex 0
-
-    expression has no terms, but has children; so let's get all children-that-don't-have-children.
-
-    that's one thing: get_leaf_children. let's pre-compute that.
-
-    a + (b + c)
-
-    identifier followed by an operator 
-"""
