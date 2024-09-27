@@ -457,7 +457,7 @@ class Node:
     def get_layer(self, i_layer:int, this_layer:int=0) -> List['Node']:
         if this_layer == i_layer: return [self]
         return [c for c in self.children for c in c.get_layer(i_layer, this_layer+1)]
-    s_dw = 14       # display width
+    s_dw = 16       # display width
     def display(self):
         n_layers = self.count_layers()
         out = ""
@@ -685,7 +685,7 @@ def parse(code: str) -> dict:
 def test_parser():
     log("test_parser")
     grammar = grammar_from_spec(test_grammar_spec)
-    result = parse("f()")
+    result = parse("f(a, c = a + 1)")
     log()
     result.display()
 
