@@ -11,6 +11,7 @@ Thoughts and prayers:
     - write tests
     - optional terms
     - enums
+    - error reporting
     - auto-generate sub-rules from complex sequences
     - bracket-jump optimisation
     - multiple terms between fixed-points

@@ -587,6 +587,7 @@ def parse_terms(terms: List[Term], ls: List[Lex]) -> List[Node]:
 # returns list of lexeme-indices if we can match all fixed-points and terminator of a rule in a lex-string
 @log_disable
 def can_match_rule(rule: Rule, ls: List[Lex]) -> List[int]:
+    log("can_match_rule:", rule.name, "<=", ls)
     i_lex = 0
     fixed_lexes = []
     for term in rule.terms:
@@ -598,11 +599,17 @@ def can_match_rule(rule: Rule, ls: List[Lex]) -> List[int]:
             fixed_lexes.append(i_lex_next)
             i_lex = i_lex_next + 1
     terminators = rule.get_terminators()
+    log("terminators:", terminators)
     i_lex_next = next_fixed_point(ls, i_lex, terminators)
     if i_lex_next == None: return None
-    if rule.terms[-1].is_fixed_point() and i_lex_next > i_lex+1: 
-        log(" returning None: extra lexes found after end!")
+    if rule.terms[-1].is_fixed_point():
+        if i_lex_next > i_lex+1: 
+            log(" returning None: extra lexes found after end!")
+            return None
+    elif i_lex_next == i_lex:
+        log(" returning None: no final lex")
         return None
+    
     fixed_lexes.append(i_lex_next)
     return fixed_lexes
 
@@ -631,7 +638,7 @@ def parse_concrete(rule: Rule, ls: List[Lex], first_node:Node = None) -> Node:
             lex_range = ls[i_lex:i_fixed_lexes[0]]
             i_lex = i_fixed_lexes[0]
             log("try and match term", term, "in", lex_range)
-            if len(lex_range) == 0 and first_node:
+            if len(lex_range) == 0 and i_term == 0 and first_node:
                 node = first_node
             else:
                 node = parse_term(term, lex_range)
@@ -649,6 +656,7 @@ def parse_concrete(rule: Rule, ls: List[Lex], first_node:Node = None) -> Node:
 @log_indent
 def parse_abstract(rule: Rule, ls: List[Lex]) -> Node:
     log("parse_abstract:", rule.name, "<=", ls)
+    if len(ls) == 0: return None
     leaves = [leaf for leaf in rule.leaves if match_lex(ls[0], leaf.get_initials())]
     log("  matching leaves:", [leaf.name for leaf in leaves])
     node = None
@@ -664,12 +672,13 @@ def parse_abstract(rule: Rule, ls: List[Lex]) -> Node:
     
     return parse_remaining(rule, ls, node.length(), node)
 
-@log_disable
+@log_indent
 def parse_remaining(rule: Rule, ls: List[Lex], i_lex_start: int, first_node: Node) -> Node:
     log(f"parse_remaining: {rule.name}: ({first_node}) <= {ls[i_lex_start:]}")
 
     # find all rule/terms that might follow the one we just matched
     terminators = [t for t in rule.terminators if match_lex(ls[i_lex_start], list(t.keys()))]
+    log("terminators", terminators)
     for t in terminators:                           # this is ugly, make it nicer
         key = list(t.keys())[0]                     # eg. <operator>
         val = list(t.values())[0]                   # eg. (infix, 1)
@@ -714,3 +723,4 @@ def test_parser():
     test("parse_function_many_params", parse("f(a, b, c)"), """{'_function': {'name': f, 'parameters': [{'_variable': a}, {'_variable': b}, {'_variable': c}]}}""")
     test("parse_infix", parse("a + b"), """{'_infix': {'left': {'_variable': a}, 'operator': +, 'right': {'_variable': b}}}""")
     test("parse_prefix", parse("-a"), """{'_prefix': {'operator': -, 'expr': {'_variable': a}}}""")
+    test("parse_postfix", parse("a++"), """{'_postfix': {'expr': {'_variable': a}, 'operator': ++}}""")
