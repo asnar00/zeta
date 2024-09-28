@@ -2,6 +2,24 @@
 # scribblez
 "slow is smooth, smooth is fast"
 
+Thoughts and prayers:
+
+- continue with this one, it's the most successful so far
+- though it probably needs a few improvements
+- next steps:
+    - generate AST
+    - write tests
+    - optional terms
+    - enums
+    - auto-generate sub-rules from complex sequences
+    - bracket-jump optimisation
+    - multiple terms between fixed-points
+
+things that could be improved:
+- should we go to LexStr? I think not, for the moment
+
+------
+
 Aside: how to speed up the scan-forward thing.
 Do a bracket-scan. For each open-bracket, store the jump amount forward to the closing bracket.
 That way, you can step right forward *instantly* without having to scan.

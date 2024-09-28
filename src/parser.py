@@ -450,6 +450,7 @@ class Node:
     def rule_name(self): return self.rule.name if self.rule else ""
     def length(self) -> int: return len(self.ls)
     def is_empty(self) -> bool: return len(self.ls) == 0
+    def is_lex(self) -> bool: return len(self.ls)==1 and not self.rule and not self.list
     def pos(self) -> int: return self.ls[0].index if len(self.ls) > 0 else None
     def count_layers(self, i_layer:int = 1) -> int:
         if len(self.children) == 0: return i_layer
@@ -479,6 +480,23 @@ class Node:
         str = (" " * p0) + s + (" "*p1)
         if bg_fn: str = bg_fn(str)
         return str + " "
+    def get_ast(self):
+        if len(self.children) == 0: return self.ls[0] if len(self.ls) == 1 else [lex.val for lex in self.ls]
+        if self.list: return [c.get_ast() for c in self.children if not c.is_lex()]
+        if not self.rule: raise Exception("node has no rule, and is not a terminal or list")
+        if len(self.rule.terms) != len(self.children): raise Exception("node has wrong number of children")
+        ast = {}
+        if len(self.rule.terms) == 1: # singular, eg. variable or constant; unnamed is OK
+            term = self.rule.terms[0]
+            if term.var: ast[term.var] = self.children[0].get_ast()
+            else: ast = self.children[0].get_ast()
+        else: # multiple terms, so each item needs a var, otherwise it's an error
+            for i, term in enumerate(self.rule.terms):
+                if not term.keyword():
+                    if term.var: ast[term.var] = self.children[i].get_ast()
+                    else: raise Exception("node has unnamed children")
+        return { "_" + self.rule.name: ast }
+            
 
 @log_disable
 # returns True if the lex matches any of the match-strings (<type>, "keyword", rule)
@@ -675,17 +693,24 @@ def parse_rule(rule: Rule, ls: List[Lex]) -> Node:
     log(" returning:", result)
     return result
 
-@log_indent
+# front-end parser for testing
 def parse(code: str) -> dict:
     ls = lexer(Source(code = code))
     node = parse_rule(s_grammar.rule_dict["expression"], ls)
-    return node
+    if node == None: return node
+    log()
+    node.display()
+    return node.get_ast()
 
-@this_is_the_test
+@this_is_a_test
 def test_parser():
     log("test_parser")
     grammar = grammar_from_spec(test_grammar_spec)
-    result = parse("f(a, c = a + 1)")
-    log()
-    result.display()
-
+    test("parse_number", parse("123"), """{'_number': 123}""")
+    test("parse_variable", parse("a"), """{'_variable': a}""")
+    test("parse_brackets", parse("(a)"), """{'_brackets': {'expr': {'_variable': a}}}""")
+    test("parse_function_no_params", parse("f()"), """{'_function': {'name': f, 'parameters': []}}""")
+    test("parse_function_one_param", parse("f(a)"), """{'_function': {'name': f, 'parameters': [{'_variable': a}]}}""")
+    test("parse_function_many_params", parse("f(a, b, c)"), """{'_function': {'name': f, 'parameters': [{'_variable': a}, {'_variable': b}, {'_variable': c}]}}""")
+    test("parse_infix", parse("a + b"), """{'_infix': {'left': {'_variable': a}, 'operator': +, 'right': {'_variable': b}}}""")
+    test("parse_prefix", parse("-a"), """{'_prefix': {'operator': -, 'expr': {'_variable': a}}}""")
