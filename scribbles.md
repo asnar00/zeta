@@ -2,13 +2,172 @@
 # scribblez
 "slow is smooth, smooth is fast"
 
+
+dealing with precedence: get it done.
+
+    a = b + c
+
+    "+" is stronger than "="    => rank("+") => rank("=")
+    
+    a = (b + c)
+
+    a + b * c
+
+    "*" is stronger than "+" => 
+
+Does this work for prefix as well?
+
+    - * x
+
+OK: so we have to treat operations specially.
+
+    postfix (a + +) should always left-associate, so it works
+    prefix  (+ + a) should always right-associate, so it fails RN
+    infix (a + b)   should find the infix-operator in the RHS,
+                    and left-associate if the next operator has rank < this one, right-associate otherwise.
+
+    a + b + c - d
+
+    ((a + b) + c) - d
+
+    a = b = c = d       - has to right-associate.
+
+
+    + (expr)            => parse RHS first
+    (expr) +            => parse LHS first
+    (expr) + (expr)     => find the outer-op in LHS and RHS, decide which one.
+
+    a + b * c
+
+    => 
+
+    pred (expr)         => so it's R-associative
+
+    (expr) add (expr)   => so it could be L or R.
+
+    We need to actually do stuff like (a = b) is always R-associative.
+    a = b = c       => a = (b = (...))
+
+    a + b * c       => a + (b * c)  (R-assoc)
+                NOT    (a + b) * c
+
+---------
+
+debug: everything is either short ("a single-word summary") or long ("like, I want to see inside this thing").
+
+ok, so I don't want to do that stuff. I want to do 
+
+    position
+    offset
+    direction
+    length
+
+    position = position + offset
+    offset = direction * length
+
+but they are all subtypes of vectors ??
+
+    type vec | vector
+        x, y, z : number = 0
+
+    type pos | position < vec
+
+    type off | offset < vec
+
+    type dir | direction < vec
+
+    type length < number
+
+"every position is a vec, but not every vec is a position"
+
+and then we can do
+
+    on (p: pos) = (q: pos) + (o: off)
+        p:vec = (q:vec) + (o:vec)
+
+
+    on (o: off) = (d: dir) * (l: length) ...
+
+but others aren't allowed, so if we do
+
+    pos + dir       => type error: doesn't exist.
+
+The reason that's useful is that when I visualise them, I can show them as absolute positions, offsets, directions, or lengths.
+
+    on direction d = normalise (offset o)
+    on direction d = (offset o) / (length l)
+
+This is quite an interesting tack to take, no?
+
+    on (image i) = show (direction d)
+    on (scene s) = show details (direction d)
+
+that's quite an interesting approach to take. Note that I'm quite liking lowercase types as well! => is that bad?
+
+
+-------
+
+
+operator precedence scribbles:
+
+    a + b * c
+
+By default, this will left-assocate, because that's how parse_remaining works.
+
+    (a + b) * c
+
+What we should do instead is:
+
+    parse "a" => variable a
+
+then - we're parsing an operator, so *special code kicks in*:
+
+    => go into the rhs (all remaining terms) and find the next top-level operator. If you don't find one, or its rank is lower than your current operator, then you left-associate. Otherwise, you parse the whole RHS and insert it into position 3.
+
+        + a -
+
+    a = b = c = d
+
+    a = (b = (c = d))
+
+so an operator can either left-associate or right-associate.
+and operators have ranks.
+
+    a << b << c
+
+should be
+
+    (a << b) << c
+
+but it could equally be
+
+    a << 1 + 2
+
+
+-----
+
+concept: "visualising what a function is doing"
+
+it's sort of connected to the code; but really we want to look at the data structures.
+
+example: we have a function that takes a List[Lex] ls and an index into that list. I like the idea of "showing state" by actually showing the individual lexems as little blobs running left to right, and the index as an arrow pointing at the appropriate item. So much easier to understand.
+
+And when you think of it that way, *that* is a visualisation of how it works, that you can really understand., the code explains what's going on. And we LLM-generate the visualisation from the explanation.
+
+----
+
+another concept: a way of combining the pseudocode and the code in the same place.
+
+-----
+
 Thoughts and prayers:
 
 - continue with this one, it's the most successful so far
 - though it probably needs a few improvements
 - next steps:
-    - generate AST
-    - write tests
+    done - generate AST
+    done - write tests
+    - operator precedence
     - optional terms
     - enums
     - error reporting
@@ -87,8 +246,6 @@ New approach to grammar specification: extensible.
     function < expression := name:<identifier> "(" parameters:expression*, ")"
 
 This gets rid of multiple Term types; there's now just one. Much simpler.
-
------------------------------
 
 
 okay so just think about argument for a second.

@@ -136,8 +136,8 @@ def lexer(source: Source) -> List[Lex]:
         specs = [ ('number', r'\d+(\.\d*)?'),                           # integer or decimal number
                     ('identifier', r'[A-Za-z_][A-Za-z0-9_$\[\]]*'),     # identifiers
                     ('string', r'"(?:\\.|[^"\\])*"'),                   # string literals with support for escaped quotes
-                    ('operator', r'[-+=%^<>*/?!|&#\\]{1,2}'),           # operators, and double-operators
-                    ('punctuation', r'[(){}\[\],.;:]'),                 # punctuation
+                    ('operator', r'[-+=%^<>*/?!|&#.\\]{1,2}'),          # operators, and double-operators
+                    ('punctuation', r'[(){}\[\],;:]'),                  # punctuation
                     ('newline', r'(^[ ]+)|(\n[ ]*)'),                   # line-start plus 0 or more spaces
                     ('whitespace', r'[ ]+')]                            # spaces
         patterns = '|'.join('(?P<%s>%s)' % pair for pair in specs)
@@ -599,7 +599,6 @@ def can_match_rule(rule: Rule, ls: List[Lex]) -> List[int]:
             fixed_lexes.append(i_lex_next)
             i_lex = i_lex_next + 1
     terminators = rule.get_terminators()
-    log("terminators:", terminators)
     i_lex_next = next_fixed_point(ls, i_lex, terminators)
     if i_lex_next == None: return None
     if rule.terms[-1].is_fixed_point():
@@ -673,12 +672,65 @@ def parse_abstract(rule: Rule, ls: List[Lex]) -> Node:
     return parse_remaining(rule, ls, node.length(), node)
 
 @log_indent
+def operator_rank(lex: Lex) -> int:
+    if lex.val in ["*", "/"]: return 3
+    if lex.val in ["+", "-"]: return 2
+    if lex.val in ["="]: return 1
+    return 0
+
+@log_indent
+def parse_operator(rule: Rule, ls: List[Lex], i_lex_start: int, first_node: Node, tirs) -> Node:
+    log("parse_operator:", rule.name, "<=", ls, i_lex_start, first_node)
+    # just do the first one for the time being
+    i_key = 0
+    val = tirs[i_key]
+    rule = val[0]
+    i_term = val[1]
+    if (i_term + 1) < len(rule.terms):
+        log("rule:", rule.name, "term", i_term)
+        next_term = rule.terms[i_term+1]
+        log("next term:", next_term)
+        ls_rhs = ls[i_lex_start+1:]
+        log("ls_rhs", ls_rhs)
+        # this is a bit of a hack...
+        i_lex_operator = next_fixed_point(ls_rhs, 0, ["<operator>"])
+        if i_lex_operator == None: return None  # just go the normal route
+        log("i_lex_operator:", i_lex_operator)
+        rhs_operator = ls_rhs[i_lex_operator]
+        log("rhs_operator:", rhs_operator)
+        this_operator = ls[i_lex_start]
+        log("this_operator:", this_operator)
+        if operator_rank(rhs_operator) <= operator_rank(this_operator): return None # do normal left-assoc
+
+        node_rhs = parse_term(next_term, ls_rhs)
+        log("node_rhs:", node_rhs)
+        if node_rhs == None: return None
+        op_node = Node(ls[i_lex_start:i_lex_start+1], None)
+        new_node = Node(first_node.ls + op_node.ls + node_rhs.ls, rule, [first_node, op_node, node_rhs])
+        log("returning:", new_node)
+        return new_node
+    log(" returning None: couldn't find a next term")
+    return None
+
+
+
+@log_indent
 def parse_remaining(rule: Rule, ls: List[Lex], i_lex_start: int, first_node: Node) -> Node:
     log(f"parse_remaining: {rule.name}: ({first_node}) <= {ls[i_lex_start:]}")
 
     # find all rule/terms that might follow the one we just matched
     terminators = [t for t in rule.terminators if match_lex(ls[i_lex_start], list(t.keys()))]
-    log("terminators", terminators)
+    keys = [list(t.keys())[0] for t in terminators]
+    vals = [list(t.values())[0] for t in terminators]
+    log("terminators:", keys)
+    all_keys_are_operators = all([k == "<operator>" for k in keys])
+    log("all_keys_are_operators:", all_keys_are_operators)
+
+    if all_keys_are_operators:
+        node = parse_operator(rule, ls, i_lex_start, first_node, vals)
+        if node: return node
+    
+    # left-associative
     for t in terminators:                           # this is ugly, make it nicer
         key = list(t.keys())[0]                     # eg. <operator>
         val = list(t.values())[0]                   # eg. (infix, 1)
@@ -711,7 +763,7 @@ def parse(code: str) -> dict:
     node.display()
     return node.get_ast()
 
-@this_is_a_test
+@this_is_the_test
 def test_parser():
     log("test_parser")
     grammar = grammar_from_spec(test_grammar_spec)
@@ -724,3 +776,5 @@ def test_parser():
     test("parse_infix", parse("a + b"), """{'_infix': {'left': {'_variable': a}, 'operator': +, 'right': {'_variable': b}}}""")
     test("parse_prefix", parse("-a"), """{'_prefix': {'operator': -, 'expr': {'_variable': a}}}""")
     test("parse_postfix", parse("a++"), """{'_postfix': {'expr': {'_variable': a}, 'operator': ++}}""")
+    test("parse_precedence", parse("a + b * c"), """{'_infix': {'left': {'_variable': a}, 'operator': +, 'right': {'_infix': {'left': {'_variable': b}, 'operator': *, 'right': {'_variable': c}}}}}""")
+    
