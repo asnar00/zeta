@@ -7,6 +7,14 @@ from util import *
 from typing import List, Dict, Tuple, Union
 
 #--------------------------------------------------------------------------------------------------
+# General design principles:
+
+# keep classes small: do computation in functions wherever possible
+# keep functions small: half a screenful is a good limit
+
+# as a general guide, if you have to scroll to understand something, it's too big
+
+#--------------------------------------------------------------------------------------------------
 # Source management
 
 # markdown files contain text and code snippets
@@ -113,668 +121,394 @@ on (out$ : string) << hello() {
 }
 next   
 """)), lexer_result)
-
+    ls = lexer(Source(code="(a + b) * c"))
+    test("lexer_jump", ls[0].jump, 4)
 
 # lexeme: stores value and type, and also position within the source
+# we're loading quite a bit of computed stuff onto it, but that speeds up parsing later
 class Lex:
-    def __init__(self, source: Source, pos: int, val: str, type: str, index: int=0):
-        self.source = source; self.pos = pos; self.val = val; self.type = type; self.index = index
+    def __init__(self, source: Source, pos: int, val: str, type: str):
+        self.source = source;   # source object we're in
+        self.pos = pos;         # character position in the source
+        self.val = val;         # "value" - the text (might be different from source, if indent/etc)
+        self.type = type;       # type - identifier, number, operator, etc
+        self.rank = 0           # rank of the lexeme if an operator (for precedence)
+        self.index = None       # index in the original lex list (doesn't change if we take slices etc)
+        self.jump = None        # increment to jump to next/prev matching bracket ("()", "[]", "indent/undent")
     def __str__(self):
         return self.val
     def __repr__(self):
         val = str(self)
         if self.type == "newline" : return log_grey(val)
         else: return val
+    def dbg(self):
+        return f"<{self.type}> {self.val} {self.jump or ""}"
     def location(self):
         return self.source.location(self.pos)
     
 # lexer: reads source and produces lexemes
 def lexer(source: Source) -> List[Lex]:
-    # naive lexer just does a straight lex
-    def naive_lexer(source: Source) -> List[Lex]:
-        ls = []
-        specs = [ ('number', r'\d+(\.\d*)?'),                           # integer or decimal number
-                    ('identifier', r'[A-Za-z_][A-Za-z0-9_$\[\]]*'),     # identifiers
-                    ('string', r'"(?:\\.|[^"\\])*"'),                   # string literals with support for escaped quotes
-                    ('operator', r'[-+=%^<>*/?!|&#.\\]{1,2}'),          # operators, and double-operators
-                    ('punctuation', r'[(){}\[\],;:]'),                  # punctuation
-                    ('newline', r'(^[ ]+)|(\n[ ]*)'),                   # line-start plus 0 or more spaces
-                    ('whitespace', r'[ ]+')]                            # spaces
-        patterns = '|'.join('(?P<%s>%s)' % pair for pair in specs)
-        regex = re.compile(patterns)
-        pos = 0
-        index = 0
-        while pos < len(source.code):
-            m = regex.match(source.code, pos)
-            if not m: raise Exception(f'unexpected character "{source.code[pos]}" at {log_short(source.code[pos:])}')
-            if len(m.group()) == 0: raise Exception(f'empty match at {log_short(source.code[pos:])}')
-            type = m.lastgroup
-            val = m.group()
-            if (type != 'whitespace'):
-                if type == 'newline':
-                    ls.append(Lex(source, pos, val.replace("\n", "↩︎\n").replace(" ", "_"), type, index))
-                else:
-                    ls.append(Lex(source, pos, val, type, index))
-            pos += len(val)
-            index += 1
-        return ls
-
-    # replaces all 'newline' lexemes with the appropriate ws-indent/undent/newline lexemes
-    def insert_ws_indents(ls: List[Lex]) -> List[Lex]:
-        ols = []
-        last_indent = 0
-        for lex in ls:
-            if lex.type == "newline":
-                indent = len(lex.val) // 4
-                if indent > last_indent:
-                    if len(ols) > 0 and ols[-1].val == ":": ols.pop()
-                    for i in range(indent - last_indent):
-                        ols.append(Lex(lex.source, lex.pos, "ws-indent", "newline"))
-                elif indent < last_indent:
-                    for i in range(last_indent - indent):
-                        ols.append(Lex(lex.source, lex.pos, "ws-undent", "newline"))
-                else:
-                    ols.append(Lex(lex.source, lex.pos, "ws-newline", "newline"))
-                last_indent = indent
-            else:
-                ols.append(lex)
-        return ols
-
-    # ensures that any braces / semicolons are handled properly for cpp/ts/etc
-    def handle_braces(ls: List[Lex]) -> List[Lex]:
-        ols = []
-        i = 0
-        while i < len(ls):
-            lex = ls[i]
-            if lex.val == "{":      # add an indent, remove all subsequent ws-indents
-                ols.append(Lex(lex.source, lex.pos, ":indent", "newline"))
-                i += 1
-                while i < len(ls) and ls[i].val.startswith("ws-") : i += 1
-                i -= 1
-            elif lex.val == "}":    # add an undent, remove all previous ws-undents
-                while len(ols) > 0 and ols[-1].val.startswith("ws-"): ols.pop()
-                ols.append(Lex(lex.source, lex.pos, ":undent", "newline"))
-            elif lex.val == ";":
-                ols.append(Lex(lex.source, lex.pos, ":newline", "newline"))
-            else:
-                ols.append(lex)
-            i += 1
-        return ols
-
-    # replace all 'ws-' tags with normal tags
-    def finalise_indents(ls: List[Lex]) -> List[Lex]:
-        for lex in ls:
-            if lex.val.startswith("ws-"):
-                lex.val = ":" + lex.val[3:]
-        return ls
-
-    # get rid of any newlines that sit next to indents or undents
-    def filter_newlines(ls: List[Lex]) -> List[Lex]:
-        ols = []
-        i = 0
-        while i < len(ls):
-            lex = ls[i]
-            if lex.val == ":newline":
-                preceding_is_ndent = (i > 0 and ls[i-1].val in [":indent", ":undent"])
-                following_is_ndent = (i < (len(ls)-1) and ls[i+1].val in [":indent", ":undent"])
-                if preceding_is_ndent or following_is_ndent: pass
-                else:
-                    ols.append(lex)
-            else:
-                ols.append(lex)
-            i += 1
-        return ols
-    
     ls = naive_lexer(source)
     ls = insert_ws_indents(ls)
     ls = handle_braces(ls)
     ls = finalise_indents(ls)
     ls = filter_newlines(ls)
+    ls = compute_jumps(ls)
+    ls = compute_ranks(ls)
     for i, lex in enumerate(ls): lex.index = i
     return ls
+
+# naive lexer just does a straight lex
+def naive_lexer(source: Source) -> List[Lex]:
+    ls = []
+    specs = [ ('number', r'\d+(\.\d*)?'),                           # integer or decimal number
+                ('identifier', r'[A-Za-z_][A-Za-z0-9_$\[\]]*'),     # identifiers
+                ('string', r'"(?:\\.|[^"\\])*"'),                   # string literals with support for escaped quotes
+                ('operator', r'[-+=%^<>*/?!|&#.\\]{1,2}'),          # operators, and double-operators
+                ('punctuation', r'[(){}\[\],;:]'),                  # punctuation
+                ('newline', r'(^[ ]+)|(\n[ ]*)'),                   # line-start plus 0 or more spaces
+                ('whitespace', r'[ ]+')]                            # spaces
+    patterns = '|'.join('(?P<%s>%s)' % pair for pair in specs)
+    regex = re.compile(patterns)
+    pos = 0
+    while pos < len(source.code):
+        m = regex.match(source.code, pos)
+        if not m: raise Exception(f'unexpected character "{source.code[pos]}" at {log_short(source.code[pos:])}')
+        if len(m.group()) == 0: raise Exception(f'empty match at {log_short(source.code[pos:])}')
+        type = m.lastgroup
+        val = m.group()
+        if (type != 'whitespace'):
+            if type == 'newline':
+                ls.append(Lex(source, pos, val.replace("\n", "↩︎\n").replace(" ", "_"), type))
+            else:
+                ls.append(Lex(source, pos, val, type))
+        pos += len(val)
+    return ls
+
+# replaces all 'newline' lexemes with the appropriate ws-indent/undent/newline lexemes
+def insert_ws_indents(ls: List[Lex]) -> List[Lex]:
+    ols = []
+    last_indent = 0
+    for lex in ls:
+        if lex.type == "newline":
+            indent = len(lex.val) // 4
+            if indent > last_indent:
+                if len(ols) > 0 and ols[-1].val == ":": ols.pop()
+                for i in range(indent - last_indent):
+                    ols.append(Lex(lex.source, lex.pos, "ws-indent", "indent"))
+            elif indent < last_indent:
+                for i in range(last_indent - indent):
+                    ols.append(Lex(lex.source, lex.pos, "ws-undent", "undent"))
+            else:
+                ols.append(Lex(lex.source, lex.pos, "ws-newline", "newline"))
+            last_indent = indent
+        else:
+            ols.append(lex)
+    return ols
+
+# ensures that any braces / semicolons are handled properly for cpp/ts/etc
+def handle_braces(ls: List[Lex]) -> List[Lex]:
+    ols = []
+    i = 0
+    while i < len(ls):
+        lex = ls[i]
+        if lex.val == "{":      # add an indent, remove all subsequent ws-indents
+            ols.append(Lex(lex.source, lex.pos, ":indent", "indent"))
+            i += 1
+            while i < len(ls) and ls[i].val.startswith("ws-") : i += 1
+            i -= 1
+        elif lex.val == "}":    # add an undent, remove all previous ws-undents
+            while len(ols) > 0 and ols[-1].val.startswith("ws-"): ols.pop()
+            ols.append(Lex(lex.source, lex.pos, ":undent", "undent"))
+        elif lex.val == ";":
+            ols.append(Lex(lex.source, lex.pos, ":newline", "newline"))
+        else:
+            ols.append(lex)
+        i += 1
+    return ols
+
+# replace all 'ws-' tags with normal tags
+def finalise_indents(ls: List[Lex]) -> List[Lex]:
+    for lex in ls:
+        if lex.val.startswith("ws-"):
+            lex.val = ":" + lex.val[3:]
+    return ls
+
+# get rid of any newlines that sit next to indents or undents
+def filter_newlines(ls: List[Lex]) -> List[Lex]:
+    ols = []
+    i = 0
+    while i < len(ls):
+        lex = ls[i]
+        if lex.val == ":newline":
+            preceding_is_ndent = (i > 0 and ls[i-1].val in [":indent", ":undent"])
+            following_is_ndent = (i < (len(ls)-1) and ls[i+1].val in [":indent", ":undent"])
+            if preceding_is_ndent or following_is_ndent: pass
+            else:
+                ols.append(lex)
+        else:
+            ols.append(lex)
+        i += 1
+    return ols
+
+# each open or close bracket ("(", "[", indent) should store a jump its matching bracket
+def compute_jumps(ls: List[Lex]) -> List[Lex]:
+    bracket_level = 0
+    open = ["(", "[", ":indent"]
+    close = [")", "]", ":undent"]
+    i_open_lex : List[int] = []
+    for i, lex in enumerate(ls):
+        if lex.val in open:
+            i_open_lex.append(i)
+        elif lex.val in close:
+            if len(i_open_lex) == 0: raise Exception(f"unmatched bracket at {lex.location()}")
+            i_open = i_open_lex.pop()
+            ls[i_open].jump = i - i_open    # forward jump
+            lex.jump = i_open - i           # backward jump
+    return ls
+
+def compute_ranks(ls: List[Lex]) -> List[Lex]:
+    for lex in ls:
+        if lex.val in ["*", "/", "**", "//"]: lex.rank = 2
+        elif lex.val in ["+", "-", "++", "--"]: lex.rank = 1
+        elif lex.val in ["=", "<<"]: lex.rank = 0
+    return ls
+
 #--------------------------------------------------------------------------------------------------
-# Grammar: a collection of Rules, each made of cross-referencing Terms
+# the complete grammar spec for the zero programming language
 
-test_grammar_spec = """
-    expression := ...
-    constant < expression := ...
-    number < constant := <number>
-    string < constant := <string>
-    variable < expression := <identifier>
-    brackets < expression := "(" expr:expression ")"
-    operation < expression := ...
-    prefix < operation := operator:<operator> expr:expression
-    infix < operation := left:expression operator:<operator> right:expression
-    postfix < operation := expr:expression operator:<operator>
-    function < expression := name:<identifier> "(" parameters:expression*, ")"
-    """
+zero_grammar = """
+    feature_decl := "feature" name:<identifier> ("extends" parent:<identifier>)? <indent> body:component* <undent>
+    component := (type_decl | variable_decl | function_decl)
 
-# Term represents a rule term
+    type_decl := "type" name_decl (type_decl_rhs)
+    type_decl_rhs := (type_structure_decl | type_relation_decl)
+    type_structure_decl := "=" <indent> properties:variable_decl+ <undent>
+    type_relation_decl := "<" parent:<identifier>
+
+    variable_decl := variable_type_decl ("=" default:expression)?
+    variable_type_decl := (c_style_var_type_decl | ts_style_var_type_decl)
+
+    c_style_var_type_decl := type:<identifier> variable_names:name_decl+,
+    ts_style_var_type_decl := variable_names:name_decl+, ":" type:<identifier>
+    name_decl := short:<identifier> ("|" long:<identifier>)?
+
+    function_decl := modifier:function_modifier "(" result:variable_type_decl ")" assign:("=" | "<<") signature:signature <indent> body:function_body <undent>
+    function_modifier := ("on" | "after" | "before" | "replace")
+    signature := short:signature_single ("|" long:signature_single)?
+    signature_single := components:signature_component+
+    signature_component := (signature_word | signature_parameter_group)
+    signature_word := word:(<identifier> | <operator>)
+    signature_parameter_group := "(" parameters:variable_decl*, ")"
+
+    function_body := statement*
+    statement := lhs:variable_assign op:("=" | "<<") rhs:expression
+    variable_assign := (variable_decl | variable)
+    variable := name:<identifier>
+
+    expression := (constant | variable | brackets | function | operation)
+    constant := (<number> | <string>)
+    brackets := "(" expression ")"
+
+    function := (function_call_word | function_call_params)+
+    function_call_word := word:<identifier>
+    function_call_params := "(" params:function_call_param*, ")"
+    function_call_param := function_call_var? value:expression
+    function_call_var := name:<identifier> ":"
+
+    operation := (infix | prefix | postfix)
+    infix := lhs:expression op:<operator> rhs:expression
+    prefix := op:<operator> rhs:expression
+    postfix := lhs:expression op:<operator>
+"""
+
+#--------------------------------------------------------------------------------------------------
+# Grammar: derived from the grammar spec
+
 class Term:
-    def __init__(self, val: str, var: str="", dec: str="", sep: str=""):
-        self.val = val          # either <type>, "keyword", or rule
-        self.var = var          # variable name, or "" if none
-        self.dec = dec          # decorator: "opt" or "list"
-        self.sep = sep          # separator if list
+    def __init__(self, var: str, vals: List[str], decorator: str=None, separator: str=None):
+        self.var = var                                  # variable name to bind the result to
+        self.vals = vals                                # list of possible values (<identifier>, "keyword", rule)
+        self.rules = [s_grammar.rule(val) for val in vals if not is_terminal(val)]                                 # list of rules that this term "points to"
+        self.decorator = decorator                      # optional decorator ("*", "+", "?")
+        self.separator = separator                      # if a list, the separator ("" or "," or "|") usually
+        self.is_terminal = self.compute_is_terminal()   # if all values are <identifier> or "keyword", we're a terminal
     def __str__(self):
-        out = self.val
-        if self.dec == "list": out += f"*{self.sep}"
-        elif self.dec == "opt": out += "?"
-        if self.var: out = f"{self.var}:{out}"
-        return out
+        vals_str = " | ".join(self.vals)
+        if len(self.vals) > 1: vals_str = f"({vals_str})"
+        if self.decorator: vals_str += self.decorator
+        if self.separator: vals_str += self.separator
+        if self.var: vals_str = f"{self.var}:{vals_str}"
+        return vals_str
     def __repr__(self): return str(self)
-    def keyword(self) -> str|None: return self.val if self.val.startswith('"') else None
-    def type(self) -> str|None: return self.val if self.val.startswith("<") else None
-    def rule(self) -> str|None: return self.val if (not self.keyword() and not self.type()) else None
-    def is_optional(self) -> bool: return self.dec == "opt"
-    def is_list(self) -> bool: return self.dec == "list"
-    def separator(self) -> str: return f'"{self.sep}"' if self.sep else None
-    def is_fixed_point(self) -> bool: return self.keyword() or self.type()
-
-# Rule is a grammar rule
-class Rule:
-    def __init__(self, name: str, parent: 'Rule', terms: List[Term]):
-        self.name = name
-        self.parent = parent
-        self.children = []
-        if self.parent: self.parent.children.append(self)
-        self.terms = terms
-        self.initials = []          # all terminals (keyword/type) that might start this
-        self.terminators = []       # all terminals (keyword/type) that might follow this
-        self.leaves = []            # children that don't have children (recursed down)
-    def __str__(self):
-        out = self.name
-        if self.parent: out += f" < {self.parent.name}"
-        out += " := "
-        out += " ".join([str(t) for t in self.terms]) if len(self.terms)>0 else "..."
-        return out
-    def __repr__(self): return str(self)
-    def is_abstract(self): return len(self.terms) == 0
-    def add_initial(self, initial): 
-        self.initials.append(initial)
-        if self.parent: self.parent.add_initial(initial)
-    def add_terminators(self, terminators):
-        for t in terminators:
-            if not t in self.terminators: self.terminators.append(t)
-        for c in self.children:
-            c.add_terminators(terminators)
-    def compute_leaves(self) -> List['Rule']:
-        if len(self.children) == 0: return [self]
-        leaves = []
-        for c in self.children: leaves += c.compute_leaves()
-        return leaves
-    def get_initials(self):
-        out = []
-        for initial in self.initials:
-            for key in initial.keys():
-                out.append(key)
-        return out
-    def get_terminators(self):
-        out = []
-        for terminator in self.terminators:
-            for key in terminator.keys():
-                out.append(key)
-        return out
+    def dbg(self): return str(self)
+    def compute_is_terminal(self) -> bool:
+        for val in self.vals: 
+            if not (val.startswith("<") or val.startswith('"')): return False
+        return True
+    def terminals(self) -> List[str]:
+        return self.vals if self.is_terminal else []
     
+def is_terminal(val: str) -> bool:
+    return val.startswith("<") or val.startswith('"')
 
-# singleton grammar just because it makes things easier (see "context problem")
-s_grammar = None 
-
-# Grammar is a list of rules
-class Grammar:
-    def __init__(self, rules: List[Rule]):
-        self.rules = rules
-        # map rule name to rule
-        self.rule_dict = {rule.name: rule for rule in self.rules}
-        self.compute_meta_stuff()
-        global s_grammar
-        s_grammar = self
-    def __str__(self):
-        return "\n".join([str(r) for r in self.rules])
+class Rule:
+    def __init__(self, name: str, terms: List[Term] = None):
+        self.name = name
+        self.terms = terms or []
+        self.parent = None
+        self.children = []
+    def __str__(self): return self.name
     def __repr__(self): return str(self)
-    @log_disable
-    def compute_meta_stuff(self):
-        self.compute_initials()
-        self.compute_terminators()
-        self.compute_leaves()
-    def compute_initials(self):
-        log("compute_initials()")
-        for rule in self.rules:
-            if len(rule.terms) == 0: continue
-            term0 = rule.terms[0]
-            initial = term0.keyword() or term0.type()
-            if initial: rule.add_initial({ initial: (rule, 0) })
-        for rule in self.rules:
-            log(f"  {rule.name}: {rule.initials}")
-    def compute_terminators(self):
-        log("compute_terminators")
-        for rule in self.rules:
-            for i_term, term in enumerate(rule.terms):
-                term_rule = term.rule()
-                if term_rule == None: continue
-                terminators = []        # array of { match: (rule, i_term) }
-                if term.is_list(): terminators.append({ term.separator() : (rule, i_term) })
-                if (i_term+1) < len(rule.terms):
-                    next_term = rule.terms[i_term+1]
-                    next_terminal = next_term.keyword() or next_term.type()
-                    if next_terminal: terminators.append({ next_terminal : (rule, i_term+1) })
-                    next_term_rule = next_term.rule()
-                    if next_term_rule: terminators += next_term_rule.initials
-                    if next_term.is_list() or next_term.is_optional():
-                        if (i_term+2) < len(rule.terms):
-                            next_next_term = rule.terms[i_term+2]
-                            next_next_term_rule = next_next_term.rule()
-                            if next_next_term_rule: terminators += next_next_term_rule.initials
-                else:
-                    terminators.append({ "<eof>" : (rule, len(rule.terms))})
-                self.rule_dict[term_rule].add_terminators(terminators)
-        for rule in self.rules:
-            log(f"  {rule.name}: {rule.terminators}")
-    def compute_leaves(self):
-        log("compute_leaves()")
-        for rule in self.rules:
-            rule.leaves = rule.compute_leaves()
-        for rule in self.rules:
-            log(f"{rule.name}: {[leaf.name for leaf in rule.leaves]}")
+    def dbg(self): return f"{self.name} := {' '.join([str(t) for t in self.terms])}"
 
-# OK, everything is super lightweight, let's keep it that way.
-def grammar_from_spec(spec: str) -> Grammar:
-    rule_dict = {}
+s_grammar = None        # global singleton for convenience
+
+class Grammar:
+    def __init__(self, spec: str):
+        self.rules = []             # array of rules
+        self.rule_dict = {}         # map name => rule
+        global s_grammar            # global singleton
+        s_grammar = self            # for convenience
+        parse_grammar(self, spec)   # do all hefty work in functions to avoid statefulmess
+
+    def add_rule(self, rule: Rule):
+        self.rules.append(rule)
+        self.rule_dict[rule.name] = rule
+
+    def rule(self, name: str) -> Rule:
+        return self.rule_dict[name]
+    
+    def __str__(self):
+        return "\n".join([rule.dbg() for rule in self.rules])
+    def __repr__(self): return str(self)
+
+# parse grammar spec into rules
+@log_indent
+def parse_grammar(grammar: Grammar, spec: str):
     lines = spec.strip().split("\n")
-    rules = []
+    lines = [line.strip() for line in lines if line.strip() != ""]
+    # first add all rules to the grammar, so we can refer to Rules directly
     for line in lines:
-        parts = line.split(" := ")
-        lhs = parts[0].strip()
+        parts = line.split(":=")
+        rule_name = parts[0].strip()
+        grammar.add_rule(Rule(rule_name))
+    # now parse each line
+    for line in lines:
+        log("\n\n", line)
+        parts = line.split(":=")
+        rule_name = parts[0].strip()
         rhs = parts[1].strip()
-        lhs_parts = lhs.split(" < ")
-        rule_name = lhs_parts[0].strip()
-        parent_name = lhs_parts[1].strip() if len(lhs_parts) > 1 else None
-        terms = []
-        if rhs != "...":
-            term_strs = [t.strip() for t in rhs.split(" ")]
-            for term_str in term_strs:
-                term_parts = term_str.split(":")
-                var = term_parts[0] if len(term_parts) == 2 else ""
-                val = term_parts[-1]
-                dec = ""
-                sep = ""
-                if '*' in val:
-                    ic = val.find('*')
-                    sep = val[ic+1:].replace("*", "")
-                    val = val[:ic]
-                    dec = "list"
-                elif val.endswith("?"):
-                    val = val[:-1]
-                    dec = "opt"
-                term = Term(val, var, dec, sep)
-                terms.append(term)
-        parent = rule_dict[parent_name] if parent_name else None
-        rule = Rule(rule_name, parent, terms)
-        rules.append(rule)
-        rule_dict[rule_name] = rule
-    grammar = Grammar(rules)
-    return grammar
+        parse_rule(rule_name, rhs)
 
-@this_is_a_test
-def test_parser():
-    grammar = grammar_from_spec(test_grammar_spec)
+# parses a single line of the grammar into one, possibly more, rules
+def parse_rule(rule_name: str, rhs: str) -> List[Rule]:
+    term_strs = split_terms(rhs)
+    for i_term, term_str in enumerate(term_strs):
+        parse_term(rule_name, term_str, i_term)
+
+# splits a rule into term strings
+@log_indent
+def split_terms(terms_str: str) -> List[str]:
+    # split by spaces, but keep things in brackets together
+    # e.g. "a b (c d) e" -> ["a", "b", "(c d)", "e"]
+    terms = []
+    term = ""
+    in_brackets = False
+    for c in terms_str:
+        if c == " " and not in_brackets:
+            terms.append(term)
+            term = ""
+        elif c == "(":
+            in_brackets = True
+            term += c
+        elif c == ")":
+            in_brackets = False
+            term += c
+        else:
+            term += c
+    terms.append(term)
+    return terms
+
+@log_indent
+def parse_term(rule_name: str, term_str: str, i_term: int):
+    rule = s_grammar.rule(rule_name)
+    # if the term has the form xxx:yyy, extract both
+    parts = re.match(r"(\w+):(.+)", term_str)
+    var = parts.group(1) if parts else None
+    term_str = parts.group(2) if parts else term_str
+    # if the term ends with a decorator (*, +, ?) optionally followed by a separator, extract both
+    parts = re.match(r"(.+)([*+?])([,|]?)", term_str)
+    separator = parts.group(3) if parts else None
+    decorator = parts.group(2) if parts else None
+    term_str = parts.group(1) if parts else term_str
+    if term_str.startswith("(") and term_str.endswith(")"):
+        term = parse_bracketed_term(rule, var, term_str, decorator, separator, i_term)
+    else:
+        term = Term(var, [term_str], decorator, separator)
+    rule.terms.append(term)
+
+@log_indent
+def parse_bracketed_term(rule, var, term_str, decorator, separator, i_term):
+    term_str = term_str[1:-1] # remove brackets
+    or_list = [t.strip() for t in term_str.split(" | ")]
+    # if you can split it using " | " , it's an "or" list:
+    if len(or_list) > 1: return Term(var, or_list, decorator, separator)
+    # otherwise, it's a sub-sequence, make a sub-rule for it and return that
+    new_rule_name = f"{rule.name}_{i_term}"
+    new_rule = Rule(new_rule_name)
+    s_grammar.add_rule(new_rule)
+    parse_rule(new_rule_name, term_str)
+    return Term(var, [new_rule_name], decorator, separator)
+
+#--------------------------------------------------------------------------------------------------
+@this_is_the_test
+def test_grammar():
+    log("test_grammar")
+    grammar = Grammar(zero_grammar)
     test("grammar", grammar, """
-expression := ...
-constant < expression := ...
-number < constant := <number>
-string < constant := <string>
-variable < expression := <identifier>
-brackets < expression := "(" expr:expression ")"
-operation < expression := ...
-prefix < operation := operator:<operator> expr:expression
-infix < operation := left:expression operator:<operator> right:expression
-postfix < operation := expr:expression operator:<operator>
-function < expression := name:<identifier> "(" parameters:expression*, ")"
+feature_decl := "feature" name:<identifier> feature_decl_2? <indent> body:component* <undent>
+component := (type_decl | variable_decl | function_decl)
+type_decl := "type" name_decl type_decl_2
+type_decl_rhs := (type_structure_decl | type_relation_decl)
+type_structure_decl := "=" <indent> properties:variable_decl+ <undent>
+type_relation_decl := "<" parent:<identifier>
+variable_decl := variable_type_decl variable_decl_1?
+variable_type_decl := (c_style_var_type_decl | ts_style_var_type_decl)
+c_style_var_type_decl := type:<identifier> variable_names:name_decl+,
+ts_style_var_type_decl := variable_names:name_decl+, ":" type:<identifier>
+name_decl := short:<identifier> name_decl_1?
+function_decl := modifier:function_modifier "(" result:variable_type_decl ")" assign:("=" | "<<") signature:signature <indent> body:function_body <undent>
+function_modifier := ("on" | "after" | "before" | "replace")
+signature := short:signature_single signature_1?
+signature_single := components:signature_component+
+signature_component := (signature_word | signature_parameter_group)
+signature_word := word:(<identifier> | <operator>)
+signature_parameter_group := "(" parameters:variable_decl*,
+function_body := statement*
+statement := lhs:variable_assign op:("=" | "<<") rhs:expression
+variable_assign := (variable_decl | variable)
+variable := name:<identifier>
+expression := (constant | variable | brackets | function | operation)
+constant := (<number> | <string>)
+brackets := "(" expression ")"
+function := (function_call_word | function_call_params)+
+function_call_word := word:<identifier>
+function_call_params := "(" params:function_call_param*,
+function_call_param := function_call_var? value:expression
+function_call_var := name:<identifier> ":"
+operation := (infix | prefix | postfix)
+infix := lhs:expression op:<operator> rhs:expression
+prefix := op:<operator> rhs:expression
+postfix := lhs:expression op:<operator>
+feature_decl_2 := "extends" parent:<identifier>
+type_decl_2 := type_decl_rhs
+variable_decl_1 := "=" default:expression
+name_decl_1 := "|" long:<identifier>
+signature_1 := "|" long:signature_single
          """)
     
-#--------------------------------------------------------------------------------------------------
-# Parser baby
 
-# an AST node
-class Node:
-    def __init__(self, ls: List[Lex] = None, rule: Rule=None, children: List['Node'] =None, list:str=None):
-        self.rule = rule
-        self.ls = ls if ls else []
-        self.children = children if children else []
-        self.list = list
-    def __str__(self): 
-        if self.list: return f"[" + ", ".join(str(c) for c in self.children) + "]"
-        return f"{self.rule_name()+": " if self.rule else ""}{self.ls_str()}"
-    def __repr__(self): return str(self)
-    def ls_str(self): return '"' + " ".join(str(lex) for lex in self.ls) + '"'
-    def rule_name(self): return self.rule.name if self.rule else ""
-    def length(self) -> int: return len(self.ls)
-    def is_empty(self) -> bool: return len(self.ls) == 0
-    def is_lex(self) -> bool: return len(self.ls)==1 and not self.rule and not self.list
-    def pos(self) -> int: return self.ls[0].index if len(self.ls) > 0 else None
-    def count_layers(self, i_layer:int = 1) -> int:
-        if len(self.children) == 0: return i_layer
-        return max([c.count_layers(i_layer+1) for c in self.children])
-    def get_layer(self, i_layer:int, this_layer:int=0) -> List['Node']:
-        if this_layer == i_layer: return [self]
-        return [c for c in self.children for c in c.get_layer(i_layer, this_layer+1)]
-    s_dw = 16       # display width
-    def display(self):
-        n_layers = self.count_layers()
-        out = ""
-        for i_layer in range(0, n_layers):
-            nodes = self.get_layer(n_layers - 1 - i_layer)
-            pos = 0
-            for node in nodes:
-                node_pos = node.pos() if node.length() > 0 else pos
-                while pos < node_pos: out += self.pad("", 1); pos += 1
-                bg_fn = log_green_background if node.rule else log_grey_background
-                out += self.pad(str(node), node.length(), bg_fn)
-                pos += node.length()
-            out += "\n"
-        log(out)
-    def pad(self, s: str, n: int, bg_fn=None) -> str:
-        padding = ((n * (Node.s_dw-1)) + (n-1)) - len(s)
-        p0 = padding // 2
-        p1 = padding - p0
-        str = (" " * p0) + s + (" "*p1)
-        if bg_fn: str = bg_fn(str)
-        return str + " "
-    def get_ast(self):
-        if len(self.children) == 0: return self.ls[0] if len(self.ls) == 1 else [lex.val for lex in self.ls]
-        if self.list: return [c.get_ast() for c in self.children if not c.is_lex()]
-        if not self.rule: raise Exception("node has no rule, and is not a terminal or list")
-        if len(self.rule.terms) != len(self.children): raise Exception("node has wrong number of children")
-        ast = {}
-        if len(self.rule.terms) == 1: # singular, eg. variable or constant; unnamed is OK
-            term = self.rule.terms[0]
-            if term.var: ast[term.var] = self.children[0].get_ast()
-            else: ast = self.children[0].get_ast()
-        else: # multiple terms, so each item needs a var, otherwise it's an error
-            for i, term in enumerate(self.rule.terms):
-                if not term.keyword():
-                    if term.var: ast[term.var] = self.children[i].get_ast()
-                    else: raise Exception("node has unnamed children")
-        return { "_" + self.rule.name: ast }
-            
-
-@log_disable
-# returns True if the lex matches any of the match-strings (<type>, "keyword", rule)
-def match_lex(lex: Lex, match_strs: List[str]) -> bool:
-    log("match_lex", lex, lex.type, match_strs)
-    for match_str in match_strs:
-        if match_str.startswith("<") and lex.type == match_str[1:-1]: return True
-        elif match_str.startswith('"') and lex.val == match_str[1:-1]: return True
-        elif match_str == lex.val : return True
-    return False
-
-# scans forward from position (i_lex) in ls to find the next fixed-point; returns index or None
-@log_disable
-def next_fixed_point(ls: List[Lex], i_lex: int, match_strs: List[str]) -> int:
-    log("next_fixed_point", i_lex, ls[i_lex:], match_strs)
-    bracket_level = 0
-    open = "([{:indent"
-    close = ")]}:undent"
-    while i_lex < len(ls):
-        lex = ls[i_lex]
-        if bracket_level == 0:
-            log("trying to match", lex, "against", match_strs)
-            if match_lex(lex, match_strs): 
-                log("  succeeded")
-                return i_lex
-            else: log("  failed!")
-        if lex.val in open: 
-            bracket_level += 1
-            log( " open bracket")
-        elif lex.val in close: 
-            bracket_level -= 1
-            log(" close bracket")
-        i_lex += 1
-    if "<eof>" in match_strs: 
-        log("matched <eof>")
-        return i_lex
-    return None
-
-# tries to parse a term (possibly list or opt) in a lex-string, returns it as a single node
-@log_indent
-def parse_term(term: Term, ls: List[Lex]) -> Node:
-    log("parse_term:", term, "<=", ls)
-    result = None
-    if term.is_list(): result= parse_list_term(term, ls)
-    elif term.is_optional(): result= parse_term_opt(term, ls)
-    else: result= parse_rule(s_grammar.rule_dict[term.rule()], ls)
-    log(" returning:", result)
-    return result
-
-# tries to parse a list term (a single term that matches zero or more times)
-# returns a single node with each matched one in it (possibly zero)
-@log_indent
-def parse_list_term(term: Term, ls: List[Lex]) -> Node:
-    log("parse_list_term:", term, "<=", ls)
-    log("separator:", term.separator())
-    nodes = []
-    i_lex = 0
-    terminators = [term.separator()]
-    while i_lex < len(ls):
-        i_lex_next = next_fixed_point(ls, i_lex, terminators)
-        if i_lex_next == None:
-            i_lex_next = len(ls)
-        node = parse_rule(s_grammar.rule_dict[term.rule()], ls[i_lex:i_lex_next])
-        nodes.append(node)
-        if i_lex_next < len(ls) and match_lex(ls[i_lex_next], [term.separator()]):
-            nodes.append(Node(ls[i_lex_next:i_lex_next+1], None))
-        i_lex = i_lex_next + 1
-    result= Node(ls[:i_lex], None, nodes, "list")
-    log(" returning:", result)
-    return result
-
-# tries to parse a list of terms in a lex-string, one by one
-@log_disable
-def parse_terms(terms: List[Term], ls: List[Lex]) -> List[Node]:
-    log("parse_terms", terms, "<=", ls)
-    i_lex = 0
-    nodes = []
-    for term in terms:
-        node = parse_term(term, ls[i_lex:])
-        if node == None: raise Exception("parse_term returned None at {ls[i_lex].location()}")
-        i_lex += node.length()
-        nodes.append(node)
-        if i_lex >= len(ls): break # we're done :-)
-    log(" returning:", nodes)
-    return nodes
-
-
-# returns list of lexeme-indices if we can match all fixed-points and terminator of a rule in a lex-string
-@log_disable
-def can_match_rule(rule: Rule, ls: List[Lex]) -> List[int]:
-    log("can_match_rule:", rule.name, "<=", ls)
-    i_lex = 0
-    fixed_lexes = []
-    for term in rule.terms:
-        if term.is_fixed_point():
-            i_lex_next = next_fixed_point(ls, i_lex, [term.val])
-            if i_lex_next == None: 
-                log(" returning None: failed to find fixed-point")
-                return None
-            fixed_lexes.append(i_lex_next)
-            i_lex = i_lex_next + 1
-    terminators = rule.get_terminators()
-    i_lex_next = next_fixed_point(ls, i_lex, terminators)
-    if i_lex_next == None: return None
-    if rule.terms[-1].is_fixed_point():
-        if i_lex_next > i_lex+1: 
-            log(" returning None: extra lexes found after end!")
-            return None
-    elif i_lex_next == i_lex:
-        log(" returning None: no final lex")
-        return None
     
-    fixed_lexes.append(i_lex_next)
-    return fixed_lexes
-
-# tries to parse a concrete rule by identifying fixed-points (terminal lexes) in terms
-# optionally, pass in an already-matched first-node
-@log_indent
-def parse_concrete(rule: Rule, ls: List[Lex], first_node:Node = None) -> Node:
-    log("parse_concrete:", rule.name, "<=", ls)
-
-    i_fixed_lexes = can_match_rule(rule, ls)
-    if i_fixed_lexes == None: 
-        log(" returning None: can't match fixed points")
-        return None
-    
-    log("matched fixed points for rule:", rule.name, i_fixed_lexes)
-    children = []
-    i_lex = 0
-    for i_term, term in enumerate(rule.terms):
-        if term.is_fixed_point():
-            lex_node = Node(ls[i_fixed_lexes[0]:i_fixed_lexes[0]+1], None) # pure lex node
-            #log("adding lex_node:", lex_node)
-            children.append(lex_node)
-            i_lex = i_fixed_lexes[0] + 1
-            i_fixed_lexes = i_fixed_lexes[1:]       # step to the next lex
-        else:
-            lex_range = ls[i_lex:i_fixed_lexes[0]]
-            i_lex = i_fixed_lexes[0]
-            log("try and match term", term, "in", lex_range)
-            if len(lex_range) == 0 and i_term == 0 and first_node:
-                node = first_node
-            else:
-                node = parse_term(term, lex_range)
-            if node:
-                #log("adding parsed node:", node)
-                children.append(node)
-            log("matched term:", node)
-
-    result= Node(ls[0:i_lex], rule, children)
-    if first_node: result.ls = first_node.ls + result.ls
-    log(" returning:", result)
-    return result
-
-# tries to parse an abstract rule (eg. expression: one that has only children, and no terms)
-@log_indent
-def parse_abstract(rule: Rule, ls: List[Lex]) -> Node:
-    log("parse_abstract:", rule.name, "<=", ls)
-    if len(ls) == 0: return None
-    leaves = [leaf for leaf in rule.leaves if match_lex(ls[0], leaf.get_initials())]
-    log("  matching leaves:", [leaf.name for leaf in leaves])
-    node = None
-    for leaf in leaves:
-        node = parse_rule(leaf, ls)
-        if node: break
-    if node == None:
-        log(" returning None: couldn't find a leaf that matched")
-        return None
-    if node.length() == len(ls):
-        log(" returning:", node)
-        return node
-    
-    return parse_remaining(rule, ls, node.length(), node)
-
-@log_indent
-def operator_rank(lex: Lex) -> int:
-    if lex.val in ["*", "/"]: return 3
-    if lex.val in ["+", "-"]: return 2
-    if lex.val in ["="]: return 1
-    return 0
-
-@log_indent
-def parse_operator(rule: Rule, ls: List[Lex], i_lex_start: int, first_node: Node, tirs) -> Node:
-    log("parse_operator:", rule.name, "<=", ls, i_lex_start, first_node)
-    # just do the first one for the time being
-    i_key = 0
-    val = tirs[i_key]
-    rule = val[0]
-    i_term = val[1]
-    if (i_term + 1) < len(rule.terms):
-        log("rule:", rule.name, "term", i_term)
-        next_term = rule.terms[i_term+1]
-        log("next term:", next_term)
-        ls_rhs = ls[i_lex_start+1:]
-        log("ls_rhs", ls_rhs)
-        # this is a bit of a hack...
-        i_lex_operator = next_fixed_point(ls_rhs, 0, ["<operator>"])
-        if i_lex_operator == None: return None  # just go the normal route
-        log("i_lex_operator:", i_lex_operator)
-        rhs_operator = ls_rhs[i_lex_operator]
-        log("rhs_operator:", rhs_operator)
-        this_operator = ls[i_lex_start]
-        log("this_operator:", this_operator)
-        if operator_rank(rhs_operator) <= operator_rank(this_operator): return None # do normal left-assoc
-
-        node_rhs = parse_term(next_term, ls_rhs)
-        log("node_rhs:", node_rhs)
-        if node_rhs == None: return None
-        op_node = Node(ls[i_lex_start:i_lex_start+1], None)
-        new_node = Node(first_node.ls + op_node.ls + node_rhs.ls, rule, [first_node, op_node, node_rhs])
-        log("returning:", new_node)
-        return new_node
-    log(" returning None: couldn't find a next term")
-    return None
 
 
-
-@log_indent
-def parse_remaining(rule: Rule, ls: List[Lex], i_lex_start: int, first_node: Node) -> Node:
-    log(f"parse_remaining: {rule.name}: ({first_node}) <= {ls[i_lex_start:]}")
-
-    # find all rule/terms that might follow the one we just matched
-    terminators = [t for t in rule.terminators if match_lex(ls[i_lex_start], list(t.keys()))]
-    keys = [list(t.keys())[0] for t in terminators]
-    vals = [list(t.values())[0] for t in terminators]
-    log("terminators:", keys)
-    all_keys_are_operators = all([k == "<operator>" for k in keys])
-    log("all_keys_are_operators:", all_keys_are_operators)
-
-    if all_keys_are_operators:
-        node = parse_operator(rule, ls, i_lex_start, first_node, vals)
-        if node: return node
-    
-    # left-associative
-    for t in terminators:                           # this is ugly, make it nicer
-        key = list(t.keys())[0]                     # eg. <operator>
-        val = list(t.values())[0]                   # eg. (infix, 1)
-        rule = val[0]                               # eg. infix
-        i_term = val[1]                             # eg. 1
-        log(" ", key, f"{rule.name}:{i_term}")
-        higher_node = parse_concrete(rule, ls[i_lex_start:], first_node)    # pass in the extra thingy
-        if higher_node != None:
-            if higher_node.length() < len(ls):
-                return parse_remaining(rule, ls, higher_node.length(), higher_node)
-            log(" returning:", higher_node)
-            return higher_node
-    log(" returning None")
-    return None
-
-# tries to parse any rule in a lex-string
-@log_indent
-def parse_rule(rule: Rule, ls: List[Lex]) -> Node:
-    log("parse_rule:", rule.name, "<=", ls)
-    result = parse_abstract(rule, ls) if rule.is_abstract() else parse_concrete(rule, ls)
-    log(" returning:", result)
-    return result
-
-# front-end parser for testing
-def parse(code: str) -> dict:
-    ls = lexer(Source(code = code))
-    node = parse_rule(s_grammar.rule_dict["expression"], ls)
-    if node == None: return node
-    log()
-    node.display()
-    return node.get_ast()
-
-@this_is_the_test
-def test_parser():
-    log("test_parser")
-    grammar = grammar_from_spec(test_grammar_spec)
-    test("parse_number", parse("123"), """{'_number': 123}""")
-    test("parse_variable", parse("a"), """{'_variable': a}""")
-    test("parse_brackets", parse("(a)"), """{'_brackets': {'expr': {'_variable': a}}}""")
-    test("parse_function_no_params", parse("f()"), """{'_function': {'name': f, 'parameters': []}}""")
-    test("parse_function_one_param", parse("f(a)"), """{'_function': {'name': f, 'parameters': [{'_variable': a}]}}""")
-    test("parse_function_many_params", parse("f(a, b, c)"), """{'_function': {'name': f, 'parameters': [{'_variable': a}, {'_variable': b}, {'_variable': c}]}}""")
-    test("parse_infix", parse("a + b"), """{'_infix': {'left': {'_variable': a}, 'operator': +, 'right': {'_variable': b}}}""")
-    test("parse_prefix", parse("-a"), """{'_prefix': {'operator': -, 'expr': {'_variable': a}}}""")
-    test("parse_postfix", parse("a++"), """{'_postfix': {'expr': {'_variable': a}, 'operator': ++}}""")
-    test("parse_precedence", parse("a + b * c"), """{'_infix': {'left': {'_variable': a}, 'operator': +, 'right': {'_infix': {'left': {'_variable': b}, 'operator': *, 'right': {'_variable': c}}}}}""")
-    

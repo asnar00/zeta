@@ -53,7 +53,30 @@ def log_indent(fn):
     def wrapper(*args, **kwargs):
         global s_log_indent
         s_log_indent += 1
+
+        # Get function signature
+        sig = inspect.signature(fn)
+        
+        # Get type hints
+        type_hints = get_type_hints(fn)
+        # Check if return type hint exists
+        has_return_hint = 'return' in type_hints
+        
+        # Combine positional and keyword arguments
+        bound_args = sig.bind(*args, **kwargs)
+        bound_args.apply_defaults()
+        
+        # Prepare parameter info
+        param_info = []
+        for name, value in bound_args.arguments.items():
+            param_type = type_hints.get(name, type(value).__name__)
+            param_info.append(f"{name}: {log_short(repr(value))}")
+        
+        # Log function call with parameters
+        log(f"{fn.__name__}({', '.join(param_info)})")
+
         result = fn(*args, **kwargs)
+        if has_return_hint: log(f"returning:", result)
         s_log_indent -= 1
         return result
     return wrapper
@@ -127,6 +150,8 @@ def log_disclose(str) -> str:
 def log_short(obj: Any, maxLen=32) -> str:
     if obj == None: return "None"
     s = str(obj)
+    s = s.replace("\n", "↩︎")
+    s = s.replace("\\n", "↩︎")
     m = re.match(r"<__main__\.(\w+)", s)    # if s matches "<__main__.ClassName", return "ClassName"
     if m: s = m.group(1)
     m = re.match(r"<(\w+).(\w+) object", s)
@@ -154,7 +179,7 @@ def test(name, a, b: str = None):
         print("----------------------------------------------------------------\n")
         
         return
-    sb = log_strip(b)
+    sb = log_strip(str(b))
     if sb.startswith("\n"): sb = sb[1:]
     if sa == sb:
         log_clear()

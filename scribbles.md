@@ -2,6 +2,26 @@
 # scribblez
 "slow is smooth, smooth is fast"
 
+what if a Term is actually a list of strings, eg.
+
+    expression := (constant | ..)
+
+    function_decl := mod:("on" | "after" | "before" | "replace") sig:signature
+
+    feature_decl := "feature" name:<identifier> ?("extends" parent:<identifier>)
+
+In each of these cases, we're adding complexity to a Term.
+
+Why don't we start with the full grammar for zero, and work up from there?
+
+
+
+
+----
+
+precedence works! next is enums.
+
+---------------------------
 
 dealing with precedence: get it done.
 
