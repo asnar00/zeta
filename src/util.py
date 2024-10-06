@@ -9,6 +9,7 @@ from typing import Any, get_type_hints
 import inspect
 import traceback
 import sys
+from functools import wraps
 
 #------------------------------------------------------------------------------
 # logging
@@ -74,8 +75,10 @@ def log_indent(fn):
         
         # Log function call with parameters
         log(f"{fn.__name__}({', '.join(param_info)})")
+        s_log_indent += 1
 
         result = fn(*args, **kwargs)
+        s_log_indent -= 1
         if has_return_hint: log(f"returning:", result)
         s_log_indent -= 1
         return result
@@ -157,7 +160,12 @@ def log_short(obj: Any, maxLen=32) -> str:
     m = re.match(r"<(\w+).(\w+) object", s)
     if m: s = f"{m.group(2)}(..)"
     if len(s) <= maxLen: return s
-    return s[:maxLen] + " " + log_grey("...") + " " + s[-12:]
+    return s[:maxLen-12] + " " + log_grey("...") + " " + s[-12:]
+
+# flushes and exits
+def log_exit():
+    log_flush()
+    exit(0)
 
 #------------------------------------------------------------------------------
 # testing
@@ -476,6 +484,28 @@ def write_file(path: str, text: str):
     with open(path, "w") as file:
         file.write(text)
     s_file_cache[path] = text
+
+
+#--------------------------------------------------------------------------------
+# memoisation
+
+def memoise(func):
+    cache = {}
+    
+    @wraps(func)
+    def wrapper(obj):
+        # Use the object's id as the key in our cache dictionary
+        obj_id = id(obj)
+        
+        if obj_id in cache:
+            return cache[obj_id]
+        else:
+            cache[obj_id] = None    # stops infinite recursion
+            result = func(obj)
+            cache[obj_id] = result
+            return result
+    
+    return wrapper
 
 
 #------------------------------------------------------------------------------

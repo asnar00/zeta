@@ -2,6 +2,28 @@
 # scribblez
 "slow is smooth, smooth is fast"
 
+now that we have the right direction for the algorithm, it's about making the code smooth, clean, and controlled; and most importantly, *understood*.
+
+I had a go this morning with the "parent/children" style, but it just leads to complexity. So now the term structure is much simpler: each term is an array of values (which can be keywords, lex-types, or rule-names); the only constraint is that you can't mix them. Each term has a decorator, a separator, and a name. 
+
+We need initiators and terminators; and we'll compute these separately using the memoise approach, so the actual classes remain small, rather than growing huge with methods. The functional approach is by far the easier to fit into my head.
+
+We'll make sure everything in the grammar is tested - that way, when we morph the grammar, we'll be able to make changes super fast.
+
+-----------------
+
+things causing non-smoothness:
+1- zero syntax is hard to parse completely
+2- so relax and just make expresion = (const or word or bracket)
+
+current weirdness is "abstract rules" should just be eg. expr := operation or variable etc
+but not decorated ones. Currently they're confused and they should be separate. General issue with zero-fixed-point rules which means we need terminators, which we should probably figure out using the same as the old method, not try to memoise it.
+
+memoising: not quite the slam dunk because of recurstion and loop-backs, but still interesting. Kind of papered it over by setting the cache before calling the function.
+
+all in all: reasonable, but a rewrite next week will firm up the exact taxonomy of rules and terms.
+------
+
 what if a Term is actually a list of strings, eg.
 
     expression := (constant | ..)

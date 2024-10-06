@@ -134,7 +134,7 @@ class Lex:
         self.type = type;       # type - identifier, number, operator, etc
         self.rank = 0           # rank of the lexeme if an operator (for precedence)
         self.index = None       # index in the original lex list (doesn't change if we take slices etc)
-        self.jump = None        # increment to jump to next/prev matching bracket ("()", "[]", "indent/undent")
+        self.jump = 1           # increment to jump to next/prev matching bracket ("()", "[]", "indent/undent")
     def __str__(self):
         return self.val
     def __repr__(self):
@@ -142,7 +142,7 @@ class Lex:
         if self.type == "newline" : return log_grey(val)
         else: return val
     def dbg(self):
-        return f"<{self.type}> {self.val} {self.jump or ""}"
+        return f"<{self.type}> {self.val} {self.jump}"
     def location(self):
         return self.source.location(self.pos)
     
@@ -264,7 +264,6 @@ def compute_jumps(ls: List[Lex]) -> List[Lex]:
             if len(i_open_lex) == 0: raise Exception(f"unmatched bracket at {lex.location()}")
             i_open = i_open_lex.pop()
             ls[i_open].jump = i - i_open    # forward jump
-            lex.jump = i_open - i           # backward jump
     return ls
 
 def compute_ranks(ls: List[Lex]) -> List[Lex]:
@@ -275,240 +274,346 @@ def compute_ranks(ls: List[Lex]) -> List[Lex]:
     return ls
 
 #--------------------------------------------------------------------------------------------------
-# the complete grammar spec for the zero programming language
-
-zero_grammar = """
-    feature_decl := "feature" name:<identifier> ("extends" parent:<identifier>)? <indent> body:component* <undent>
-    component := (type_decl | variable_decl | function_decl)
-
-    type_decl := "type" name_decl (type_decl_rhs)
-    type_decl_rhs := (type_structure_decl | type_relation_decl)
-    type_structure_decl := "=" <indent> properties:variable_decl+ <undent>
-    type_relation_decl := "<" parent:<identifier>
-
-    variable_decl := variable_type_decl ("=" default:expression)?
-    variable_type_decl := (c_style_var_type_decl | ts_style_var_type_decl)
-
-    c_style_var_type_decl := type:<identifier> variable_names:name_decl+,
-    ts_style_var_type_decl := variable_names:name_decl+, ":" type:<identifier>
-    name_decl := short:<identifier> ("|" long:<identifier>)?
-
-    function_decl := modifier:function_modifier "(" result:variable_type_decl ")" assign:("=" | "<<") signature:signature <indent> body:function_body <undent>
-    function_modifier := ("on" | "after" | "before" | "replace")
-    signature := short:signature_single ("|" long:signature_single)?
-    signature_single := components:signature_component+
-    signature_component := (signature_word | signature_parameter_group)
-    signature_word := word:(<identifier> | <operator>)
-    signature_parameter_group := "(" parameters:variable_decl*, ")"
-
-    function_body := statement*
-    statement := lhs:variable_assign op:("=" | "<<") rhs:expression
-    variable_assign := (variable_decl | variable)
-    variable := name:<identifier>
-
-    expression := (constant | variable | brackets | function | operation)
-    constant := (<number> | <string>)
-    brackets := "(" expression ")"
-
-    function := (function_call_word | function_call_params)+
-    function_call_word := word:<identifier>
-    function_call_params := "(" params:function_call_param*, ")"
-    function_call_param := function_call_var? value:expression
-    function_call_var := name:<identifier> ":"
-
-    operation := (infix | prefix | postfix)
-    infix := lhs:expression op:<operator> rhs:expression
-    prefix := op:<operator> rhs:expression
-    postfix := lhs:expression op:<operator>
-"""
-
+# Grammar
 #--------------------------------------------------------------------------------------------------
-# Grammar: derived from the grammar spec
+# Term: a single term of a rule
 
 class Term:
-    def __init__(self, var: str, vals: List[str], decorator: str=None, separator: str=None):
-        self.var = var                                  # variable name to bind the result to
-        self.vals = vals                                # list of possible values (<identifier>, "keyword", rule)
-        self.rules = [s_grammar.rule(val) for val in vals if not is_terminal(val)]                                 # list of rules that this term "points to"
-        self.decorator = decorator                      # optional decorator ("*", "+", "?")
-        self.separator = separator                      # if a list, the separator ("" or "," or "|") usually
-        self.is_terminal = self.compute_is_terminal()   # if all values are <identifier> or "keyword", we're a terminal
+    def __init__(self, var: str, vals: List[str], dec:str ="", sep:str =""):
+        self.var = var      # variable to assign in the AST, if any
+        self.vals = vals    # a set of keywords ("word"), types (<type>), or rules (Rule)
+        self.dec = dec      # one of "?" (zero or one), "*" (zero or more) or "+" (one or more)
+        self.sep = sep      # separator if we are "+" or "*"
     def __str__(self):
-        vals_str = " | ".join(self.vals)
-        if len(self.vals) > 1: vals_str = f"({vals_str})"
-        if self.decorator: vals_str += self.decorator
-        if self.separator: vals_str += self.separator
-        if self.var: vals_str = f"{self.var}:{vals_str}"
-        return vals_str
-    def __repr__(self): return str(self)
-    def dbg(self): return str(self)
-    def compute_is_terminal(self) -> bool:
-        for val in self.vals: 
-            if not (val.startswith("<") or val.startswith('"')): return False
-        return True
-    def terminals(self) -> List[str]:
-        return self.vals if self.is_terminal else []
-    
-def is_terminal(val: str) -> bool:
-    return val.startswith("<") or val.startswith('"')
+        out = " | ".join(self.vals)
+        if len(self.vals) > 1: out = f"({out})"
+        if self.dec: out += self.dec
+        if self.sep: out += self.sep
+        if self.var: out = f"{self.var}:{out}"
+        return out
+    def __repr__(self): return self.__str__()
+
+#--------------------------------------------------------------------------------------------------
+# Rule: a name and a list of terms
 
 class Rule:
-    def __init__(self, name: str, terms: List[Term] = None):
+    def __init__(self, name: str):
         self.name = name
-        self.terms = terms or []
-        self.parent = None
-        self.children = []
-    def __str__(self): return self.name
-    def __repr__(self): return str(self)
-    def dbg(self): return f"{self.name} := {' '.join([str(t) for t in self.terms])}"
+        self.terms = []
+    def __str__(self):
+        return self.name
+    def __repr__(self): return self.__str__()
+    def dbg(self):
+        out = self.name + " := " + " ".join([str(term) for term in self.terms])
+        return out
 
-s_grammar = None        # global singleton for convenience
+#--------------------------------------------------------------------------------------------------
+# Grammar: a list of rules
+
+s_grammar = None
 
 class Grammar:
-    def __init__(self, spec: str):
-        self.rules = []             # array of rules
-        self.rule_dict = {}         # map name => rule
-        global s_grammar            # global singleton
-        s_grammar = self            # for convenience
-        parse_grammar(self, spec)   # do all hefty work in functions to avoid statefulmess
+    def __init__(self):
+        self.rules = []
+        self.rule_named = {}
+        global s_grammar
+        s_grammar = self
 
-    def add_rule(self, rule: Rule):
-        self.rules.append(rule)
-        self.rule_dict[rule.name] = rule
+    def dbg(self):
+        out = ""
+        for rule in self.rules:
+            out += rule.dbg() + "\n"
+        return out
 
-    def rule(self, name: str) -> Rule:
-        return self.rule_dict[name]
+#--------------------------------------------------------------------------------------------------
+# build a grammar from a spec
+
+def build_grammar(spec: str) -> Grammar:
+    grammar = Grammar()
+    lines = [line.strip() for line in spec.split("\n")]
+    lines = [line for line in lines if line != ""]
+    for line in lines:
+        name, terms_str = map(str.strip, line.split(':='))
+        build_rule(name, split_terms(terms_str))
+    log(grammar.dbg())
+    return grammar
     
-    def __str__(self):
-        return "\n".join([rule.dbg() for rule in self.rules])
-    def __repr__(self): return str(self)
-
-# parse grammar spec into rules
-@log_indent
-def parse_grammar(grammar: Grammar, spec: str):
-    lines = spec.strip().split("\n")
-    lines = [line.strip() for line in lines if line.strip() != ""]
-    # first add all rules to the grammar, so we can refer to Rules directly
-    for line in lines:
-        parts = line.split(":=")
-        rule_name = parts[0].strip()
-        grammar.add_rule(Rule(rule_name))
-    # now parse each line
-    for line in lines:
-        log("\n\n", line)
-        parts = line.split(":=")
-        rule_name = parts[0].strip()
-        rhs = parts[1].strip()
-        parse_rule(rule_name, rhs)
-
-# parses a single line of the grammar into one, possibly more, rules
-def parse_rule(rule_name: str, rhs: str) -> List[Rule]:
-    term_strs = split_terms(rhs)
+def build_rule(rule_name: str, term_strs: List[str], after_rule_name: str=None) -> Rule:
+    new_rule = add_rule(rule_name, after_rule_name)
     for i_term, term_str in enumerate(term_strs):
-        parse_term(rule_name, term_str, i_term)
+        term = build_term(term_str, i_term, rule_name)
+        new_rule.terms.append(term)
+    return new_rule
 
-# splits a rule into term strings
-@log_indent
-def split_terms(terms_str: str) -> List[str]:
-    # split by spaces, but keep things in brackets together
-    # e.g. "a b (c d) e" -> ["a", "b", "(c d)", "e"]
-    terms = []
-    term = ""
-    in_brackets = False
-    for c in terms_str:
-        if c == " " and not in_brackets:
-            terms.append(term)
-            term = ""
-        elif c == "(":
-            in_brackets = True
-            term += c
-        elif c == ")":
-            in_brackets = False
-            term += c
-        else:
-            term += c
-    terms.append(term)
-    return terms
+def add_rule(rule_name: str, after_rule_name: str=None) -> Rule:
+    global s_grammar
+    new_rule = Rule(rule_name)
+    if after_rule_name:
+        after = s_grammar.rule_named[after_rule_name]
+        i = s_grammar.rules.index(after)
+        s_grammar.rules.insert(i+1, new_rule)
+    else:
+        s_grammar.rules.append(new_rule)
+    s_grammar.rule_named[rule_name] = new_rule
+    return new_rule
 
-@log_indent
-def parse_term(rule_name: str, term_str: str, i_term: int):
-    rule = s_grammar.rule(rule_name)
-    # if the term has the form xxx:yyy, extract both
+def build_term(term_str: str, i_term: int, rule_name: str) -> Term:
     parts = re.match(r"(\w+):(.+)", term_str)
     var = parts.group(1) if parts else None
     term_str = parts.group(2) if parts else term_str
-    # if the term ends with a decorator (*, +, ?) optionally followed by a separator, extract both
     parts = re.match(r"(.+)([*+?])([,|]?)", term_str)
-    separator = parts.group(3) if parts else None
-    decorator = parts.group(2) if parts else None
+    sep = parts.group(3) if parts else ""
+    dec = parts.group(2) if parts else ""
     term_str = parts.group(1) if parts else term_str
+    vals = []
     if term_str.startswith("(") and term_str.endswith(")"):
-        term = parse_bracketed_term(rule, var, term_str, decorator, separator, i_term)
+        term_str = term_str[1:-1]
+        if " | " in term_str: 
+            vals = [val.strip() for val in term_str.split("|")]
+        else:
+            sub_rule = build_rule(rule_name + "_" + str(i_term), split_terms(term_str), rule_name)
+            vals = [ sub_rule.name ]
     else:
-        term = Term(var, [term_str], decorator, separator)
-    rule.terms.append(term)
+        vals = [term_str]
+    return Term(var, vals, dec, sep)
 
-@log_indent
-def parse_bracketed_term(rule, var, term_str, decorator, separator, i_term):
-    term_str = term_str[1:-1] # remove brackets
-    or_list = [t.strip() for t in term_str.split(" | ")]
-    # if you can split it using " | " , it's an "or" list:
-    if len(or_list) > 1: return Term(var, or_list, decorator, separator)
-    # otherwise, it's a sub-sequence, make a sub-rule for it and return that
-    new_rule_name = f"{rule.name}_{i_term}"
-    new_rule = Rule(new_rule_name)
-    s_grammar.add_rule(new_rule)
-    parse_rule(new_rule_name, term_str)
-    return Term(var, [new_rule_name], decorator, separator)
+def split_terms(rhs: str) -> str:
+    terms = []
+    current_term = ""
+    bracket_depth = 0
+    in_quotes = False
+    for char in rhs:
+        if char == ' ' and bracket_depth == 0 and not in_quotes:
+            if current_term:
+                terms.append(current_term)
+                current_term = ""
+        else:
+            if char == '(' and not in_quotes:
+                bracket_depth += 1
+            elif char == ')' and not in_quotes:
+                bracket_depth -= 1
+            elif char == '"':
+                in_quotes = not in_quotes
+            
+            current_term += char
+    if current_term:
+        terms.append(current_term)
+    return terms
+
+#--------------------------------------------------------------------------------------------------
+# second-order grammar properties
+
+# a rule is abstract if it has one term that points to more than one rule
+@memoise
+def abstract_children(rule: Rule) -> List[Rule]:
+    if len(rule.terms) != 1: return []
+    term = rule.terms[0]
+    if term.dec: return []
+    return get_rules(term)
+
+# if a term is one or more keywords, return the list, otherwise none
+@memoise
+def get_keywords(term: Term) -> List[str]:
+    return term.vals if term.vals and term.vals[0][0] == '"' else []
+
+# if a term is one or more lex-types, return the list, otherwise none
+@memoise
+def get_types(term: Term) -> List[str]:
+    return term.vals if term.vals and term.vals[0][0] == '<' else []
+
+# returns keywords and types in a single list (all will be one or another)
+@memoise
+def get_terminals(term: Term) -> List[str]:
+    return get_keywords(term) + get_types(term)
+
+# if a term is a list of rules, return the list of rules, otherwise none
+@memoise
+def get_rules(term: Term) -> List[str]:
+    if not term.vals or term.vals[0][0] in '<"': return []
+    return [s_grammar.rule_named[val] for val in term.vals]
+
+# check that each rule referred to in each term actually exists
+@memoise
+def get_errors(grammar: Grammar) -> str:
+    out = ""
+    for rule in grammar.rules:
+        for i_term, term in enumerate(rule.terms):
+            for val in term.vals:
+                if val[0] and not (val[0] in '"<'):
+                    if not (val in s_grammar.rule_named):
+                        out += f"term {i_term} of {rule.name}: can't find referred-to rule '{val}'\n"
+    if out == "":
+        out = "no errors"
+    return out
+
+# merge two dicts of lists
+def merge_dicts(d1: dict, d2: dict) -> dict:
+    for key, vals in d2.items():
+        if key in d1: 
+            for val in vals:
+                if not val in d1[key]: d1[key].append(val)
+        else: d1[key] = vals
+    return d1
+
+# "initials" is a dict mapping a terminal-string to a list of rules it initiates
+@memoise
+def get_initials_for_rule(rule: Rule) -> dict:
+    results = {}        # terminal_str -> [rule]
+    for term in rule.terms:
+        terminals = get_terminals(term)
+        if terminals:
+            for t in terminals:
+                results = merge_dicts(results, {t: [rule]})
+        else:
+            for sub_rule in get_rules(term):
+                add = get_initials_for_rule(sub_rule)
+                results = merge_dicts(results, add)
+        if not term.dec or not (term.dec in '?*'):
+            return results
+    return results
+
+# show all initials
+@memoise
+def show_initials(grammar: Grammar) -> str:
+    out = ""
+    for rule in grammar.rules:
+        out += rule.name + " : " + str(get_initials_for_rule(rule)) + "\n"
+    return out
+
+# get initials for a term: all the terminals that could possible start it
+@memoise
+def get_initials_for_term(term: Term) -> List[str]:
+    terminals = get_terminals(term)
+    if terminals:
+        result = {}
+        for t in terminals:
+            result[t] = []
+        return result
+    rules = get_rules(term)
+    result = {}
+    for rule in rules:
+        result = merge_dicts(result, get_initials_for_rule(rule))
+    return result
+
+# terminators are all terminals that could follow a given rule
+# we compute them in a single pass because it's better that way
+def compute_terminators() -> dict:
+    terminators = {}
+    # first create an empty dict for each rule
+    for rule in s_grammar.rules:
+        terminators[rule.name] = {}
+    # now run through and look at all terms
+    for rule in s_grammar.rules:
+        for i_term, term in enumerate(rule.terms):
+            sub_rules = get_rules(term)
+            if sub_rules: # now look at initials for the next term
+                if i_term+1 < len(rule.terms):
+                    initials = get_initials_for_term(rule.terms[i_term+1])
+                if term.sep:
+                    initials = merge_dicts(initials, { f'"{term.sep}"' : [] })
+                for sub_rule in sub_rules:
+                    terminators[sub_rule.name] = merge_dicts(terminators[sub_rule.name], initials)
+    # all last-terms should add the terminators of the rule they're in
+    for rule in s_grammar.rules:
+        last_term = rule.terms[-1]
+        sub_rules = get_rules(last_term)
+        if sub_rules:
+            for sub_rule in sub_rules:
+                terminators[sub_rule.name] = merge_dicts(terminators[sub_rule.name], terminators[rule.name])
+    # each abstract rule should push its terminators down to its children
+    for rule in s_grammar.rules:
+        children = abstract_children(rule)
+        for child in children:
+            terminators[child.name] = merge_dicts(terminators[child.name], terminators[rule.name])
+    return terminators
+
+
+
+#--------------------------------------------------------------------------------------------------
+# Zero grammar spec
+
+s_zero_grammar_spec : str = """
+    feature_decl := "feature" name:<identifier> ("extends" parent:<identifier>)? <indent> component_decl* <undent>
+    component_decl := (test_decl | type_decl | variable_decl | function_decl)
+
+    test_decl := ">" lhs:expression ("=>" rhs:expression)?
+
+    type_decl := "type" name_decl (struct_decl | type_relation_decl | enum_decl)
+    name_decl := name:<identifier> ("|" alias:<identifier>)?
+    struct_decl := "=" <indent> properties:variable_decl* <undent>
+    type_relation_decl := (child_type_decl | parent_type_decl)
+    child_type_decl := "<" parent:<identifier>
+    parent_type_decl := ">" children:<indentifier>*|
+    enum_decl := "=" values:<identifier>*|
+
+    variable_decl := name_type_decl ("=" default:expression)?
+    name_type_decl := (c_name_type_decl | ts_name_type_decl)
+    c_name_type_decl := type:<identifier> names:name_decl+,
+    ts_name_type_decl := names:name_decl+, ":" type:<identifier>
+
+    function_decl := modifier:modifier result:result_type_decl assign:assign_op signature:function_signature_decl <indent> function_body <undent>
+    modifier := ("on" | "replace" | "after" | "before")
+    result_type_decl := "(" name_type_decl*, ")"
+    assign_op := ("=" | "<<")
+    function_signature_decl := (word | operator | parameter_decl)+
+    word := <identifier>
+    operator := <operator>
+    parameter_decl := "(" variable_decl*, ")"
+    function_body := statement*
+    statement := lhs:statement_dest assign:assign_op rhs:expression
+    statement_dest := (name_type_decl | variable_ref)
+    variable_ref := <identifier>
+
+    expression := (constant | operator | word | parameter_group)*
+    constant := (<number> | <string>)
+    parameter_group := "(" parameter*, ")"
+    parameter := (names:<identifier>+, "=")? value:expression
+
+    """
 
 #--------------------------------------------------------------------------------------------------
 @this_is_the_test
 def test_grammar():
     log("test_grammar")
-    grammar = Grammar(zero_grammar)
-    test("grammar", grammar, """
-feature_decl := "feature" name:<identifier> feature_decl_2? <indent> body:component* <undent>
-component := (type_decl | variable_decl | function_decl)
-type_decl := "type" name_decl type_decl_2
-type_decl_rhs := (type_structure_decl | type_relation_decl)
-type_structure_decl := "=" <indent> properties:variable_decl+ <undent>
-type_relation_decl := "<" parent:<identifier>
-variable_decl := variable_type_decl variable_decl_1?
-variable_type_decl := (c_style_var_type_decl | ts_style_var_type_decl)
-c_style_var_type_decl := type:<identifier> variable_names:name_decl+,
-ts_style_var_type_decl := variable_names:name_decl+, ":" type:<identifier>
-name_decl := short:<identifier> name_decl_1?
-function_decl := modifier:function_modifier "(" result:variable_type_decl ")" assign:("=" | "<<") signature:signature <indent> body:function_body <undent>
-function_modifier := ("on" | "after" | "before" | "replace")
-signature := short:signature_single signature_1?
-signature_single := components:signature_component+
-signature_component := (signature_word | signature_parameter_group)
-signature_word := word:(<identifier> | <operator>)
-signature_parameter_group := "(" parameters:variable_decl*,
-function_body := statement*
-statement := lhs:variable_assign op:("=" | "<<") rhs:expression
-variable_assign := (variable_decl | variable)
-variable := name:<identifier>
-expression := (constant | variable | brackets | function | operation)
-constant := (<number> | <string>)
-brackets := "(" expression ")"
-function := (function_call_word | function_call_params)+
-function_call_word := word:<identifier>
-function_call_params := "(" params:function_call_param*,
-function_call_param := function_call_var? value:expression
-function_call_var := name:<identifier> ":"
-operation := (infix | prefix | postfix)
-infix := lhs:expression op:<operator> rhs:expression
-prefix := op:<operator> rhs:expression
-postfix := lhs:expression op:<operator>
+    grammar = build_grammar(s_zero_grammar_spec)
+    test("test_grammar", grammar.dbg(), """
+feature_decl := "feature" name:<identifier> feature_decl_2? <indent> component_decl* <undent>
 feature_decl_2 := "extends" parent:<identifier>
-type_decl_2 := type_decl_rhs
+component_decl := (test_decl | type_decl | variable_decl | function_decl)
+test_decl := ">" lhs:expression test_decl_2?
+test_decl_2 := "=>" rhs:expression
+type_decl := "type" name_decl (struct_decl | type_relation_decl | enum_decl)
+name_decl := name:<identifier> name_decl_1?
+name_decl_1 := "|" alias:<identifier>
+struct_decl := "=" <indent> properties:variable_decl* <undent>
+type_relation_decl := (child_type_decl | parent_type_decl)
+child_type_decl := "<" parent:<identifier>
+parent_type_decl := ">" children:<indentifier>*|
+enum_decl := "=" values:<identifier>*|
+variable_decl := name_type_decl variable_decl_1?
 variable_decl_1 := "=" default:expression
-name_decl_1 := "|" long:<identifier>
-signature_1 := "|" long:signature_single
+name_type_decl := (c_name_type_decl | ts_name_type_decl)
+c_name_type_decl := type:<identifier> names:name_decl+,
+ts_name_type_decl := names:name_decl+, ":" type:<identifier>
+function_decl := modifier:modifier result:result_type_decl assign:assign_op signature:function_signature_decl <indent> function_body <undent>
+modifier := ("on" | "replace" | "after" | "before")
+result_type_decl := "(" name_type_decl*, ")"
+assign_op := ("=" | "<<")
+function_signature_decl := (word | operator | parameter_decl)+
+word := <identifier>
+operator := <operator>
+parameter_decl := "(" variable_decl*, ")"
+function_body := statement*
+statement := lhs:statement_dest assign:assign_op rhs:expression
+statement_dest := (name_type_decl | variable_ref)
+variable_ref := <identifier>
+expression := (constant | operator | word | parameter_group)*
+constant := (<number> | <string>)
+parameter_group := "(" parameter*, ")"
+parameter := parameter_0? value:expression
+parameter_0 := names:<identifier>+, "="
          """)
-    
-
-    
-
-
+    test("grammar_errors", get_errors(grammar), """no errors""")
+    terminators = compute_terminators()
+    for rule in grammar.rules:
+        log(rule.name + f": {str(list(terminators[rule.name].keys())).replace("'", "")}")
