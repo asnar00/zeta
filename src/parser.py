@@ -511,6 +511,8 @@ def compute_terminators() -> dict:
                     initials = get_initials_for_term(rule.terms[i_term+1])
                 if term.sep:
                     initials = merge_dicts(initials, { f'"{term.sep}"' : [] })
+                if term.dec in '?*' and (i_term+2) < len(rule.terms):
+                    initials = merge_dicts(initials, get_initials_for_term(rule.terms[i_term+2]))
                 for sub_rule in sub_rules:
                     terminators[sub_rule.name] = merge_dicts(terminators[sub_rule.name], initials)
     # all last-terms should add the terminators of the rule they're in
