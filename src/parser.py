@@ -447,13 +447,12 @@ def get_errors(grammar: Grammar) -> str:
     return out
 
 # merge two dicts of lists
-def merge_dicts(d1: dict, d2: dict) -> dict:
+def merge_dicts(d1: dict, d2: dict):
     for key, vals in d2.items():
         if key in d1: 
             for val in vals:
                 if not val in d1[key]: d1[key].append(val)
         else: d1[key] = vals
-    return d1
 
 # "initials" is a dict mapping a terminal-string to a list of rules it initiates
 @memoise
@@ -463,11 +462,11 @@ def get_initials_for_rule(rule: Rule) -> dict:
         terminals = get_terminals(term)
         if terminals:
             for t in terminals:
-                results = merge_dicts(results, {t: [rule]})
+                merge_dicts(results, {t: [rule]})
         else:
             for sub_rule in get_rules(term):
                 add = get_initials_for_rule(sub_rule)
-                results = merge_dicts(results, add)
+                merge_dicts(results, add)
         if not term.dec or not (term.dec in '?*'):
             return results
     return results
@@ -492,7 +491,7 @@ def get_initials_for_term(term: Term) -> List[str]:
     rules = get_rules(term)
     result = {}
     for rule in rules:
-        result = merge_dicts(result, get_initials_for_rule(rule))
+        merge_dicts(result, get_initials_for_rule(rule))
     return result
 
 # terminators are all terminals that could follow a given rule
@@ -510,23 +509,23 @@ def compute_terminators() -> dict:
                 if i_term+1 < len(rule.terms):
                     initials = get_initials_for_term(rule.terms[i_term+1])
                 if term.sep:
-                    initials = merge_dicts(initials, { f'"{term.sep}"' : [] })
+                    merge_dicts(initials, { f'"{term.sep}"' : [] })
                 if term.dec in '?*' and (i_term+2) < len(rule.terms):
-                    initials = merge_dicts(initials, get_initials_for_term(rule.terms[i_term+2]))
+                    merge_dicts(initials, get_initials_for_term(rule.terms[i_term+2]))
                 for sub_rule in sub_rules:
-                    terminators[sub_rule.name] = merge_dicts(terminators[sub_rule.name], initials)
+                    merge_dicts(terminators[sub_rule.name], initials)
     # all last-terms should add the terminators of the rule they're in
     for rule in s_grammar.rules:
         last_term = rule.terms[-1]
         sub_rules = get_rules(last_term)
         if sub_rules:
             for sub_rule in sub_rules:
-                terminators[sub_rule.name] = merge_dicts(terminators[sub_rule.name], terminators[rule.name])
+                merge_dicts(terminators[sub_rule.name], terminators[rule.name])
     # each abstract rule should push its terminators down to its children
     for rule in s_grammar.rules:
         children = abstract_children(rule)
         for child in children:
-            terminators[child.name] = merge_dicts(terminators[child.name], terminators[rule.name])
+            merge_dicts(terminators[child.name], terminators[rule.name])
     return terminators
 
 
