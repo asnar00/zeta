@@ -316,6 +316,7 @@ class Grammar:
     def __init__(self):
         self.rules = []
         self.rule_named = {}
+        self.terminators = {}
         global s_grammar
         s_grammar = self
 
@@ -335,8 +336,28 @@ def build_grammar(spec: str) -> Grammar:
     for line in lines:
         name, terms_str = map(str.strip, line.split(':='))
         build_rule(name, split_terms(terms_str))
-    log(grammar.dbg())
+    grammar.terminators = compute_terminators()
+    check_grammar()
     return grammar
+
+# checks the grammar to see if there's any assumptions we made in the parser that aren't actually true of the grammar
+def check_grammar():
+    bad = False
+    for rule in s_grammar.rules:
+        last_i_term = 0
+        for i_term, term in enumerate(rule.terms):
+            if is_terminal(term):
+                #log("i_term:", i_term, term)
+                n_terms_since_last = i_term - last_i_term
+                last_i_term = i_term
+                if n_terms_since_last > 2:
+                    log("warning", f"rule {rule.name} has >2 nonterminals in a row at {i_term}")
+                    log("  rule:", rule.dbg())
+                    bad = True
+    if bad:
+        log("grammar check failed: exiting.")
+        log_exit()
+
     
 def build_rule(rule_name: str, term_strs: List[str], after_rule_name: str=None) -> Rule:
     new_rule = add_rule(rule_name, after_rule_name)
@@ -403,6 +424,13 @@ def split_terms(rhs: str) -> str:
 #--------------------------------------------------------------------------------------------------
 # second-order grammar properties
 
+@memoise
+def is_abstract(rule: Rule) -> bool:
+    if len(rule.terms) != 1: return False
+    if rule.terms[0].dec: return False
+    if rule.terms[0].vals[0][0] in '<"': return False
+    return True
+
 # a rule is abstract if it has one term that points to more than one rule
 @memoise
 def abstract_children(rule: Rule) -> List[Rule]:
@@ -421,10 +449,23 @@ def get_keywords(term: Term) -> List[str]:
 def get_types(term: Term) -> List[str]:
     return term.vals if term.vals and term.vals[0][0] == '<' else []
 
+# returns true if a term is terminal (i.e. operators/keywords only, no sequence)
+@memoise
+def is_terminal(term: Term) -> bool:
+    if term.dec: return False
+    if not term.vals: return False
+    if term.vals[0][0] in '<"': return True
+    return False
+
 # returns keywords and types in a single list (all will be one or another)
 @memoise
 def get_terminals(term: Term) -> List[str]:
     return get_keywords(term) + get_types(term)
+
+# returns list of terminal terms in a rule
+@memoise
+def get_terminal_terms(rule: Rule) -> List[str]:
+    return [term for term in rule.terms if is_terminal(term)]
 
 # if a term is a list of rules, return the list of rules, otherwise none
 @memoise
@@ -528,8 +569,6 @@ def compute_terminators() -> dict:
             merge_dicts(terminators[child.name], terminators[rule.name])
     return terminators
 
-
-
 #--------------------------------------------------------------------------------------------------
 # Zero grammar spec
 
@@ -552,16 +591,14 @@ s_zero_grammar_spec : str = """
     c_name_type_decl := type:<identifier> names:name_decl+,
     ts_name_type_decl := names:name_decl+, ":" type:<identifier>
 
-    function_decl := modifier:modifier result:result_type_decl assign:assign_op signature:function_signature_decl <indent> function_body <undent>
-    modifier := ("on" | "replace" | "after" | "before")
+    function_decl := modifier:("on" | "replace" | "after" | "before") result:result_type_decl assign:("=" | "<<") signature:function_signature_decl <indent> function_body <undent>
     result_type_decl := "(" name_type_decl*, ")"
-    assign_op := ("=" | "<<")
     function_signature_decl := (word | operator | parameter_decl)+
     word := <identifier>
     operator := <operator>
     parameter_decl := "(" variable_decl*, ")"
     function_body := statement*
-    statement := lhs:statement_dest assign:assign_op rhs:expression
+    statement := lhs:statement_dest assign:("=" | "<<") rhs:expression
     statement_dest := (name_type_decl | variable_ref)
     variable_ref := <identifier>
 
@@ -573,7 +610,7 @@ s_zero_grammar_spec : str = """
     """
 
 #--------------------------------------------------------------------------------------------------
-@this_is_the_test
+@this_is_a_test
 def test_grammar():
     log("test_grammar")
     grammar = build_grammar(s_zero_grammar_spec)
@@ -596,16 +633,14 @@ variable_decl_1 := "=" default:expression
 name_type_decl := (c_name_type_decl | ts_name_type_decl)
 c_name_type_decl := type:<identifier> names:name_decl+,
 ts_name_type_decl := names:name_decl+, ":" type:<identifier>
-function_decl := modifier:modifier result:result_type_decl assign:assign_op signature:function_signature_decl <indent> function_body <undent>
-modifier := ("on" | "replace" | "after" | "before")
+function_decl := modifier:("on" | "replace" | "after" | "before") result:result_type_decl assign:("=" | "<<") signature:function_signature_decl <indent> function_body <undent>
 result_type_decl := "(" name_type_decl*, ")"
-assign_op := ("=" | "<<")
 function_signature_decl := (word | operator | parameter_decl)+
 word := <identifier>
 operator := <operator>
 parameter_decl := "(" variable_decl*, ")"
 function_body := statement*
-statement := lhs:statement_dest assign:assign_op rhs:expression
+statement := lhs:statement_dest assign:("=" | "<<") rhs:expression
 statement_dest := (name_type_decl | variable_ref)
 variable_ref := <identifier>
 expression := (constant | operator | word | parameter_group)*
@@ -615,6 +650,204 @@ parameter := parameter_0? value:expression
 parameter_0 := names:<identifier>+, "="
          """)
     test("grammar_errors", get_errors(grammar), """no errors""")
-    terminators = compute_terminators()
-    for rule in grammar.rules:
-        log(rule.name + f": {str(list(terminators[rule.name].keys())).replace("'", "")}")
+    
+#--------------------------------------------------------------------------------------------------
+# Parser helpers
+
+# Node: an AST node
+class Node:
+    def __init__(self, rule: Rule, ls: List[Lex]):
+        self.rule = rule            # if none, we're a leaf node
+        self.ls = ls                # all lexemes
+        self.children = []          # list of child nodes OR lexemes; one per term in the rule
+    def __str__(self): return f"{self.rule.name if self.rule else ""}: '{" ".join([str(lex) for lex in self.ls])}"
+    def __repr__(self): return self.__str__()
+    def add(self, child: Union['Node',Lex]):
+        self.children.append(child)
+
+# Error: an error
+class Error(Node):
+    def __init__(self, rule: Rule, ls: List[Lex], msg: str):
+        super().__init__(rule, ls)
+        self.msg = msg
+    def __str__(self): return self.msg
+    def __repr__(self): return self.__str__()
+
+def err(node: Node)-> bool:
+    return node == None or isinstance(node, Error)
+
+# parse some code, with an expected rule name
+@log_indent
+def parse(code: str, rule_name: str) -> dict:
+    rule = s_grammar.rule_named[rule_name]
+    source = Source(code=code)
+    ls = lexer(source)
+    node = parse_rule(ls, rule)
+    if err(node): return { 'error' : node.msg }
+    return get_ast(node)
+
+# construct an ast from a node
+@log_indent
+def get_ast(node: Node|Lex) -> dict:
+    if isinstance(node, Lex): return node
+    if node.rule == None: # we're a list node
+        log("list node:")
+        return [get_ast(child) for child in node.children]
+    if len(node.children) != len(node.rule.terms): raise Exception("node child-count mismatch")
+    ast = {}
+    for i, child in enumerate(node.children):
+        log(i, child)
+        term = node.rule.terms[i]
+        if get_keywords(term): continue
+        if term.var:
+            ast[term.var] = get_ast(child)
+            log(ast)
+        else:
+            sub_ast = get_ast(child)
+            if len(node.rule.terms) > 1:
+                if isinstance(sub_ast, list) and term.dec == "?":
+                    log(f"extracting from sub_ast {sub_ast}")
+                    log(" sub_ast is a list!")
+                    if len(sub_ast) != 1: log("  can only merge a single item")
+                    else: 
+                        sub_ast = list(sub_ast[0].values())[0]
+                        log(" merging with", sub_ast)
+                        ast.update(sub_ast)
+                        log("new ast:", ast)
+                else: log("warning: discarding", sub_ast)
+            else:
+                ast = sub_ast
+    return { "_" + node.rule.name : ast }
+
+# parse an arbitrary rule covering a list of lexemes
+@log_indent
+def parse_rule(ls: List[Lex], rule: Rule) -> Node:
+    return parse_abstract(ls, rule) if is_abstract(rule) else parse_concrete(ls, rule)
+
+# parse an abstract rule
+@log_indent
+def parse_abstract(ls: List[Lex], rule: Rule) -> Node:
+    # look at the initials and figure out which concrete one to use
+    log_exit()
+        
+# parse a concrete rule
+@log_indent
+def parse_concrete(ls: List[Lex], rule: Rule) -> Node:
+    log(rule.dbg())
+    success, i_lexemes = find_terminals(ls, rule)
+    if not success: return make_error(ls, rule, i_lexemes)
+    # yes we can
+    node = Node(rule, ls[0:i_lexemes[-1]+1])
+    log("i_lexemes", i_lexemes)
+    i_i_lex = 0 # index into i_lexemes
+    for i_term, term in enumerate(rule.terms):
+        log("i_term", i_term, term)
+        log("i_i_lex", i_i_lex)
+        if is_terminal(term):
+            lex = ls[i_lexemes[i_i_lex]]
+            log("adding lex:", lex)
+            node.add(lex)
+            i_i_lex += 1
+        else:
+            log("sub-rule", term)
+            if i_i_lex == 0:
+                log("ermmmm not sure what to do here")
+                log_exit()
+            ls_range = ls[i_lexemes[i_i_lex-1]+1:i_lexemes[i_i_lex]]
+            log("ls_range", ls_range)
+            sub_node = parse_term(ls_range, term)
+            node.add(sub_node)
+    return node
+
+# parse a term within a lex range
+@log_indent
+def parse_term(ls: List[Lex], term: Term) -> Node:
+    return parse_decorated_term(ls, term) if term.dec else parse_simple_term(ls, term)
+
+@log_indent
+def parse_decorated_term(ls: List[Lex], term: Term) -> Node:
+    min = 0 if term.dec in "?*" else 1
+    max = 1 if term.dec == "?" else None
+    count = 0
+    node = Node(None, [])
+    i_lex = 0
+    while i_lex < len(ls) and (max == None or count < max):
+        sub_node = parse_simple_term(ls, term)
+        if err(sub_node): break
+        node.add(sub_node)
+        i_lex += len(sub_node.ls)
+        if term.sep and i_lex < len(ls):
+            if ls[i_lex].val == term.sep:
+                i_lex += 1
+            else: return Error(None, ls[i_lex:], f"expected separator {term.sep} at {ls[i_lex].location()}")
+        count += 1
+    node.ls = ls[0:i_lex]
+    return node
+
+@log_indent
+def parse_simple_term(ls: List[Lex], term: Term) -> Node:
+    initials = get_initials_for_term(term)
+    log("initials", initials)
+    for key, rules in initials.items():
+        if lex_matches_terminal(ls[0], [key]):
+            log("matched rules:", rules)
+            for rule in rules:
+                node = parse_rule(ls, rule)
+                if not err(node): return node
+    log("no match")
+    log_exit()
+
+# if we didn't match one of the terminals we expected, let us know
+@log_indent
+def make_error(ls: List[Lex], rule: Rule, i_lexemes: List[int]) -> Node:
+    terminal_terms = get_terminal_terms(rule)
+    term = terminal_terms[len(i_lexemes)]
+    terminals = str(get_terminals(term)).replace("'", "").replace("[", "").replace("]", "")
+    msg = f"expected {rule.name}.{term.var}:{terminals} at or after {ls[i_lexemes[-1]+1].location()}"
+    return Error(rule, ls, msg)
+
+# finds all terminals within a rule, returns their indices, and success or failure
+@log_indent
+def find_terminals(ls: List[Lex], rule: Rule) -> Union[bool, List[int]]:
+    terminal_terms = get_terminal_terms(rule)
+    terminators = s_grammar.terminators[rule.name]
+    terminals = [get_terminals(t) for t in terminal_terms]
+    terminals.append(terminators)
+    log(terminals)
+    i_lexemes = []
+    i_lex = 0
+    while i_lex < len(ls) and len(i_lexemes) < len(terminals):
+        i_lex = scan_forward(ls, i_lex, terminals[len(i_lexemes)])
+        if i_lex >= len(ls) and len(i_lexemes) < len(terminals)-1: return False, i_lexemes
+        i_lexemes.append(i_lex)
+        i_lex = step_forward(ls, i_lex)
+    return True, i_lexemes
+    
+# scan forward for a match
+def scan_forward(ls: List[Lex], i_lex: int, terminals: List[str]) -> int:
+    while i_lex < len(ls):
+        if lex_matches_terminal(ls[i_lex], terminals): break
+        i_lex = step_forward(ls, i_lex)
+    return i_lex
+
+# return true if a lex matches a list of terminals ("keyword" or <type>)
+def lex_matches_terminal(lex: Lex, terminals: List[str]) -> bool:
+    if f'"{lex.val}"' in terminals: return True
+    elif f'<{lex.type}>' in terminals: return True
+    else: return False
+
+# step forward to the next lex, skipping brackets
+def step_forward(ls: List[Lex], i_lex: int) -> int:
+    return i_lex + ls[i_lex].jump
+    
+
+                            
+
+#--------------------------------------------------------------------------------------------------
+@this_is_the_test
+def test_parser():
+    log("test_parser")
+    grammar = build_grammar(s_zero_grammar_spec)
+            
+
+    test("parse", parse("feature Hello extends Another {  }", "feature_decl"))

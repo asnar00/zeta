@@ -7,7 +7,7 @@ The lexer breaks a string of characters into a sequence of *lexemes* - each corr
 
 Each lexeme is shown by as a pair, `type`:`value`.
 
-    feature _lexer
+    feature lexer
         enum token_type = 
             num | number, 
             id | identifier, 
@@ -23,7 +23,7 @@ Each lexeme is shown by as a pair, `type`:`value`.
 
 To give us useful location feedback, a lexeme also has an index into the code it came from:
 
-    feature _source_location extends _lexer
+    feature source_location extends lexer
         type lex += 
             source[] : char
 
@@ -38,7 +38,7 @@ There's something to be done here with tracking what points to what, and managin
 
 And to allow fast forward jumps while lexing, we also allow open-brace lexemes to store the lex index of their partner close-brace lexeme:
 
-    feature _jump_brace extends _lexer
+    feature jump_brace extends lexer
         type lex +=
             partner[] : lex
 
@@ -58,16 +58,16 @@ we'll see this:
 
 and if we print out all the lex jumps as well as the values, we'll see that the open bracket stores a 4-lex jump forward to get to its partnering close-brace:
 
-    > lex$.jump
-    => [1, 4, 1, 1, 1, -4]
+    > lex$.partner
+    => [[], [brace:")"], [], [], [], [], [brace:"("]]
 
-Notice the niceness of the `lex$.jump` formulation! That just returns an array with all the lex jump values.
+Notice the niceness of the `lex$.partner` formulation! That just returns an array with all the lex jump values.
 
-This is a really nice exercise, because it shows you how literate zero code feels different, in a deep way, to the python code it was based on.
+This is a really nice exercise, because it shows you how literate zero code feels different, in a deep way, to the python code it was based on. Keep going!
 
 ## implementation
 
-    feature _lexer
+    feature lexer
         on (lex$ : lex) << lexer (code$ : char)
             lex$ << if (code$ is alphanumeric) then Lex(type: identifier, read (identifer) from (code$))
                     else if ((code$) is (operator)) then lex(type: operator, read (operator) from (code$))
