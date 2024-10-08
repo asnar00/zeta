@@ -424,7 +424,6 @@ def split_terms(rhs: str) -> str:
 #--------------------------------------------------------------------------------------------------
 # second-order grammar properties
 
-@memoise
 def is_abstract(rule: Rule) -> bool:
     if len(rule.terms) != 1: return False
     if rule.terms[0].dec: return False
@@ -432,7 +431,6 @@ def is_abstract(rule: Rule) -> bool:
     return True
 
 # a rule is abstract if it has one term that points to more than one rule
-@memoise
 def abstract_children(rule: Rule) -> List[Rule]:
     if len(rule.terms) != 1: return []
     term = rule.terms[0]
@@ -440,17 +438,14 @@ def abstract_children(rule: Rule) -> List[Rule]:
     return get_rules(term)
 
 # if a term is one or more keywords, return the list, otherwise none
-@memoise
 def get_keywords(term: Term) -> List[str]:
     return term.vals if term.vals and term.vals[0][0] == '"' else []
 
 # if a term is one or more lex-types, return the list, otherwise none
-@memoise
 def get_types(term: Term) -> List[str]:
     return term.vals if term.vals and term.vals[0][0] == '<' else []
 
 # returns true if a term is terminal (i.e. operators/keywords only, no sequence)
-@memoise
 def is_terminal(term: Term) -> bool:
     if term.dec: return False
     if not term.vals: return False
@@ -458,31 +453,41 @@ def is_terminal(term: Term) -> bool:
     return False
 
 # returns keywords and types in a single list (all will be one or another)
-@memoise
 def get_terminals(term: Term) -> List[str]:
     return get_keywords(term) + get_types(term)
 
 # returns list of terminal terms in a rule
-@memoise
 def get_terminal_terms(rule: Rule) -> List[str]:
     return [term for term in rule.terms if is_terminal(term)]
 
 # if a term is a list of rules, return the list of rules, otherwise none
-@memoise
 def get_rules(term: Term) -> List[str]:
     if not term.vals or term.vals[0][0] in '<"': return []
     return [s_grammar.rule_named[val] for val in term.vals]
 
-# check that each rule referred to in each term actually exists
-@memoise
+# check that the following assumptions made by the parser are true:
+# 1- all referred to rules actually exist
+# 2- any unbound list terms are the only variable term in the rule
 def get_errors(grammar: Grammar) -> str:
     out = ""
     for rule in grammar.rules:
+        unbound_list_terms = []
+        variable_terms = []
         for i_term, term in enumerate(rule.terms):
+            # 1- check referred-to-rules exist
             for val in term.vals:
                 if val[0] and not (val[0] in '"<'):
                     if not (val in s_grammar.rule_named):
                         out += f"term {i_term} of {rule.name}: can't find referred-to rule '{val}'\n"
+            # 2- is the term unbound, and has '+' or '*'?
+            
+            if term.dec and (term.dec in "*+") and not term.var:
+                unbound_list_terms.append(term)
+            # 2.1- is the term a variable term? (i.e. contains identifier or rule)
+            if len(term.vals) > 0 and term.vals[0][0] != '"':
+                variable_terms.append(term)
+        if len(unbound_list_terms) > 0 and len(variable_terms) > 1:
+            out += f"rule {rule.name} has unbound list terms: {str(unbound_list_terms).replace("[", "").replace("]", "")}\n"
     if out == "":
         out = "no errors"
     return out
@@ -496,7 +501,6 @@ def merge_dicts(d1: dict, d2: dict):
         else: d1[key] = vals
 
 # "initials" is a dict mapping a terminal-string to a list of rules it initiates
-@memoise
 def get_initials_for_rule(rule: Rule) -> dict:
     results = {}        # terminal_str -> [rule]
     for term in rule.terms:
@@ -513,15 +517,12 @@ def get_initials_for_rule(rule: Rule) -> dict:
     return results
 
 # show all initials
-@memoise
 def show_initials(grammar: Grammar) -> str:
     out = ""
     for rule in grammar.rules:
         out += rule.name + " : " + str(get_initials_for_rule(rule)) + "\n"
     return out
 
-# get initials for a term: all the terminals that could possible start it
-@memoise
 def get_initials_for_term(term: Term) -> List[str]:
     terminals = get_terminals(term)
     if terminals:
@@ -573,14 +574,14 @@ def compute_terminators() -> dict:
 # Zero grammar spec
 
 s_zero_grammar_spec : str = """
-    feature_decl := "feature" name:<identifier> ("extends" parent:<identifier>)? <indent> component_decl* <undent>
+    feature_decl := "feature" name:<identifier> ("extends" parent:<identifier>)? ":indent" body:component_decl* ":undent"
     component_decl := (test_decl | type_decl | variable_decl | function_decl)
 
     test_decl := ">" lhs:expression ("=>" rhs:expression)?
 
     type_decl := "type" name_decl (struct_decl | type_relation_decl | enum_decl)
     name_decl := name:<identifier> ("|" alias:<identifier>)?
-    struct_decl := "=" <indent> properties:variable_decl* <undent>
+    struct_decl := "=" ":indent" properties:variable_decl* ":undent"
     type_relation_decl := (child_type_decl | parent_type_decl)
     child_type_decl := "<" parent:<identifier>
     parent_type_decl := ">" children:<indentifier>*|
@@ -591,7 +592,7 @@ s_zero_grammar_spec : str = """
     c_name_type_decl := type:<identifier> names:name_decl+,
     ts_name_type_decl := names:name_decl+, ":" type:<identifier>
 
-    function_decl := modifier:("on" | "replace" | "after" | "before") result:result_type_decl assign:("=" | "<<") signature:function_signature_decl <indent> function_body <undent>
+    function_decl := modifier:("on" | "replace" | "after" | "before") result:result_type_decl assign:("=" | "<<") signature:function_signature_decl ":indent" function_body ":undent"
     result_type_decl := "(" name_type_decl*, ")"
     function_signature_decl := (word | operator | parameter_decl)+
     word := <identifier>
@@ -615,7 +616,7 @@ def test_grammar():
     log("test_grammar")
     grammar = build_grammar(s_zero_grammar_spec)
     test("test_grammar", grammar.dbg(), """
-feature_decl := "feature" name:<identifier> feature_decl_2? <indent> component_decl* <undent>
+feature_decl := "feature" name:<identifier> feature_decl_2? ":indent" body:component_decl* ":undent"
 feature_decl_2 := "extends" parent:<identifier>
 component_decl := (test_decl | type_decl | variable_decl | function_decl)
 test_decl := ">" lhs:expression test_decl_2?
@@ -623,7 +624,7 @@ test_decl_2 := "=>" rhs:expression
 type_decl := "type" name_decl (struct_decl | type_relation_decl | enum_decl)
 name_decl := name:<identifier> name_decl_1?
 name_decl_1 := "|" alias:<identifier>
-struct_decl := "=" <indent> properties:variable_decl* <undent>
+struct_decl := "=" ":indent" properties:variable_decl* ":undent"
 type_relation_decl := (child_type_decl | parent_type_decl)
 child_type_decl := "<" parent:<identifier>
 parent_type_decl := ">" children:<indentifier>*|
@@ -633,7 +634,7 @@ variable_decl_1 := "=" default:expression
 name_type_decl := (c_name_type_decl | ts_name_type_decl)
 c_name_type_decl := type:<identifier> names:name_decl+,
 ts_name_type_decl := names:name_decl+, ":" type:<identifier>
-function_decl := modifier:("on" | "replace" | "after" | "before") result:result_type_decl assign:("=" | "<<") signature:function_signature_decl <indent> function_body <undent>
+function_decl := modifier:("on" | "replace" | "after" | "before") result:result_type_decl assign:("=" | "<<") signature:function_signature_decl ":indent" function_body ":undent"
 result_type_decl := "(" name_type_decl*, ")"
 function_signature_decl := (word | operator | parameter_decl)+
 word := <identifier>
@@ -844,10 +845,8 @@ def step_forward(ls: List[Lex], i_lex: int) -> int:
                             
 
 #--------------------------------------------------------------------------------------------------
-@this_is_the_test
+@this_is_a_test
 def test_parser():
     log("test_parser")
     grammar = build_grammar(s_zero_grammar_spec)
-            
-
-    test("parse", parse("feature Hello extends Another {  }", "feature_decl"))
+    test("parse", parse("feature Hello extends Another {  }", "feature_decl"), """{'_feature_decl': {'name': Hello, 'parent': Another, 'body': []}}""")
