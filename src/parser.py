@@ -359,6 +359,12 @@ def compute_meta_stuff():
     while not done: done = not (compute_followers())
     done = False
     while not done: done = not (compute_leaves())
+    for rule in s_grammar.rules:
+        log(rule.dbg())
+        log("  initials:", rule.initials)
+        log("  followers:", rule.followers)
+        log("  leaves:", rule.leaves)
+
 
 def compute_initials() -> bool:
     changed = False
@@ -394,6 +400,13 @@ def compute_followers():
     for rule in s_grammar.rules:
         for i_term, term in enumerate(rule.terms):
             if term.is_terminal(): continue
+            if term.dec and term.dec in '*+':
+                if term.sep: 
+                    changed = merge_arrays(term.followers, [f'"term.sep"']) or changed
+                else:
+                    changed = merge_arrays(term.followers, term.initials) or changed
+                    for sub_rule in term.rules():
+                        changed = merge_arrays(sub_rule.followers, term.initials) or changed
             if (i_term + 1) < len(rule.terms):
                 next_term = rule.terms[i_term+1]
                 next_initials = rule.terms[i_term+1].initials
@@ -418,7 +431,6 @@ def compute_followers():
             if second_last_term.is_rule():
                 for sub_rule in second_last_term.rules():
                     changed = merge_arrays(sub_rule.followers, rule.followers)
-
     return changed
 
 # compute leaves: for each rule, find {terminal => [rule]}
@@ -677,16 +689,34 @@ parameter_0 := names:<identifier>+, "="
 def test_parser():
     log("test parser")
     grammar = build_grammar(s_zero_grammar_spec)
-    test("parser", parse("feature MyFeature extends AnotherFeature { }", "feature_decl"), """
+    test("parser_feature_decl", parse("feature MyFeature extends AnotherFeature { }", "feature_decl"), """
          {'_feature_decl': {'name': MyFeature, 'parent': AnotherFeature, 'body': []}}
          """)
-
+    test("parser_expression", parse("a + b * c", "expression"), """
+         {'_expression': [{'_word': a}, {'_operator': +}, {'_word': b}, {'_operator': *}, {'_word': c}]}
+         """)
+    
+@log_indent
 def parse(code: str, rule_name: str) -> Dict:
     source = Source(code = code)
     ls = lexer(source)
     ast = parse_rule(ls, s_grammar.rule_named[rule_name])
-    first_key = list(ast.keys())[0]
-    return { first_key: ast[first_key] }
+    return clean_ast(ast)
+
+# remove "ls" members from all levels of the Dict
+def clean_ast(ast: Dict) -> Dict:
+    if isinstance(ast, list):
+        return [clean_ast(a) for a in ast]
+    elif isinstance(ast, dict):
+        out = {}
+        for k, v in ast.items():
+            if k == "ls": pass
+            else:
+                out[k] = clean_ast(v)
+        return out
+    else:
+        return ast
+
 
 @log_indent
 def parse_rule(ls: List[Lex], rule: Rule) -> Dict:
@@ -697,7 +727,7 @@ def parse_rule(ls: List[Lex], rule: Rule) -> Dict:
             if lex_matches(ls[i_lex], term.vals):
                 i_lex += 1
             else: 
-                return { "error": f"expected one of {term.vals} at {ls[i_lex].location()}", "ast" : ast }
+                return { "error": f"#1: expected one of {cleanup(term.vals)} at {ls[i_lex].location()}", "ast" : ast }
         elif term.is_type():
             if lex_matches(ls[i_lex], term.vals):
                 if term.var: ast[term.var] = ls[i_lex]
@@ -705,27 +735,30 @@ def parse_rule(ls: List[Lex], rule: Rule) -> Dict:
                 else: raise Exception("unbound terminal")
                 i_lex += 1
             else:
-                return { "error": f"expected one of {term.vals} at {ls[i_lex].location()}", "ast" : ast }
+                return { "error": f"#2: expected one of {cleanup(term.vals)} at {ls[i_lex].location()}", "ast" : ast }
         else:
             i_lex_end = scan_forward(ls, i_lex, term.followers)
             if not i_lex_end:
-                return { "error": f"expected one of {term.followers} at {ls[i_lex].location()}", "ast" : ast }
+                i_lex_end = len(ls)
+                #return { "error": f"#3: expected one of {cleanup(term.followers)} at {ls[i_lex].location()}", "ast" : ast }
             sub_ls = ls[i_lex:i_lex_end]
             sub_ast = parse_term(sub_ls, term)
             if err(sub_ast): return sub_ast
-            log(sub_ast)
             if term.var: ast.update({ term.var : sub_ast })
             else: 
                 if isinstance(sub_ast, list):
                     if len(sub_ast) > 1:
-                        raise Exception("warning: throwing away multi-item list")
+                        if len(rule.terms) > 1:
+                            raise Exception("warning: throwing away multi-item list")
+                        else: ast = sub_ast
                     elif len(sub_ast) == 1:
                         sub_ast = sub_ast[0]
                     elif len(sub_ast) == 0:
                         sub_ast = {}
-                log(sub_ast)
-                first_key = list(sub_ast.keys())[0]
-                ast.update(sub_ast[first_key])
+                if isinstance(sub_ast, dict):
+                    log(sub_ast)
+                    first_key = list(sub_ast.keys())[0]
+                    ast.update(sub_ast[first_key])
             i_lex = i_lex_end
     return { f"_{rule.name}": ast, "ls" : ls[0:i_lex] }
 
@@ -739,7 +772,6 @@ def parse_term(ls: List[Lex], term: Term) -> Dict:
         result = []
         min = 1 if term.dec == '+' else 0
         max = 1 if term.dec == '?' else None
-        log("min/max:", min, max)
         i_lex = 0
         count = 0
         while i_lex < len(ls) and (max == None or len(result) < max):
@@ -759,18 +791,14 @@ def parse_term(ls: List[Lex], term: Term) -> Dict:
 @log_indent
 def parse_singular_term(ls: List[Lex], term: Term) -> Dict:
     leaves = term.leaves
-    log("leaves", leaves)
     for val, rules in leaves.items():
         if lex_matches(ls[0], [val]):
             log("found rules:", rules)
             for rule in rules:
                 sub_ast = parse_rule(ls, rule)
-                log("sub_ast:", sub_ast)
                 if term.var: return { term.var: sub_ast }
                 else: return sub_ast
-    
-    
-    log_exit()
+    return { "error": f"expected one of {cleanup(term.vals)} at {ls[0].location()}", "ast" : {} }
 
 def scan_forward(ls: List[Lex], i_lex: int, terminals: List[str]) -> int:
     while i_lex < len(ls):
@@ -786,4 +814,8 @@ def lex_matches(lex: Lex, matches: List[str]) -> bool:
 
 def err(ast: Dict) -> bool:
     return "error" in ast
+
+def cleanup(obj) -> str:
+    s = str(obj)
+    return s.replace("\"", "").replace("'", "").replace("[","").replace("]","")
     
