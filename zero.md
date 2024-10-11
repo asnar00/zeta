@@ -1,149 +1,155 @@
 ᕦ(ツ)ᕤ
 # zero
 
-A place for notes and scribbles about the language, rather than the zeta project.
+`zero` (always lowercase) is a feature-modular programming language designed for real-time distributed applications.
 
-Current definition of the language is:
+## design goals
 
-## comments
+- approachable: small, readable syntax
+- fast: compiled, strongly typed, fast edit/build/test cycle
+- flexible: modular backends targeting multiple languages/frameworks
+- real-time: time is a first-class construct
+- distributed: targets heterogenous clusters by default
 
-*experimental*
+## organisation
 
-comments are at the start of the line, followed by a `:`:
+The specification of zero is organised into *layers*: layer 1 is the 'outermost' layer of the language, containing the basic concepts you need to learn in order to write programs in zero. Additional details and features are introduced at 'deeper' layers. The goal is to get you up and running quickly, adding complexity in stages.
 
-    comment:    code
+## literate code
+
+Programs in zero are written in a human-first markdown format. There are no comments; instead, all 'meta-information', such as specification, explanation, tutorials and tests, is defined using markdown text around the code. In the following document, all code examples are editable and runnable, and are presented like this:
+
+    > (some code)
+    => (expected result)
+
+# layer 1
 
 ## types
 
-zero is strongly typed.
+### installed types
 
-concrete numerical types:
+*Abstract numeric types* are arbitrary-precision numbers used when we don't care about the bit-depth or precision of the values we're programming with (we let the compiler choose the appropriate bit-depths):
 
-    u8, u16, u32, u64
-    i8, i16, i32, i64
-    f32, f64
+    bool    : true or false
+    int     : arbitrary-precision signed integer
+    float   : arbitrary-precision floating-point number
+    number  : either int or float
 
-abstract numerical types:
+zero also defines the following *utility* types:
 
-    type int = i8 | i16 | i32 | i64
-    type uint = u8 | u16 | u32 | u64
-    type fp | float = f32 | f64
-    type num | number = int | float
+    char    : unicode character
+    string  : unicode string
+    time    : high-resolution time
 
-enums:
+### user-definable types
 
-    enum evil = no | yes | dunno
+*enums* are defined using the `enum` keyword, as follows:
 
-convenience:
+    enum evil = yes, no, maybe
 
-    boolean : bool | boolean
-    string  : str | string
-    time    : time
+*structure types* are defined using the `type` keyword, thus:
 
-structure types:
+    type vec =
+        number x, y, z = 0
 
-long/short names for conciseness or verbosity
+zero automatically defines a constructor that can be called in many ways:
 
-    type col | colour = 
-        r | red, g | green, b | blue : number = 0
-
-type narrowers:
-
-    type vec | vector = 
-        x, y, z : number = 0
-    
-    position in space: type pos | position < vector
-
-    length in meters: type len | length < number
-
-    direction vector always has length 0: type dir | direction < vector
-
-variable declarations:
-
-automatically created constructor
-
-can use c-style:
-
-    vec v = (x: 1, y: 2, y: 3)
-
-or ts-style:
-
-    v: vec = (1, 2, 3)
+    vec v               : sets v.x, v.y, v.z to default (0)
+    vec v = (1, 2, 3)   : v.x => 1, v.y => 2, v.z => 3
+    vec v = (y: 1)      : v.y => 1, v.x and v.z => default (0)
 
 ## functions
 
+Functions in zero are defined using a *named result* pattern, like this:
 
+    on (vec r) = add (vec a, b)
+        r = (a.x + b.x, a.y + b.y, a.z + b.z)
 
-## arrays
+or like this:
 
-    int a[] = [ 0 .. 10 ]               : [ 0, 1, ..., 9 ]
-    int b[] = [ 1 .. =10 ]              : [ 1, 2, ..., 10 ]
-    int c[] = a[] + b[]                 : map '+'
-    int d[] = a[] + 1                   : map '+' with singular value
-    int sum = a[] + _                   : reduce using '+'
-    int e[] = a[] : _ & 1 == 0          : filter
-    int s[] = a[>]                      : sort (descending)
+    on (vec r) = (vec a) + (vec b)
+        r = (a.x + b.x, a.y + b.y, a.z + b.z)
 
-    int f[] = a[] << b[]                : concatenate
-    int g[] = a[] << 1                  : concatenate singular value
-    int h[] = a[ 0 .. 5 ]               : slice (0-5 non-incl)
-    int j[] = a[ 0 .= 5 ]               : slice (0-5 inclusive)
-    int k[] = a[ 0 ]                    : slice (0-0 inclusive) *returns array*
-    int l[] = a[ _ + 5 ]                : shift array left by 5 places
-    int m[] = a[ _ * 2 ]                : scale the array
+Function signatures can be any sequence of words, operators, or bracketed parameter groups. This *open syntax* allows concise definition of infix, prefix and post-fix operators, as well as more descriptive and readable code.
 
-Generalisation of this syntax to n-dimensional arrays is made by noticing that (eg.) a 2D array is just a 1-D array, with a function mapping a 2D integer coordinate to a 1D integer index.
+All functions are *pure* : they can only read their parameters, and write their results.
 
-There's a general need for a type that is an "index into an array" -> this is the equivalent of a pointer. And I think that type just ends up being a slice, i.e. an array anyway. Arrays handle zero-or-more or zero-or-one semantics trivially, and the map syntax makes it just as easy to use them as singular values.
+### if-then-else
+
+zero uses a functional form of if-then-else, as follows:
+
+    on (string s) = is (vec v) zero:
+        b = if (v.x + v.y + v.z ==0) then true else false
 
 ## streams
 
-A stream is a 1-D array that exists in time; i.e. each value in the array has a specific time. Under the hood, it's a sequence of arrays, but each array has a set of meta-data that scale it to a time range (basically scale and offset). Streams are a bit like texture samplers, and there's a 1-1 correspondence with samplers in gpu-land.
+A `stream` is a sequence of zero or more values.
 
-So we can do a countdown:
+    > int i$ << [0 to 10]
+    => [0, 1, 2, ... 9]
 
-    num a$ << [ 10 .. =1 ] at (1 hz)
+The `$` suffix (read as 'string') indicates that a variable is a stream rather than a singular value; 
 
-or we can synthesize audio:
+the `<<` operator indicates that we are 'pushing' or 'concatenating' the right-hand-side of the statement onto the stream; and 
 
-    audio out$ << sinewave(40 hz) at (48 khz) forever
+the `[]` notation specifies a list of numbers.
 
-`at` and `forever` and `until` are stream modifiers - they decide how fast it runs, and when it stops.
+### slice
 
+Given any stream, we can extract some sub-range of the stream using the slice notation. For instance:
 
-## features
+    > int j$ << i$[3 .. 5]
+    => [3, 4]
 
-## contexts
+If we try to read a slice that's outside the range of the stream, the slice is truncated:
 
------------------------
-scribbles
-------------------------
+    > int k$ << i$[8..15]
+    => [8, 9]
 
-# some other nice ideas
+Specifying a single number inside the `[]` does not return a singular value; instead, it returns a single-element slice:
 
-- parse/print defined at the same time in the string format.
+    > int val = i$[8]
+    => !! indexing not supported
 
-    so for instance:
+    > int v$ << i$[8]
+    => [8]
 
-    "hello \(name) how's it going"
+### map
 
-    can both print and parse a string - it's bidirectional.
+Functions are defined on singular values; however, we can pass a stream to a function, which maps the function to each singular value in the stream. So, for instance:
 
-    So actually make the parser "accessible" as part of the language.
+    > int i$ << [1 to 10 incl]
+    > int j$ << i$ * 2
+    => [2, 4, 6, 8, ... 20]
 
-- brain-breaker: what if the compiler (=parser, grammar, lexer, etc) is feature modular? And you can create different compilers / languages just by selecting different contexts?
+We can also operate on two streams :
 
-So you can morph the syntax of the language to whatever you want by adding features to the language. That's pretty cool, I reckon.
+    > int k$ = i$ + j$
+    => [3, 6, 9, 12, ... 30]
 
-## demo targets:
+### reduce
 
-1- the zerp repl, written in zero, with the editor
-2- wasm backend: audio output (hummingbird-stems)
-3- wgpu backend: polygon output (frankie the robot)
+We can reduce any stream through any function, using the following syntax:
 
-The thing about choosing these is that I know how they work, intimately! And they form a direct line to d3.
+    > int sum = i$ + _
+    => 45
 
+### filter
 
+We can filter a stream using the following syntax:
 
+    > int even$ = i$ : (_ & 1 == 0)
 
+### sort
 
+Finally, we can sort a stream using syntax like this:
+
+    > int d$ = i$ > _
+
+# features
+
+A `feature` is the basic unit of modularity in zero. A feature defines a set of types,variables, and functions.
+
+# contexts
+
+A `context` is a group of features enabled at runtime. 

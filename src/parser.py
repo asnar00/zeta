@@ -284,6 +284,9 @@ class Term:
         self.vals = vals    # a set of keywords ("word"), types (<type>), or rules (Rule)
         self.dec = dec      # one of "?" (zero or one), "*" (zero or more) or "+" (one or more)
         self.sep = sep      # separator if we are "+" or "*"
+        self.initials = []  # keywords that can initiate this term
+        self.followers = [] # keywords that can follow this term
+        self.leaves = {}    # maps match => rule-names
     def __str__(self):
         out = " | ".join(self.vals)
         if len(self.vals) > 1: out = f"({out})"
@@ -292,6 +295,11 @@ class Term:
         if self.var: out = f"{self.var}:{out}"
         return out
     def __repr__(self): return self.__str__()
+    def is_keyword(self): return self.vals[0][0] == '"'
+    def is_type(self): return self.vals[0][0] == '<'
+    def is_terminal(self): return self.is_keyword() or self.is_type()
+    def is_rule(self): return not (self.is_keyword() or self.is_type())
+    def rules(self): return [s_grammar.rule_named[r] for r in self.vals]
 
 #--------------------------------------------------------------------------------------------------
 # Rule: a name and a list of terms
@@ -300,6 +308,9 @@ class Rule:
     def __init__(self, name: str):
         self.name = name
         self.terms = []
+        self.initials = []      # keywords that can start this rule
+        self.followers = []     # keywords that can follow this rule
+        self.leaves = {}        # maps match => rule-names
     def __str__(self):
         return self.name
     def __repr__(self): return self.__str__()
@@ -316,7 +327,6 @@ class Grammar:
     def __init__(self):
         self.rules = []
         self.rule_named = {}
-        self.terminators = {}
         global s_grammar
         s_grammar = self
 
@@ -336,9 +346,126 @@ def build_grammar(spec: str) -> Grammar:
     for line in lines:
         name, terms_str = map(str.strip, line.split(':='))
         build_rule(name, split_terms(terms_str))
-    grammar.terminators = compute_terminators()
+    compute_meta_stuff()
     check_grammar()
     return grammar
+
+# computes the initiators and followers for each rule and term
+
+def compute_meta_stuff():
+    done = False
+    while not done: done = not (compute_initials())
+    done = False
+    while not done: done = not (compute_followers())
+    done = False
+    while not done: done = not (compute_leaves())
+
+def compute_initials() -> bool:
+    changed = False
+    # all keyword terms get their initials = vals
+    for rule in s_grammar.rules:
+        for term in rule.terms:
+            if term.is_keyword(): term.initials = term.vals
+    # first find the first keyword in each rule
+    for rule in s_grammar.rules:
+        for term in rule.terms:
+            if term.is_keyword():
+                changed = merge_arrays(rule.initials, term.vals) or changed
+            if not term.dec or term.dec == '+':
+                break
+    # now apply this transitively to the terms:
+    # if a term is a bunch of rules, that term's initials come from those rules
+    for rule in s_grammar.rules:
+        for term in rule.terms:
+            if term.is_rule():
+                for sub_rule in term.rules():
+                    changed = merge_arrays(term.initials, sub_rule.initials) or changed
+    # and finally skim the first term's initials into the parent rule
+    for rule in s_grammar.rules:
+        for term in rule.terms:
+            changed = merge_arrays(rule.initials, term.initials) or changed
+            if not term.dec or term.dec == '+':
+                break
+    return changed
+
+def compute_followers():
+    changed = False
+    # set term and rule followers using initials of the next term
+    for rule in s_grammar.rules:
+        for i_term, term in enumerate(rule.terms):
+            if term.is_terminal(): continue
+            if (i_term + 1) < len(rule.terms):
+                next_term = rule.terms[i_term+1]
+                next_initials = rule.terms[i_term+1].initials
+                changed = merge_arrays(term.followers, next_initials) or changed
+                for sub_rule in term.rules():
+                    changed = merge_arrays(sub_rule.followers, next_initials) or changed
+                if next_term.dec and (i_term + 2) < len(rule.terms):
+                    next_next_initials = rule.terms[i_term+2].initials
+                    changed = merge_arrays(term.followers, next_next_initials) or changed
+                    for sub_rule in term.rules():
+                        changed = merge_arrays(sub_rule.followers, next_next_initials) or changed
+    # for the last term in each rule, set its followers to the followers of its rule
+    for rule in s_grammar.rules:
+        last_term = rule.terms[-1]
+        changed = merge_arrays(last_term.followers, rule.followers)
+        if last_term.is_rule():
+            for sub_rule in last_term.rules():
+                changed = merge_arrays(sub_rule.followers, rule.followers)
+        if last_term.dec and last_term.dec in '?*' and len(rule.terms)>1:
+            second_last_term = rule.terms[-2]
+            changed = merge_arrays(second_last_term.followers, rule.followers)
+            if second_last_term.is_rule():
+                for sub_rule in second_last_term.rules():
+                    changed = merge_arrays(sub_rule.followers, rule.followers)
+
+    return changed
+
+# compute leaves: for each rule, find {terminal => [rule]}
+def compute_leaves() -> bool:
+    changed = False
+    for rule in s_grammar.rules:
+        for term in rule.terms:
+            if term.is_terminal():
+                for val in term.vals:
+                    changed = merge_dicts(rule.leaves, { val : [rule] }) or changed
+            if not term.dec or term.dec == '+':
+                break
+    # now transfer those to terms
+    for rule in s_grammar.rules:
+        for term in rule.terms:
+            if term.is_rule():
+                for sub_rule in term.rules():
+                    for val in sub_rule.leaves.keys():
+                        changed = merge_dicts(term.leaves, { val : [sub_rule] }) or changed
+    # and then back to the rules
+    for rule in s_grammar.rules:
+        for term in rule.terms:
+            if term.is_rule():
+                changed = merge_dicts(rule.leaves, term.leaves) or changed
+            if not term.dec or term.dec == '+':
+                break
+    return changed
+
+# merge two dicts (name => [vals]): return true if d1 changed
+def merge_dicts(d1: Dict, d2: Dict) -> bool:
+    changed = False
+    for k, v in d2.items():
+        if not k in d1:
+            d1[k] = v
+            changed = True
+        else:
+            changed = merge_arrays(d1[k], v) or changed
+    return changed
+
+# merge two arrays: return true if a1 changed
+def merge_arrays(a1, a2)->bool:
+    changed = False
+    for v in a2:
+        if not v in a1:
+            a1.append(v)
+            changed = True
+    return changed
 
 # checks the grammar to see if there's any assumptions we made in the parser that aren't actually true of the grammar
 def check_grammar():
@@ -346,7 +473,7 @@ def check_grammar():
     for rule in s_grammar.rules:
         last_i_term = 0
         for i_term, term in enumerate(rule.terms):
-            if is_terminal(term):
+            if term.is_terminal():
                 #log("i_term:", i_term, term)
                 n_terms_since_last = i_term - last_i_term
                 last_i_term = i_term
@@ -358,7 +485,6 @@ def check_grammar():
         log("grammar check failed: exiting.")
         log_exit()
 
-    
 def build_rule(rule_name: str, term_strs: List[str], after_rule_name: str=None) -> Rule:
     new_rule = add_rule(rule_name, after_rule_name)
     for i_term, term_str in enumerate(term_strs):
@@ -424,50 +550,10 @@ def split_terms(rhs: str) -> str:
 #--------------------------------------------------------------------------------------------------
 # second-order grammar properties
 
-def is_abstract(rule: Rule) -> bool:
-    if len(rule.terms) != 1: return False
-    if rule.terms[0].dec: return False
-    if rule.terms[0].vals[0][0] in '<"': return False
-    return True
-
-# a rule is abstract if it has one term that points to more than one rule
-def abstract_children(rule: Rule) -> List[Rule]:
-    if len(rule.terms) != 1: return []
-    term = rule.terms[0]
-    if term.dec: return []
-    return get_rules(term)
-
-# if a term is one or more keywords, return the list, otherwise none
-def get_keywords(term: Term) -> List[str]:
-    return term.vals if term.vals and term.vals[0][0] == '"' else []
-
-# if a term is one or more lex-types, return the list, otherwise none
-def get_types(term: Term) -> List[str]:
-    return term.vals if term.vals and term.vals[0][0] == '<' else []
-
-# returns true if a term is terminal (i.e. operators/keywords only, no sequence)
-def is_terminal(term: Term) -> bool:
-    if term.dec: return False
-    if not term.vals: return False
-    if term.vals[0][0] in '<"': return True
-    return False
-
-# returns keywords and types in a single list (all will be one or another)
-def get_terminals(term: Term) -> List[str]:
-    return get_keywords(term) + get_types(term)
-
-# returns list of terminal terms in a rule
-def get_terminal_terms(rule: Rule) -> List[str]:
-    return [term for term in rule.terms if is_terminal(term)]
-
-# if a term is a list of rules, return the list of rules, otherwise none
-def get_rules(term: Term) -> List[str]:
-    if not term.vals or term.vals[0][0] in '<"': return []
-    return [s_grammar.rule_named[val] for val in term.vals]
-
 # check that the following assumptions made by the parser are true:
 # 1- all referred to rules actually exist
 # 2- any unbound list terms are the only variable term in the rule
+# 3- a term's values are all the same type ("keyword", <type>, or rule)
 def get_errors(grammar: Grammar) -> str:
     out = ""
     for rule in grammar.rules:
@@ -480,95 +566,27 @@ def get_errors(grammar: Grammar) -> str:
                     if not (val in s_grammar.rule_named):
                         out += f"term {i_term} of {rule.name}: can't find referred-to rule '{val}'\n"
             # 2- is the term unbound, and has '+' or '*'?
-            
             if term.dec and (term.dec in "*+") and not term.var:
                 unbound_list_terms.append(term)
             # 2.1- is the term a variable term? (i.e. contains identifier or rule)
             if len(term.vals) > 0 and term.vals[0][0] != '"':
                 variable_terms.append(term)
+            # 3- are all the term's values the same type?
+            n_keywords = 0; n_types =0; n_rules =0
+            for val in term.vals:
+                if val[0] == '"': n_keywords += 1
+                elif val[0] == "<": n_types += 1
+                else: n_rules += 1
+            n_vals = len(term.vals)
+            ok = (n_keywords == n_vals) or (n_types == n_vals) or (n_rules == n_vals)
+            if not ok:
+                out += f"term {i_term} of {rule.name}: values are mixed types\n"
         if len(unbound_list_terms) > 0 and len(variable_terms) > 1:
             out += f"rule {rule.name} has unbound list terms: {str(unbound_list_terms).replace("[", "").replace("]", "")}\n"
     if out == "":
         out = "no errors"
     return out
 
-# merge two dicts of lists
-def merge_dicts(d1: dict, d2: dict):
-    for key, vals in d2.items():
-        if key in d1: 
-            for val in vals:
-                if not val in d1[key]: d1[key].append(val)
-        else: d1[key] = vals
-
-# "initials" is a dict mapping a terminal-string to a list of rules it initiates
-def get_initials_for_rule(rule: Rule) -> dict:
-    results = {}        # terminal_str -> [rule]
-    for term in rule.terms:
-        terminals = get_terminals(term)
-        if terminals:
-            for t in terminals:
-                merge_dicts(results, {t: [rule]})
-        else:
-            for sub_rule in get_rules(term):
-                add = get_initials_for_rule(sub_rule)
-                merge_dicts(results, add)
-        if not term.dec or not (term.dec in '?*'):
-            return results
-    return results
-
-# show all initials
-def show_initials(grammar: Grammar) -> str:
-    out = ""
-    for rule in grammar.rules:
-        out += rule.name + " : " + str(get_initials_for_rule(rule)) + "\n"
-    return out
-
-def get_initials_for_term(term: Term) -> List[str]:
-    terminals = get_terminals(term)
-    if terminals:
-        result = {}
-        for t in terminals:
-            result[t] = []
-        return result
-    rules = get_rules(term)
-    result = {}
-    for rule in rules:
-        merge_dicts(result, get_initials_for_rule(rule))
-    return result
-
-# terminators are all terminals that could follow a given rule
-# we compute them in a single pass because it's better that way
-def compute_terminators() -> dict:
-    terminators = {}
-    # first create an empty dict for each rule
-    for rule in s_grammar.rules:
-        terminators[rule.name] = {}
-    # now run through and look at all terms
-    for rule in s_grammar.rules:
-        for i_term, term in enumerate(rule.terms):
-            sub_rules = get_rules(term)
-            if sub_rules: # now look at initials for the next term
-                if i_term+1 < len(rule.terms):
-                    initials = get_initials_for_term(rule.terms[i_term+1])
-                if term.sep:
-                    merge_dicts(initials, { f'"{term.sep}"' : [] })
-                if term.dec in '?*' and (i_term+2) < len(rule.terms):
-                    merge_dicts(initials, get_initials_for_term(rule.terms[i_term+2]))
-                for sub_rule in sub_rules:
-                    merge_dicts(terminators[sub_rule.name], initials)
-    # all last-terms should add the terminators of the rule they're in
-    for rule in s_grammar.rules:
-        last_term = rule.terms[-1]
-        sub_rules = get_rules(last_term)
-        if sub_rules:
-            for sub_rule in sub_rules:
-                merge_dicts(terminators[sub_rule.name], terminators[rule.name])
-    # each abstract rule should push its terminators down to its children
-    for rule in s_grammar.rules:
-        children = abstract_children(rule)
-        for child in children:
-            merge_dicts(terminators[child.name], terminators[rule.name])
-    return terminators
 
 #--------------------------------------------------------------------------------------------------
 # Zero grammar spec
@@ -611,7 +629,7 @@ s_zero_grammar_spec : str = """
     """
 
 #--------------------------------------------------------------------------------------------------
-@this_is_a_test
+@this_is_the_test
 def test_grammar():
     log("test_grammar")
     grammar = build_grammar(s_zero_grammar_spec)
@@ -651,202 +669,121 @@ parameter := parameter_0? value:expression
 parameter_0 := names:<identifier>+, "="
          """)
     test("grammar_errors", get_errors(grammar), """no errors""")
-    
+
 #--------------------------------------------------------------------------------------------------
-# Parser helpers
+# Parser itself
 
-# Node: an AST node
-class Node:
-    def __init__(self, rule: Rule, ls: List[Lex]):
-        self.rule = rule            # if none, we're a leaf node
-        self.ls = ls                # all lexemes
-        self.children = []          # list of child nodes OR lexemes; one per term in the rule
-    def __str__(self): return f"{self.rule.name if self.rule else ""}: '{" ".join([str(lex) for lex in self.ls])}"
-    def __repr__(self): return self.__str__()
-    def add(self, child: Union['Node',Lex]):
-        self.children.append(child)
+@this_is_the_test
+def test_parser():
+    log("test parser")
+    grammar = build_grammar(s_zero_grammar_spec)
+    test("parser", parse("feature MyFeature extends AnotherFeature { }", "feature_decl"), """
+         {'_feature_decl': {'name': MyFeature, 'parent': AnotherFeature, 'body': []}}
+         """)
 
-# Error: an error
-class Error(Node):
-    def __init__(self, rule: Rule, ls: List[Lex], msg: str):
-        super().__init__(rule, ls)
-        self.msg = msg
-    def __str__(self): return self.msg
-    def __repr__(self): return self.__str__()
-
-def err(node: Node)-> bool:
-    return node == None or isinstance(node, Error)
-
-# parse some code, with an expected rule name
-@log_indent
-def parse(code: str, rule_name: str) -> dict:
-    rule = s_grammar.rule_named[rule_name]
-    source = Source(code=code)
+def parse(code: str, rule_name: str) -> Dict:
+    source = Source(code = code)
     ls = lexer(source)
-    node = parse_rule(ls, rule)
-    if err(node): return { 'error' : node.msg }
-    return get_ast(node)
+    ast = parse_rule(ls, s_grammar.rule_named[rule_name])
+    first_key = list(ast.keys())[0]
+    return { first_key: ast[first_key] }
 
-# construct an ast from a node
 @log_indent
-def get_ast(node: Node|Lex) -> dict:
-    if isinstance(node, Lex): return node
-    if node.rule == None: # we're a list node
-        log("list node:")
-        return [get_ast(child) for child in node.children]
-    if len(node.children) != len(node.rule.terms): raise Exception("node child-count mismatch")
+def parse_rule(ls: List[Lex], rule: Rule) -> Dict:
     ast = {}
-    for i, child in enumerate(node.children):
-        log(i, child)
-        term = node.rule.terms[i]
-        if get_keywords(term): continue
-        if term.var:
-            ast[term.var] = get_ast(child)
-            log(ast)
-        else:
-            sub_ast = get_ast(child)
-            if len(node.rule.terms) > 1:
-                if isinstance(sub_ast, list) and term.dec == "?":
-                    log(f"extracting from sub_ast {sub_ast}")
-                    log(" sub_ast is a list!")
-                    if len(sub_ast) != 1: log("  can only merge a single item")
-                    else: 
-                        sub_ast = list(sub_ast[0].values())[0]
-                        log(" merging with", sub_ast)
-                        ast.update(sub_ast)
-                        log("new ast:", ast)
-                else: log("warning: discarding", sub_ast)
-            else:
-                ast = sub_ast
-    return { "_" + node.rule.name : ast }
-
-# parse an arbitrary rule covering a list of lexemes
-@log_indent
-def parse_rule(ls: List[Lex], rule: Rule) -> Node:
-    return parse_abstract(ls, rule) if is_abstract(rule) else parse_concrete(ls, rule)
-
-# parse an abstract rule
-@log_indent
-def parse_abstract(ls: List[Lex], rule: Rule) -> Node:
-    # look at the initials and figure out which concrete one to use
-    log_exit()
-        
-# parse a concrete rule
-@log_indent
-def parse_concrete(ls: List[Lex], rule: Rule) -> Node:
-    log(rule.dbg())
-    success, i_lexemes = find_terminals(ls, rule)
-    if not success: return make_error(ls, rule, i_lexemes)
-    # yes we can
-    node = Node(rule, ls[0:i_lexemes[-1]+1])
-    log("i_lexemes", i_lexemes)
-    i_i_lex = 0 # index into i_lexemes
-    for i_term, term in enumerate(rule.terms):
-        log("i_term", i_term, term)
-        log("i_i_lex", i_i_lex)
-        if is_terminal(term):
-            lex = ls[i_lexemes[i_i_lex]]
-            log("adding lex:", lex)
-            node.add(lex)
-            i_i_lex += 1
-        else:
-            log("sub-rule", term)
-            if i_i_lex == 0:
-                log("ermmmm not sure what to do here")
-                log_exit()
-            ls_range = ls[i_lexemes[i_i_lex-1]+1:i_lexemes[i_i_lex]]
-            log("ls_range", ls_range)
-            sub_node = parse_term(ls_range, term)
-            node.add(sub_node)
-    return node
-
-# parse a term within a lex range
-@log_indent
-def parse_term(ls: List[Lex], term: Term) -> Node:
-    return parse_decorated_term(ls, term) if term.dec else parse_simple_term(ls, term)
-
-@log_indent
-def parse_decorated_term(ls: List[Lex], term: Term) -> Node:
-    min = 0 if term.dec in "?*" else 1
-    max = 1 if term.dec == "?" else None
-    count = 0
-    node = Node(None, [])
     i_lex = 0
-    while i_lex < len(ls) and (max == None or count < max):
-        sub_node = parse_simple_term(ls, term)
-        if err(sub_node): break
-        node.add(sub_node)
-        i_lex += len(sub_node.ls)
-        if term.sep and i_lex < len(ls):
-            if ls[i_lex].val == term.sep:
+    for term in rule.terms:
+        if term.is_keyword():
+            if lex_matches(ls[i_lex], term.vals):
                 i_lex += 1
-            else: return Error(None, ls[i_lex:], f"expected separator {term.sep} at {ls[i_lex].location()}")
-        count += 1
-    node.ls = ls[0:i_lex]
-    return node
+            else: 
+                return { "error": f"expected one of {term.vals} at {ls[i_lex].location()}", "ast" : ast }
+        elif term.is_type():
+            if lex_matches(ls[i_lex], term.vals):
+                if term.var: ast[term.var] = ls[i_lex]
+                elif len(rule.terms)==1: ast = ls[i_lex]
+                else: raise Exception("unbound terminal")
+                i_lex += 1
+            else:
+                return { "error": f"expected one of {term.vals} at {ls[i_lex].location()}", "ast" : ast }
+        else:
+            i_lex_end = scan_forward(ls, i_lex, term.followers)
+            if not i_lex_end:
+                return { "error": f"expected one of {term.followers} at {ls[i_lex].location()}", "ast" : ast }
+            sub_ls = ls[i_lex:i_lex_end]
+            sub_ast = parse_term(sub_ls, term)
+            if err(sub_ast): return sub_ast
+            log(sub_ast)
+            if term.var: ast.update({ term.var : sub_ast })
+            else: 
+                if isinstance(sub_ast, list):
+                    if len(sub_ast) > 1:
+                        raise Exception("warning: throwing away multi-item list")
+                    elif len(sub_ast) == 1:
+                        sub_ast = sub_ast[0]
+                    elif len(sub_ast) == 0:
+                        sub_ast = {}
+                log(sub_ast)
+                first_key = list(sub_ast.keys())[0]
+                ast.update(sub_ast[first_key])
+            i_lex = i_lex_end
+    return { f"_{rule.name}": ast, "ls" : ls[0:i_lex] }
 
+# top-level parser for a complex term (one or more rules, possible decorator)
 @log_indent
-def parse_simple_term(ls: List[Lex], term: Term) -> Node:
-    initials = get_initials_for_term(term)
-    log("initials", initials)
-    for key, rules in initials.items():
-        if lex_matches_terminal(ls[0], [key]):
-            log("matched rules:", rules)
-            for rule in rules:
-                node = parse_rule(ls, rule)
-                if not err(node): return node
-    log("no match")
+def parse_term(ls: List[Lex], term: Term) -> Dict:
+    result = None
+    if not term.dec: 
+        result= parse_singular_term(term)
+    else:
+        result = []
+        min = 1 if term.dec == '+' else 0
+        max = 1 if term.dec == '?' else None
+        log("min/max:", min, max)
+        i_lex = 0
+        count = 0
+        while i_lex < len(ls) and (max == None or len(result) < max):
+            sub_ast = parse_singular_term(ls[i_lex:], term)
+            if err(sub_ast): return sub_ast
+            result.append(sub_ast)
+            i_lex += len(sub_ast["ls"])
+            if (term.sep and i_lex < len(ls) and ls[i_lex].val == term.sep):
+                i_lex += 1
+        if len(result) < min:
+            return { "error": f"expected at least {min} of {term} at {ls[0].location()}", "ast" : result }
+    return result
+
     log_exit()
 
-# if we didn't match one of the terminals we expected, let us know
+# parses a complex term (one or more rules), ignoring decorator
 @log_indent
-def make_error(ls: List[Lex], rule: Rule, i_lexemes: List[int]) -> Node:
-    terminal_terms = get_terminal_terms(rule)
-    term = terminal_terms[len(i_lexemes)]
-    terminals = str(get_terminals(term)).replace("'", "").replace("[", "").replace("]", "")
-    msg = f"expected {rule.name}.{term.var}:{terminals} at or after {ls[i_lexemes[-1]+1].location()}"
-    return Error(rule, ls, msg)
-
-# finds all terminals within a rule, returns their indices, and success or failure
-@log_indent
-def find_terminals(ls: List[Lex], rule: Rule) -> Union[bool, List[int]]:
-    terminal_terms = get_terminal_terms(rule)
-    terminators = s_grammar.terminators[rule.name]
-    terminals = [get_terminals(t) for t in terminal_terms]
-    terminals.append(terminators)
-    log(terminals)
-    i_lexemes = []
-    i_lex = 0
-    while i_lex < len(ls) and len(i_lexemes) < len(terminals):
-        i_lex = scan_forward(ls, i_lex, terminals[len(i_lexemes)])
-        if i_lex >= len(ls) and len(i_lexemes) < len(terminals)-1: return False, i_lexemes
-        i_lexemes.append(i_lex)
-        i_lex = step_forward(ls, i_lex)
-    return True, i_lexemes
+def parse_singular_term(ls: List[Lex], term: Term) -> Dict:
+    leaves = term.leaves
+    log("leaves", leaves)
+    for val, rules in leaves.items():
+        if lex_matches(ls[0], [val]):
+            log("found rules:", rules)
+            for rule in rules:
+                sub_ast = parse_rule(ls, rule)
+                log("sub_ast:", sub_ast)
+                if term.var: return { term.var: sub_ast }
+                else: return sub_ast
     
-# scan forward for a match
+    
+    log_exit()
+
 def scan_forward(ls: List[Lex], i_lex: int, terminals: List[str]) -> int:
     while i_lex < len(ls):
-        if lex_matches_terminal(ls[i_lex], terminals): break
-        i_lex = step_forward(ls, i_lex)
-    return i_lex
+        lex = ls[i_lex]
+        if lex_matches(lex, terminals): return i_lex
+        i_lex += ls[i_lex].jump
+    return None
 
-# return true if a lex matches a list of terminals ("keyword" or <type>)
-def lex_matches_terminal(lex: Lex, terminals: List[str]) -> bool:
-    if f'"{lex.val}"' in terminals: return True
-    elif f'<{lex.type}>' in terminals: return True
+def lex_matches(lex: Lex, matches: List[str]) -> bool:
+    if matches[0][0]=='"': return f'"{lex.val}"' in matches
+    elif matches[0][0]=='<': return f'<{lex.type}>' in matches
     else: return False
 
-# step forward to the next lex, skipping brackets
-def step_forward(ls: List[Lex], i_lex: int) -> int:
-    return i_lex + ls[i_lex].jump
+def err(ast: Dict) -> bool:
+    return "error" in ast
     
-
-                            
-
-#--------------------------------------------------------------------------------------------------
-@this_is_a_test
-def test_parser():
-    log("test_parser")
-    grammar = build_grammar(s_zero_grammar_spec)
-    test("parse", parse("feature Hello extends Another {  }", "feature_decl"), """{'_feature_decl': {'name': Hello, 'parent': Another, 'body': []}}""")
