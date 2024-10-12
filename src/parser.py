@@ -359,12 +359,6 @@ def compute_meta_stuff():
     while not done: done = not (compute_followers())
     done = False
     while not done: done = not (compute_leaves())
-    for rule in s_grammar.rules:
-        log(rule.dbg())
-        log("  initials:", rule.initials)
-        log("  followers:", rule.followers)
-        log("  leaves:", rule.leaves)
-
 
 def compute_initials() -> bool:
     changed = False
@@ -394,43 +388,51 @@ def compute_initials() -> bool:
                 break
     return changed
 
+s_trace = ""
+
+def push_followers_downwards(term, followers, changed) -> bool:
+    for sub_rule in term.rules():
+        vb = (sub_rule.name == s_trace)
+        if vb: log(caller())
+        if vb: log("trace:", sub_rule.name)
+        if vb: log("before:", sub_rule.followers)
+        changed = merge_arrays(sub_rule.followers, followers) or changed
+        if vb: log("after:", sub_rule.followers)
+    return changed
+
 def compute_followers():
     changed = False
     # set term and rule followers using initials of the next term
     for rule in s_grammar.rules:
         for i_term, term in enumerate(rule.terms):
             if term.is_terminal(): continue
-            if term.dec and term.dec in '*+':
-                if term.sep: 
-                    changed = merge_arrays(term.followers, [f'"term.sep"']) or changed
-                else:
-                    changed = merge_arrays(term.followers, term.initials) or changed
-                    for sub_rule in term.rules():
-                        changed = merge_arrays(sub_rule.followers, term.initials) or changed
+            #if term.dec and term.dec in '*+' and term.is_rule():
+            #    sub_followers = []
+            #    if term.sep: 
+            #        merge_arrays(sub_followers, [f'"{term.sep}"'])
+            #    else:
+            #        merge_arrays(sub_followers, term.initials)
+            #    changed = push_followers_downwards(term, sub_followers, changed)
             if (i_term + 1) < len(rule.terms):
                 next_term = rule.terms[i_term+1]
                 next_initials = rule.terms[i_term+1].initials
                 changed = merge_arrays(term.followers, next_initials) or changed
-                for sub_rule in term.rules():
-                    changed = merge_arrays(sub_rule.followers, next_initials) or changed
+                changed = push_followers_downwards(term, next_initials, changed)
                 if next_term.dec and (i_term + 2) < len(rule.terms):
                     next_next_initials = rule.terms[i_term+2].initials
                     changed = merge_arrays(term.followers, next_next_initials) or changed
-                    for sub_rule in term.rules():
-                        changed = merge_arrays(sub_rule.followers, next_next_initials) or changed
+                    changed = push_followers_downwards(term, next_next_initials, changed)
     # for the last term in each rule, set its followers to the followers of its rule
     for rule in s_grammar.rules:
         last_term = rule.terms[-1]
         changed = merge_arrays(last_term.followers, rule.followers)
         if last_term.is_rule():
-            for sub_rule in last_term.rules():
-                changed = merge_arrays(sub_rule.followers, rule.followers)
+            changed = push_followers_downwards(last_term, rule.followers, changed)
         if last_term.dec and last_term.dec in '?*' and len(rule.terms)>1:
             second_last_term = rule.terms[-2]
             changed = merge_arrays(second_last_term.followers, rule.followers)
             if second_last_term.is_rule():
-                for sub_rule in second_last_term.rules():
-                    changed = merge_arrays(sub_rule.followers, rule.followers)
+                changed = push_followers_downwards(second_last_term, rule.followers, changed)
     return changed
 
 # compute leaves: for each rule, find {terminal => [rule]}
@@ -641,7 +643,7 @@ s_zero_grammar_spec : str = """
     """
 
 #--------------------------------------------------------------------------------------------------
-@this_is_the_test
+@this_is_a_test
 def test_grammar():
     log("test_grammar")
     grammar = build_grammar(s_zero_grammar_spec)
@@ -689,13 +691,15 @@ parameter_0 := names:<identifier>+, "="
 def test_parser():
     log("test parser")
     grammar = build_grammar(s_zero_grammar_spec)
-    test("parser_feature_decl", parse("feature MyFeature extends AnotherFeature { }", "feature_decl"), """
-         {'_feature_decl': {'name': MyFeature, 'parent': AnotherFeature, 'body': []}}
-         """)
-    test("parser_expression", parse("a + b * c", "expression"), """
-         {'_expression': [{'_word': a}, {'_operator': +}, {'_word': b}, {'_operator': *}, {'_word': c}]}
-         """)
-    
+    test("parse_feature_decl", parse("feature MyFeature extends AnotherFeature { }", "feature_decl"), """
+         {'_feature_decl': {'name': MyFeature, 'parent': AnotherFeature, 'body': []}}""")
+    test("parse_expression", parse("a + b * c", "expression"), """
+         {'_expression': [{'_word': a}, {'_operator': +}, {'_word': b}, {'_operator': *}, {'_word': c}]}""")
+    test("parse_test_decl", parse("> a => b", "test_decl"), """
+         {'_test_decl': {'lhs': {'_expression': {'_word': a}}, 'rhs': {'_expression': {'_word': b}}}}""")
+    test("parse_variable_decl", parse("int r | red, g | green, b | blue =0", "variable_decl"),"""
+         {'_variable_decl': {'type': int, 'names': [{'_name_decl': {'name': r, 'alias': red}}, {'_name_decl': {'name': g, 'alias': green}}, {'_name_decl': {'name': b, 'alias': blue}}], 'default': {'_expression': {'_constant': 0}}}}""")
+
 @log_indent
 def parse(code: str, rule_name: str) -> Dict:
     source = Source(code = code)
@@ -723,6 +727,8 @@ def parse_rule(ls: List[Lex], rule: Rule) -> Dict:
     ast = {}
     i_lex = 0
     for term in rule.terms:
+        #log("i_lex:", i_lex)
+        #log("term:", term)
         if term.is_keyword():
             if lex_matches(ls[i_lex], term.vals):
                 i_lex += 1
@@ -737,12 +743,14 @@ def parse_rule(ls: List[Lex], rule: Rule) -> Dict:
             else:
                 return { "error": f"#2: expected one of {cleanup(term.vals)} at {ls[i_lex].location()}", "ast" : ast }
         else:
+            #log("term followers:", term.followers)
             i_lex_end = scan_forward(ls, i_lex, term.followers)
             if not i_lex_end:
                 i_lex_end = len(ls)
                 #return { "error": f"#3: expected one of {cleanup(term.followers)} at {ls[i_lex].location()}", "ast" : ast }
             sub_ls = ls[i_lex:i_lex_end]
             sub_ast = parse_term(sub_ls, term)
+            #log("this one:", sub_ast)
             if err(sub_ast): return sub_ast
             if term.var: ast.update({ term.var : sub_ast })
             else: 
@@ -750,15 +758,21 @@ def parse_rule(ls: List[Lex], rule: Rule) -> Dict:
                     if len(sub_ast) > 1:
                         if len(rule.terms) > 1:
                             raise Exception("warning: throwing away multi-item list")
-                        else: ast = sub_ast
+                        else: 
+                            ast = sub_ast
                     elif len(sub_ast) == 1:
                         sub_ast = sub_ast[0]
                     elif len(sub_ast) == 0:
                         sub_ast = {}
                 if isinstance(sub_ast, dict):
-                    log(sub_ast)
-                    first_key = list(sub_ast.keys())[0]
-                    ast.update(sub_ast[first_key])
+                    keys = list(sub_ast.keys())
+                    if len(keys) > 0:
+                        first_key = keys[0]
+                        first_item = sub_ast[first_key]
+                        if isinstance(first_item, dict):
+                            ast.update(first_item)
+                        else:
+                            ast.update(sub_ast)
             i_lex = i_lex_end
     return { f"_{rule.name}": ast, "ls" : ls[0:i_lex] }
 
@@ -766,18 +780,31 @@ def parse_rule(ls: List[Lex], rule: Rule) -> Dict:
 @log_indent
 def parse_term(ls: List[Lex], term: Term) -> Dict:
     result = None
-    if not term.dec: 
-        result= parse_singular_term(term)
+    if not term.dec:
+        result= parse_singular_term(ls, term)
     else:
         result = []
         min = 1 if term.dec == '+' else 0
         max = 1 if term.dec == '?' else None
         i_lex = 0
-        count = 0
+        #log("min:", min, "max:", max)
+        #log("term.sep:", term.sep)
+        term_followers = [f'"{term.sep}"'] if term.sep else (term.initials if max==None else [])
+        #log("term_followers:", term_followers)
         while i_lex < len(ls) and (max == None or len(result) < max):
-            sub_ast = parse_singular_term(ls[i_lex:], term)
-            if err(sub_ast): return sub_ast
+            i_lex_end = scan_forward(ls, i_lex, term_followers)
+            if i_lex_end == None: i_lex_end = len(ls)
+            sub_ls = ls[i_lex:i_lex_end]
+            #log("sub_ls:", sub_ls)
+            sub_ast = parse_singular_term(sub_ls, term)
+            if err(sub_ast): # ok sort of weird thing here:
+                # don't know how to distinguish between maybe an error and maybe not
+                # I think we need to add the error to the end of the list
+                #log("error:", sub_ast)
+                #log("result is:", result)
+                return result
             result.append(sub_ast)
+            #log("adding", sub_ast)
             i_lex += len(sub_ast["ls"])
             if (term.sep and i_lex < len(ls) and ls[i_lex].val == term.sep):
                 i_lex += 1
@@ -793,11 +820,10 @@ def parse_singular_term(ls: List[Lex], term: Term) -> Dict:
     leaves = term.leaves
     for val, rules in leaves.items():
         if lex_matches(ls[0], [val]):
-            log("found rules:", rules)
+            #log("found rules:", rules)
             for rule in rules:
                 sub_ast = parse_rule(ls, rule)
-                if term.var: return { term.var: sub_ast }
-                else: return sub_ast
+                if not err(sub_ast): return sub_ast
     return { "error": f"expected one of {cleanup(term.vals)} at {ls[0].location()}", "ast" : {} }
 
 def scan_forward(ls: List[Lex], i_lex: int, terminals: List[str]) -> int:
@@ -808,6 +834,7 @@ def scan_forward(ls: List[Lex], i_lex: int, terminals: List[str]) -> int:
     return None
 
 def lex_matches(lex: Lex, matches: List[str]) -> bool:
+    if len(matches)==0: return False
     if matches[0][0]=='"': return f'"{lex.val}"' in matches
     elif matches[0][0]=='<': return f'<{lex.type}>' in matches
     else: return False

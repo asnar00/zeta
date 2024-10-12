@@ -2,6 +2,16 @@
 # scribblez
 "slow is smooth, smooth is fast"
 
+    (a, b, c: int, d, e: blah)
+
+and this makes it ambiguous; you can't scan forwards because the "," is at two different levels.
+
+=> ok, so we need to think of an alternative way of making this work. This is the non smooth bit.
+=> it means that we can't push the separators downwards, ever.
+
+-----
+
+
 now that we have the right direction for the algorithm, it's about making the code smooth, clean, and controlled; and most importantly, *understood*.
 
 I had a go this morning with the "parent/children" style, but it just leads to complexity. So now the term structure is much simpler: each term is an array of values (which can be keywords, lex-types, or rule-names); the only constraint is that you can't mix them. Each term has a decorator, a separator, and a name. 
