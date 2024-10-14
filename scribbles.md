@@ -2,12 +2,11 @@
 # scribblez
 "slow is smooth, smooth is fast"
 
-    (a, b, c: int, d, e: blah)
+documentation format:
 
-and this makes it ambiguous; you can't scan forwards because the "," is at two different levels.
-
-=> ok, so we need to think of an alternative way of making this work. This is the non smooth bit.
-=> it means that we can't push the separators downwards, ever.
+a bit like instagram; drag up and down for 1-page documents at "this level";
+drag left to go "more into detail" (i.e. layer +1 in this topic). right to go back up a layer.
+so at any level, you can scan up and down really quick, and burrow in (left-drag) to whatever looks interesting.
 
 -----
 

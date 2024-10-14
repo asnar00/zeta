@@ -134,7 +134,7 @@ class Lex:
         self.type = type;       # type - identifier, number, operator, etc
         self.rank = 0           # rank of the lexeme if an operator (for precedence)
         self.index = None       # index in the original lex list (doesn't change if we take slices etc)
-        self.jump = 0           # increment to jump to next/prev matching bracket ("()", "[]", "indent/undent")
+        self.jump = 1           # increment to jump to next/prev matching bracket ("()", "[]", "indent/undent")
     def __str__(self):
         return self.val
     def __repr__(self):
@@ -350,127 +350,8 @@ def build_grammar(spec: str) -> Grammar:
     check_grammar()
     return grammar
 
-# checks the grammar to see if there's any assumptions we made in the parser that aren't actually true of the grammar
-def check_grammar():
-    bad = False
-    for rule in s_grammar.rules:
-        last_i_term = 0
-        for i_term, term in enumerate(rule.terms):
-            if term.is_terminal():
-                #log("i_term:", i_term, term)
-                n_terms_since_last = i_term - last_i_term
-                last_i_term = i_term
-                if n_terms_since_last > 2:
-                    log("warning", f"rule {rule.name} has >2 nonterminals in a row at {i_term}")
-                    log("  rule:", rule.dbg())
-                    bad = True
-    if bad:
-        log("grammar check failed: exiting.")
-        log_exit()
-
-def build_rule(rule_name: str, term_strs: List[str], after_rule_name: str=None) -> Rule:
-    new_rule = add_rule(rule_name, after_rule_name)
-    for i_term, term_str in enumerate(term_strs):
-        term = build_term(term_str, i_term, rule_name)
-        new_rule.terms.append(term)
-    return new_rule
-
-def add_rule(rule_name: str, after_rule_name: str=None) -> Rule:
-    global s_grammar
-    new_rule = Rule(rule_name)
-    if after_rule_name:
-        after = s_grammar.rule_named[after_rule_name]
-        i = s_grammar.rules.index(after)
-        s_grammar.rules.insert(i+1, new_rule)
-    else:
-        s_grammar.rules.append(new_rule)
-    s_grammar.rule_named[rule_name] = new_rule
-    return new_rule
-
-def build_term(term_str: str, i_term: int, rule_name: str) -> Term:
-    parts = re.match(r"(\w+):(.+)", term_str)
-    var = parts.group(1) if parts else None
-    term_str = parts.group(2) if parts else term_str
-    parts = re.match(r"(.+)([*+?])([,|]?)", term_str)
-    sep = parts.group(3) if parts else ""
-    dec = parts.group(2) if parts else ""
-    term_str = parts.group(1) if parts else term_str
-    vals = []
-    if term_str.startswith("(") and term_str.endswith(")"):
-        term_str = term_str[1:-1]
-        if " | " in term_str: 
-            vals = [val.strip() for val in term_str.split("|")]
-        else:
-            sub_rule = build_rule(rule_name + "_" + str(i_term), split_terms(term_str), rule_name)
-            vals = [ sub_rule.name ]
-    else:
-        vals = [term_str]
-    return Term(var, vals, dec, sep)
-
-def split_terms(rhs: str) -> str:
-    terms = []
-    current_term = ""
-    bracket_depth = 0
-    in_quotes = False
-    for char in rhs:
-        if char == ' ' and bracket_depth == 0 and not in_quotes:
-            if current_term:
-                terms.append(current_term)
-                current_term = ""
-        else:
-            if char == '(' and not in_quotes:
-                bracket_depth += 1
-            elif char == ')' and not in_quotes:
-                bracket_depth -= 1
-            elif char == '"':
-                in_quotes = not in_quotes
-            
-            current_term += char
-    if current_term:
-        terms.append(current_term)
-    return terms
-
-#--------------------------------------------------------------------------------------------------
-# second-order grammar properties
-
-# check that the following assumptions made by the parser are true:
-# 1- all referred to rules actually exist
-# 2- any unbound list terms are the only variable term in the rule
-# 3- a term's values are all the same type ("keyword", <type>, or rule)
-def get_errors(grammar: Grammar) -> str:
-    out = ""
-    for rule in grammar.rules:
-        unbound_list_terms = []
-        variable_terms = []
-        for i_term, term in enumerate(rule.terms):
-            # 1- check referred-to-rules exist
-            for val in term.vals:
-                if val[0] and not (val[0] in '"<'):
-                    if not (val in s_grammar.rule_named):
-                        out += f"term {i_term} of {rule.name}: can't find referred-to rule '{val}'\n"
-            # 2- is the term unbound, and has '+' or '*'?
-            if term.dec and (term.dec in "*+") and not term.var:
-                unbound_list_terms.append(term)
-            # 2.1- is the term a variable term? (i.e. contains identifier or rule)
-            if len(term.vals) > 0 and term.vals[0][0] != '"':
-                variable_terms.append(term)
-            # 3- are all the term's values the same type?
-            n_keywords = 0; n_types =0; n_rules =0
-            for val in term.vals:
-                if val[0] == '"': n_keywords += 1
-                elif val[0] == "<": n_types += 1
-                else: n_rules += 1
-            n_vals = len(term.vals)
-            ok = (n_keywords == n_vals) or (n_types == n_vals) or (n_rules == n_vals)
-            if not ok:
-                out += f"term {i_term} of {rule.name}: values are mixed types\n"
-        if len(unbound_list_terms) > 0 and len(variable_terms) > 1:
-            out += f"rule {rule.name} has unbound list terms: {str(unbound_list_terms).replace("[", "").replace("]", "")}\n"
-    if out == "":
-        out = "no errors"
-    return out
-
 # computes the initiators and followers for each rule and term
+
 def compute_meta_stuff():
     done = False
     while not done: done = not (compute_initials())
@@ -600,6 +481,127 @@ def merge_arrays(a1, a2)->bool:
             changed = True
     return changed
 
+# checks the grammar to see if there's any assumptions we made in the parser that aren't actually true of the grammar
+def check_grammar():
+    bad = False
+    for rule in s_grammar.rules:
+        last_i_term = 0
+        for i_term, term in enumerate(rule.terms):
+            if term.is_terminal():
+                #log("i_term:", i_term, term)
+                n_terms_since_last = i_term - last_i_term
+                last_i_term = i_term
+                if n_terms_since_last > 2:
+                    log("warning", f"rule {rule.name} has >2 nonterminals in a row at {i_term}")
+                    log("  rule:", rule.dbg())
+                    bad = True
+    if bad:
+        log("grammar check failed: exiting.")
+        log_exit()
+
+def build_rule(rule_name: str, term_strs: List[str], after_rule_name: str=None) -> Rule:
+    new_rule = add_rule(rule_name, after_rule_name)
+    for i_term, term_str in enumerate(term_strs):
+        term = build_term(term_str, i_term, rule_name)
+        new_rule.terms.append(term)
+    return new_rule
+
+def add_rule(rule_name: str, after_rule_name: str=None) -> Rule:
+    global s_grammar
+    new_rule = Rule(rule_name)
+    if after_rule_name:
+        after = s_grammar.rule_named[after_rule_name]
+        i = s_grammar.rules.index(after)
+        s_grammar.rules.insert(i+1, new_rule)
+    else:
+        s_grammar.rules.append(new_rule)
+    s_grammar.rule_named[rule_name] = new_rule
+    return new_rule
+
+def build_term(term_str: str, i_term: int, rule_name: str) -> Term:
+    parts = re.match(r"(\w+):(.+)", term_str)
+    var = parts.group(1) if parts else None
+    term_str = parts.group(2) if parts else term_str
+    parts = re.match(r"(.+)([*+?])([,|]?)", term_str)
+    sep = parts.group(3) if parts else ""
+    dec = parts.group(2) if parts else ""
+    term_str = parts.group(1) if parts else term_str
+    vals = []
+    if term_str.startswith("(") and term_str.endswith(")"):
+        term_str = term_str[1:-1]
+        if " | " in term_str: 
+            vals = [val.strip() for val in term_str.split("|")]
+        else:
+            sub_rule = build_rule(rule_name + "_" + str(i_term), split_terms(term_str), rule_name)
+            vals = [ sub_rule.name ]
+    else:
+        vals = [term_str]
+    return Term(var, vals, dec, sep)
+
+def split_terms(rhs: str) -> str:
+    terms = []
+    current_term = ""
+    bracket_depth = 0
+    in_quotes = False
+    for char in rhs:
+        if char == ' ' and bracket_depth == 0 and not in_quotes:
+            if current_term:
+                terms.append(current_term)
+                current_term = ""
+        else:
+            if char == '(' and not in_quotes:
+                bracket_depth += 1
+            elif char == ')' and not in_quotes:
+                bracket_depth -= 1
+            elif char == '"':
+                in_quotes = not in_quotes
+            
+            current_term += char
+    if current_term:
+        terms.append(current_term)
+    return terms
+
+#--------------------------------------------------------------------------------------------------
+# second-order grammar properties
+
+# check that the following assumptions made by the parser are true:
+# 1- all referred to rules actually exist
+# 2- any unbound list terms are the only variable term in the rule
+# 3- a term's values are all the same type ("keyword", <type>, or rule)
+def get_errors(grammar: Grammar) -> str:
+    out = ""
+    for rule in grammar.rules:
+        unbound_list_terms = []
+        variable_terms = []
+        for i_term, term in enumerate(rule.terms):
+            # 1- check referred-to-rules exist
+            for val in term.vals:
+                if val[0] and not (val[0] in '"<'):
+                    if not (val in s_grammar.rule_named):
+                        out += f"term {i_term} of {rule.name}: can't find referred-to rule '{val}'\n"
+            # 2- is the term unbound, and has '+' or '*'?
+            if term.dec and (term.dec in "*+") and not term.var:
+                unbound_list_terms.append(term)
+            # 2.1- is the term a variable term? (i.e. contains identifier or rule)
+            if len(term.vals) > 0 and term.vals[0][0] != '"':
+                variable_terms.append(term)
+            # 3- are all the term's values the same type?
+            n_keywords = 0; n_types =0; n_rules =0
+            for val in term.vals:
+                if val[0] == '"': n_keywords += 1
+                elif val[0] == "<": n_types += 1
+                else: n_rules += 1
+            n_vals = len(term.vals)
+            ok = (n_keywords == n_vals) or (n_types == n_vals) or (n_rules == n_vals)
+            if not ok:
+                out += f"term {i_term} of {rule.name}: values are mixed types\n"
+        if len(unbound_list_terms) > 0 and len(variable_terms) > 1:
+            out += f"rule {rule.name} has unbound list terms: {str(unbound_list_terms).replace("[", "").replace("]", "")}\n"
+    if out == "":
+        out = "no errors"
+    return out
+
+
 #--------------------------------------------------------------------------------------------------
 # Zero grammar spec
 
@@ -683,85 +685,6 @@ parameter_0 := names:<identifier>+, "="
     test("grammar_errors", get_errors(grammar), """no errors""")
 
 #--------------------------------------------------------------------------------------------------
-# Parser helpers
-
-class Node: # AST node
-    def __init__(self, name: str = None, ls: List[Lex] =None, nodes: List['Node'] =None):
-        self.name = name or ""
-        self.ls = ls or []
-        self.nodes = nodes or []
-    def __str__(self): return self.show()
-    def __repr__(self): return self.__str__()
-    def length(self): return len(self.ls)
-    def show(self): return f"{self.name}: {self.ls}"
-
-class Error(Node): # bad things
-    def __init__(self, ls: List[Lex], message: str):
-        super().__init__("_error", ls)
-        self.message = message
-    def __str__(self): return self.show()
-    def __repr__(self): return self.__str__()
-    def show(self): return f"{self.name}: {self.message}"
-
-def err(node: Node) -> bool:
-    return node.name == "_error"
-
-# convert a node to a dictionary
-@log_indent
-def get_dict(node: Node) -> Dict:
-    if err(node): return { "_error": node.message }
-    if node.name == "lex": return node.ls[0]
-    if node.name == "nopt": return {}
-    if node.name == "list": return [get_dict(n) for n in node.nodes]
-    rule = s_grammar.rule_named[node.name]
-    ast = {}
-    for i_term, term in enumerate(rule.terms):
-        if i_term >= len(node.nodes): break
-        sub_ast = get_dict(node.nodes[i_term])
-        if term.dec == "?" and isinstance(sub_ast, list):
-            sub_ast = sub_ast[0]
-        log(f"term {i_term}: sub_ast: {sub_ast}")
-        if term.var: 
-            ast.update({ term.var : sub_ast })
-            log("ast:", ast)
-        else:
-            if not term.is_keyword():
-                if isinstance(sub_ast, dict):
-                    if len(sub_ast) > 0:
-                        log("sub_ast:", sub_ast)
-                        first_key = list(sub_ast.keys())[0]
-                        sub_ast = sub_ast[first_key]
-                        log("extracted sub_ast:", sub_ast)
-                        if isinstance(sub_ast, dict):
-                            ast.update(sub_ast)
-                        else:
-                            ast = sub_ast
-                else:
-                    ast = sub_ast
-    return { "_" + rule.name: ast }
-    
-# scan forward to find the next lex that matches a set of terminals, skipping braces
-def scan_forward(ls: List[Lex], i_lex: int, terminals: List[str]) -> int:
-    if len(terminals)==0: return len(ls)
-    while i_lex < len(ls):
-        lex = ls[i_lex]
-        if lex_matches(lex, terminals): return i_lex
-        i_lex += ls[i_lex].jump + 1
-    return i_lex
-
-# returns true if a lex matches a set of terminals
-def lex_matches(lex: Lex, matches: List[str]) -> bool:
-    if len(matches)==0: return False
-    if matches[0][0]=='"': return f'"{lex.val}"' in matches
-    elif matches[0][0]=='<': return f'<{lex.type}>' in matches
-    else: return False
-
-# cleans up a string - removes all quotes/braces
-def cleanup(obj) -> str:
-    s = str(obj)
-    return s.replace("'", "").replace("[", "").replace("]", "")
-
-#--------------------------------------------------------------------------------------------------
 # Parser itself
 
 @this_is_the_test
@@ -773,71 +696,158 @@ def test_parser():
     test("parse_expression", parse("a + b * c", "expression"), """
          {'_expression': [{'_word': a}, {'_operator': +}, {'_word': b}, {'_operator': *}, {'_word': c}]}""")
     test("parse_test_decl", parse("> a => b", "test_decl"), """
-         {'_test_decl': {'lhs': {'_expression': [{'_word': a}]}, 'rhs': {'_expression': [{'_word': b}]}}}""")
+         {'_test_decl': {'lhs': {'_expression': {'_word': a}}, 'rhs': {'_expression': {'_word': b}}}}""")
     test("parse_variable_decl", parse("int r | red, g | green, b | blue =0", "variable_decl"),"""
-         {'_variable_decl': {'type': int, 'names': [{'_name_decl': {'name': r, 'alias': red}}, {'_name_decl': {'name': g, 'alias': green}}, {'_name_decl': {'name': b, 'alias': blue}}], 'default': {'_expression': [{'_constant': 0}]}}}""")
-    test("parse_type_decl", parse("type Col | Colour = { int r, g, b =0 }", "type_decl"), """
-         {'_type_decl': {'name': Col, 'alias': Colour, 'properties': [{'_variable_decl': {'type': int, 'names': [{'_name_decl': {'name': r}}, {'_name_decl': {'name': g}}, {'_name_decl': {'name': b}}], 'default': {'_expression': [{'_constant': 0}]}}}]}}""")
+         {'_variable_decl': {'type': int, 'names': [{'_name_decl': {'name': r, 'alias': red}}, {'_name_decl': {'name': g, 'alias': green}}, {'_name_decl': {'name': b, 'alias': blue}}], 'default': {'_expression': {'_constant': 0}}}}""")
+    test("parse_type_decl", parse("type Col | Colour = { int r, g, b =0 }", "type_decl"))
 
 @log_indent
 def parse(code: str, rule_name: str) -> Dict:
     source = Source(code = code)
     ls = lexer(source)
-    ast_node = parse_rule(s_grammar.rule_named[rule_name], ls)
-    return get_dict(ast_node)
+    ast = parse_rule(ls, s_grammar.rule_named[rule_name])
+    return clean_ast(ast)
+
+# remove "len" members from all levels of the Dict
+def clean_ast(ast: Dict) -> Dict:
+    if isinstance(ast, list):
+        return [clean_ast(a) for a in ast]
+    elif isinstance(ast, dict):
+        out = {}
+        for k, v in ast.items():
+            if k == "len": pass
+            else:
+                out[k] = clean_ast(v)
+        return out
+    else:
+        return ast
+
 
 @log_indent
-def parse_rule(rule: Rule, ls: List[Lex]) -> Dict:
-    i_lex_end = scan_forward(ls, 0, rule.followers)
-    ls_range = ls[0:i_lex_end]
-    log("ls_range:", ls_range)
+def parse_rule(ls: List[Lex], rule: Rule) -> Dict:
+    ast = {}
     i_lex = 0
-    nodes = []
     for term in rule.terms:
-        if i_lex >= len(ls_range): break
-        node = parse_term(term, ls_range[i_lex:])
-        i_lex += node.length()
-        nodes.append(node)
-        if err(node): break
-    return Node(rule.name, ls_range[0:i_lex], nodes)
-
-# parses a full term, paying attention to dec and sep
-# this one unifies the logic for single terms and optional/list terms, rather nice :-)
-@log_indent
-def parse_term(term: Term, ls: List[Lex]) -> Node:
-    min = 0 if term.dec and term.dec in "*?" else 1
-    max = None if term.dec and term.dec in "+*" else 1
-    nodes = []
-    i_lex = 0
-    while (max is None or len(nodes) < max) and i_lex < len(ls):
-        node = parse_singular_term(term, ls[i_lex:])
-        if err(node): break
-        nodes.append(node)
-        i_lex += node.length()
-        if term.sep:
-            log("separator:", term.sep)
-            if i_lex < len(ls) and lex_matches(ls[i_lex], [f'"{term.sep}"']):
+        log("i_lex:", i_lex)
+        log("term:", term)
+        if term.is_keyword():
+            if i_lex >= len(ls):
+                log("hit the end unexpectedly")
+                log("ls:", ls)
+                log("rule:", rule.dbg())
+            if lex_matches(ls[i_lex], term.vals):
                 i_lex += 1
-    if len(nodes) < min: return Error(ls, f"expected at least {min} of {term}")
-    if not term.dec: return nodes[0]
-    if term.dec == '?': return nodes[0] if len(nodes)==1 else Node("nopt")
-    return Node("list", ls[0:i_lex], nodes)
+            else: 
+                return { "error": f"#1: expected one of {cleanup(term.vals)} at {ls[i_lex].location()}", "ast" : ast }
+        elif term.is_type():
+            if lex_matches(ls[i_lex], term.vals):
+                if term.var: ast[term.var] = ls[i_lex]
+                elif len(rule.terms)==1: ast = ls[i_lex]
+                else: raise Exception("unbound terminal")
+                i_lex += 1
+            else:
+                return { "error": f"#2: expected one of {cleanup(term.vals)} at {ls[i_lex].location()}", "ast" : ast }
+        else:
+            #log("term followers:", term.followers)
+            i_lex_end = scan_forward(ls, i_lex, term.followers)
+            if not i_lex_end:
+                i_lex_end = len(ls)
+                #return { "error": f"#3: expected one of {cleanup(term.followers)} at {ls[i_lex].location()}", "ast" : ast }
+            sub_ls = ls[i_lex:i_lex_end]
+            sub_ast = parse_term(sub_ls, term)
+            #log("this one:", sub_ast)
+            if err(sub_ast): return sub_ast
+            if term.var: ast.update({ term.var : sub_ast })
+            else: 
+                if isinstance(sub_ast, list):
+                    if len(sub_ast) > 1:
+                        if len(rule.terms) > 1:
+                            raise Exception("warning: throwing away multi-item list")
+                        else: 
+                            ast = sub_ast
+                    elif len(sub_ast) == 1:
+                        sub_ast = sub_ast[0]
+                    elif len(sub_ast) == 0:
+                        sub_ast = {}
+                if isinstance(sub_ast, dict):
+                    keys = list(sub_ast.keys())
+                    if len(keys) > 0:
+                        first_key = keys[0]
+                        first_item = sub_ast[first_key]
+                        if isinstance(first_item, dict):
+                            ast.update(first_item)
+                        else:
+                            ast.update(sub_ast)
+            i_lex = i_lex_end
+    return { f"_{rule.name}": ast, "len" : len(ls[0:i_lex]) }
 
-# parses a singular term (ignoring any dec/sep)
+# top-level parser for a complex term (one or more rules, possible decorator)
 @log_indent
-def parse_singular_term(term: Term, ls: List[Lex]) -> Node:
-    if term.is_terminal():
-        if lex_matches(ls[0], term.vals): return Node("lex", ls[0:1])
-        else: return Error(ls, f"expected {cleanup(term.vals)}")
-    # abstract term: a list of rules
-    log("term:", term)
-    log("leaves:", term.leaves)
-    leaf_rules = []
-    for key, rules in term.leaves.items():
-        if lex_matches(ls[0], [key]):
-            leaf_rules += rules
-    log("leaf rules:", leaf_rules)
-    for rule in leaf_rules:
-        node = parse_rule(rule, ls)
-        if not err(node): return node
-    return Error(ls, f"expected one of {cleanup(term.vals)}")
+def parse_term(ls: List[Lex], term: Term) -> Dict:
+    result = None
+    if not term.dec:
+        result= parse_singular_term(ls, term)
+    else:
+        result = []
+        min = 1 if term.dec == '+' else 0
+        max = 1 if term.dec == '?' else None
+        i_lex = 0
+        #log("min:", min, "max:", max)
+        #log("term.sep:", term.sep)
+        term_followers = [f'"{term.sep}"'] if term.sep else (term.initials if max==None else [])
+        #log("term_followers:", term_followers)
+        while i_lex < len(ls) and (max == None or len(result) < max):
+            i_lex_end = scan_forward(ls, i_lex, term_followers)
+            if i_lex_end == None: i_lex_end = len(ls)
+            sub_ls = ls[i_lex:i_lex_end]
+            #log("sub_ls:", sub_ls)
+            sub_ast = parse_singular_term(sub_ls, term)
+            if err(sub_ast): # ok sort of weird thing here:
+                # don't know how to distinguish between maybe an error and maybe not
+                # I think we need to add the error to the end of the list
+                #log("error:", sub_ast)
+                #log("result is:", result)
+                return result
+            result.append(sub_ast)
+            #log("adding", sub_ast)
+            i_lex += sub_ast["len"]
+            if (term.sep and i_lex < len(ls) and ls[i_lex].val == term.sep):
+                i_lex += 1
+        if len(result) < min:
+            return { "error": f"expected at least {min} of {term} at {ls[0].location()}", "ast" : result }
+    return result
+
+    log_exit()
+
+# parses a complex term (one or more rules), ignoring decorator
+@log_indent
+def parse_singular_term(ls: List[Lex], term: Term) -> Dict:
+    leaves = term.leaves
+    for val, rules in leaves.items():
+        if lex_matches(ls[0], [val]):
+            #log("found rules:", rules)
+            for rule in rules:
+                sub_ast = parse_rule(ls, rule)
+                if not err(sub_ast): return sub_ast
+    return { "error": f"expected one of {cleanup(term.vals)} at {ls[0].location()}", "ast" : {} }
+
+def scan_forward(ls: List[Lex], i_lex: int, terminals: List[str]) -> int:
+    while i_lex < len(ls):
+        lex = ls[i_lex]
+        if lex_matches(lex, terminals): return i_lex
+        i_lex += ls[i_lex].jump
+    return None
+
+def lex_matches(lex: Lex, matches: List[str]) -> bool:
+    if len(matches)==0: return False
+    if matches[0][0]=='"': return f'"{lex.val}"' in matches
+    elif matches[0][0]=='<': return f'<{lex.type}>' in matches
+    else: return False
+
+def err(ast: Dict) -> bool:
+    return "error" in ast
+
+def cleanup(obj) -> str:
+    s = str(obj)
+    return s.replace("\"", "").replace("'", "").replace("[","").replace("]","")
+    

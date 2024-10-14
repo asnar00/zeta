@@ -17,14 +17,12 @@ The specification of zero is organised into *layers*: layer 1 is the 'outermost'
 
 ## literate code
 
-Programs in zero are written in a human-first markdown format. There are no comments; instead, all 'meta-information', such as specification, explanation, tutorials and tests, is defined using markdown text, next to the code it describes. 
+Programs in zero are written as human-first markdown documents, like this one, containing text and code snippets. All 'meta-information', such as specification, explanation, tutorials and tests, is defined using markdown text, next to the code it describes. 
 
-In the following document, all code examples are editable and runnable*, and are presented like this:
+In the following document, all code examples are presented like this:
 
     > (some code)
     => (expected result)
-
-(*when viewed in the `zerp` IDE)
 
 # ______________________________________________
 # layer 1
@@ -60,10 +58,10 @@ zero automatically defines a constructor that can be called in three ways:
 
     > vec v                         : default constructor
     => v: vec(x: 0, y: 0, z: 0)
-
+    
     > vec v = (1, 2, 3)             : anonymous constructor
     => v: vec(x: 1, y: 2, z: 3)
-
+    
     > vec v = (y: 1)                : named constructor
     => v: vec(x: 0, y: 1, z: 0)
 
@@ -79,34 +77,31 @@ or like this:
     on (vec r) = (vec a) + (vec b)
         r = (a.x + b.x, a.y + b.y, a.z + b.z)
 
-Functions have *open syntax* : the signature can be any sequence of words, operators and bracketed parameter groups (there must be at least one parameter group). This allows us to concisely define and call operators (infix, prefix, postfix) and conversion functions, and write more readable, natural-sounding code.
+Functions have *open syntax* : the signature can be any sequence of words, operators and bracketed parameter groups (there must be at least one parameter group). This allows us to concisely define and call conversion functions, operators (infix, prefix, postfix), and generally and write more readable, natural-sounding code.
 
-Functions are *pure*, which means they can only read their parameters, and can only write their outputs (multiple outputs are allowed).
+Functions are *pure*, which means they can only read their parameters, and can only write their outputs (multiple outputs are allowed). Internally, functions can create and assign local variables, but those variables are thereafter immutable.
 
 ## streams
 
 A *stream* is a sequence of values.
 
-Stream variables are denoted by suffixing the variable name with `$` (read 'stream' or 'string', an idea borrowed from BASIC; it means you can always tell when a variable is a stream just by looking at the code, rather than having to find the declaration).
+Stream variables are denoted by suffixing the variable name with `$` (read as 'stream' or 'string'):
 
     > int i$                    : declares a stream of integers
     => i$: []
 
-We use the `<<` operator ('push', borrowed from C++) to push singular values onto the stream:
+The `<<` operator ('push') pushes a singular value onto the stream:
 
     > int i$ << 1 << 2 << 3     : push individual values to stream
     => i$: [1, 2, 3]
 
-We can use the `[]` notation to specify a range of values more concisely:
+The `[]` notation specifies a range of values more concisely:
 
     > int i$ << [1, 2, 3]       : push multiple values
     => i$: [1, 2, 3]
 
-The `[]` format also allows us to specify ranges of values:
-
-    > int i$ << [1 to 5 inclusive]
-    => i$: [1, 2, 3, 4, 5]
-
+The `[]` notation can also specify a range of values:
+    
     > int i$ << [0 to 5]
     => i$: [0, 1, 2, 3, 4]
 
@@ -122,41 +117,34 @@ or this:
 
 ### slices, pushing
 
-We can 'empty out' a stream by pushing it to another stream using the `<<` operator:
+The `[]` notation can also be used to take a slice of an array, for instance:
 
-    > int i$ = [1, 2, 3]
-    > int j$ = [4, 5, 6]
+    > int i$ << [1, 2, 4, 8, 16]
+    > j$ = i$[0 to 3]
+    => j$: [1, 2, 4]
 
+The `<<` operator with a stream as a right-hand-side argument empties that stream out into the receiver on the left:
+
+    > int i$ << [1, 2, 3]
+    > int j$ << [4, 5, 6]
     > i$ << j$
     => i$: [1, 2, 3, 4, 5, 6]
        j$: []
 
-We can also take a 'slice' of a stream using the `[]` operator as follows:
+The `<<` operator combined with a slice operation can be used to transfer part of the right-hand stream into the receiver on the left:
 
-    > int k$ = i$[3 to 10]
-    => k$: [3, 4, 5, 6]
-
-We can also use negative indices to count from the end of the stream:
-
-    > int m$ = i$[-5 to -1]
-    => m$: [2, 3, 4, 5, 6]
-
-The keyword `end` stands in for '-1' but is more readable:
-
-    > int m$ = i$[3 to end]
-    => m$: [3, 4, 5, 6]
-
-We can combine slicing with pushing to do useful things:
-
-    > i$ << m$[1 to 2]
-    => i$: [1, 2, 3, 4, 5, 6, 3, 4]
-       m$: [3, 6]
+    > int i$ << [1, 2, 3]
+    > int j$ << [4, 5, 6]
+    > i$ << j$[0 to 1]
+    => i$: [1, 2, 3, 4]
+       j$: [5, 6]
 
 ### map, reduce, filter, sort
 
 Functions are defined to take singular values as parameters. This restriction lets zero give us a very concise syntax for mapping a function to a stream:
 
     > int i$ << [1 to 5 inclusive]
+    => i$: [1, 2, 3, 4, 5]
     > int j$ = i$ + 1                   : maps '+ 1' to each element of i$
     => j$: [2, 3, 4, 5, 6]
 
@@ -180,22 +168,20 @@ To filter, we use the `where` reserved keyword:
 And finally, to sort, we use the `sort` keyword:
 
     > int d$ = sort j$ > _              : descending order
-    => d$: [6. 5. 4. 3. 2]
+    => d$: [6, 5, 4, 3, 2]
 
 ### time
 
-As a language designed for real-time applications, zero considers time to be of fundamental importance, and therefore elevates it to a first-class language construct.
-
 The `at` keyword specifies a 'sample rate' that adds a time-stamp to each value of a stream, for example:
 
-    > int i$ << [10 to 1 inclusive] at (1 hz)
+    > int i$ << [10 to 0] at (1 hz)
     => i$: [10 at 0s, 9 at 1s, 7 at 2s, ... 1 at 9s]
 
 This counts down from 10 to 1 at the rate of 1 step per second. The postfix function `hz` (hertz, or cycles per second) takes a number and returns a frequency.
 
 We could also express the same thing using the `every` keyword:
 
-    > int i$ << [10 to 1 inclusive] every (1 sec)
+    > int i$ << [10 to 0] every (1 sec)
     => i$: [10 at 0s, 9 at 1s, 7 at 2s, ... 1 at 9s]
 
 Here, the postfix function `sec` takes a number and returns a duration.
@@ -211,7 +197,7 @@ Here `forever` is a keyword that just means `while true` or `until false`.
 
 A `feature` is the fundamental unit of modularity in zero. A feature can define new types, variables, and functions; and it can modify existing types, variables, and functions.
 
-Canonical "hello world" looks like this:
+The canonical "hello world" looks like this:
 
     feature Hello extends Run
         string out$                 : feature-scope variable
@@ -219,7 +205,7 @@ Canonical "hello world" looks like this:
             out$ << "hello world"
         replace run()               : replace existing function
             hello()
-
+    
     > run()
     => out$: ["hello world"]
 
@@ -230,9 +216,10 @@ We can then extend "hello world" to, for example, count down from 10 to 1 before
             out$ << [10 to 0] every (1 sec)
         before hello()                          : modify 'hello'
             countdown()
-
+    
     > run()
-    => out$: ["10" at 0s, "9" at 1s, ... "1" at 9s, "hello world" at 10s]
+    => out$: ["10" at 0s, "9" at 1s, ... "0" at 10s, 
+              "hello world" at 10s]
 
 Or, for example, we could say "goodbye" before the program ends:
 
@@ -241,9 +228,9 @@ Or, for example, we could say "goodbye" before the program ends:
             out$ << "kthxbye!"
         after hello()
             bye()
-
+    
     > run()
-    => out$: ["10" at 0s, "9" at 1s, ... "1" at 9s, 
+    => out$: ["10" at 0s, "9" at 1s, ... "0" at 10s, 
               "hello world" at 10s, "kthxbye!" at 10s]
 
 ## contexts
@@ -251,7 +238,7 @@ Or, for example, we could say "goodbye" before the program ends:
 A `context` is a group of enabled features. For instance:
 
     context SimpleHello = [Hello]
-
+    
     context FullFatHello = [Hello, Countdown, Goodbye]
-
+    
     context QuickPoliteHello = [Hello, Goodbye]
