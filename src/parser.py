@@ -558,12 +558,11 @@ def compute_followers():
 def compute_leaves() -> bool:
     changed = False
     for rule in s_grammar.rules:
-        for term in rule.terms:
-            if term.is_terminal():
-                for val in term.vals:
-                    changed = merge_dicts(rule.leaves, { val : [rule] }) or changed
-            if not term.dec or term.dec == '+':
-                break
+        term = rule.terms[0]
+        if term.is_terminal():
+            for val in term.vals:
+                changed = merge_dicts(rule.leaves, { val : [rule] }) or changed
+
     # now transfer those to terms
     for rule in s_grammar.rules:
         for term in rule.terms:
@@ -573,11 +572,10 @@ def compute_leaves() -> bool:
                         changed = merge_dicts(term.leaves, { val : [sub_rule] }) or changed
     # and then back to the rules
     for rule in s_grammar.rules:
-        for term in rule.terms:
-            if term.is_rule():
-                changed = merge_dicts(rule.leaves, term.leaves) or changed
-            if not term.dec or term.dec == '+':
-                break
+        term = rule.terms[0]
+        if term.is_rule():
+            changed = merge_dicts(rule.leaves, term.leaves) or changed
+
     return changed
 
 # merge two dicts (name => [vals]): return true if d1 changed
@@ -622,7 +620,7 @@ s_zero_grammar_spec : str = """
     c_name_type_decl := type:<identifier> names:name_decl+,
     ts_name_type_decl := names:name_decl+, ":" type:<identifier>
 
-    function_decl := modifier:("on" | "replace" | "after" | "before") result:result_type_decl assign:("=" | "<<") signature:function_signature_decl ":indent" function_body ":undent"
+    function_decl := modifier:("on" | "replace" | "after" | "before") result:result_type_decl assign:("=" | "<<") signature:function_signature_decl ":indent" body:function_body ":undent"
     result_type_decl := "(" name_type_decl*, ")"
     function_signature_decl := (word | operator | parameter_decl)+
     word := <identifier>
@@ -664,7 +662,7 @@ variable_decl_1 := "=" default:expression
 name_type_decl := (c_name_type_decl | ts_name_type_decl)
 c_name_type_decl := type:<identifier> names:name_decl+,
 ts_name_type_decl := names:name_decl+, ":" type:<identifier>
-function_decl := modifier:("on" | "replace" | "after" | "before") result:result_type_decl assign:("=" | "<<") signature:function_signature_decl ":indent" function_body ":undent"
+function_decl := modifier:("on" | "replace" | "after" | "before") result:result_type_decl assign:("=" | "<<") signature:function_signature_decl ":indent" body:function_body ":undent"
 result_type_decl := "(" name_type_decl*, ")"
 function_signature_decl := (word | operator | parameter_decl)+
 word := <identifier>
@@ -707,7 +705,7 @@ def err(node: Node) -> bool:
     return node.name == "_error"
 
 # convert a node to a dictionary
-@log_indent
+@log_disable
 def get_dict(node: Node) -> Dict:
     if err(node): return { "_error": node.message }
     if node.name == "lex": return node.ls[0]
@@ -778,6 +776,11 @@ def test_parser():
          {'_variable_decl': {'type': int, 'names': [{'_name_decl': {'name': r, 'alias': red}}, {'_name_decl': {'name': g, 'alias': green}}, {'_name_decl': {'name': b, 'alias': blue}}], 'default': {'_expression': [{'_constant': 0}]}}}""")
     test("parse_type_decl", parse("type Col | Colour = { int r, g, b =0 }", "type_decl"), """
          {'_type_decl': {'name': Col, 'alias': Colour, 'properties': [{'_variable_decl': {'type': int, 'names': [{'_name_decl': {'name': r}}, {'_name_decl': {'name': g}}, {'_name_decl': {'name': b}}], 'default': {'_expression': [{'_constant': 0}]}}}]}}""")
+    test("parse_parameter_group", parse("(a < b)", "parameter_group"), """
+         {'_parameter_group': [{'_parameter': {'value': {'_expression': [{'_word': a}, {'_operator': <}, {'_word': b}]}}}]}""")
+    test("parse_function_decl", parse("on (number r) = min(number a, b) { r = if (a < b) then (a) else (b) }", "function_decl"), """
+         {'_function_decl': {'modifier': on, 'result': {'_result_type_decl': [{'_name_type_decl': {'type': number, 'names': [{'_name_decl': {'name': r}}]}}]}, 'assign': =, 'signature': {'_function_signature_decl': [{'_word': min}, {'_parameter_decl': [{'_variable_decl': {'type': number, 'names': [{'_name_decl': {'name': a}}, {'_name_decl': {'name': b}}]}}]}]}, 'body': {'_function_body': [{'_statement': {'lhs': {'_statement_dest': r}, 'assign': =, 'rhs': {'_expression': [{'_word': if}, {'_parameter_group': [{'_parameter': {'value': {'_expression': [{'_word': a}, {'_operator': <}, {'_word': b}]}}}]}, {'_word': then}, {'_parameter_group': [{'_parameter': {'names': [a]}}]}, {'_word': else}, {'_parameter_group': [{'_parameter': {'names': [b]}}]}]}}}]}}}""")
+
 
 @log_indent
 def parse(code: str, rule_name: str) -> Dict:
@@ -796,9 +799,9 @@ def parse_rule(rule: Rule, ls: List[Lex]) -> Dict:
     for term in rule.terms:
         if i_lex >= len(ls_range): break
         node = parse_term(term, ls_range[i_lex:])
+        if err(node): return node
         i_lex += node.length()
         nodes.append(node)
-        if err(node): break
     return Node(rule.name, ls_range[0:i_lex], nodes)
 
 # parses a full term, paying attention to dec and sep
@@ -820,7 +823,7 @@ def parse_term(term: Term, ls: List[Lex]) -> Node:
                 i_lex += 1
     if len(nodes) < min: return Error(ls, f"expected at least {min} of {term}")
     if not term.dec: return nodes[0]
-    if term.dec == '?': return nodes[0] if len(nodes)==1 else Node("nopt")
+    if term.dec == '?': return nodes[0] if (len(nodes)==1 and not err(nodes[0])) else Node("nopt")
     return Node("list", ls[0:i_lex], nodes)
 
 # parses a singular term (ignoring any dec/sep)
