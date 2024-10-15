@@ -215,26 +215,27 @@ def this_is_a_test(fn):
 def this_is_the_test(fn):
     global s_active_test
     s_active_test = fn
+    global s_tests
+    s_tests.append(fn)
 
 # run all tests
 def test_run_all():
     global s_tests_verbose
     global s_n_tests_failed
     s_n_tests_failed = 0
-    if s_tests_verbose:
-        print("test ------------------------------------")
     global s_tests
     global s_active_test
-    if not s_active_test:
-        for test_fn in s_tests:
-            test_fn()
-        if s_n_tests_failed == 0:
-            print(log_green("all tests passed."))
-    if s_active_test:
-        global s_log_enabled
-        s_log_enabled = True
-        s_tests_verbose = True
-        s_active_test()
+    global s_log_enabled
+    for test_fn in s_tests:
+        if s_active_test == test_fn:
+            s_log_enabled = True
+            s_tests_verbose = True
+        else:
+            s_log_enabled = True
+            s_tests_verbose = False
+        test_fn()
+    if s_n_tests_failed == 0:
+        print(log_green("all tests passed."))
     log_flush()
 
 # set test verbosity

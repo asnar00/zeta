@@ -27,15 +27,15 @@ def test_source():
 
     # you can create a Source from code directly
     source = Source(code = "a b c")
-    test("source", source.code, "a b c")
+    test("source_direct", source.code, "a b c")
 
     # or from markdown text directly
     source = Source(text = "some code:\n    a b c\n    d e f\n\nsome text.")
-    test("source", source.code, "a b c\n    d e f")
+    test("source_markdown", source.code, "a b c\n    d e f")
 
     # or from a markdown file path
     source = Source(path = 'src/test/Hello.zero.md')
-    test("source", source.code, """
+    test("source_mdfile", source.code, """
         feature Hello extends Main
             > hello()
             => "hello world"
@@ -348,15 +348,7 @@ def build_grammar(spec: str) -> Grammar:
         name, terms_str = map(str.strip, line.split(':='))
         build_rule(name, split_terms(terms_str))
     compute_meta_stuff()
-    check_grammar()
     return grammar
-
-# checks the grammar to see if there's any assumptions we made in the parser that aren't actually true of the grammar
-def check_grammar():
-    bad = False
-    if bad:
-        log("grammar check failed: exiting.")
-        log_exit()
 
 def build_rule(rule_name: str, term_strs: List[str], after_rule_name: str=None) -> Rule:
     new_rule = add_rule(rule_name, after_rule_name)
@@ -587,40 +579,40 @@ def merge_arrays(a1, a2)->bool:
 # Zero grammar spec
 
 s_zero_grammar_spec : str = """
-    feature_decl := "feature" name:<identifier> ("extends" parent:<identifier>)? ":indent" body:component_decl* ":undent"
-    component_decl := (test_decl | type_decl | variable_decl | function_decl)
+    feature := "feature" name:<identifier> ("extends" parent:<identifier>)? ":indent" body:component* ":undent"
+    component := (test | type | variable | function)
 
-    test_decl := ">" lhs:expression ("=>" rhs:expression)?
+    test := ">" lhs:expression ("=>" rhs:expression)?
 
-    type_decl := "type" name_decl (struct_decl | type_relation_decl | enum_decl)
+    type := "type" name_decl (struct | type_relation | enum)
     name_decl := name:<identifier> ("|" alias:<identifier>)?
-    struct_decl := "=" ":indent" properties:variable_decl* ":undent"
-    type_relation_decl := (child_type_decl | parent_type_decl)
-    child_type_decl := "<" parent:<identifier>
-    parent_type_decl := ">" children:<indentifier>*|
-    enum_decl := "=" values:<identifier>*|
+    struct := "=" ":indent" properties:variable* ":undent"
+    type_relation := (child_type | parent_type)
+    child_type := "<" parent:<identifier>
+    parent_type := ">" children:<indentifier>*|
+    enum := "=" values:<identifier>*|
 
-    variable_decl := name_type_decl ("=" default:expression)?
-    name_type_decl := (c_name_type_decl | ts_name_type_decl)
-    c_name_type_decl := type:<identifier> names:name_decl+,
-    ts_name_type_decl := names:name_decl+, ":" type:<identifier>
+    variable := name_type ("=" default:expression)?
+    name_type := (c_name_type | ts_name_type)
+    c_name_type := type:<identifier> names:name_decl+,
+    ts_name_type := names:name_decl+, ":" type:<identifier>
 
-    function_decl := modifier:("on" | "replace" | "after" | "before") function_result? signature:function_signature_decl ":indent" body:function_body ":undent"
-    function_result := result:result_type_decl assign:("=" | "<<")
-    result_type_decl := "(" name_type_decl*, ")"
-    function_signature_decl := (word | operator | parameter_decl)+
+    function := modifier:("on" | "replace" | "after" | "before") function_result? signature:signature ":indent" body:function_body ":undent"
+    function_result := result:result_type assign:("=" | "<<")
+    result_type := "(" name_type*, ")"
+    signature := (word | operator | param_group)+
     word := <identifier>
     operator := <operator>
-    parameter_decl := "(" variable_decl*, ")"
+    param_group := "(" variable*, ")"
     function_body := statement*
     statement := statement_lhs? rhs:expression
     statement_lhs := lhs:statement_dest assign:("=" | "<<")
-    statement_dest := (name_type_decl | variable_ref)
+    statement_dest := (name_type | variable_ref)
     variable_ref := <identifier>
 
-    expression := (constant | operator | word | parameter_group)*
+    expression := (constant | operator | word | brackets)*
     constant := (<number> | <string>)
-    parameter_group := "(" parameter*, ")"
+    brackets := "(" parameter*, ")"
     parameter := (names:<identifier>+, "=")? value:expression
 
     """
@@ -631,41 +623,42 @@ def test_grammar():
     log("test_grammar")
     grammar = build_grammar(s_zero_grammar_spec)
     test("test_grammar", grammar.dbg(), """
-feature_decl := "feature" name:<identifier> feature_decl_2? ":indent" body:component_decl* ":undent"
-feature_decl_2 := "extends" parent:<identifier>
-component_decl := (test_decl | type_decl | variable_decl | function_decl)
-test_decl := ">" lhs:expression test_decl_2?
-test_decl_2 := "=>" rhs:expression
-type_decl := "type" name_decl (struct_decl | type_relation_decl | enum_decl)
+feature := "feature" name:<identifier> feature_2? ":indent" body:component* ":undent"
+feature_2 := "extends" parent:<identifier>
+component := (test | type | variable | function)
+test := ">" lhs:expression test_2?
+test_2 := "=>" rhs:expression
+type := "type" name_decl (struct | type_relation | enum)
 name_decl := name:<identifier> name_decl_1?
 name_decl_1 := "|" alias:<identifier>
-struct_decl := "=" ":indent" properties:variable_decl* ":undent"
-type_relation_decl := (child_type_decl | parent_type_decl)
-child_type_decl := "<" parent:<identifier>
-parent_type_decl := ">" children:<indentifier>*|
-enum_decl := "=" values:<identifier>*|
-variable_decl := name_type_decl variable_decl_1?
-variable_decl_1 := "=" default:expression
-name_type_decl := (c_name_type_decl | ts_name_type_decl)
-c_name_type_decl := type:<identifier> names:name_decl+,
-ts_name_type_decl := names:name_decl+, ":" type:<identifier>
-function_decl := modifier:("on" | "replace" | "after" | "before") result:result_type_decl assign:("=" | "<<") signature:function_signature_decl ":indent" body:function_body ":undent"
-result_type_decl := "(" name_type_decl*, ")"
-function_signature_decl := (word | operator | parameter_decl)+
+struct := "=" ":indent" properties:variable* ":undent"
+type_relation := (child_type | parent_type)
+child_type := "<" parent:<identifier>
+parent_type := ">" children:<indentifier>*|
+enum := "=" values:<identifier>*|
+variable := name_type variable_1?
+variable_1 := "=" default:expression
+name_type := (c_name_type | ts_name_type)
+c_name_type := type:<identifier> names:name_decl+,
+ts_name_type := names:name_decl+, ":" type:<identifier>
+function := modifier:("on" | "replace" | "after" | "before") function_result? signature:signature ":indent" body:function_body ":undent"
+function_result := result:result_type assign:("=" | "<<")
+result_type := "(" name_type*, ")"
+signature := (word | operator | param_group)+
 word := <identifier>
 operator := <operator>
-parameter_decl := "(" variable_decl*, ")"
+param_group := "(" variable*, ")"
 function_body := statement*
-statement := lhs:statement_dest assign:("=" | "<<") rhs:expression
-statement_dest := (name_type_decl | variable_ref)
+statement := statement_lhs? rhs:expression
+statement_lhs := lhs:statement_dest assign:("=" | "<<")
+statement_dest := (name_type | variable_ref)
 variable_ref := <identifier>
-expression := (constant | operator | word | parameter_group)*
+expression := (constant | operator | word | brackets)*
 constant := (<number> | <string>)
-parameter_group := "(" parameter*, ")"
+brackets := "(" parameter*, ")"
 parameter := parameter_0? value:expression
 parameter_0 := names:<identifier>+, "="
          """)
-    test("grammar_errors", get_errors(grammar), """no errors""")
 
 #--------------------------------------------------------------------------------------------------
 # Parser helpers
@@ -686,7 +679,7 @@ class Error(Node): # bad things
         self.message = message
     def __str__(self): return self.show()
     def __repr__(self): return self.__str__()
-    def show(self): return f"{self.name}: {self.message}"
+    def show(self): return f"{self.name}: {self.message} at {self.ls[0].location()} (\"{' '.join([str(lex) for lex in self.ls])}\")"
 
 def err(node: Node) -> bool:
     return node.name == "_error"
@@ -749,36 +742,36 @@ def cleanup(obj) -> str:
 #--------------------------------------------------------------------------------------------------
 # Parser itself
 
-@this_is_the_test
+@this_is_a_test
 def test_parser():
     log("test parser")
     grammar = build_grammar(s_zero_grammar_spec)
-    test("parse_feature_decl", parse("feature MyFeature extends AnotherFeature { }", "feature_decl"), """
-         {'_feature_decl': {'name': MyFeature, 'parent': AnotherFeature, 'body': []}}
+    test("parse_feature", parse("feature MyFeature extends AnotherFeature { }", "feature"), """
+         {'_feature': {'name': MyFeature, 'parent': AnotherFeature, 'body': []}}
          """)
     test("parse_expression", parse("a + b * c", "expression"), """
          {'_expression': [{'_word': a}, {'_operator': +}, {'_word': b}, {'_operator': *}, {'_word': c}]}
          """)
-    test("parse_test_decl", parse("> a => b", "test_decl"), """
-         {'_test_decl': {'lhs': {'_expression': [{'_word': a}]}, 'rhs': {'_expression': [{'_word': b}]}}}
+    test("parse_test", parse("> a => b", "test"), """
+         {'_test': {'lhs': {'_expression': [{'_word': a}]}, 'rhs': {'_expression': [{'_word': b}]}}}
          """)
-    test("parse_variable_decl", parse("int r | red, g | green, b | blue =0", "variable_decl"),"""
-         {'_variable_decl': {'type': int, 'names': [{'_name_decl': {'name': r, 'alias': red}}, {'_name_decl': {'name': g, 'alias': green}}, {'_name_decl': {'name': b, 'alias': blue}}], 'default': {'_expression': [{'_constant': 0}]}}}
+    test("parse_variable", parse("int r | red, g | green, b | blue =0", "variable"),"""
+         {'_variable': {'type': int, 'names': [{'_name_decl': {'name': r, 'alias': red}}, {'_name_decl': {'name': g, 'alias': green}}, {'_name_decl': {'name': b, 'alias': blue}}], 'default': {'_expression': [{'_constant': 0}]}}}
          """)
-    test("parse_type_decl", parse("type Col | Colour = { int r, g, b =0 }", "type_decl"), """
-         {'_type_decl': {'name': Col, 'alias': Colour, 'properties': [{'_variable_decl': {'type': int, 'names': [{'_name_decl': {'name': r}}, {'_name_decl': {'name': g}}, {'_name_decl': {'name': b}}], 'default': {'_expression': [{'_constant': 0}]}}}]}}
+    test("parse_type", parse("type Col | Colour = { int r, g, b =0 }", "type"), """
+         {'_type': {'name': Col, 'alias': Colour, 'properties': [{'_variable': {'type': int, 'names': [{'_name_decl': {'name': r}}, {'_name_decl': {'name': g}}, {'_name_decl': {'name': b}}], 'default': {'_expression': [{'_constant': 0}]}}}]}}
          """)
-    test("parse_parameter_group", parse("(a < b)", "parameter_group"), """
-         {'_parameter_group': [{'_parameter': {'value': {'_expression': [{'_word': a}, {'_operator': <}, {'_word': b}]}}}]}
+    test("parse_brackets", parse("(a < b)", "brackets"), """
+         {'_brackets': [{'_parameter': {'value': {'_expression': [{'_word': a}, {'_operator': <}, {'_word': b}]}}}]}
          """)
-    test("parse_function_decl", parse("on (number r) = min(number a, b) { r = if (a < b) then (a) else (b) }", "function_decl"), """
-         {'_function_decl': {'modifier': on, 'result': {'_result_type_decl': [{'_c_name_type_decl': {'type': number, 'names': [{'_name_decl': {'name': r}}]}}]}, 'assign': =, 'signature': {'_function_signature_decl': [{'_word': min}, {'_parameter_decl': [{'_variable_decl': {'type': number, 'names': [{'_name_decl': {'name': a}}, {'_name_decl': {'name': b}}]}}]}]}, 'body': {'_function_body': [{'_statement': {'lhs': {'_variable_ref': r}, 'assign': =, 'rhs': {'_expression': [{'_word': if}, {'_parameter_group': [{'_parameter': {'value': {'_expression': [{'_word': a}, {'_operator': <}, {'_word': b}]}}}]}, {'_word': then}, {'_parameter_group': [{'_parameter': {'value': {'_expression': [{'_word': a}]}}}]}, {'_word': else}, {'_parameter_group': [{'_parameter': {'value': {'_expression': [{'_word': b}]}}}]}]}}}]}}}
+    test("parse_function", parse("on (number r) = min(number a, b) { r = if (a < b) then (a) else (b) }", "function"), """
+         {'_function': {'modifier': on, 'result': {'_result_type': [{'_c_name_type': {'type': number, 'names': [{'_name_decl': {'name': r}}]}}]}, 'assign': =, 'signature': {'_signature': [{'_word': min}, {'_param_group': [{'_variable': {'type': number, 'names': [{'_name_decl': {'name': a}}, {'_name_decl': {'name': b}}]}}]}]}, 'body': {'_function_body': [{'_statement': {'lhs': {'_variable_ref': r}, 'assign': =, 'rhs': {'_expression': [{'_word': if}, {'_brackets': [{'_parameter': {'value': {'_expression': [{'_word': a}, {'_operator': <}, {'_word': b}]}}}]}, {'_word': then}, {'_brackets': [{'_parameter': {'value': {'_expression': [{'_word': a}]}}}]}, {'_word': else}, {'_brackets': [{'_parameter': {'value': {'_expression': [{'_word': b}]}}}]}]}}}]}}}
          """)
     test("parse_statement", parse("hello()", "statement"), """
-         {'_statement': {'rhs': {'_expression': [{'_word': hello}, {'_parameter_group': []}]}}}
+         {'_statement': {'rhs': {'_expression': [{'_word': hello}, {'_brackets': []}]}}}
          """)
-    test("parse_hello", parse("feature Hello extends Run { string out$; on hello() { out$ << \"hello world\" }; on run() { hello() } }", "feature_decl"), """
-         {'_feature_decl': {'name': Hello, 'parent': Run, 'body': [{'_variable_decl': {'type': string, 'names': [{'_name_decl': {'name': out$}}]}}, {'_function_decl': {'modifier': on, 'signature': {'_function_signature_decl': [{'_word': hello}, {'_parameter_decl': []}]}, 'body': {'_function_body': [{'_statement': {'lhs': {'_variable_ref': out$}, 'assign': <<, 'rhs': {'_expression': [{'_constant': "hello world"}]}}}]}}}, {'_function_decl': {'modifier': on, 'signature': {'_function_signature_decl': [{'_word': run}, {'_parameter_decl': []}]}, 'body': {'_function_body': [{'_statement': {'rhs': {'_expression': [{'_word': hello}, {'_parameter_group': []}]}}}]}}}]}}
+    test("parse_hello", parse("feature Hello extends Run { string out$; on hello() { out$ << \"hello world\" }; on run() { hello() } }", "feature"), """
+         {'_feature': {'name': Hello, 'parent': Run, 'body': [{'_variable': {'type': string, 'names': [{'_name_decl': {'name': out$}}]}}, {'_function': {'modifier': on, 'signature': {'_signature': [{'_word': hello}, {'_param_group': []}]}, 'body': {'_function_body': [{'_statement': {'lhs': {'_variable_ref': out$}, 'assign': <<, 'rhs': {'_expression': [{'_constant': "hello world"}]}}}]}}}, {'_function': {'modifier': on, 'signature': {'_signature': [{'_word': run}, {'_param_group': []}]}, 'body': {'_function_body': [{'_statement': {'rhs': {'_expression': [{'_word': hello}, {'_brackets': []}]}}}]}}}]}}
          """)
     
 @log_indent
@@ -804,7 +797,8 @@ def parse_rule(rule: Rule, ls: List[Lex]) -> Dict:
     if len(nodes) < len(rule.terms):
         # if any of the unmatched terms are non-optional, it's a premature end
         for i in range(len(nodes), len(rule.terms)):
-            if not rule.terms[i].dec or rule.terms[i].dec == '+':
+            if (not rule.terms[i].dec or rule.terms[i].dec == '+') \
+                and rule.terms[i].vals[0] != '":undent"': # wrinkle: allow end-of-file undents to match
                 return Error(ls_range, "premature end")
     if rule.is_abstract():  # don't need to wrap the node,
         return nodes[0]     # so don't.
@@ -830,7 +824,7 @@ def parse_term(term: Term, ls: List[Lex]) -> Node:
         else:
             while i_lex < len(ls) and lex_matches(ls[i_lex], [f'":newline"']):
                 i_lex += 1
-    if len(nodes) < min: return Error(ls, f"expected at least {min} of {term}")
+    if len(nodes) < min: return Error(ls, f"expected {term}")
     if not term.dec: return nodes[0]
     if term.dec == '?': return nodes[0] if (len(nodes)==1 and not err(nodes[0])) else Node("nopt")
     return Node("list", ls[0:i_lex], nodes)
@@ -848,6 +842,7 @@ def parse_singular_term(term: Term, ls: List[Lex]) -> Node:
     for key, rules in term.leaves.items():
         if lex_matches(ls[0], [key]):
             leaf_rules += rules
+            if key.startswith('"'): break   # i.e. a keyword match prevents all others
     log("leaf rules:", leaf_rules)
     for rule in leaf_rules:
         node = parse_rule(rule, ls)

@@ -4,6 +4,12 @@
 
 ok so. next steps.
 
+"analytics" - where we analyse the ast to create variables, types and functions, and convert expressions to actual function calls. => easypeasy.
+
+
+
+--------------------------------------
+
 we have a lovely, clean, small parser that I understand.
 
 We can tweak the leaf-computation to make it more efficient, but it's pretty damn efficient. Possibly a bit stack-heavy, but we can crunch that. There's exactly three functions in the guts of the actual parser: parse_rule, parse_term, and parse_singular_term. And those functions are small, and easy to understand.
