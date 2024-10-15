@@ -317,6 +317,8 @@ class Rule:
     def dbg(self):
         out = self.name + " := " + " ".join([str(term) for term in self.terms])
         return out
+    def is_abstract(self):
+        return len(self.terms)==1 and self.terms[0].is_rule() and not self.terms[0].dec
 
 #--------------------------------------------------------------------------------------------------
 # Grammar: a list of rules
@@ -549,8 +551,11 @@ def compute_leaves() -> bool:
         for term in rule.terms:
             if term.is_rule():
                 for sub_rule in term.rules():
-                    for val in sub_rule.leaves.keys():
-                        changed = merge_dicts(term.leaves, { val : [sub_rule] }) or changed
+                    if sub_rule.is_abstract():
+                        changed = merge_dicts(term.leaves, sub_rule.terms[0].leaves) or changed
+                    else:
+                        for val in sub_rule.leaves.keys():
+                            changed = merge_dicts(term.leaves, { val : [sub_rule] }) or changed
     # and then back to the rules
     for rule in s_grammar.rules:
         term = rule.terms[0]
@@ -801,10 +806,8 @@ def parse_rule(rule: Rule, ls: List[Lex]) -> Dict:
         for i in range(len(nodes), len(rule.terms)):
             if not rule.terms[i].dec or rule.terms[i].dec == '+':
                 return Error(ls_range, "premature end")
-    # if the rule is an abstract rule (only one multi-rule term with no list-op):
-    if len(rule.terms) == 1 and rule.terms[0].is_rule() and not rule.terms[0].dec:
-        # then return the node, rather than wrapping it
-        return nodes[0]
+    if rule.is_abstract():  # don't need to wrap the node,
+        return nodes[0]     # so don't.
     return Node(rule.name, ls_range[0:i_lex], nodes)
 
 # parses a full term, paying attention to dec and sep
