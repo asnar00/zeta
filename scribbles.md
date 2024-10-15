@@ -2,6 +2,22 @@
 # scribblez
 "slow is smooth, smooth is fast"
 
+ok so. next steps.
+
+we have a lovely, clean, small parser that I understand.
+
+We can tweak the leaf-computation to make it more efficient, but it's pretty damn efficient. Possibly a bit stack-heavy, but we can crunch that. There's exactly three functions in the guts of the actual parser: parse_rule, parse_term, and parse_singular_term. And those functions are small, and easy to understand.
+
+I think the next step is to work on errors, so that error reports are clean and informative. Then we should start work on the actual expression-understander (the thing that deals with functions, variables, and converting expression-strings to actual calls and variables.
+
+Once that's done, we can start to look at generating output code. Goal is to get py, ts and cpp output as the first pass (we'll do them all together).
+
+It would be nice to think of a feature-modular modification to the grammar builder, so that we can implement things feature-modularly, as they're described in the zero.md document.
+
+The objective of this exercise is to have the toolchain written in zero, implemented in either python, typescript, or c++.
+
+------------
+
 documentation format:
 
 a bit like instagram; drag up and down for 1-page documents at "this level";

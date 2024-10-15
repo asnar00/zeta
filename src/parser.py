@@ -329,7 +329,6 @@ class Grammar:
         self.rule_named = {}
         global s_grammar
         s_grammar = self
-
     def dbg(self):
         out = ""
         for rule in self.rules:
@@ -353,17 +352,6 @@ def build_grammar(spec: str) -> Grammar:
 # checks the grammar to see if there's any assumptions we made in the parser that aren't actually true of the grammar
 def check_grammar():
     bad = False
-    for rule in s_grammar.rules:
-        last_i_term = 0
-        for i_term, term in enumerate(rule.terms):
-            if term.is_terminal():
-                #log("i_term:", i_term, term)
-                n_terms_since_last = i_term - last_i_term
-                last_i_term = i_term
-                if n_terms_since_last > 2:
-                    log("warning", f"rule {rule.name} has >2 nonterminals in a row at {i_term}")
-                    log("  rule:", rule.dbg())
-                    bad = True
     if bad:
         log("grammar check failed: exiting.")
         log_exit()
@@ -515,7 +503,8 @@ def push_followers_downwards(term, followers, changed) -> bool:
         if vb: log(caller())
         if vb: log("trace:", sub_rule.name)
         if vb: log("before:", sub_rule.followers)
-        changed = merge_arrays(sub_rule.followers, followers) or changed
+        filtered_followers = [f for f in followers if f not in sub_rule.initials]
+        changed = merge_arrays(sub_rule.followers, filtered_followers) or changed
         if vb: log("after:", sub_rule.followers)
     return changed
 
@@ -525,13 +514,6 @@ def compute_followers():
     for rule in s_grammar.rules:
         for i_term, term in enumerate(rule.terms):
             if term.is_terminal(): continue
-            #if term.dec and term.dec in '*+' and term.is_rule():
-            #    sub_followers = []
-            #    if term.sep: 
-            #        merge_arrays(sub_followers, [f'"{term.sep}"'])
-            #    else:
-            #        merge_arrays(sub_followers, term.initials)
-            #    changed = push_followers_downwards(term, sub_followers, changed)
             if (i_term + 1) < len(rule.terms):
                 next_term = rule.terms[i_term+1]
                 next_initials = rule.terms[i_term+1].initials
@@ -551,7 +533,7 @@ def compute_followers():
             second_last_term = rule.terms[-2]
             changed = merge_arrays(second_last_term.followers, rule.followers)
             if second_last_term.is_rule():
-                changed = push_followers_downwards(second_last_term, rule.followers, changed)
+                changed = push_followers_downwards(second_last_term, rule.followers, changed)    
     return changed
 
 # compute leaves: for each rule, find {terminal => [rule]}
@@ -562,7 +544,6 @@ def compute_leaves() -> bool:
         if term.is_terminal():
             for val in term.vals:
                 changed = merge_dicts(rule.leaves, { val : [rule] }) or changed
-
     # now transfer those to terms
     for rule in s_grammar.rules:
         for term in rule.terms:
@@ -575,7 +556,6 @@ def compute_leaves() -> bool:
         term = rule.terms[0]
         if term.is_rule():
             changed = merge_dicts(rule.leaves, term.leaves) or changed
-
     return changed
 
 # merge two dicts (name => [vals]): return true if d1 changed
@@ -620,7 +600,8 @@ s_zero_grammar_spec : str = """
     c_name_type_decl := type:<identifier> names:name_decl+,
     ts_name_type_decl := names:name_decl+, ":" type:<identifier>
 
-    function_decl := modifier:("on" | "replace" | "after" | "before") result:result_type_decl assign:("=" | "<<") signature:function_signature_decl ":indent" body:function_body ":undent"
+    function_decl := modifier:("on" | "replace" | "after" | "before") function_result? signature:function_signature_decl ":indent" body:function_body ":undent"
+    function_result := result:result_type_decl assign:("=" | "<<")
     result_type_decl := "(" name_type_decl*, ")"
     function_signature_decl := (word | operator | parameter_decl)+
     word := <identifier>
@@ -780,8 +761,7 @@ def test_parser():
          {'_parameter_group': [{'_parameter': {'value': {'_expression': [{'_word': a}, {'_operator': <}, {'_word': b}]}}}]}""")
     test("parse_function_decl", parse("on (number r) = min(number a, b) { r = if (a < b) then (a) else (b) }", "function_decl"), """
          {'_function_decl': {'modifier': on, 'result': {'_result_type_decl': [{'_name_type_decl': {'type': number, 'names': [{'_name_decl': {'name': r}}]}}]}, 'assign': =, 'signature': {'_function_signature_decl': [{'_word': min}, {'_parameter_decl': [{'_variable_decl': {'type': number, 'names': [{'_name_decl': {'name': a}}, {'_name_decl': {'name': b}}]}}]}]}, 'body': {'_function_body': [{'_statement': {'lhs': {'_statement_dest': r}, 'assign': =, 'rhs': {'_expression': [{'_word': if}, {'_parameter_group': [{'_parameter': {'value': {'_expression': [{'_word': a}, {'_operator': <}, {'_word': b}]}}}]}, {'_word': then}, {'_parameter_group': [{'_parameter': {'names': [a]}}]}, {'_word': else}, {'_parameter_group': [{'_parameter': {'names': [b]}}]}]}}}]}}}""")
-
-
+    
 @log_indent
 def parse(code: str, rule_name: str) -> Dict:
     source = Source(code = code)
