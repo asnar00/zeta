@@ -227,11 +227,19 @@ def handle_braces(ls: List[Lex]) -> List[Lex]:
         i += 1
     return ols
 
-# replace all 'ws-' tags with normal tags
+# replace all 'ws-' tags with normal tags; add missing undents to the end
 def finalise_indents(ls: List[Lex]) -> List[Lex]:
     for lex in ls:
         if lex.val.startswith("ws-"):
             lex.val = ":" + lex.val[3:]
+    indent_level = 0
+    for lex in ls:
+        if lex.val == ":indent": indent_level += 1
+        elif lex.val == ":undent": indent_level -= 1
+    if indent_level >0:
+        lex = ls[-1]
+        for i in range(indent_level):
+            ls.append(Lex(lex.source, len(ls), ":undent", "undent"))
     return ls
 
 # get rid of any newlines that sit next to indents or undents
@@ -797,8 +805,7 @@ def parse_rule(rule: Rule, ls: List[Lex]) -> Dict:
     if len(nodes) < len(rule.terms):
         # if any of the unmatched terms are non-optional, it's a premature end
         for i in range(len(nodes), len(rule.terms)):
-            if (not rule.terms[i].dec or rule.terms[i].dec == '+') \
-                and rule.terms[i].vals[0] != '":undent"': # wrinkle: allow end-of-file undents to match
+            if (not rule.terms[i].dec or rule.terms[i].dec == '+'):
                 return Error(ls_range, "premature end")
     if rule.is_abstract():  # don't need to wrap the node,
         return nodes[0]     # so don't.
