@@ -715,16 +715,19 @@ def get_dict(node: Node) -> Dict:
                 if isinstance(sub_ast, dict):
                     if len(sub_ast) > 0:
                         log("sub_ast:", sub_ast)
-                        first_key = list(sub_ast.keys())[0]
-                        sub_ast = sub_ast[first_key]
+                        sub_ast.pop("_type", None)
                         log("extracted sub_ast:", sub_ast)
                         if isinstance(sub_ast, dict):
                             ast.update(sub_ast)
                         else:
                             ast = sub_ast
-                else:
-                    ast = sub_ast
-    return { "_" + rule.name: ast }
+                elif isinstance(sub_ast, list):
+                    ast.update({"_list" : sub_ast})
+                elif isinstance(sub_ast, Lex):
+                    ast.update({"_lex": sub_ast})
+    result = { "_type" : rule.name }
+    result.update(ast)
+    return result
     
 # scan forward to find the next lex that matches a set of terminals, skipping braces
 def scan_forward(ls: List[Lex], i_lex: int, terminals: List[str]) -> int:
@@ -755,32 +758,32 @@ def test_parser():
     log("test parser")
     grammar = build_grammar(s_zero_grammar_spec)
     test("parse_feature", parse("feature MyFeature extends AnotherFeature { }", "feature"), """
-         {'_feature': {'name': MyFeature, 'parent': AnotherFeature, 'body': []}}
+         {'_type': 'feature', 'name': MyFeature, 'parent': AnotherFeature, 'body': []}
          """)
     test("parse_expression", parse("a + b * c", "expression"), """
-         {'_expression': [{'_word': a}, {'_operator': +}, {'_word': b}, {'_operator': *}, {'_word': c}]}
+         {'_type': 'expression', '_list': [{'_type': 'word', '_lex': a}, {'_type': 'operator', '_lex': +}, {'_type': 'word', '_lex': b}, {'_type': 'operator', '_lex': *}, {'_type': 'word', '_lex': c}]}
          """)
     test("parse_test", parse("> a => b", "test"), """
-         {'_test': {'lhs': {'_expression': [{'_word': a}]}, 'rhs': {'_expression': [{'_word': b}]}}}
+         {'_type': 'test', 'lhs': {'_type': 'expression', '_list': [{'_type': 'word', '_lex': a}]}, 'rhs': {'_type': 'expression', '_list': [{'_type': 'word', '_lex': b}]}}
          """)
     test("parse_variable", parse("int r | red, g | green, b | blue =0", "variable"),"""
-         {'_variable': {'type': int, 'names': [{'_name_decl': {'name': r, 'alias': red}}, {'_name_decl': {'name': g, 'alias': green}}, {'_name_decl': {'name': b, 'alias': blue}}], 'default': {'_expression': [{'_constant': 0}]}}}
+         {'_type': 'variable', 'type': int, 'names': [{'_type': 'name_decl', 'name': r, 'alias': red}, {'_type': 'name_decl', 'name': g, 'alias': green}, {'_type': 'name_decl', 'name': b, 'alias': blue}], 'default': {'_type': 'expression', '_list': [{'_type': 'constant', '_lex': 0}]}}
          """)
     test("parse_type", parse("type Col | Colour = { int r, g, b =0 }", "type"), """
-         {'_type': {'name': Col, 'alias': Colour, 'properties': [{'_variable': {'type': int, 'names': [{'_name_decl': {'name': r}}, {'_name_decl': {'name': g}}, {'_name_decl': {'name': b}}], 'default': {'_expression': [{'_constant': 0}]}}}]}}
+         {'_type': 'type', 'name': Col, 'alias': Colour, 'properties': [{'_type': 'variable', 'type': int, 'names': [{'_type': 'name_decl', 'name': r}, {'_type': 'name_decl', 'name': g}, {'_type': 'name_decl', 'name': b}], 'default': {'_type': 'expression', '_list': [{'_type': 'constant', '_lex': 0}]}}]}
          """)
     test("parse_brackets", parse("(a < b)", "brackets"), """
-         {'_brackets': [{'_parameter': {'value': {'_expression': [{'_word': a}, {'_operator': <}, {'_word': b}]}}}]}
+         {'_type': 'brackets', '_list': [{'_type': 'parameter', 'value': {'_type': 'expression', '_list': [{'_type': 'word', '_lex': a}, {'_type': 'operator', '_lex': <}, {'_type': 'word', '_lex': b}]}}]}
          """)
     test("parse_function", parse("on (number r) = min(number a, b) { r = if (a < b) then (a) else (b) }", "function"), """
-         {'_function': {'modifier': on, 'result': {'_result_type': [{'_c_name_type': {'type': number, 'names': [{'_name_decl': {'name': r}}]}}]}, 'assign': =, 'signature': {'_signature': [{'_word': min}, {'_param_group': [{'_variable': {'type': number, 'names': [{'_name_decl': {'name': a}}, {'_name_decl': {'name': b}}]}}]}]}, 'body': {'_function_body': [{'_statement': {'lhs': {'_variable_ref': r}, 'assign': =, 'rhs': {'_expression': [{'_word': if}, {'_brackets': [{'_parameter': {'value': {'_expression': [{'_word': a}, {'_operator': <}, {'_word': b}]}}}]}, {'_word': then}, {'_brackets': [{'_parameter': {'value': {'_expression': [{'_word': a}]}}}]}, {'_word': else}, {'_brackets': [{'_parameter': {'value': {'_expression': [{'_word': b}]}}}]}]}}}]}}}
+         {'_type': 'function', 'modifier': on, 'result': {'_type': 'result_type', '_list': [{'_type': 'c_name_type', 'type': number, 'names': [{'_type': 'name_decl', 'name': r}]}]}, 'assign': =, 'signature': {'_type': 'signature', '_list': [{'_type': 'word', '_lex': min}, {'_type': 'param_group', '_list': [{'_type': 'variable', 'type': number, 'names': [{'_type': 'name_decl', 'name': a}, {'_type': 'name_decl', 'name': b}]}]}]}, 'body': {'_type': 'function_body', '_list': [{'_type': 'statement', 'lhs': {'_type': 'variable_ref', '_lex': r}, 'assign': =, 'rhs': {'_type': 'expression', '_list': [{'_type': 'word', '_lex': if}, {'_type': 'brackets', '_list': [{'_type': 'parameter', 'value': {'_type': 'expression', '_list': [{'_type': 'word', '_lex': a}, {'_type': 'operator', '_lex': <}, {'_type': 'word', '_lex': b}]}}]}, {'_type': 'word', '_lex': then}, {'_type': 'brackets', '_list': [{'_type': 'parameter', 'value': {'_type': 'expression', '_list': [{'_type': 'word', '_lex': a}]}}]}, {'_type': 'word', '_lex': else}, {'_type': 'brackets', '_list': [{'_type': 'parameter', 'value': {'_type': 'expression', '_list': [{'_type': 'word', '_lex': b}]}}]}]}}]}}
          """)
     test("parse_statement", parse("hello()", "statement"), """
-         {'_statement': {'rhs': {'_expression': [{'_word': hello}, {'_brackets': []}]}}}
+         {'_type': 'statement', 'rhs': {'_type': 'expression', '_list': [{'_type': 'word', '_lex': hello}, {'_type': 'brackets', '_list': []}]}}
          """)
     test("parse_hello", parse("feature Hello extends Run { string out$; on hello() { out$ << \"hello world\" }; on run() { hello() } }", "feature"), """
-         {'_feature': {'name': Hello, 'parent': Run, 'body': [{'_variable': {'type': string, 'names': [{'_name_decl': {'name': out$}}]}}, {'_function': {'modifier': on, 'signature': {'_signature': [{'_word': hello}, {'_param_group': []}]}, 'body': {'_function_body': [{'_statement': {'lhs': {'_variable_ref': out$}, 'assign': <<, 'rhs': {'_expression': [{'_constant': "hello world"}]}}}]}}}, {'_function': {'modifier': on, 'signature': {'_signature': [{'_word': run}, {'_param_group': []}]}, 'body': {'_function_body': [{'_statement': {'rhs': {'_expression': [{'_word': hello}, {'_brackets': []}]}}}]}}}]}}
-         """)
+         {'_type': 'feature', 'name': Hello, 'parent': Run, 'body': [{'_type': 'variable', 'type': string, 'names': [{'_type': 'name_decl', 'name': out$}]}, {'_type': 'function', 'modifier': on, 'signature': {'_type': 'signature', '_list': [{'_type': 'word', '_lex': hello}, {'_type': 'param_group', '_list': []}]}, 'body': {'_type': 'function_body', '_list': [{'_type': 'statement', 'lhs': {'_type': 'variable_ref', '_lex': out$}, 'assign': <<, 'rhs': {'_type': 'expression', '_list': [{'_type': 'constant', '_lex': "hello world"}]}}]}}, {'_type': 'function', 'modifier': on, 'signature': {'_type': 'signature', '_list': [{'_type': 'word', '_lex': run}, {'_type': 'param_group', '_list': []}]}, 'body': {'_type': 'function_body', '_list': [{'_type': 'statement', 'rhs': {'_type': 'expression', '_list': [{'_type': 'word', '_lex': hello}, {'_type': 'brackets', '_list': []}]}}]}}]}
+          """)
     
 @log_indent
 def parse(code: str, rule_name: str) -> Dict:
@@ -789,7 +792,7 @@ def parse(code: str, rule_name: str) -> Dict:
     ast_node = parse_rule(s_grammar.rule_named[rule_name], ls)
     return get_dict(ast_node)
 
-@log_indent
+@log_disable
 def parse_rule(rule: Rule, ls: List[Lex]) -> Dict:
     i_lex_end = scan_forward(ls, 0, rule.followers)
     ls_range = ls[0:i_lex_end]
@@ -813,7 +816,7 @@ def parse_rule(rule: Rule, ls: List[Lex]) -> Dict:
 
 # parses a full term, paying attention to dec and sep
 # this one unifies the logic for single terms and optional/list terms, rather nice :-)
-@log_indent
+@log_disable
 def parse_term(term: Term, ls: List[Lex]) -> Node:
     min = 0 if term.dec and term.dec in "*?" else 1
     max = None if term.dec and term.dec in "+*" else 1
@@ -837,7 +840,7 @@ def parse_term(term: Term, ls: List[Lex]) -> Node:
     return Node("list", ls[0:i_lex], nodes)
 
 # parses a singular term (ignoring any dec/sep)
-@log_indent
+@log_disable
 def parse_singular_term(term: Term, ls: List[Lex]) -> Node:
     if term.is_terminal():
         if lex_matches(ls[0], term.vals): return Node("lex", ls[0:1])

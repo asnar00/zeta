@@ -2,11 +2,22 @@
 # scribblez
 "slow is smooth, smooth is fast"
 
+actually before analytics we need to work on error messages from the parser methinks.
+also the ast representation. let's do that first.
+-------
+
 ok so. next steps.
 
 "analytics" - where we analyse the ast to create variables, types and functions, and convert expressions to actual function calls. => easypeasy.
 
+so let's do it!
 
+what we want is { _feature: xyz } to be extended with { types: ..., vars: ..., functions: ... }
+and we want { _function_body: xyz } to be extended with { vars: ... }
+and then finally we want something that looks at each expression and parses it to create function calls, var-refs, and so on.
+That's the next stage.
+
+So let's do it!
 
 --------------------------------------
 
