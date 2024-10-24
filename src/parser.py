@@ -142,7 +142,7 @@ class Lex:
         if self.type == "newline" : return log_grey(val)
         else: return val
     def dbg(self):
-        return f"<{self.type}> {self.val} {self.jump}"
+        return f"Lex <{self.type}> '{self.val}' @ {self.location()}"
     def location(self):
         return self.source.location(self.pos)
     

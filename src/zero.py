@@ -6,83 +6,95 @@
 from util import *
 from parser import *
 from typing import List, Dict, Tuple, Union
+import json
 
 s_test_program = """
 feature Hello
-    string out$
+    type str | string =
+        char c$
+    string out$ | output$
     on hello()
         out$ << "hello world"
-    on run()
+    replace run()
         hello()
+    > run() => "hello world"
 """
 
+@this_is_the_test
 def test_zero():
     log("test_zero")
     ast = parse(s_test_program, "feature")
+    if "_error" in ast:
+        log(ast)
+        log_exit()
     log_clear()
-    ast = analyse_ast(ast)
-    log(format_ast(ast))
+    analyse_ast(ast)
+    ast.pop("body")
+    text = format_ast(ast)
+    log(text)
 
-def format_ast(ast: Dict, indent: int =0) -> str:
-    out = ""
-    type = node_type(ast)
-    if not type: raise Exception("format_ast: unknown node type")
-    out += f"{indent*" "}_{type}: "
-    rest = first_item(ast)
-    if isinstance(rest, Dict):
-        out += "\n"
-        for key, item in rest.items():
-            out += f'{(indent+2)*" "}{key}: '
-            if isinstance(item, Lex): out += f'{item.val}'
-            elif isinstance(item, List):
-                if len(item)==0: out += "[]"
-                else:
-                    out += "[\n"
-                    for sub_item in item:
-                        sub_str = format_ast(sub_item, indent+4)
-                        out += f'{sub_str}'
-                    out += f'{(indent+2)*" "}]'
-            else:
-                out += "\n"
-                out += format_ast(item, indent+4)
-            out += "\n"
-    elif isinstance(rest, List):
-        if len(rest)==0: out += "[]"
+def format_ast(ast) -> str:
+    json_string = json.dumps(ast, default=lambda x: x.dbg() if isinstance(x, Lex) else str(x), indent=4)
+    return json_string
+
+# semantic analysis here
+def analyse_ast(ast: Dict):
+    analyse_types(ast)
+    analyse_variables(ast)
+    analyse_functions(ast)
+    analyse_tests(ast)
+
+# extract types, add them to the index
+def analyse_types(ast):
+    ast["types"] = {}
+    for c in ast["body"]:
+        if not (c["_type"] == "type"): continue
+        name = str(c["name"])
+        merge(ast["types"], name, c)
+        if "alias" in c:
+            alias = str(c["alias"])
+            merge(ast["types"], alias, c)
+
+def analyse_variables(ast):
+    ast["variables"] = {}
+    for c in ast["body"]:
+        if not (c["_type"] == "variable"): continue
+        for n in c["names"]:
+            name = str(n["name"])
+            merge(ast["variables"], name, c)
+            if "alias" in n:
+                alias = str(n["alias"])
+                merge(ast["variables"], alias, c)
+            pass
+    pass
+
+def analyse_functions(ast):
+    ast["functions"] = {}
+    for c in ast["body"]:
+        if not (c["_type"] == "function"): continue
+        name = function_name(c["signature"])
+        merge(ast["functions"], name, c)
+    pass
+
+def analyse_tests(ast):
+    ast["tests"] = []
+    for c in ast["body"]:
+        if not (c["_type"] == "test"): continue
+        ast["tests"].append(c)
+
+
+def function_name(sig: Dict):
+    name = ""
+    for item in sig["_list"]:
+        if item["_type"] in ["word", "operator"]:
+            name += str(item["_lex"])
         else:
-            out += "["
-            out += "\n"
-            for sub_item in rest:
-                sub_str = format_ast(sub_item, indent+4)
-                out += f'{sub_str}\n'
-            out += f'\n{(indent)*" "}]'
-    elif isinstance(rest, Lex):
-        out += f'{rest.val}'
-    return out
+            name += "()" # todo: actual parameter types should go here
+    return name
 
-def node_type(ast: Dict) -> str:
-    first_key= list(ast.keys())[0]
-    return first_key[1:] if first_key.startswith("_") else None
-
-def first_item(ast: Dict) -> str:
-    return ast[list(ast.keys())[0]]
-
-def analyse_ast(ast: Dict) -> Dict:
-    type = node_type(ast)
-    if type == "feature":
-        return analyse_feature(ast)
-    elif type == "function":
-        return analyse_function(ast)
-    elif type == "expression":
-        return analyse_expression(ast)
-    
-def analyse_feature(ast: Dict) -> Dict:
-    return ast
-
-def analyse_function(ast: Dict) -> Dict:
-    return ast
-
-def analyse_expression(ast: Dict) -> Dict:
-    return ast
-
-
-
+def merge(dict, key, item):
+    if key in dict:
+        if not (item in dict[key]):
+            dict[key].append(item)
+    else:
+        dict[key] = [item]

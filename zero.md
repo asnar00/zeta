@@ -11,9 +11,9 @@
 - real-time: predictable throughput and latency
 - distributed: targets heterogenous clusters
 
-## organisation
+## about this document
 
-The specification of zero is organised into *layers*: layer 1 is the 'outermost' layer of the language, containing the basic concepts you need to learn in order to write programs in zero. Additional refinements are introduced at 'deeper' layers. "Controversial", "experimental", "poorly-defined" or "needs work" language features are marked using the 👀 emoji.
+Since zero is evolving rapidly, it doesn't make sense to try and specify the whole thing in one go. Instead, the specification is organised into "layers", with layer 1 (the "outermost" layer) being the simplest, and deeper layers adding detail. Language features marked 👀  are controversial, experimental, evolving, or poorly defined. I've omitted justification for language features in an attempt to keep things concise; they'll be covered in other documents.
 
 ## literate code
 
@@ -24,8 +24,11 @@ In the following document, all code examples are presented like this:
     > (some code)
     => (expected result)
 
-# ______________________________________________
-# layer 1
+# Layer 1
+
+## general
+
+Layer 1 is the simplest language layer; concepts at this level are the bare minimum of what you need to write zero programs.
 
 ## types
 
@@ -43,13 +46,15 @@ zero also defines the following *utility* types:
     string  : unicode string
     time    : high-resolution time
 
-### user-definable types
+### enums
 
-*enums* are defined using the `enum` keyword, as follows:
+*Enumerated types* are defined using the `type` keyword like this:
 
-    enum evil = yes, no, maybe
+    type evil = yes, no, maybe
 
-*structure types* are defined using the `type` keyword, thus:
+### structures
+
+*structure types* are defined using the `type` keyword like this:
 
     type vec =
         number x, y, z = 0
@@ -59,11 +64,23 @@ zero automatically defines a constructor that can be called in three ways:
     > vec v                         : default constructor
     => v: vec(x: 0, y: 0, z: 0)
     
-    > vec v = (1, 2, 3)             : anonymous constructor
+    > vec v = (1, 2, 3)             : anonymous property constructor
     => v: vec(x: 1, y: 2, z: 3)
     
-    > vec v = (y: 1)                : named constructor
-    => v: vec(x: 0, y: 1, z: 0)
+    > vec v = (y: 1, x: 2)          : named property constructor
+    => v: vec(x: 2, y: 1, z: 0)
+
+Structure properties are accessed using the familiar `.` notation, as in
+
+```
+number x = v.x
+```
+
+or
+
+```
+v.x = 1
+```
 
 ## functions
 
@@ -112,30 +129,6 @@ or this:
     > int i$ << 1 << (i$ * 2) while (i$ < 32)
     => i$: [1, 2, 4, 8, 16]
 
-### slices, pushing 👀 
-
-The `[]` notation can also be used to take a slice of an array, for instance:
-
-    > int i$ << [1, 2, 4, 8, 16]
-    > j$ = i$[0 to 3]
-    => j$: [1, 2, 4]
-
-The `<<` operator with a stream as a right-hand-side argument empties that stream out into the receiver on the left:
-
-    > int i$ << [1, 2, 3]
-    > int j$ << [4, 5, 6]
-    > i$ << j$
-    => i$: [1, 2, 3, 4, 5, 6]
-       j$: []
-
-The `<<` operator combined with a slice operation can be used to transfer part of the right-hand stream into the receiver on the left:  **controversial : there should actually be a better notation for this; a slice should be a read-only window onto a stream, and using things on the RHS shouldn't modify them**
-
-    > int i$ << [1, 2, 3]
-    > int j$ << [4, 5, 6]
-    > i$ << j$[0 to 1]
-    => i$: [1, 2, 3, 4]
-       j$: [5, 6]
-
 ### map, reduce, filter, sort
 
 Functions are defined to take singular values as parameters. This restriction lets zero give us a very concise syntax for mapping a function to a stream:
@@ -166,29 +159,6 @@ And finally, to sort, we use the `sort` keyword:
 
     > int d$ = sort j$ > _              : descending order
     => d$: [6, 5, 4, 3, 2]
-
-### time
-
-The `at` keyword specifies a 'sample rate' that adds a time-stamp to each value of a stream, for example:
-
-    > int i$ << [10 to 0] at (1 hz)
-    => i$: [10 at 0s, 9 at 1s, 7 at 2s, ... 1 at 9s]
-
-This counts down from 10 to 1 at the rate of 1 step per second. The postfix function `hz` (hertz, or cycles per second) takes a number and returns a frequency.
-
-We could also express the same thing using the `every` keyword:
-
-    > int i$ << [10 to 0] every (1 sec)
-    => i$: [10 at 0s, 9 at 1s, 7 at 2s, ... 1 at 9s]
-
-Here, the postfix function `sec` takes a number and returns a duration.
-
-The reserved keyword `t` 👀 refers to the "current time", and is available as a global read-only variable in every expression. So, for example, we can do things like: 
-
-    > float f$ << sin(t) at (48 khz) forever
-    => f$: [0 at 0s, ...]
-
-Here `forever` is a keyword that just means `while true` or `until false`.
 
 ## features
 
@@ -255,9 +225,11 @@ SimpleHello.run()
 FullFatHello.run()
 ```
 
-# layer 2
+# Layer 2
 
-## aliases
+## general
+
+### aliases 👀
 
 All names (variable names, type names, and functions) can be defined using a short *name* and a longer, more descriptive *alias*, using the `|` operator (read as "or"). For instance:
 
@@ -281,6 +253,56 @@ on (colour r) = (colour a) + (colour b)
 ```
 
 This allows code editors to present unfamiliar code using the more descriptive aliases, and then switch to the more efficient short form for more familiar code.
+
+### layout agnosticism 👀
+
+To better cater for programmers coming to zero from other programming languages (specifically typescript, python and C/C++), zero is agnostic about code layout. The following code snippets are all correct zero.
+
+Typescript layout: `{}` for indents, `name : type` for variables, optional `;` line terminators
+
+```
+type vec = {
+    x, y, z : number = 0;
+}
+
+on (r: vec) = (a: vec) + (b: vec) {
+    r = vec(a.x + b.x, a.y + b.z, a.z + b.z);
+}
+```
+
+Python layout: significant whitespace with `:`, `name:type` for variables, no `;`
+
+```
+type vec:
+    x, y, z : number = 0
+
+on (r: vec) = (a: vec) + (b: vec) :
+    r = vec(a.x + b.x, a.y + b.z, a.z + b.z)
+```
+
+C/C++ layout: `{}` for indents, `type name` for variables, optional `;` terminators
+
+```
+type vec {
+    number x, y, z = 0;
+}
+
+on (vec r) = (vec a) + (vec b) {
+    r = vec(a.x + b.x, a.y + b.z, a.z + b.z);
+}
+```
+
+Canonical zero layout (significant whitespace for indents, no `:` or `;` required, `type name` for variables) is chosen because it's the "cleanest" and most compact form, with minimal decoration:
+
+```
+type vec =
+    number x, y, z  = 0
+
+on (vec v) = (vec a) + (vec b)
+    r = vec(a.x + b.x, a.y + b.z, a.z + b.z)
+```
+
+The intention is that any code can be viewed in the form that the programmer finds easiest to deal with.
 
 ## types
 
@@ -312,8 +334,6 @@ type int > i8, i16, i32, i64
 
 This asserts, for each type `T` on the right-hand-side of the statement, that every `T` is an `int`, but not every `int` is a `T`.  Any function or structure defined using `int` can be rewritten by the compiler to use any of `i8`...`i64`, but not every function or structure defined using (say) `i32` can be rewritten to use `int`. 
 
-**based on this definition, every u8 is an int but not vice versa, so does int > u8?**
-
 We can also define a new type to be a *subtype* of existing types. For instance, we might wish to define a new floating-point format `f16` to be a 16-bit floating-point number:
 
 ```
@@ -328,6 +348,68 @@ We'd like every existing function and structure defined using `float` to be rewr
 ```
 type f16 < float
 ```
+
+### printing 👀 
+
+zero defines the concrete installed type `string` to be the same as a stream of `char`, i.e.
+
+```
+type string = char$
+```
+
+We can print any type by defining a conversion function like this:
+
+```
+on (string s) = (vec v)
+    s = "vec(\(v.x), \(v.y), \(v.z))"
+```
+
+### slices, pushing 👀 
+
+The `[]` notation can also be used to take a slice of an array, for instance:
+
+    > int i$ << [1, 2, 4, 8, 16]
+    > j$ = i$[0 to 3]
+    => j$: [1, 2, 4]
+
+The `<<` operator with a stream as a right-hand-side argument empties that stream out into the receiver on the left:
+
+    > int i$ << [1, 2, 3]
+    > int j$ << [4, 5, 6]
+    > i$ << j$
+    => i$: [1, 2, 3, 4, 5, 6]
+       j$: []
+
+The `<<` operator combined with a slice operation can be used to transfer part of the right-hand stream into the receiver on the left:
+
+    > int i$ << [1, 2, 3]
+    > int j$ << [4, 5, 6]
+    > i$ << j$[0 to 1]
+    => i$: [1, 2, 3, 4]
+       j$: [5, 6]
+
+### time
+
+The `at` keyword specifies a 'sample rate' that adds a time-stamp to each value of a stream, for example:
+
+    > int i$ << [10 to 0] at (1 hz)
+    => i$: [10 at 0s, 9 at 1s, 7 at 2s, ... 1 at 9s]
+
+This counts down from 10 to 1 at the rate of 1 step per second. The postfix function `hz` (hertz, or cycles per second) takes a number and returns a frequency.
+
+We could also express the same thing using the `every` keyword:
+
+    > int i$ << [10 to 0] every (1 sec)
+    => i$: [10 at 0s, 9 at 1s, 7 at 2s, ... 1 at 9s]
+
+Here, the postfix function `sec` takes a number and returns a duration.
+
+The reserved keyword `t` 👀 refers to the "current time", and is available as a global read-only variable in every expression. So, for example, we can do things like: 
+
+    > float f$ << sin(t) at (48 khz) forever
+    => f$: [0 at 0s, ...]
+
+Here `forever` is a keyword that just means `while true` or `until false`.
 
 ### narrowed types
 
@@ -346,7 +428,7 @@ type offset < vec						: offset from one position to another
 type direction < vec				: normalised direction vectors
 ```
 
-Here, the statement "every X is a Y but not every Y is an X" applies for X = {`pos`, `offset`, `dir`} and Y= `vec`. We can now go on to define functions like this:
+Here, the statement "every X is a Y but not every Y is an X" applies for X = {`pos`, `offset`, `dir`} and Y= `vec`. We can now go on to define special-case functions like this:
 
 ```
 on (offset r) = (position a) - (position b) ...
