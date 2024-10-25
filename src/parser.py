@@ -104,7 +104,7 @@ class Source:
 @this_is_a_test
 def test_lexer():
     log("test_lexer")
-    lexer_result = """[on, (, out$, :, string, ), <<, hello, (, ), :indent, out$, <<, "hello world", :undent, next]"""
+    lexer_result = """[on, (, out$, :, string, ), <<, hello, (, ), {, out$, <<, "hello world", }, next]"""
     test("lexer_simple", lexer(Source(code = """
 on (out$ : string) << hello()
     out$ << "hello world"
@@ -213,15 +213,15 @@ def handle_braces(ls: List[Lex]) -> List[Lex]:
     while i < len(ls):
         lex = ls[i]
         if lex.val == "{":      # add an indent, remove all subsequent ws-indents
-            ols.append(Lex(lex.source, lex.pos, ":indent", "indent"))
+            ols.append(Lex(lex.source, lex.pos, "{", "indent"))
             i += 1
             while i < len(ls) and ls[i].val.startswith("ws-") : i += 1
             i -= 1
         elif lex.val == "}":    # add an undent, remove all previous ws-undents
             while len(ols) > 0 and ols[-1].val.startswith("ws-"): ols.pop()
-            ols.append(Lex(lex.source, lex.pos, ":undent", "undent"))
+            ols.append(Lex(lex.source, lex.pos, "}", "undent"))
         elif lex.val == ";":
-            ols.append(Lex(lex.source, lex.pos, ":newline", "newline"))
+            ols.append(Lex(lex.source, lex.pos, ";", "newline"))
         else:
             ols.append(lex)
         i += 1
@@ -231,15 +231,15 @@ def handle_braces(ls: List[Lex]) -> List[Lex]:
 def finalise_indents(ls: List[Lex]) -> List[Lex]:
     for lex in ls:
         if lex.val.startswith("ws-"):
-            lex.val = ":" + lex.val[3:]
+            lex.val = "{" if lex.val == "ws-indent" else "}" if lex.val == "ws-undent" else ";"
     indent_level = 0
     for lex in ls:
-        if lex.val == ":indent": indent_level += 1
-        elif lex.val == ":undent": indent_level -= 1
+        if lex.val == "{": indent_level += 1
+        elif lex.val == "}": indent_level -= 1
     if indent_level >0:
         lex = ls[-1]
         for i in range(indent_level):
-            ls.append(Lex(lex.source, len(ls), ":undent", "undent"))
+            ls.append(Lex(lex.source, len(ls), "}", "undent"))
     return ls
 
 # get rid of any newlines that sit next to indents or undents
@@ -248,9 +248,9 @@ def filter_newlines(ls: List[Lex]) -> List[Lex]:
     i = 0
     while i < len(ls):
         lex = ls[i]
-        if lex.val == ":newline":
-            preceding_is_ndent = (i > 0 and ls[i-1].val in [":indent", ":undent"])
-            following_is_ndent = (i < (len(ls)-1) and ls[i+1].val in [":indent", ":undent"])
+        if lex.val == ";":
+            preceding_is_ndent = (i > 0 and ls[i-1].val in ["{", "}"])
+            following_is_ndent = (i < (len(ls)-1) and ls[i+1].val in ["{", "}"])
             if preceding_is_ndent or following_is_ndent: pass
             else:
                 ols.append(lex)
@@ -262,8 +262,8 @@ def filter_newlines(ls: List[Lex]) -> List[Lex]:
 # each open or close bracket ("(", "[", indent) should store a jump its matching bracket
 def compute_jumps(ls: List[Lex]) -> List[Lex]:
     bracket_level = 0
-    open = ["(", "[", ":indent"]
-    close = [")", "]", ":undent"]
+    open = ["(", "[", "{"]
+    close = [")", "]", "}"]
     i_open_lex : List[int] = []
     for i, lex in enumerate(ls):
         if lex.val in open:
@@ -587,14 +587,14 @@ def merge_arrays(a1, a2)->bool:
 # Zero grammar spec
 
 s_zero_grammar_spec : str = """
-    feature := "feature" name:<identifier> ("extends" parent:<identifier>)? ":indent" body:component* ":undent"
+    feature := "feature" name:<identifier> ("extends" parent:<identifier>)? "{" body:component* "}"
     component := (test | type | variable | function)
 
     test := ">" lhs:expression ("=>" rhs:expression)?
 
     type := "type" name_decl (struct | type_relation | enum)
     name_decl := name:<identifier> ("|" alias:<identifier>)?
-    struct := "=" ":indent" properties:variable* ":undent"
+    struct := "=" "{" properties:variable* "}"
     type_relation := (child_type | parent_type)
     child_type := "<" parent:<identifier>
     parent_type := ">" children:<indentifier>*|
@@ -605,7 +605,7 @@ s_zero_grammar_spec : str = """
     c_name_type := type:<identifier> names:name_decl+,
     ts_name_type := names:name_decl+, ":" type:<identifier>
 
-    function := modifier:("on" | "replace" | "after" | "before") function_result? signature:signature ":indent" body:function_body ":undent"
+    function := modifier:("on" | "replace" | "after" | "before") function_result? signature:signature "{" body:function_body "}"
     function_result := result:result_type assign:("=" | "<<")
     result_type := "(" name_type*, ")"
     signature := (word | operator | param_group)+
@@ -631,7 +631,7 @@ def test_grammar():
     log("test_grammar")
     grammar = build_grammar(s_zero_grammar_spec)
     test("test_grammar", grammar.dbg(), """
-feature := "feature" name:<identifier> feature_2? ":indent" body:component* ":undent"
+feature := "feature" name:<identifier> feature_2? "{" body:component* "}"
 feature_2 := "extends" parent:<identifier>
 component := (test | type | variable | function)
 test := ">" lhs:expression test_2?
@@ -639,7 +639,7 @@ test_2 := "=>" rhs:expression
 type := "type" name_decl (struct | type_relation | enum)
 name_decl := name:<identifier> name_decl_1?
 name_decl_1 := "|" alias:<identifier>
-struct := "=" ":indent" properties:variable* ":undent"
+struct := "=" "{" properties:variable* "}"
 type_relation := (child_type | parent_type)
 child_type := "<" parent:<identifier>
 parent_type := ">" children:<indentifier>*|
@@ -649,7 +649,7 @@ variable_1 := "=" default:expression
 name_type := (c_name_type | ts_name_type)
 c_name_type := type:<identifier> names:name_decl+,
 ts_name_type := names:name_decl+, ":" type:<identifier>
-function := modifier:("on" | "replace" | "after" | "before") function_result? signature:signature ":indent" body:function_body ":undent"
+function := modifier:("on" | "replace" | "after" | "before") function_result? signature:signature "{" body:function_body "}"
 function_result := result:result_type assign:("=" | "<<")
 result_type := "(" name_type*, ")"
 signature := (word | operator | param_group)+
@@ -796,7 +796,7 @@ def parse(code: str, rule_name: str) -> Dict:
     return get_dict(ast_node)
 
 # parses a rule, one term at a time
-#@log_indent
+@log_indent
 def parse_rule(rule: Rule, ls: List[Lex]) -> Dict: 
     i_lex_end = scan_forward(ls, 0, rule.followers)
     ls_range = ls[0:i_lex_end]
@@ -820,7 +820,7 @@ def parse_rule(rule: Rule, ls: List[Lex]) -> Dict:
 
 # parses a full term, paying attention to dec and sep
 # this one unifies the logic for single terms and optional/list terms, rather nice :-)
-#@log_indent
+@log_indent
 def parse_term(term: Term, ls: List[Lex]) -> Node:
     min = 0 if term.dec and term.dec in "*?" else 1
     max = None if term.dec and term.dec in "+*" else 1
@@ -836,7 +836,7 @@ def parse_term(term: Term, ls: List[Lex]) -> Node:
             if i_lex < len(ls) and lex_matches(ls[i_lex], [f'"{term.sep}"']):
                 i_lex += 1
         else:
-            while i_lex < len(ls) and lex_matches(ls[i_lex], [f'":newline"']):
+            while i_lex < len(ls) and lex_matches(ls[i_lex], [f'";"']):
                 i_lex += 1
     if len(nodes) < min: return Error(ls, f"expected {term}")
     if not term.dec: return nodes[0]
@@ -844,7 +844,7 @@ def parse_term(term: Term, ls: List[Lex]) -> Node:
     return Node("list", ls[0:i_lex], nodes)
 
 # parses a singular term (ignoring any dec/sep)
-#@log_indent
+@log_indent
 def parse_singular_term(term: Term, ls: List[Lex]) -> Node:
     if term.is_terminal():
         if lex_matches(ls[0], term.vals): return Node("lex", ls[0:1])
