@@ -63,13 +63,19 @@ def build_feature_symbol_tables(feature_ast):
         elif _type == "variable": build_variable_st(st, component)
         elif _type == "function": build_function_st(st, component)
     feature_ast["_st"] = st
+    # merge down feature scope into each function scope
+    for component in feature_ast["body"]:
+        if component["_type"] == "function":
+            merge_st(component["_st"], st)
     log("----")
     show_st("feature st: ", st)
+    for component in feature_ast["body"]:
+        if component["_type"] == "function":
+            show_st(f"function st: {function_shortname(component)}", component["_st"])
 
 # updates feature's symbol table with function names/aliases
 # and computes internal sts for the function
 def build_function_st(st, function_ast) -> Dict:
-    log("function:",  function_shortname(function_ast))
     # the function words
     for i, item in enumerate(function_ast["signature"]["_list"]):
         if item["_type"] in ["word", "operator"]:
@@ -89,9 +95,7 @@ def build_function_st(st, function_ast) -> Dict:
     for i, statement in enumerate(function_ast["body"]["_list"]):
         lhs = statement["lhs"]
         if "names" in lhs:
-            log("lhs:", lhs)
             add_multiple_to_st(function_st, lhs["names"], lhs, i+1)
-    show_st("function st:", function_st)
     function_ast["_st"] = function_st
     return st
 

@@ -2,6 +2,25 @@
 # scribblez
 "slow is smooth, smooth is fast"
 
+end-of-day/week notes:
+
+today we got symbol tables working nicely. that's good!
+next: expression parser. it's a two-stage thing.
+at some point in the future we really do want to add "types" to the parser mechanics.
+but no rewrites of that stuff until we have the whole thing working in zero.
+
+to re-iterate our current goal:
+
+be able to write a client/server website in pure zero, using a typescript backend (deno+browser).
+
+where we are now: semantic analysis of the zero ast; we've got the symbol table;
+the next thing is to resolve expressions so we can factor them into variables, constants, and function calls.
+prove this out for operations as well.
+and then get on with the ts backends.
+
+COME ON
+-------
+
 actually before analytics we need to work on error messages from the parser methinks.
 also the ast representation. let's do that first.
 -------
