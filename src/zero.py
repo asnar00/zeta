@@ -14,7 +14,7 @@ feature Hello
         char c$
     string out$ | output$
     on (string result$) << hello(string name)
-        int i = 0
+        int my_var = 0
         result$ << "hello \(name)"
     replace run()
         out$ << hello("world")
@@ -28,7 +28,7 @@ def test_zero():
         log(ast)
         log_exit()
     log_clear()
-    analyse_ast(ast)
+    st = build_feature_symbol_tables(ast)
 
 #--------------------------------------------------------------------------------------------------
 # helpers
@@ -42,93 +42,97 @@ def merge(dict, key, item):
     else:
         dict[key] = [item]
 
-#--------------------------------------------------------------------------------------------------
-# semantic analysis here
-
-def analyse_ast(ast: Dict):
-    analyse_types(ast)
-    analyse_variables(ast)
-    analyse_functions(ast)
-    analyse_tests(ast)
-
-# extract types, add them to the index
-def analyse_types(ast):
-    ast["types"] = {}
-    for c in ast["body"]:
-        if not (c["_type"] == "type"): continue
-        name = str(c["name"])
-        merge(ast["types"], name, c)
-        if "alias" in c:
-            alias = str(c["alias"])
-            merge(ast["types"], alias, c)
-
-# variable declarations, enter them into feature scope
-def analyse_variables(ast):
-    ast["variables"] = {}
-    for c in ast["body"]:
-        if not (c["_type"] == "variable"): continue
-        for n in c["names"]:
-            merge(ast["variables"], n["name"], c)
-            if "alias" in n:
-                merge(ast["variables"], n["alias"], c)
-
-# function declarations, enter into feature scope and analyse body
-def analyse_functions(ast):
-    ast["functions"] = {}
-    for c in ast["body"]:
-        if not (c["_type"] == "function"): continue
-        name = function_name(c["signature"])
-        merge(ast["functions"], name, c)
-        analyse_function(c)
-
-# test declarations, add them to feature test array
-def analyse_tests(ast):
-    ast["tests"] = []
-    for c in ast["body"]:
-        if not (c["_type"] == "test"): continue
-        ast["tests"].append(c)
-
-# given a function signature, derive a simple name
-def function_name(sig: Dict):
+# function shortname
+def function_shortname(function_ast) -> str:
     name = ""
-    for item in sig["_list"]:
+    for item in function_ast["signature"]["_list"]:
         if item["_type"] in ["word", "operator"]:
             name += str(item["_lex"])
-        else:
-            name += "()" # todo: actual parameter types should go here
+        else: name += "_"
     return name
 
 #--------------------------------------------------------------------------------------------------
+# symbol table: maps name => (item, index)
 
-# function analysis: where the real work happens
-def analyse_function(f: Dict):
-    scope = {}      # maps name => (variable, i_statement)
-    result_scope = get_scope_from_result(f["result"])
-    scope.update(result_scope)
-    params_scope = get_scope_from_parameters(f["signature"])
-    scope.update(params_scope)
-    log(format(f["body"]))
-    
-    log_exit()
+# sets feature_ast["_st"] to a symbol table of all feature-scope stuff
+def build_feature_symbol_tables(feature_ast):
+    st = {}
+    for component in feature_ast["body"]:
+        _type = component["_type"]
+        if _type == "type": build_type_st(st, component)
+        elif _type == "variable": build_variable_st(st, component)
+        elif _type == "function": build_function_st(st, component)
+    feature_ast["_st"] = st
+    log("----")
+    show_st("feature st: ", st)
 
-# get result vars of function into a scope
-def get_scope_from_result(result: Dict) -> Dict:
-    scope = {}
-    if result["_type"] != "result_type": raise Exception("expected result_type")
-    for item in result["_list"]:
-        for name in item["names"]:
-            merge(scope, name["name"], (item, 0))
-            if "alias" in name: merge(scope, name["alias"], (item, 0))
-    return scope
-
-# get parameters of function into a scope (name => (variable, i_statement))
-def get_scope_from_parameters(sig: Dict) -> Dict:
-    scope = {}
-    for item in sig["_list"]:
+# updates feature's symbol table with function names/aliases
+# and computes internal sts for the function
+def build_function_st(st, function_ast) -> Dict:
+    log("function:",  function_shortname(function_ast))
+    # the function words
+    for i, item in enumerate(function_ast["signature"]["_list"]):
+        if item["_type"] in ["word", "operator"]:
+            merge(st, item["_lex"], (function_ast, i))
+    function_st = {}
+    # the function result
+    if "result" in function_ast:
+        result = function_ast["result"]
+        for item in result["_list"]:
+            add_multiple_to_st(function_st, item["names"], result)
+    # the function parameters
+    for i, item in enumerate(function_ast["signature"]["_list"]):
         if item["_type"] == "param_group":
             for param in item["_list"]:
-                if not (param["_type"] == "variable"): continue
-                for name in param["names"]:
-                    merge(scope, name["name"], (param, 0))
-                    if "alias" in name: merge(scope, name["alias"], (param, 0))
-    return scope
+                add_multiple_to_st(function_st, param["names"], param, 0)
+    # and finally the statements
+    for i, statement in enumerate(function_ast["body"]["_list"]):
+        lhs = statement["lhs"]
+        if "names" in lhs:
+            log("lhs:", lhs)
+            add_multiple_to_st(function_st, lhs["names"], lhs, i+1)
+    show_st("function st:", function_st)
+    
+
+# updates feature's symbol table, and sets an internal one within the type
+def build_type_st(st, type_ast) -> Dict:
+    add_to_st(st, type_ast, type_ast)
+    type_st = {}
+    for property in type_ast["properties"]:
+        add_multiple_to_st(type_st, property["names"], property)
+    type_ast["_st"] = type_st
+    return st
+
+# updates feature's symbol table with variable names/aliases
+def build_variable_st(st, variable_ast) -> Dict:
+    add_multiple_to_st(st, variable_ast["names"], variable_ast)
+    return st
+
+# given a list of name/alias, add each of them to the st
+def add_multiple_to_st(st, names: List[Dict], item_to_add, index:int =0) -> Dict:
+    for name in names:
+        add_to_st(st, name, item_to_add, index)
+    return st
+
+# adds a single name/alias to the st
+def add_to_st(st, component, item_to_add, index:int =0) -> Dict:
+    name = component["name"]
+    merge(st, name, (item_to_add, index))
+    if "alias" in component:
+        merge(st, component["alias"], (item_to_add, index))
+
+# compact printout of symbol table
+def show_st(label, st: Dict)-> str:
+    out = label + "\n"
+    for key, list in st.items():
+        out += f'  "{key}" => '
+        for item in list:
+            out += f"{item[0]["_type"]}:{item[1]}"
+        out += "\n"
+    log(out)
+
+# merge child_st into parent_st, child_st gets modified, and takes precedence
+def merge_st(child_st: Dict, parent_st: Dict):
+    for key, list in parent_st.items():
+        if not key in child_st:
+            child_st[key] = list

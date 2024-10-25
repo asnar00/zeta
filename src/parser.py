@@ -612,8 +612,8 @@ s_zero_grammar_spec : str = """
     ts_name_type := names:name_decl+, ":" type:<identifier>
 
     function := modifier:("on" | "replace" | "after" | "before") function_result? signature:signature "{" body:function_body "}"
-    function_result := result:result_type assign:("=" | "<<")
-    result_type := "(" name_type*, ")"
+    function_result := result:result_var assign:("=" | "<<")
+    result_var := "(" name_type*, ")"
     signature := (word | operator | param_group)+
     word := <identifier>
     operator := <operator>
@@ -656,8 +656,8 @@ name_type := (c_name_type | ts_name_type)
 c_name_type := type:<identifier> names:name_decl+,
 ts_name_type := names:name_decl+, ":" type:<identifier>
 function := modifier:("on" | "replace" | "after" | "before") function_result? signature:signature "{" body:function_body "}"
-function_result := result:result_type assign:("=" | "<<")
-result_type := "(" name_type*, ")"
+function_result := result:result_var assign:("=" | "<<")
+result_var := "(" name_type*, ")"
 signature := (word | operator | param_group)+
 word := <identifier>
 operator := <operator>
@@ -787,7 +787,7 @@ def test_parser():
          {'_type': 'brackets', '_list': [{'_type': 'parameter', 'value': {'_type': 'expression', '_list': [{'_type': 'word', '_lex': a}, {'_type': 'operator', '_lex': <}, {'_type': 'word', '_lex': b}]}}]}
          """)
     test("parse_function", parse("on (number r) = min(number a, b) { r = if (a < b) then (a) else (b) }", "function"), """
-         {'_type': 'function', 'modifier': on, 'result': {'_type': 'result_type', '_list': [{'_type': 'c_name_type', 'type': number, 'names': [{'_type': 'name_decl', 'name': r}]}]}, 'assign': =, 'signature': {'_type': 'signature', '_list': [{'_type': 'word', '_lex': min}, {'_type': 'param_group', '_list': [{'_type': 'variable', 'type': number, 'names': [{'_type': 'name_decl', 'name': a}, {'_type': 'name_decl', 'name': b}]}]}]}, 'body': {'_type': 'function_body', '_list': [{'_type': 'statement', 'lhs': {'_type': 'variable_ref', '_lex': r}, 'assign': =, 'rhs': {'_type': 'expression', '_list': [{'_type': 'word', '_lex': if}, {'_type': 'brackets', '_list': [{'_type': 'parameter', 'value': {'_type': 'expression', '_list': [{'_type': 'word', '_lex': a}, {'_type': 'operator', '_lex': <}, {'_type': 'word', '_lex': b}]}}]}, {'_type': 'word', '_lex': then}, {'_type': 'brackets', '_list': [{'_type': 'parameter', 'value': {'_type': 'expression', '_list': [{'_type': 'word', '_lex': a}]}}]}, {'_type': 'word', '_lex': else}, {'_type': 'brackets', '_list': [{'_type': 'parameter', 'value': {'_type': 'expression', '_list': [{'_type': 'word', '_lex': b}]}}]}]}}]}}
+         {'_type': 'function', 'modifier': on, 'result': {'_type': 'result_var', '_list': [{'_type': 'c_name_type', 'type': number, 'names': [{'_type': 'name_decl', 'name': r}]}]}, 'assign': =, 'signature': {'_type': 'signature', '_list': [{'_type': 'word', '_lex': min}, {'_type': 'param_group', '_list': [{'_type': 'variable', 'type': number, 'names': [{'_type': 'name_decl', 'name': a}, {'_type': 'name_decl', 'name': b}]}]}]}, 'body': {'_type': 'function_body', '_list': [{'_type': 'statement', 'lhs': {'_type': 'variable_ref', '_lex': r}, 'assign': =, 'rhs': {'_type': 'expression', '_list': [{'_type': 'word', '_lex': if}, {'_type': 'brackets', '_list': [{'_type': 'parameter', 'value': {'_type': 'expression', '_list': [{'_type': 'word', '_lex': a}, {'_type': 'operator', '_lex': <}, {'_type': 'word', '_lex': b}]}}]}, {'_type': 'word', '_lex': then}, {'_type': 'brackets', '_list': [{'_type': 'parameter', 'value': {'_type': 'expression', '_list': [{'_type': 'word', '_lex': a}]}}]}, {'_type': 'word', '_lex': else}, {'_type': 'brackets', '_list': [{'_type': 'parameter', 'value': {'_type': 'expression', '_list': [{'_type': 'word', '_lex': b}]}}]}]}}]}}
          """)
     test("parse_statement", parse("hello()", "statement"), """
          {'_type': 'statement', 'rhs': {'_type': 'expression', '_list': [{'_type': 'word', '_lex': hello}, {'_type': 'brackets', '_list': []}]}}
@@ -801,7 +801,6 @@ def test_parser():
     log_flush()
     test("parse_statements", format(parse("a = 1; b = 2; c = 3;", "function_body")))
     
-
 def parse(code: str, rule_name: str) -> Dict:
     source = Source(code = code)
     ls = lexer(source)
@@ -809,7 +808,7 @@ def parse(code: str, rule_name: str) -> Dict:
     return get_dict(ast_node)
 
 # parses a rule, one term at a time
-@log_indent
+#@log_indent
 def parse_rule(rule: Rule, ls: List[Lex]) -> Dict: 
     i_lex_end = scan_forward(ls, 0, rule.followers)
     ls_range = ls[0:i_lex_end]
@@ -833,7 +832,7 @@ def parse_rule(rule: Rule, ls: List[Lex]) -> Dict:
 
 # parses a full term, paying attention to dec and sep
 # this one unifies the logic for single terms and optional/list terms, rather nice :-)
-@log_indent
+#@log_indent
 def parse_term(term: Term, ls: List[Lex]) -> Node:
     min = 0 if term.dec and term.dec in "*?" else 1
     max = None if term.dec and term.dec in "+*" else 1
@@ -854,7 +853,7 @@ def parse_term(term: Term, ls: List[Lex]) -> Node:
     return Node("list", ls[0:i_lex], nodes)
 
 # parses a singular term (ignoring any dec/sep)
-@log_indent
+#@log_indent
 def parse_singular_term(term: Term, ls: List[Lex]) -> Node:
     if term.is_terminal():
         if lex_matches(ls[0], term.vals): return Node("lex", ls[0:1])
