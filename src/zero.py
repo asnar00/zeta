@@ -8,16 +8,16 @@ from parser import *
 from typing import List, Dict, Tuple, Union
 import json
 
+#--------------------------------------------------------------------------------------------------
 s_test_program = """
 feature Hello
     type str | string =
         char c$
     string out$ | output$
-    on hello()
-        out$ << "hello world"
+    on hello(string name)
+        out$ << "hello \(name)"
     replace run()
-        hello()
-    > run() => "hello world"
+        hello("world")
 """
 
 @this_is_the_test
@@ -29,15 +29,26 @@ def test_zero():
         log_exit()
     log_clear()
     analyse_ast(ast)
-    ast.pop("body")
-    text = format_ast(ast)
-    log(text)
+
+#--------------------------------------------------------------------------------------------------
+# helpers
 
 def format_ast(ast) -> str:
     json_string = json.dumps(ast, default=lambda x: x.dbg() if isinstance(x, Lex) else str(x), indent=4)
     return json_string
 
+
+# merge an item into a dictionary mapping str-> list[x]
+def merge(dict, key, item):
+    if key in dict:
+        if not (item in dict[key]):
+            dict[key].append(item)
+    else:
+        dict[key] = [item]
+
+#--------------------------------------------------------------------------------------------------
 # semantic analysis here
+
 def analyse_ast(ast: Dict):
     analyse_types(ast)
     analyse_variables(ast)
@@ -55,6 +66,7 @@ def analyse_types(ast):
             alias = str(c["alias"])
             merge(ast["types"], alias, c)
 
+# variable declarations, enter them into feature scope
 def analyse_variables(ast):
     ast["variables"] = {}
     for c in ast["body"]:
@@ -65,24 +77,24 @@ def analyse_variables(ast):
             if "alias" in n:
                 alias = str(n["alias"])
                 merge(ast["variables"], alias, c)
-            pass
-    pass
 
+# function declarations, enter into feature scope and analyse body
 def analyse_functions(ast):
     ast["functions"] = {}
     for c in ast["body"]:
         if not (c["_type"] == "function"): continue
         name = function_name(c["signature"])
         merge(ast["functions"], name, c)
-    pass
+        analyse_function(c)
 
+# test declarations, add them to feature test array
 def analyse_tests(ast):
     ast["tests"] = []
     for c in ast["body"]:
         if not (c["_type"] == "test"): continue
         ast["tests"].append(c)
 
-
+# given a function signature, derive a simple name
 def function_name(sig: Dict):
     name = ""
     for item in sig["_list"]:
@@ -92,9 +104,15 @@ def function_name(sig: Dict):
             name += "()" # todo: actual parameter types should go here
     return name
 
-def merge(dict, key, item):
-    if key in dict:
-        if not (item in dict[key]):
-            dict[key].append(item)
-    else:
-        dict[key] = [item]
+#--------------------------------------------------------------------------------------------------
+
+# function analysis: where the real work happens
+def analyse_function(f: Dict):
+    log(format_ast(f))
+    scope = {}      # maps name => (variable, i_statement)
+    scope = get_parameters(f)
+    pass
+
+# get parameters of function into a scope (name => (variable, i_statement))
+def get_parameters(f: Dict) -> Dict:
+    pass

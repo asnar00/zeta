@@ -687,7 +687,7 @@ class Error(Node): # bad things
         self.message = message
     def __str__(self): return self.show()
     def __repr__(self): return self.__str__()
-    def show(self): return f"{self.name}: {self.message} at {self.ls[0].location()} (\"{' '.join([str(lex) for lex in self.ls])}\")"
+    def show(self): return f"{self.name}: {self.message} at {self.ls[0].location() if self.ls else "eof"} (\"{' '.join([str(lex) for lex in self.ls])}\")"
 
 def err(node: Node) -> bool:
     return node.name == "_error"
@@ -784,16 +784,20 @@ def test_parser():
     test("parse_hello", parse("feature Hello extends Run { string out$; on hello() { out$ << \"hello world\" }; on run() { hello() } }", "feature"), """
          {'_type': 'feature', 'name': Hello, 'parent': Run, 'body': [{'_type': 'variable', 'type': string, 'names': [{'_type': 'name_decl', 'name': out$}]}, {'_type': 'function', 'modifier': on, 'signature': {'_type': 'signature', '_list': [{'_type': 'word', '_lex': hello}, {'_type': 'param_group', '_list': []}]}, 'body': {'_type': 'function_body', '_list': [{'_type': 'statement', 'lhs': {'_type': 'variable_ref', '_lex': out$}, 'assign': <<, 'rhs': {'_type': 'expression', '_list': [{'_type': 'constant', '_lex': "hello world"}]}}]}}, {'_type': 'function', 'modifier': on, 'signature': {'_type': 'signature', '_list': [{'_type': 'word', '_lex': run}, {'_type': 'param_group', '_list': []}]}, 'body': {'_type': 'function_body', '_list': [{'_type': 'statement', 'rhs': {'_type': 'expression', '_list': [{'_type': 'word', '_lex': hello}, {'_type': 'brackets', '_list': []}]}}]}}]}
           """)
+    test("parse_bracket_constant", parse("(1)", "expression"), """
+         {'_type': 'expression', '_list': [{'_type': 'brackets', '_list': [{'_type': 'parameter', 'value': {'_type': 'expression', '_list': [{'_type': 'constant', '_lex': 1}]}}]}]}
+         """)
     
-@log_indent
+
 def parse(code: str, rule_name: str) -> Dict:
     source = Source(code = code)
     ls = lexer(source)
     ast_node = parse_rule(s_grammar.rule_named[rule_name], ls)
     return get_dict(ast_node)
 
-@log_disable
-def parse_rule(rule: Rule, ls: List[Lex]) -> Dict:
+# parses a rule, one term at a time
+@log_indent
+def parse_rule(rule: Rule, ls: List[Lex]) -> Dict: 
     i_lex_end = scan_forward(ls, 0, rule.followers)
     ls_range = ls[0:i_lex_end]
     log("ls_range:", ls_range)
@@ -816,7 +820,7 @@ def parse_rule(rule: Rule, ls: List[Lex]) -> Dict:
 
 # parses a full term, paying attention to dec and sep
 # this one unifies the logic for single terms and optional/list terms, rather nice :-)
-@log_disable
+@log_indent
 def parse_term(term: Term, ls: List[Lex]) -> Node:
     min = 0 if term.dec and term.dec in "*?" else 1
     max = None if term.dec and term.dec in "+*" else 1
@@ -840,21 +844,25 @@ def parse_term(term: Term, ls: List[Lex]) -> Node:
     return Node("list", ls[0:i_lex], nodes)
 
 # parses a singular term (ignoring any dec/sep)
-@log_disable
+@log_indent
 def parse_singular_term(term: Term, ls: List[Lex]) -> Node:
     if term.is_terminal():
         if lex_matches(ls[0], term.vals): return Node("lex", ls[0:1])
         else: return Error(ls, f"expected {cleanup(term.vals)}")
     # abstract term: a list of rules
-    log("term:", term)
-    log("leaves:", term.leaves)
-    leaf_rules = []
-    for key, rules in term.leaves.items():
-        if lex_matches(ls[0], [key]):
-            leaf_rules += rules
-            if key.startswith('"'): break   # i.e. a keyword match prevents all others
-    log("leaf rules:", leaf_rules)
-    for rule in leaf_rules:
+    rules = term.rules()
+    log("rules:", rules)
+    if len(rules) > 1:
+        log("term:", term)
+        log("leaves:", term.leaves)
+        leaf_rules = []
+        for key, rules in term.leaves.items():
+            if lex_matches(ls[0], [key]):
+                leaf_rules += rules
+                if key.startswith('"'): break   # i.e. a keyword match prevents all others
+        log("leaf rules:", leaf_rules)
+        rules = leaf_rules
+    for rule in rules:
         node = parse_rule(rule, ls)
         if not err(node): return node
     return Error(ls, f"expected one of {cleanup(term.vals)}")
