@@ -92,7 +92,8 @@ def build_function_st(st, function_ast) -> Dict:
             log("lhs:", lhs)
             add_multiple_to_st(function_st, lhs["names"], lhs, i+1)
     show_st("function st:", function_st)
-    
+    function_ast["_st"] = function_st
+    return st
 
 # updates feature's symbol table, and sets an internal one within the type
 def build_type_st(st, type_ast) -> Dict:
