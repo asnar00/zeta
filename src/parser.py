@@ -796,7 +796,7 @@ def parse(code: str, rule_name: str) -> Dict:
     return get_dict(ast_node)
 
 # parses a rule, one term at a time
-@log_indent
+#@log_indent
 def parse_rule(rule: Rule, ls: List[Lex]) -> Dict: 
     i_lex_end = scan_forward(ls, 0, rule.followers)
     ls_range = ls[0:i_lex_end]
@@ -820,7 +820,7 @@ def parse_rule(rule: Rule, ls: List[Lex]) -> Dict:
 
 # parses a full term, paying attention to dec and sep
 # this one unifies the logic for single terms and optional/list terms, rather nice :-)
-@log_indent
+#@log_indent
 def parse_term(term: Term, ls: List[Lex]) -> Node:
     min = 0 if term.dec and term.dec in "*?" else 1
     max = None if term.dec and term.dec in "+*" else 1
@@ -844,7 +844,7 @@ def parse_term(term: Term, ls: List[Lex]) -> Node:
     return Node("list", ls[0:i_lex], nodes)
 
 # parses a singular term (ignoring any dec/sep)
-@log_indent
+#@log_indent
 def parse_singular_term(term: Term, ls: List[Lex]) -> Node:
     if term.is_terminal():
         if lex_matches(ls[0], term.vals): return Node("lex", ls[0:1])

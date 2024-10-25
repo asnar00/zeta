@@ -14,10 +14,11 @@ feature Hello
     type str | string =
         char c$
     string out$ | output$
-    on hello(string name)
-        out$ << "hello \(name)"
+    on (string result$) << hello(string name)
+        int i = 0
+        result$ << "hello \(name)"
     replace run()
-        hello("world")
+        out$ << hello("world")
 """
 
 @this_is_the_test
@@ -33,13 +34,14 @@ def test_zero():
 #--------------------------------------------------------------------------------------------------
 # helpers
 
-def format_ast(ast) -> str:
+def format(ast) -> str:
     json_string = json.dumps(ast, default=lambda x: x.dbg() if isinstance(x, Lex) else str(x), indent=4)
     return json_string
 
 
 # merge an item into a dictionary mapping str-> list[x]
 def merge(dict, key, item):
+    if not isinstance(key, str): key = str(key)
     if key in dict:
         if not (item in dict[key]):
             dict[key].append(item)
@@ -72,11 +74,9 @@ def analyse_variables(ast):
     for c in ast["body"]:
         if not (c["_type"] == "variable"): continue
         for n in c["names"]:
-            name = str(n["name"])
-            merge(ast["variables"], name, c)
+            merge(ast["variables"], n["name"], c)
             if "alias" in n:
-                alias = str(n["alias"])
-                merge(ast["variables"], alias, c)
+                merge(ast["variables"], n["alias"], c)
 
 # function declarations, enter into feature scope and analyse body
 def analyse_functions(ast):
@@ -108,11 +108,33 @@ def function_name(sig: Dict):
 
 # function analysis: where the real work happens
 def analyse_function(f: Dict):
-    log(format_ast(f))
     scope = {}      # maps name => (variable, i_statement)
-    scope = get_parameters(f)
-    pass
+    result_scope = get_scope_from_result(f["result"])
+    scope.update(result_scope)
+    params_scope = get_scope_from_parameters(f["signature"])
+    scope.update(params_scope)
+    log(format(f["body"]))
+    
+    log_exit()
+
+# get result vars of function into a scope
+def get_scope_from_result(result: Dict) -> Dict:
+    scope = {}
+    if result["_type"] != "result_type": raise Exception("expected result_type")
+    for item in result["_list"]:
+        for name in item["names"]:
+            merge(scope, name["name"], (item, 0))
+            if "alias" in name: merge(scope, name["alias"], (item, 0))
+    return scope
 
 # get parameters of function into a scope (name => (variable, i_statement))
-def get_parameters(f: Dict) -> Dict:
-    pass
+def get_scope_from_parameters(sig: Dict) -> Dict:
+    scope = {}
+    for item in sig["_list"]:
+        if item["_type"] == "param_group":
+            for param in item["_list"]:
+                if not (param["_type"] == "variable"): continue
+                for name in param["names"]:
+                    merge(scope, name["name"], (param, 0))
+                    if "alias" in name: merge(scope, name["alias"], (param, 0))
+    return scope

@@ -10,7 +10,7 @@ ok so this is the current masterplan. look at it and master-debate it every morn
     - light touch
 
 - plan is to make the zero computer.
-    - zeta.ts: write the noob.org website RIGHT NOW
+NOW - zeta.ts: write the noob.org website
     - zerp: so people can try writing/learning zero code
     - self-hosting: zeta in zero
     - zerp.web: wasm/webgpu backend 👀
