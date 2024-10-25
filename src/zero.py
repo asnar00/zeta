@@ -6,7 +6,6 @@
 from util import *
 from parser import *
 from typing import List, Dict, Tuple, Union
-import json
 
 #--------------------------------------------------------------------------------------------------
 s_test_program = """
@@ -33,11 +32,6 @@ def test_zero():
 
 #--------------------------------------------------------------------------------------------------
 # helpers
-
-def format(ast) -> str:
-    json_string = json.dumps(ast, default=lambda x: x.dbg() if isinstance(x, Lex) else str(x), indent=4)
-    return json_string
-
 
 # merge an item into a dictionary mapping str-> list[x]
 def merge(dict, key, item):

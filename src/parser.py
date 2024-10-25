@@ -5,6 +5,7 @@
 
 from util import *
 from typing import List, Dict, Tuple, Union
+import json
 
 #--------------------------------------------------------------------------------------------------
 # General design principles:
@@ -104,19 +105,22 @@ class Source:
 @this_is_a_test
 def test_lexer():
     log("test_lexer")
-    lexer_result = """[on, (, out$, :, string, ), <<, hello, (, ), {, out$, <<, "hello world", }, next]"""
+    lexer_result = """[on, (, out$, :, string, ), <<, hello, (, ), {, bingo, ;, out$, <<, "hello world", }, next]"""
     test("lexer_simple", lexer(Source(code = """
 on (out$ : string) << hello()
+    bingo
     out$ << "hello world"
 next   
 """)), lexer_result)
     test("lexer_py", lexer(Source(code = """
 on (out$ : string) << hello():
+    bingo
     out$ << "hello world"
 next   
 """)), lexer_result)
     test("lexer_ts", lexer(Source(code = """
 on (out$ : string) << hello() {
+    bingo;
     out$ << "hello world";
 }
 next   
@@ -242,14 +246,14 @@ def finalise_indents(ls: List[Lex]) -> List[Lex]:
             ls.append(Lex(lex.source, len(ls), "}", "undent"))
     return ls
 
-# get rid of any newlines that sit next to indents or undents
+# get rid of any newlines that sit next to indents, undents, or other newlines
 def filter_newlines(ls: List[Lex]) -> List[Lex]:
     ols = []
     i = 0
     while i < len(ls):
         lex = ls[i]
         if lex.val == ";":
-            preceding_is_ndent = (i > 0 and ls[i-1].val in ["{", "}"])
+            preceding_is_ndent = (i > 0 and ls[i-1].val in ["{", "}", ";"])
             following_is_ndent = (i < (len(ls)-1) and ls[i+1].val in ["{", "}"])
             if preceding_is_ndent or following_is_ndent: pass
             else:
@@ -365,6 +369,7 @@ def build_rule(rule_name: str, term_strs: List[str], after_rule_name: str=None) 
         new_rule.terms.append(term)
     return new_rule
 
+@log_indent
 def add_rule(rule_name: str, after_rule_name: str=None) -> Rule:
     global s_grammar
     new_rule = Rule(rule_name)
@@ -377,11 +382,12 @@ def add_rule(rule_name: str, after_rule_name: str=None) -> Rule:
     s_grammar.rule_named[rule_name] = new_rule
     return new_rule
 
+@log_indent
 def build_term(term_str: str, i_term: int, rule_name: str) -> Term:
     parts = re.match(r"(\w+):(.+)", term_str)
     var = parts.group(1) if parts else None
     term_str = parts.group(2) if parts else term_str
-    parts = re.match(r"(.+)([*+?])([,|]?)", term_str)
+    parts = re.match(r"(.+)([*+?])([,;|]?)", term_str)
     sep = parts.group(3) if parts else ""
     dec = parts.group(2) if parts else ""
     term_str = parts.group(1) if parts else term_str
@@ -587,7 +593,7 @@ def merge_arrays(a1, a2)->bool:
 # Zero grammar spec
 
 s_zero_grammar_spec : str = """
-    feature := "feature" name:<identifier> ("extends" parent:<identifier>)? "{" body:component* "}"
+    feature := "feature" name:<identifier> ("extends" parent:<identifier>)? "{" body:component*; "}"
     component := (test | type | variable | function)
 
     test := ">" lhs:expression ("=>" rhs:expression)?
@@ -612,7 +618,7 @@ s_zero_grammar_spec : str = """
     word := <identifier>
     operator := <operator>
     param_group := "(" variable*, ")"
-    function_body := statement*
+    function_body := statement*;
     statement := statement_lhs? rhs:expression
     statement_lhs := lhs:statement_dest assign:("=" | "<<")
     statement_dest := (name_type | variable_ref)
@@ -626,12 +632,12 @@ s_zero_grammar_spec : str = """
     """
 
 #--------------------------------------------------------------------------------------------------
-@this_is_a_test
+@this_is_the_test
 def test_grammar():
     log("test_grammar")
     grammar = build_grammar(s_zero_grammar_spec)
     test("test_grammar", grammar.dbg(), """
-feature := "feature" name:<identifier> feature_2? "{" body:component* "}"
+feature := "feature" name:<identifier> feature_2? "{" body:component*; "}"
 feature_2 := "extends" parent:<identifier>
 component := (test | type | variable | function)
 test := ">" lhs:expression test_2?
@@ -656,7 +662,7 @@ signature := (word | operator | param_group)+
 word := <identifier>
 operator := <operator>
 param_group := "(" variable*, ")"
-function_body := statement*
+function_body := statement*;
 statement := statement_lhs? rhs:expression
 statement_lhs := lhs:statement_dest assign:("=" | "<<")
 statement_dest := (name_type | variable_ref)
@@ -695,7 +701,7 @@ def err(node: Node) -> bool:
 # convert a node to a dictionary
 @log_disable
 def get_dict(node: Node) -> Dict:
-    if err(node): return { "_error": node.message }
+    if err(node): return { "_error": node.show() }
     if node.name == "lex": return node.ls[0]
     if node.name == "nopt": return {}
     if node.name == "list": return [get_dict(n) for n in node.nodes]
@@ -750,10 +756,15 @@ def cleanup(obj) -> str:
     s = str(obj)
     return s.replace("'", "").replace("[", "").replace("]", "")
 
+# format: prints an AST in a nice indented manner
+def format(ast) -> str:
+    json_string = json.dumps(ast, default=lambda x: x.dbg() if isinstance(x, Lex) else str(x), indent=4)
+    return json_string
+
 #--------------------------------------------------------------------------------------------------
 # Parser itself
 
-@this_is_a_test
+#@this_is_a_test
 def test_parser():
     log("test parser")
     grammar = build_grammar(s_zero_grammar_spec)
@@ -787,6 +798,8 @@ def test_parser():
     test("parse_bracket_constant", parse("(1)", "expression"), """
          {'_type': 'expression', '_list': [{'_type': 'brackets', '_list': [{'_type': 'parameter', 'value': {'_type': 'expression', '_list': [{'_type': 'constant', '_lex': 1}]}}]}]}
          """)
+    log_flush()
+    test("parse_statements", format(parse("a = 1; b = 2; c = 3;", "function_body")))
     
 
 def parse(code: str, rule_name: str) -> Dict:
@@ -834,9 +847,6 @@ def parse_term(term: Term, ls: List[Lex]) -> Node:
         if term.sep:
             log("separator:", term.sep)
             if i_lex < len(ls) and lex_matches(ls[i_lex], [f'"{term.sep}"']):
-                i_lex += 1
-        else:
-            while i_lex < len(ls) and lex_matches(ls[i_lex], [f'";"']):
                 i_lex += 1
     if len(nodes) < min: return Error(ls, f"expected {term}")
     if not term.dec: return nodes[0]
