@@ -687,21 +687,24 @@ class Node: # AST node
     def __str__(self): return self.show()
     def __repr__(self): return self.__str__()
     def length(self): return len(self.ls)
-    def show(self): return f"{self.name}: {self.ls}"
+    def show(self): return f"{self.name}: {self.ls} {"**" if self.error_node else ""}"
 
 class Error(Node): # bad things
     def __init__(self, ls: List[Lex], message: str):
         super().__init__("_error", ls)
         self.message = message
+        self.caller = caller()
     def __str__(self): return self.show()
     def __repr__(self): return self.__str__()
-    def show(self): return f"{self.message} at {self.ls[0].location() if self.ls else "eof"} (\"{' '.join([str(lex) for lex in self.ls])}\")"
+    def show(self):
+        err = "**" if self.error_node else ""
+        return f"{self.message} at {self.ls[0].location() if self.ls else "eof"} (\"{' '.join([str(lex) for lex in self.ls])}\") [{self.caller}] {err}"
 
 def err(node: Node) -> bool:
     return node.name == "_error"
 
 # convert a node to a dictionary
-@log_indent
+@log_disable
 def get_dict(node: Node) -> Dict:
     if err(node): return { "_error": node.show() }
     if node.name == "lex": return node.ls[0]
@@ -768,10 +771,33 @@ def error_desc(rule, term):
     rule_name = rule.name if rule.name[-2] != "_" else rule.name[:-2]
     return f"{cleanup(term.vals)} ({rule_name}{var})"
 
+# scan through node 
+@log_indent
+def best_error(nodes: List[Node]) -> Node:
+    best_err = None
+    i_lex_latest = 0
+    for node in nodes:
+        log("node:", node)
+        err_node = lowest_error(node)
+        log(" err_node:", err_node)
+        if err_node:
+            if not best_err or err_node.ls[0].pos > i_lex_latest:
+                best_err = err_node
+                i_lex_latest = err_node.ls[0].pos
+    return best_err
+
+def lowest_error(node):
+    e = node
+    while e and e.error_node: e = e.error_node
+    if e and err(e): return e
+    return None
+
+
+
 #--------------------------------------------------------------------------------------------------
 # Parser itself
 
-#@this_is_a_test
+@this_is_a_test
 def test_parser():
     log("test parser")
     grammar = build_grammar(s_zero_grammar_spec)
@@ -813,51 +839,54 @@ def test_parser():
 @this_is_the_test
 def test_parse_errors():
     grammar = build_grammar(s_zero_grammar_spec)
-    test("parse_feature_1", parse("feature MyFeature extends { }", "feature"))
+    test("parse_feature_1", parse("feature MyFeature extends { }", "feature"), """
+         {'_error': 'expected <identifier> (feature.parent) at :1:27 ("{ }") [parser.py:892:] '}
+         """)
 
 def parse(code: str, rule_name: str) -> Dict:
     source = Source(code = code)
     ls = lexer(source)
-    ast_node = parse_rule(s_grammar.rule_named[rule_name], ls, len(ls))
+    ast_node = parse_rule(s_grammar.rule_named[rule_name], ls, 0, len(ls))
     return get_dict(ast_node)
 
 # parses a rule, one term at a time
 @log_indent
-def parse_rule(rule: Rule, ls: List[Lex], i_lex_limit) -> Dict: 
-    i_lex_end = scan_forward(ls, 0, rule.followers)
-    i_lex_end = max(i_lex_end, i_lex_limit)
-    i_lex = 0
+def parse_rule(rule: Rule, ls: List[Lex], i_lex_start, i_lex_limit) -> Dict: 
+    i_lex_end = scan_forward(ls, i_lex_start, rule.followers)
+    i_lex_end = min(i_lex_end, i_lex_limit)
+    log("ls_range:", ls[i_lex_start:i_lex_end])
+    i_lex = i_lex_start
     nodes = []
     for term in rule.terms:
         if i_lex >= i_lex_end: break
-        node = parse_term(term, rule, ls[i_lex:], i_lex_end)
-        if err(node): return node
+        node = parse_term(term, rule, ls, i_lex, i_lex_end)
+        if err(node): return best_error(nodes + [node])
         i_lex += node.length()
         nodes.append(node)
     if len(nodes) < len(rule.terms):
         # premature end
-        # sum the length of all nodes in a single line:
-        i_lex_report = 0
+        i_lex_report = i_lex_start
         for i in range(len(nodes)):
             i_lex_report += nodes[i].length()
         for i in range(len(nodes), len(rule.terms)):
             if (not rule.terms[i].dec or rule.terms[i].dec == '+'):
-                return Error(ls[i_lex_report:], f"premature end: expected {error_desc(rule, term)}")
+                return Error(ls[i_lex_report:], f"expected {error_desc(rule, term)}")
     if rule.is_abstract():  # don't need to wrap the node,
         return nodes[0]     # so don't.
-    return Node(rule.name, ls[0:i_lex], nodes)
+    return Node(rule.name, ls[i_lex_start:i_lex], nodes)
 
 # parses a full term, paying attention to dec and sep
 # this one unifies the logic for single terms and optional/list terms, rather nice :-)
 @log_indent
-def parse_term(term: Term, in_rule: Rule, ls: List[Lex], i_lex_end: int) -> Node:
+def parse_term(term: Term, in_rule: Rule, ls: List[Lex], i_lex_start: int, i_lex_end: int) -> Node:
+    log("ls_range:", ls[i_lex_start:i_lex_end])
     min = 0 if term.dec and term.dec in "*?" else 1
     max = None if term.dec and term.dec in "+*" else 1
     nodes = []
-    i_lex = 0
+    i_lex = i_lex_start
     error_node = None
     while (max is None or len(nodes) < max) and i_lex < i_lex_end:
-        node = parse_singular_term(term, in_rule, ls[i_lex:], i_lex_end)
+        node = parse_singular_term(term, in_rule, ls, i_lex, i_lex_end)
         if err(node): 
             error_node = node
             break
@@ -867,21 +896,25 @@ def parse_term(term: Term, in_rule: Rule, ls: List[Lex], i_lex_end: int) -> Node
             log("separator:", term.sep)
             if i_lex < i_lex_end and lex_matches(ls[i_lex], [f'"{term.sep}"']):
                 i_lex += 1
-    if len(nodes) < min: return Error(ls, f"expected {error_desc(in_rule, term)}")
+    if len(nodes) < min: 
+        result = Error(ls[i_lex_start:], f"expected {error_desc(in_rule, term)}")
+        result.error_node = error_node
+        return result
     if not term.dec: return nodes[0]
     if term.dec == '?': 
         result = nodes[0] if (len(nodes)==1 and not err(nodes[0])) else Node("nopt")
         result.error_node = error_node
         return result
-    result = Node("list", ls[0:i_lex], nodes)
+    result = Node("list", ls[i_lex_start:i_lex], nodes)
     result.error_node = error_node
     return result
 
 # parses a singular term (ignoring any dec/sep)
 @log_indent
-def parse_singular_term(term: Term, in_rule: Rule, ls: List[Lex], i_lex_end: int) -> Node:
+def parse_singular_term(term: Term, in_rule: Rule, ls: List[Lex], i_lex_start: int, i_lex_end: int) -> Node:
+    log("ls_range:", ls[i_lex_start:i_lex_end])
     if term.is_terminal():
-        if lex_matches(ls[0], term.vals): return Node("lex", ls[0:1])
+        if lex_matches(ls[i_lex_start], term.vals): return Node("lex", ls[i_lex_start:i_lex_start + 1])
         else: return Error(ls, f"expected {error_desc(in_rule, term)}")
     # abstract term: a list of rules
     rules = term.rules()
@@ -891,14 +924,15 @@ def parse_singular_term(term: Term, in_rule: Rule, ls: List[Lex], i_lex_end: int
         log("leaves:", term.leaves)
         leaf_rules = []
         for key, rules in term.leaves.items():
-            if lex_matches(ls[0], [key]):
+            if lex_matches(ls[i_lex_start], [key]):
                 leaf_rules += rules
                 if key.startswith('"'): break   # i.e. a keyword match prevents all others
         log("leaf rules:", leaf_rules)
         rules = leaf_rules
+    node = None
     for rule in rules:
-        node = parse_rule(rule, ls, i_lex_end)
+        node = parse_rule(rule, ls, i_lex_start, i_lex_end)
         if not err(node): return node
     result = Error(ls, f"expected {error_desc(in_rule, term)}")
-    if err(node): result.error_node = node
+    result.error_node = node
     return result
