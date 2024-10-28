@@ -13,14 +13,14 @@ feature Hello
     type str | string =
         char c$
     string out$ | output$
-    on (string result$) << hello(string name)
+    on (string result$, int yi) << hello(string name)
         int my_var = 0
         result$ << "hello \(name)"
     replace run()
         out$ << hello("world")
 """
 
-@this_is_the_test
+#@this_is_the_test
 def test_zero():
     log("test_zero")
     ast = parse(s_test_program, "feature")
@@ -29,6 +29,32 @@ def test_zero():
         log_exit()
     log_clear()
     st = build_feature_symbol_tables(ast)
+    test("symbol_tables", show_symbol_tables(ast), """
+feature st: 
+  "str" => type:0
+  "string" => type:0
+  "out$" => variable:0
+  "output$" => variable:0
+  "hello" => function:0
+  "run" => function:0
+function st: hello_
+  "result$" => result_vars:0
+  "name" => variable:0
+  "my_var" => c_name_type:1
+  "str" => type:0
+  "string" => type:0
+  "out$" => variable:0
+  "output$" => variable:0
+  "hello" => function:0
+  "run" => function:0
+function st: run_
+  "str" => type:0
+  "string" => type:0
+  "out$" => variable:0
+  "output$" => variable:0
+  "hello" => function:0
+  "run" => function:0
+         """)
 
 #--------------------------------------------------------------------------------------------------
 # helpers
@@ -67,11 +93,13 @@ def build_feature_symbol_tables(feature_ast):
     for component in feature_ast["body"]:
         if component["_type"] == "function":
             merge_st(component["_st"], st)
-    log("----")
-    show_st("feature st: ", st)
+
+def show_symbol_tables(feature_ast: Dict) -> str:
+    out = show_st("feature st: ", feature_ast["_st"])
     for component in feature_ast["body"]:
         if component["_type"] == "function":
-            show_st(f"function st: {function_shortname(component)}", component["_st"])
+            out += show_st(f"function st: {function_shortname(component)}", component["_st"])
+    return out
 
 # updates feature's symbol table with function names/aliases
 # and computes internal sts for the function
@@ -84,8 +112,17 @@ def build_function_st(st, function_ast) -> Dict:
     # the function result
     if "result" in function_ast:
         result = function_ast["result"]
+        log(format(result))
         for item in result["_list"]:
-            add_multiple_to_st(function_st, item["names"], result)
+            type = item["type"]
+            names = item["names"] # declaring multiple vars
+            for name in names:
+                variable = { "_type": "variable", "type": type, "name": name["name"] }
+                if "alias" in name: variable["alias"] = name["alias"]
+                log(variable)
+        log_exit()
+            
+        add_multiple_to_st(function_st, item["names"], result)
     # the function parameters
     for i, item in enumerate(function_ast["signature"]["_list"]):
         if item["_type"] == "param_group":
@@ -134,10 +171,17 @@ def show_st(label, st: Dict)-> str:
         for item in list:
             out += f"{item[0]["_type"]}:{item[1]}"
         out += "\n"
-    log(out)
+    return out
 
 # merge child_st into parent_st, child_st gets modified, and takes precedence
 def merge_st(child_st: Dict, parent_st: Dict):
     for key, list in parent_st.items():
         if not key in child_st:
             child_st[key] = list
+
+#--------------------------------------------------------------------------------------------------
+# resolve expression
+
+# resolve expressions to function calls and variable references
+def resolve_expression(expr_ast : Dict):
+    pass

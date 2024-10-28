@@ -2,6 +2,17 @@
 # scribblez
 "slow is smooth, smooth is fast"
 
+we have to handle errors better in the parser. that's critical, otherwise all future steps become compromised and non-smooth. So let's do that.
+
+---------------
+
+current microgoal before we fire into expresions: make all st items => variables.
+so local variables and function results should all => variable.
+let's do function results first => we have a bunch of declarations, and we need to move them across to variables: so let's create those variables.
+This can totally be done as a post-process: but ultimately when we come to re-do the parser and the grammar in a feature-modular way, we should make that more regular.
+
+-----
+
 end-of-day/week notes:
 
 today we got symbol tables working nicely. that's good!
@@ -14,7 +25,10 @@ to re-iterate our current goal:
 be able to write a client/server website in pure zero, using a typescript backend (deno+browser).
 
 where we are now: semantic analysis of the zero ast; we've got the symbol table;
-the next thing is to resolve expressions so we can factor them into variables, constants, and function calls.
+the next thing is to 
+
+- resolve expressions so we can factor them into variables, constants, and function calls.
+
 prove this out for operations as well.
 and then get on with the ts backends.
 
@@ -23,6 +37,7 @@ COME ON
 
 actually before analytics we need to work on error messages from the parser methinks.
 also the ast representation. let's do that first.
+
 -------
 
 ok so. next steps.

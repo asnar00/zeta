@@ -313,6 +313,7 @@ class Term:
     def is_rule(self): return not (self.is_keyword() or self.is_type())
     def rules(self): return [s_grammar.rule_named[r] for r in self.vals]
 
+
 #--------------------------------------------------------------------------------------------------
 # Rule: a name and a list of terms
 
@@ -369,7 +370,7 @@ def build_rule(rule_name: str, term_strs: List[str], after_rule_name: str=None) 
         new_rule.terms.append(term)
     return new_rule
 
-@log_indent
+#@log_indent
 def add_rule(rule_name: str, after_rule_name: str=None) -> Rule:
     global s_grammar
     new_rule = Rule(rule_name)
@@ -382,7 +383,7 @@ def add_rule(rule_name: str, after_rule_name: str=None) -> Rule:
     s_grammar.rule_named[rule_name] = new_rule
     return new_rule
 
-@log_indent
+#@log_indent
 def build_term(term_str: str, i_term: int, rule_name: str) -> Term:
     parts = re.match(r"(\w+):(.+)", term_str)
     var = parts.group(1) if parts else None
@@ -612,8 +613,8 @@ s_zero_grammar_spec : str = """
     ts_name_type := names:name_decl+, ":" type:<identifier>
 
     function := modifier:("on" | "replace" | "after" | "before") function_result? signature:signature "{" body:function_body "}"
-    function_result := result:result_var assign:("=" | "<<")
-    result_var := "(" name_type*, ")"
+    function_result := result:result_vars assign:("=" | "<<")
+    result_vars := "(" name_type*, ")"
     signature := (word | operator | param_group)+
     word := <identifier>
     operator := <operator>
@@ -632,7 +633,7 @@ s_zero_grammar_spec : str = """
     """
 
 #--------------------------------------------------------------------------------------------------
-@this_is_the_test
+#@this_is_the_test
 def test_grammar():
     log("test_grammar")
     grammar = build_grammar(s_zero_grammar_spec)
@@ -656,8 +657,8 @@ name_type := (c_name_type | ts_name_type)
 c_name_type := type:<identifier> names:name_decl+,
 ts_name_type := names:name_decl+, ":" type:<identifier>
 function := modifier:("on" | "replace" | "after" | "before") function_result? signature:signature "{" body:function_body "}"
-function_result := result:result_var assign:("=" | "<<")
-result_var := "(" name_type*, ")"
+function_result := result:result_vars assign:("=" | "<<")
+result_vars := "(" name_type*, ")"
 signature := (word | operator | param_group)+
 word := <identifier>
 operator := <operator>
@@ -682,6 +683,7 @@ class Node: # AST node
         self.name = name or ""
         self.ls = ls or []
         self.nodes = nodes or []
+        self.error_node = None
     def __str__(self): return self.show()
     def __repr__(self): return self.__str__()
     def length(self): return len(self.ls)
@@ -693,13 +695,13 @@ class Error(Node): # bad things
         self.message = message
     def __str__(self): return self.show()
     def __repr__(self): return self.__str__()
-    def show(self): return f"{self.name}: {self.message} at {self.ls[0].location() if self.ls else "eof"} (\"{' '.join([str(lex) for lex in self.ls])}\")"
+    def show(self): return f"{self.message} at {self.ls[0].location() if self.ls else "eof"} (\"{' '.join([str(lex) for lex in self.ls])}\")"
 
 def err(node: Node) -> bool:
     return node.name == "_error"
 
 # convert a node to a dictionary
-@log_disable
+@log_indent
 def get_dict(node: Node) -> Dict:
     if err(node): return { "_error": node.show() }
     if node.name == "lex": return node.ls[0]
@@ -754,12 +756,17 @@ def lex_matches(lex: Lex, matches: List[str]) -> bool:
 # cleans up a string - removes all quotes/braces
 def cleanup(obj) -> str:
     s = str(obj)
-    return s.replace("'", "").replace("[", "").replace("]", "")
+    return s.replace("'", "").replace("[", "").replace("]", "").replace(",", " |")
 
 # format: prints an AST in a nice indented manner
 def format(ast) -> str:
     json_string = json.dumps(ast, default=lambda x: x.dbg() if isinstance(x, Lex) else str(x), indent=4)
     return json_string
+
+def error_desc(rule, term):
+    var = f".{term.var}" if term.var else ""
+    rule_name = rule.name if rule.name[-2] != "_" else rule.name[:-2]
+    return f"{cleanup(term.vals)} ({rule_name}{var})"
 
 #--------------------------------------------------------------------------------------------------
 # Parser itself
@@ -787,7 +794,7 @@ def test_parser():
          {'_type': 'brackets', '_list': [{'_type': 'parameter', 'value': {'_type': 'expression', '_list': [{'_type': 'word', '_lex': a}, {'_type': 'operator', '_lex': <}, {'_type': 'word', '_lex': b}]}}]}
          """)
     test("parse_function", parse("on (number r) = min(number a, b) { r = if (a < b) then (a) else (b) }", "function"), """
-         {'_type': 'function', 'modifier': on, 'result': {'_type': 'result_var', '_list': [{'_type': 'c_name_type', 'type': number, 'names': [{'_type': 'name_decl', 'name': r}]}]}, 'assign': =, 'signature': {'_type': 'signature', '_list': [{'_type': 'word', '_lex': min}, {'_type': 'param_group', '_list': [{'_type': 'variable', 'type': number, 'names': [{'_type': 'name_decl', 'name': a}, {'_type': 'name_decl', 'name': b}]}]}]}, 'body': {'_type': 'function_body', '_list': [{'_type': 'statement', 'lhs': {'_type': 'variable_ref', '_lex': r}, 'assign': =, 'rhs': {'_type': 'expression', '_list': [{'_type': 'word', '_lex': if}, {'_type': 'brackets', '_list': [{'_type': 'parameter', 'value': {'_type': 'expression', '_list': [{'_type': 'word', '_lex': a}, {'_type': 'operator', '_lex': <}, {'_type': 'word', '_lex': b}]}}]}, {'_type': 'word', '_lex': then}, {'_type': 'brackets', '_list': [{'_type': 'parameter', 'value': {'_type': 'expression', '_list': [{'_type': 'word', '_lex': a}]}}]}, {'_type': 'word', '_lex': else}, {'_type': 'brackets', '_list': [{'_type': 'parameter', 'value': {'_type': 'expression', '_list': [{'_type': 'word', '_lex': b}]}}]}]}}]}}
+         {'_type': 'function', 'modifier': on, 'result': {'_type': 'result_vars', '_list': [{'_type': 'c_name_type', 'type': number, 'names': [{'_type': 'name_decl', 'name': r}]}]}, 'assign': =, 'signature': {'_type': 'signature', '_list': [{'_type': 'word', '_lex': min}, {'_type': 'param_group', '_list': [{'_type': 'variable', 'type': number, 'names': [{'_type': 'name_decl', 'name': a}, {'_type': 'name_decl', 'name': b}]}]}]}, 'body': {'_type': 'function_body', '_list': [{'_type': 'statement', 'lhs': {'_type': 'variable_ref', '_lex': r}, 'assign': =, 'rhs': {'_type': 'expression', '_list': [{'_type': 'word', '_lex': if}, {'_type': 'brackets', '_list': [{'_type': 'parameter', 'value': {'_type': 'expression', '_list': [{'_type': 'word', '_lex': a}, {'_type': 'operator', '_lex': <}, {'_type': 'word', '_lex': b}]}}]}, {'_type': 'word', '_lex': then}, {'_type': 'brackets', '_list': [{'_type': 'parameter', 'value': {'_type': 'expression', '_list': [{'_type': 'word', '_lex': a}]}}]}, {'_type': 'word', '_lex': else}, {'_type': 'brackets', '_list': [{'_type': 'parameter', 'value': {'_type': 'expression', '_list': [{'_type': 'word', '_lex': b}]}}]}]}}]}}
          """)
     test("parse_statement", parse("hello()", "statement"), """
          {'_type': 'statement', 'rhs': {'_type': 'expression', '_list': [{'_type': 'word', '_lex': hello}, {'_type': 'brackets', '_list': []}]}}
@@ -798,66 +805,84 @@ def test_parser():
     test("parse_bracket_constant", parse("(1)", "expression"), """
          {'_type': 'expression', '_list': [{'_type': 'brackets', '_list': [{'_type': 'parameter', 'value': {'_type': 'expression', '_list': [{'_type': 'constant', '_lex': 1}]}}]}]}
          """)
-    log_flush()
-    test("parse_statements", format(parse("a = 1; b = 2; c = 3;", "function_body")))
+    test("parse_statements", parse("a = 1; b = 2; c = 3;", "function_body"), """
+         {'_type': 'function_body', '_list': [{'_type': 'statement', 'lhs': {'_type': 'variable_ref', '_lex': a}, 'assign': =, 'rhs': {'_type': 'expression', '_list': [{'_type': 'constant', '_lex': 1}]}}, {'_type': 'statement', 'lhs': {'_type': 'variable_ref', '_lex': b}, 'assign': =, 'rhs': {'_type': 'expression', '_list': [{'_type': 'constant', '_lex': 2}]}}, {'_type': 'statement', 'lhs': {'_type': 'variable_ref', '_lex': c}, 'assign': =, 'rhs': {'_type': 'expression', '_list': [{'_type': 'constant', '_lex': 3}]}}]}
+         """)
+    #test("parse_resultvars", parse("(string result$, int yi)", "result_vars"))
     
+@this_is_the_test
+def test_parse_errors():
+    grammar = build_grammar(s_zero_grammar_spec)
+    test("parse_feature_1", parse("feature MyFeature extends { }", "feature"))
+
 def parse(code: str, rule_name: str) -> Dict:
     source = Source(code = code)
     ls = lexer(source)
-    ast_node = parse_rule(s_grammar.rule_named[rule_name], ls)
+    ast_node = parse_rule(s_grammar.rule_named[rule_name], ls, len(ls))
     return get_dict(ast_node)
 
 # parses a rule, one term at a time
-#@log_indent
-def parse_rule(rule: Rule, ls: List[Lex]) -> Dict: 
+@log_indent
+def parse_rule(rule: Rule, ls: List[Lex], i_lex_limit) -> Dict: 
     i_lex_end = scan_forward(ls, 0, rule.followers)
-    ls_range = ls[0:i_lex_end]
-    log("ls_range:", ls_range)
+    i_lex_end = max(i_lex_end, i_lex_limit)
     i_lex = 0
     nodes = []
     for term in rule.terms:
-        if i_lex >= len(ls_range): break
-        node = parse_term(term, ls_range[i_lex:])
+        if i_lex >= i_lex_end: break
+        node = parse_term(term, rule, ls[i_lex:], i_lex_end)
         if err(node): return node
         i_lex += node.length()
         nodes.append(node)
     if len(nodes) < len(rule.terms):
-        # if any of the unmatched terms are non-optional, it's a premature end
+        # premature end
+        # sum the length of all nodes in a single line:
+        i_lex_report = 0
+        for i in range(len(nodes)):
+            i_lex_report += nodes[i].length()
         for i in range(len(nodes), len(rule.terms)):
             if (not rule.terms[i].dec or rule.terms[i].dec == '+'):
-                return Error(ls_range, "premature end")
+                return Error(ls[i_lex_report:], f"premature end: expected {error_desc(rule, term)}")
     if rule.is_abstract():  # don't need to wrap the node,
         return nodes[0]     # so don't.
-    return Node(rule.name, ls_range[0:i_lex], nodes)
+    return Node(rule.name, ls[0:i_lex], nodes)
 
 # parses a full term, paying attention to dec and sep
 # this one unifies the logic for single terms and optional/list terms, rather nice :-)
-#@log_indent
-def parse_term(term: Term, ls: List[Lex]) -> Node:
+@log_indent
+def parse_term(term: Term, in_rule: Rule, ls: List[Lex], i_lex_end: int) -> Node:
     min = 0 if term.dec and term.dec in "*?" else 1
     max = None if term.dec and term.dec in "+*" else 1
     nodes = []
     i_lex = 0
-    while (max is None or len(nodes) < max) and i_lex < len(ls):
-        node = parse_singular_term(term, ls[i_lex:])
-        if err(node): break
+    error_node = None
+    while (max is None or len(nodes) < max) and i_lex < i_lex_end:
+        node = parse_singular_term(term, in_rule, ls[i_lex:], i_lex_end)
+        if err(node): 
+            error_node = node
+            break
         nodes.append(node)
         i_lex += node.length()
         if term.sep:
             log("separator:", term.sep)
-            if i_lex < len(ls) and lex_matches(ls[i_lex], [f'"{term.sep}"']):
+            if i_lex < i_lex_end and lex_matches(ls[i_lex], [f'"{term.sep}"']):
                 i_lex += 1
-    if len(nodes) < min: return Error(ls, f"expected {term}")
+    if len(nodes) < min: return Error(ls, f"expected {error_desc(in_rule, term)}")
     if not term.dec: return nodes[0]
-    if term.dec == '?': return nodes[0] if (len(nodes)==1 and not err(nodes[0])) else Node("nopt")
-    return Node("list", ls[0:i_lex], nodes)
+    if term.dec == '?': 
+        result = nodes[0] if (len(nodes)==1 and not err(nodes[0])) else Node("nopt")
+        result.error_node = error_node
+        return result
+    result = Node("list", ls[0:i_lex], nodes)
+    result.error_node = error_node
+    return result
 
 # parses a singular term (ignoring any dec/sep)
-#@log_indent
-def parse_singular_term(term: Term, ls: List[Lex]) -> Node:
+@log_indent
+def parse_singular_term(term: Term, in_rule: Rule, ls: List[Lex], i_lex_end: int) -> Node:
     if term.is_terminal():
         if lex_matches(ls[0], term.vals): return Node("lex", ls[0:1])
-        else: return Error(ls, f"expected {cleanup(term.vals)}")
+        else: return Error(ls, f"expected {error_desc(in_rule, term)}")
     # abstract term: a list of rules
     rules = term.rules()
     log("rules:", rules)
@@ -872,6 +897,8 @@ def parse_singular_term(term: Term, ls: List[Lex]) -> Node:
         log("leaf rules:", leaf_rules)
         rules = leaf_rules
     for rule in rules:
-        node = parse_rule(rule, ls)
+        node = parse_rule(rule, ls, i_lex_end)
         if not err(node): return node
-    return Error(ls, f"expected one of {cleanup(term.vals)}")
+    result = Error(ls, f"expected {error_desc(in_rule, term)}")
+    if err(node): result.error_node = node
+    return result
