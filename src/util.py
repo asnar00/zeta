@@ -32,7 +32,7 @@ def log_enabled() -> bool:
 def log(*args):
     if s_log_enabled:
         # print args to a string instead of the output
-        s = "  " * s_log_indent
+        s = " " * s_log_indent
         for a in args:
             s += str(a) + " "
         # add it to the global s_log string
