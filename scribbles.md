@@ -2,7 +2,56 @@
 # scribblez
 "slow is smooth, smooth is fast"
 
+thinking about errors is a super interesting exercise,
+because how errors flow through the system - and how we represent that flow clearly: is critical.
+
+grand gestures on the type system level: we had error subtypes, right?
+
+I think it's quite interesting to think about x?, x+, x* as different array types. We should also be able to parametrise x[1], x[2], x[3] as different types:
+
+    type bit = 0, 1                 # one bit     
+    type u[N] = bit[N]  < uint      # u8 = 8-bit uint, u16 = 16-bit uint, etcetc
+    type i[N] = bit[N] < int        # i8 = 8-bit int, i16 = 16-bit int, etc
+    type fp[N] = 
+        bit s | sign = 0
+        u[A if N is M else B] m | mantissa = 0
+        u[A if N is M else B] e | exponent = 0
+    type u32 = u[32]
+
+Because they are super interesting and that's a super compact notation.
+
+Because then we have stuff like:
+
+    type feature =
+        string name
+        feature parent?
+        component components*
+    
+    on (string s) << (feature f)
+        s << "feature \(f.name+) \?("extends \(f.parent?)") { \*(f.components*) }"
+
+But that should, I think, also work the other way... 
+
+    on (feature f) = (string s)
+        s >> "feature \(f.name) \?("extends \f.parent?) { \*(f.components*) }"
+
+        parent?.x => number?    => that's fine.
+
+    I wonder if we actually do want to try that. Would it... work?
+    It's a super interesting idea.
+
+    
+
+
+---------
+
 we have to handle errors better in the parser. that's critical, otherwise all future steps become compromised and non-smooth. So let's do that.
+
+why don't we do: tir in a stack, one symbol at a time, backtrack?
+
+try this one; it's a rule, so stick the next (feature_2:0) on the end, and try with the next token, and so on.
+
+Hm I wonder if that can work? No huge thingies.
 
 ---------------
 

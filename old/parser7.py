@@ -311,7 +311,7 @@ class Term:
     def __repr__(self): return self.__str__()
     def is_keyword(self): return self.vals[0][0] == '"'
     def is_type(self): return self.vals[0][0] == '<'
-    def is_terminal(self): return (self.is_keyword() or self.is_type())
+    def is_terminal(self): return self.is_keyword() or self.is_type()
     def is_rule(self): return not (self.is_keyword() or self.is_type())
     def rules(self): return [s_grammar.rule_named[r] for r in self.vals]
 
@@ -697,13 +697,13 @@ def format(ast) -> str:
 def error_message(term: Term, rule: Rule, ls: List[Lex], i_lex: int) -> str:
     location = ls[i_lex].location() if i_lex < len(ls) else "<eof>"
     term_str = f"{rule.name}"
-    term_str += f".{term.var or "term" + str(term.index)}"
+    if term.var or term.dec: term_str += f".{term.var or "term" + str(term.index)}"
     return f"expected {cleanup(term.vals)} ({term_str}) at {location} (\"{' '.join([str(lex) for lex in ls[i_lex:i_lex+4]])}\")"
 
 # cleans up a string - removes all quotes/braces
 def cleanup(obj) -> str:
     s = str(obj)
-    return s.replace("'", "").replace("[", "").replace("]", "").replace(",", " |")
+    return s.replace("'", "").replace("[", "").replace("]", "").replace(",", " |").replace('"', "'")
 
 # returns true if a lex matches a set of terminals
 def lex_matches(lex: Lex, matches: List[str]) -> bool:
@@ -723,8 +723,14 @@ def reduce_rules(term: Term, lex: Lex) -> List[Rule]:
             if key.startswith('"'): break   # i.e. a keyword match prevents all others
     return leaf_rules
 
+# get min/max expected counts from (+, ?, *) decorators
+def get_min_max(dec: str) -> Tuple[int, int]:
+    min = 1 if dec == "+" else 0
+    max = 1 if dec == "?" else None
+    return min, max
+
 #--------------------------------------------------------------------------------------------------
-# Reader: parser helper, feeds in lexemes one at a time, does matching and scanning
+# Reader: ls, plus position, for compactness
 
 class Reader:
     def __init__(self, ls: List[Lex]):
@@ -734,187 +740,133 @@ class Reader:
         return '"' + " ".join([str(lex) for lex in self.ls[self.pos:]]) + '"' if self.pos < len(self.ls) else "<eof>"
     def __repr__(self): return self.__str__()
     def copy(self): return Reader(self.ls, self.pos)
-    def restore(self, pos):
-        self.pos = pos
     def peek(self, end: int) -> Lex:
         return self.ls[self.pos] if self.pos < min(end, len(self.ls)) else None
     def next(self, end: int):
         result = self.peek(end)
         self.pos += 1
         return result
-    def eof(self, end: int) -> bool: 
-        return self.pos >= end
-    def matches(self, term: Term, end: int) -> Lex:
-        result = lex_matches(self.peek(end), term.vals)
-        return result
-    def scan(self, end: int, terminals: List[str]) -> int:
-        if len(terminals)==0: return end
-        i_lex = self.pos
-        while i_lex < end:
-            lex = self.ls[i_lex]
-            if lex_matches(lex, terminals): return i_lex
-            i_lex += self.ls[i_lex].jump + 1
-        return i_lex
+
+def scan_forward(reader: Reader, end: int, terminals: List[str]) -> int:
+    if len(terminals)==0: return end
+    i_lex = reader.pos
+    while i_lex < end:
+        lex = reader.ls[i_lex]
+        if lex_matches(lex, terminals): return i_lex
+        i_lex += reader.ls[i_lex].jump + 1
+    return i_lex
 
 #--------------------------------------------------------------------------------------------------
-# Parser helpers
+# AST Node
 
-# One Node per term in the grammar
 class Node:
-    def __init__(self, rule: Rule = None, term: Term = None, lex: Lex = None, children: List['Node'] = None, errors: List['Error'] = None):
-        self.rule = rule or (term.rule if term else None)
-        self.term = term
-        self.lex = lex
-        self.children = children or []
-        self.errors = errors or []
-    def __str__(self):
-        out = ""
-        out += f"{self.rule.name}" if self.rule else ""
-        if self.term:
-            out += f".{self.term.var}" if self.term.var else f".term{self.term.index}"
-        if self.lex: out += f": '{self.lex}'"
-        if self.errors: out += f" !! {self.errors}"
+    def __init__(self, name: str, lex: Lex = None, nodes: List['Node'] = None, error: str= ""):
+        self.name = name; self.lex = lex; self.nodes = nodes or []; self.error = error
+        self.length = self.compute_length()
+    def __str__(self): 
+        out = f"{self.name}: " if self.name else ""
+        if self.lex: out += f"'{self.lex}' "
+        if self.error: out += f"!! {self.error}"
         return out
-    def __reprs__(self): return self.__str__()
-    def add(self, child: 'Node'):
-        self.children.append(child)
-    def in_error(self) -> bool:
-        return len(self.errors) > 0
-    
-# an error is not a node; but it contains all properties needed to generate an error message
-class Error:
-    def __init__(self, term: Term, rule: Rule, ls: List[Lex], i_lex: int):
-        self.term = term
-        self.rule = rule
-        self.ls = ls
-        self.i_lex = i_lex
-    def __str__(self):
-        return error_message(self.term, self.rule, self.ls, self.i_lex).replace('"', "'")
     def __repr__(self): return self.__str__()
-    
-def readout(node: Node, indent=0) -> str:
-    out = "  " * indent + str(node) + "\n"
-    for child in node.children:
-        out += readout(child, indent+1)
+    def compute_length(self):
+        if self.lex: return 1
+        return sum([node.compute_length() for node in self.nodes])
+
+def readout(node: Node, indent: int=0) -> str:
+    out = "  "*indent + str(node) + "\n"
+    for node in node.nodes:
+        out += readout(node, indent+1)
     return out
 
-# convert a node tree into an AST dictionary
-@log_indent
-def get_ast(node: Node, ast: Dict = None) -> Dict:
-    ast = ast or {}
-    if not node.term:
-        if not "_type" in ast: ast["_type"] = node.rule.name
-        for child in node.children: ast = get_ast(child, ast)
-    else:
-        term = node.term
-        if term.dec == "":
-            if term.is_keyword(): pass
-            elif term.is_type(): 
-                if term.var: ast[term.var] = node.lex
-                else: raise Exception(f"type {term.vals[0]} of rule {node.rule.name} has no var")
-            else:
-                if term.var: ast[term.var] = get_ast(node.children[0])
-                else: ast = get_ast(node.children[0], ast)
-        elif term.dec == "?":
-            if len(node.children) == 1:
-                if term.var: ast[term.var] = get_ast(node.children[0])
-                else: ast = get_ast(node.children[0], ast)
-        elif term.dec in "+*":
-            if term.var: 
-                ast[term.var] = [get_ast(child, {}) for child in node.children]
-            else: raise Exception(f"type {term.vals[0]} of rule {node.rule.name} has no var")
-    if node.errors:
-        for error in node.errors:
-            if not "_errors" in ast: ast["_errors"] = []
-            if not error in ast["_errors"]: ast["_errors"].append(error)
-    return ast
-
+def first_error_node(node: Node) -> Node:
+    if isinstance(node, Lex): return ""
+    if node.error: return node
+    for n in node.nodes:
+        error = first_error_node(n)
+        if error: return error
+    return ""
 
 #--------------------------------------------------------------------------------------------------
 # Parser
-
-# generate one node per term and pack them into a rule node
 @log_indent
 def parse_rule(rule: Rule, reader: Reader, end: int) -> Node:
-    node = Node(rule)
+    nodes = []
+    error_node = None
     for term in rule.terms:
-        if reader.eof(end): 
-            node.errors.append(error_message(term, rule, reader.ls, reader.pos))
-            break
-        child = parse_term(term, reader, end)
-        node.add(child)
-        if child.in_error(): break
-    return node
+        node = parse_term(term, reader, end) if term.dec == "" else parse_var_term(term, reader, end)
+        nodes.append(node)
+        error_node = first_error_node(node)
+        if error_node: break
+    error = error_node.error if error_node else ""
+    return Node(rule.name, nodes=nodes, error=error)
 
-# generages a single term node; if it's a list node, it will contain zero or more children
+@log_indent
+def parse_var_term(term: Term, reader: Reader, end: int) -> Node:
+    min, max = get_min_max(term.dec)
+    nodes = []
+    safe_count = 10
+    error_node = None
+    while reader.peek(end) and (max ==None or len(nodes)<max):
+        if safe_count==0: raise Exception(f"infinite loop in {term.rule.name}")
+        safe_count -= 1
+        pos = reader.pos
+        node = parse_term(term, reader, end)
+        if node.length == 0: break
+        error_node = first_error_node(node)
+        if error_node:
+            log(f"node {node} has error {error_node}")
+            reader.pos = pos # backtrack
+            log(f"backtracked to {reader.pos}: {reader}")
+            break
+        parse_separator(term, reader, end)
+        nodes.append(node)
+    if len(nodes) < min:
+        log("not enough nodes")
+        return error_node or parse_error(term, reader)
+    log("standard return")
+    return Node(term.var or term.dec, nodes=nodes)
+
 @log_indent
 def parse_term(term: Term, reader: Reader, end: int) -> Node:
-    if term.dec == "": return parse_single_term(term, reader, end)
-    min = 1 if term.dec == "+" else 0
-    max = 1 if term.dec == "?" else None
-    end = reader.scan(end, term.followers)
-    node = Node(term=term)
-    while not reader.eof(end) and (max==None or len(node.children) < max):
-        child = parse_single_term(term, reader, end)
-        node.add(child)
-        if child.in_error(): break
-    if len(node.children) < min:
-        node.errors.append(error_message(term, term.rule, reader.ls, reader.pos))
-    return node
-
-# singular-term, either a terminal or a list of rules (ignores decorator)
-@log_indent
-def parse_single_term(term: Term, reader: Reader, end: int) -> Node:
     if term.is_terminal():
-        if reader.matches(term, end):
-            return Node(term=term, lex=reader.next(end))
-        else:
-            return parse_error(term, reader, end)
-    rules = reduce_rules(term, reader.peek(end))
-    child = None
-    for rule in rules:
+        if lex_matches(reader.peek(end), term.vals): return Node(term.var or "", lex=reader.next(end))
+        else: return parse_error(term, reader)
+    else:
+        followers = term.followers
+        end = scan_forward(reader, end, followers)
+        rules = reduce_rules(term, reader.peek(end))
+        if len(rules)==0: return parse_error(term, reader)
         pos = reader.pos
-        child = parse_rule(rule, reader, end)
-        if not child.in_error(): return child
-        reader.restore(pos)
-    return child or parse_error(term, reader, end)
-
-# term is in error, so return a readable message for it
-def parse_error(term: Term, reader: Reader, end: int) -> Node:
-    return Node(term= term, errors=[Error(term, term.rule, reader.ls, reader.pos)])
-
-# parses a separator if appropriate
+        node = None
+        for rule in rules:
+            node = parse_rule(rule, reader, end)
+            if term.var: node.name = term.var
+            if not node.error:
+                return node
+            reader.pos = pos
+        log("returning error:")
+        return node or parse_error(term, reader)
+    
 def parse_separator(term: Term, reader: Reader, end: int):
     if term.sep:
-        if reader.matches(f'"{term.sep}"'): reader.next(end)
+        if lex_matches(reader.peek(end), [f'"{term.sep}"']): reader.next(end)
+
+def parse_error(term: Term, reader: Reader) -> Node:
+    return Node(term.var or "", error=error_message(term, term.rule, reader.ls, reader.pos))
 
 #--------------------------------------------------------------------------------------------------
-# Parser test
+# test
 
-@log_indent
 def parse(code: str, rule_name ="feature") -> Node:
     ls = lexer(Source(code=code))
     reader = Reader(ls)
     rule = s_grammar.rule_named[rule_name]
     node = parse_rule(rule, reader, len(ls))
-    log("------------------------------------------------------------")
-    log("readout:")
-    log(readout(node))
-    ast = get_ast(node)
-    log("------------------------------------------------------------")
-    log("AST:")
-    log(format(ast))
-    return ast
+    return readout(node)
 
 @this_is_the_test
 def test_parser():
     log("test_parser")
     grammar = build_grammar(s_zero_grammar_spec)
-    test("feature_0", parse(""), """{'_type': 'feature', '_errors': ['expected "feature" (feature.term0) at <eof> ("")']}""")
-    test("feature_1", parse("feature"), """{'_type': 'feature', '_errors': ['expected <identifier> (feature.name) at <eof> ("")']}""")
-    test("feature_2", parse("feature MyFeature"), """{'_type': 'feature', 'name': MyFeature, '_errors': ['expected feature_2 (feature.term2) at <eof> ("")']}""")
-    test("feature_3", parse("feature MyFeature extrnds"), """{'_type': 'feature', 'name': MyFeature, '_errors': [expected 'extends' (feature_2.term0) at :1:19 ('extrnds'), expected '{' (feature.term3) at :1:19 ('extrnds')]}""")
-    test("feature_4", parse("feature MyFeature extends"), """{'_type': 'feature', 'name': MyFeature, '_errors': ['expected <identifier> (feature_2.parent) at <eof> ("")', expected '{' (feature.term3) at :1:19 ('extends')]}""")
-    test("feature_5", parse("feature MyFeature extends Another"), """{'_type': 'feature', 'name': MyFeature, 'parent': Another, '_errors': ['expected "{" (feature.term3) at <eof> ("")']}""")
-    test("feature_6", parse("feature MyFeature {}"), """{'_type': 'feature', 'name': MyFeature, 'body': []}""")
-    test("feature_7", parse("feature MyFeature extends Another {}"), """{'_type': 'feature', 'name': MyFeature, 'parent': Another, 'body': []}""")
+    test("parser", parse("feature MyFeature extends  { > a => (a, b, c)}"))
