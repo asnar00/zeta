@@ -2,6 +2,41 @@
 # scribblez
 "slow is smooth, smooth is fast"
 
+-------------
+
+next step is modular grammar/parser/semantic analysis
+split the language into little bits, and generate the code for them one by one.
+=> do this after you get the first end-to-end test running.
+
+------
+
+zero ideas again: thinking about this parser, for instance.
+what if we did something like this:
+
+```c++
+class Feature {
+    name: string
+    parent?: Feature
+    components*: Component
+    print() { s << "feature" << name << (? << "extends" << parent?.name) << "{" << 
+        (* << components*) << "}"
+}
+```
+
+what if we applied the same thing to structures: don't define them like this, but define them as a sentence:
+
+```
+type feature = 
+    feature (string name) [extends (Feature parent)]? { [Component components]* }
+```
+
+so then this would write the class for you:
+
+    class _feature:
+        def __init__(etc)
+------
+
+
 thinking about errors is a super interesting exercise,
 because how errors flow through the system - and how we represent that flow clearly: is critical.
 

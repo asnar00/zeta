@@ -307,7 +307,7 @@ class Term:
         if self.dec: out += self.dec
         if self.sep: out += self.sep
         if self.var: out = f"{self.var}:{out}"
-        return out.replace('"', "'")
+        return out
     def __repr__(self): return self.__str__()
     def is_keyword(self): return self.vals[0][0] == '"'
     def is_type(self): return self.vals[0][0] == '<'
@@ -568,7 +568,7 @@ def compute_leaves() -> bool:
                         changed = merge_dicts(term.leaves, sub_rule.terms[0].leaves) or changed
                     else:
                         for val in sub_rule.leaves.keys():
-                            changed = merge_dicts(term.leaves, { val : [sub_rule] }) or changed             
+                            changed = merge_dicts(term.leaves, { val : [sub_rule] }) or changed
     # and then back to the rules
     for rule in s_grammar.rules:
         term = rule.terms[0]
@@ -588,7 +588,7 @@ def merge_dicts(d1: Dict, d2: Dict) -> bool:
     changed = False
     for k, v in d2.items():
         if not k in d1:
-            d1[k] = v.copy()
+            d1[k] = v
             changed = True
         else:
             changed = merge_arrays(d1[k], v) or changed
@@ -651,41 +651,41 @@ def test_grammar():
     log("test_grammar")
     grammar = build_grammar(s_zero_grammar_spec)
     test("test_grammar", grammar.dbg(), """
-feature := 'feature' name:<identifier> feature_2? '{' body:component*; '}'
-feature_2 := 'extends' parent:<identifier>
+feature := "feature" name:<identifier> feature_2? "{" body:component*; "}"
+feature_2 := "extends" parent:<identifier>
 component := (test | type | variable | function)
-test := '>' lhs:expression test_2?
-test_2 := '=>' rhs:expression
-type := 'type' name_decl (struct | type_relation | enum)
+test := ">" lhs:expression test_2?
+test_2 := "=>" rhs:expression
+type := "type" name_decl (struct | type_relation | enum)
 name_decl := name:<identifier> name_decl_1?
-name_decl_1 := '|' alias:<identifier>
-struct := '=' '{' properties:variable* '}'
+name_decl_1 := "|" alias:<identifier>
+struct := "=" "{" properties:variable* "}"
 type_relation := (child_type | parent_type)
-child_type := '<' parent:<identifier>
-parent_type := '>' children:<indentifier>*|
-enum := '=' values:<identifier>*|
+child_type := "<" parent:<identifier>
+parent_type := ">" children:<indentifier>*|
+enum := "=" values:<identifier>*|
 variable := name_type variable_1?
-variable_1 := '=' default:expression
+variable_1 := "=" default:expression
 name_type := (c_name_type | ts_name_type)
 c_name_type := type:<identifier> names:name_decl+,
-ts_name_type := names:name_decl+, ':' type:<identifier>
-function := modifier:('on' | 'replace' | 'after' | 'before') function_result? signature:signature '{' body:function_body '}'
-function_result := result:result_vars assign:('=' | '<<')
-result_vars := '(' name_type*, ')'
+ts_name_type := names:name_decl+, ":" type:<identifier>
+function := modifier:("on" | "replace" | "after" | "before") function_result? signature:signature "{" body:function_body "}"
+function_result := result:result_vars assign:("=" | "<<")
+result_vars := "(" name_type*, ")"
 signature := (word | operator | param_group)+
 word := <identifier>
 operator := <operator>
-param_group := '(' variable*, ')'
+param_group := "(" variable*, ")"
 function_body := statement*;
 statement := statement_lhs? rhs:expression
-statement_lhs := lhs:statement_dest assign:('=' | '<<')
+statement_lhs := lhs:statement_dest assign:("=" | "<<")
 statement_dest := (name_type | variable_ref)
 variable_ref := <identifier>
 expression := (constant | operator | word | brackets)+
 constant := (<number> | <string>)
-brackets := '(' parameter*, ')'
+brackets := "(" parameter*, ")"
 parameter := parameter_0? value:expression
-parameter_0 := names:<identifier>+, '='
+parameter_0 := names:<identifier>+, "="
          """)
     
 #--------------------------------------------------------------------------------------------------
@@ -739,8 +739,7 @@ class Reader:
     def copy(self): return Reader(self.ls, self.pos)
     def restore(self, pos):
         self.pos = pos
-    def peek(self, end: int = None) -> Lex:
-        end = end or len(self.ls)
+    def peek(self, end: int) -> Lex:
         return self.ls[self.pos] if self.pos < min(end, len(self.ls)) else None
     def next(self, end: int):
         result = self.peek(end)
@@ -759,203 +758,180 @@ class Reader:
             if lex_matches(lex, terminals): return i_lex
             i_lex += self.ls[i_lex].jump + 1
         return i_lex
-    def location(self) -> str:
-        return self.ls[self.pos].location() if self.pos < len(self.ls) else "<eof>"
 
 #--------------------------------------------------------------------------------------------------
-# Parser helpers: small functions that make the main three functions more readable
+# Parser helpers
 
-# if there are errors in child_ast, raise them up into ast; return True if so
-def merge_errors(ast, child_ast) -> bool:
-    if not isinstance(child_ast, dict): return False
-    if not "_errors" in child_ast: return False
-    if not "_errors" in ast: ast["_errors"] = []
-    ast["_errors"] += child_ast["_errors"]
-    return True
+# One Node per term in the grammar
+class Node:
+    def __init__(self, name: str, lex: Lex = None, children: List['Node'] = None, errors: List['Error'] = None):
+        self.name = name
+        self.lex = lex
+        self.children = children or []
+        self.errors = errors or []
+    def __str__(self):
+        out = ""
+        out += f"{self.name}: "
+        if self.lex: out += f"'{self.lex}'" 
+        else: out += f"[{len(self.children)}]"
+        if self.errors: out += f" !! {self.errors}"
+        return out
+    def __repr__(self): return self.__str__()
+    def add(self, child: 'Node'):
+        self.children.append(child)
+    def in_error(self) -> bool:
+        if len(self.errors) > 0: return True
+        for child in self.children:
+            if child.in_error(): return True
+        return False
+    
+# an error is not a node; but it contains all properties needed to generate an error message
+class Error:
+    def __init__(self, term: Term, rule: Rule, ls: List[Lex], i_lex: int):
+        self.term = term
+        self.rule = rule
+        self.ls = ls
+        self.i_lex = i_lex
+    def __str__(self):
+        return "'" + error_message(self.term, self.rule, self.ls, self.i_lex) + "'"
+    def __repr__(self): return self.__str__()
+    
+def readout(node: Node, indent=0) -> str:
+    out = "  " * indent + str(node) + "\n"
+    for child in node.children:
+        out += readout(child, indent+1)
+    return out
 
-# given the term (which specifies a variable name, or doesn't), merge the child_ast into the ast
-def merge_ast(term: Term, ast: Dict, child_ast: Dict) -> Dict:
-    if term.var: 
-        ast[term.var] = child_ast
-        return ast
-    merge_errors(ast, child_ast)
-    if term.is_type(): ast["_lex"] =  child_ast
-    if isinstance(child_ast, list):
-        if term.dec == "?":
-            if len(child_ast) == 0: return ast
-            child_ast = child_ast[0]
-        else:
-            ast["_list"] = child_ast
-            for item in child_ast: merge_errors(ast, item)
-    if isinstance(child_ast, dict):
-        for key, val in child_ast.items():
-            if key not in ["_type", "_errors"]: 
-                if not merge_errors(ast, val):
-                        ast[key] = val
+# convert a node tree into an AST dictionary
+@log_indent
+def get_ast(node: Node) -> Dict:
+    if node.lex: return node.lex
+    ast = {}
+    errors = node.errors
+    if node.name.startswith("_"):
+        ast["_type"] = node.name[1:]
+        rule = s_grammar.rule_named[ast["_type"]]
+        for i_term, term in enumerate(rule.terms):
+            if i_term >= len(node.children): break
+            child_ast = get_ast(node.children[i_term])
+            if term.var: ast[term.var] = child_ast
+            else:
+                if isinstance(child_ast, Lex): log("skipping lex", child_ast)
+                elif isinstance(child_ast, Dict):
+                    for k, v in child_ast.items():
+                        if k != "_type" and k != "_errors": ast[k] = v
+            if isinstance(child_ast, Dict) and "_errors" in child_ast:
+                errors += child_ast["_errors"]
+    if node.errors: ast["_errors"] = node.errors
     return ast
 
-# does (ast) contain errors?
-def has_errors(ast: Dict|List) -> bool:
-    if isinstance(ast, dict):
-        if "_errors" in ast: return True
-        for key, val in ast.items():
-            if has_errors(val): return True
-    elif isinstance(ast, list):
-        for item in ast:
-            if has_errors(item): return True
-    return False
-
-def should_stop(term: Term, ast: Dict, child_ast: Dict) -> bool:
-    if has_errors(child_ast): return True
-    if "_errors" in ast: return True
-    return False
-
-def should_stop_list(term: Term, ast: Dict) -> bool:
-    return isinstance(ast, dict) and has_errors(ast)
-
-def should_retry(term: Term, child_ast: Dict) -> bool:
-    if term.dec == "?": return True
-    return False
 
 #--------------------------------------------------------------------------------------------------
 # Parser
 
-# top-level function, from code string to ast
+# generate one node per term and pack them into a rule node
 @log_indent
-def parse(code: str, rule_name: str = "feature") -> str:
-    ls = lexer(Source(code = code))
-    reader = Reader(ls)
-    ast = parse_rule(s_grammar.rule_named[rule_name], reader, len(ls))
-    return str(ast)
-
-# parse a single rule; return a Dict
-@log_indent
-def parse_rule(rule: Rule, reader: Reader, end: int) -> Dict:
-
-    # phase 1 : parse all the terms, stop if there's two errors in a row
-    child_asts = []
+def parse_rule(rule: Rule, reader: Reader, end: int) -> Node:
+    node = Node(name = "_" + rule.name)
     n_errors = 0
-    for i_term, term in enumerate(rule.terms):
+    for term in rule.terms:
+        if reader.eof(end): 
+            node.errors.append(Error(term, rule, reader.ls, reader.pos))
+            break
         pos = reader.pos
-        log_msg = f"term {i_term} ({str(term)}) : {reader} => "
-        child_ast = parse_term(term, reader, end)
-        log(log_msg + str(child_ast))
-        child_asts.append(child_ast)
-        if has_errors(child_ast):
-            log("has_errors!")
+        child = parse_term(term, reader, end)
+        node.add(child)
+        if child.in_error():
+            reader.restore(pos)
             n_errors += 1
-            if term.dec != "?" or n_errors > 1: 
-                log("break!")
-                break
-            else: 
-                log("restoring...")
-                reader.restore(pos)
+            if term.dec == "" or n_errors > 1: break
         else:
             n_errors = 0
-            
-    # phase 2: merge children into the top-level ast
-    log("--------------------------------")
-    ast = { "_type": rule.name }
-    for i_term, child_ast in enumerate(child_asts):
-        term = rule.terms[i_term]
-        log(f"term {i_term} ({str(term)}) : {child_ast}")
-        should_merge = True
-        if term.dec == "?" and has_errors(child_ast):
-            if i_term < len(child_asts)-1 and not has_errors(child_asts[i_term+1]):
-                should_merge = False
-        if should_merge:
-            log("merging...")
-            merge_ast(term, ast, child_ast)
-    
-    return ast
+    return node
 
-def parse_term(term: Term, reader: Reader, end: int) -> Dict|List|Lex:
+# generages a single term node; if it's a list node, it will contain zero or more children
+@log_indent
+def parse_term(term: Term, reader: Reader, end: int) -> Node:
     if term.dec == "": return parse_single_term(term, reader, end)
     min = 1 if term.dec == "+" else 0
     max = 1 if term.dec == "?" else None
-    #log(f"scanning for {term.followers}")
+    log(f"scanning for {term.followers}")
     end = reader.scan(end, term.followers)
-    items = []
-    safe_count = 4
-    while not reader.eof(end) and (max==None or len(items) < max):
-        #log(f"---------- item {len(items)} ------------")
-        item_ast = parse_single_term(term, reader, end)
-        items.append(item_ast)
-        if should_stop_list(term, item_ast):
-            return item_ast["_errors"] if "_errors" in item_ast else items
-        safe_count -= 1
-        if safe_count == 0:
-            raise Exception("safe count hit")
-            break
-        if not parse_separator(term, reader, end):
-            return parse_error_separator(term, reader)
-    if len(items) < min: return parse_error(term, reader)
-    return items
-        
-def parse_single_term(term: Term, reader: Reader, end: int) -> Dict|Lex:
-    if term.is_terminal():
-        if reader.matches(term, end): return reader.next(end)
-        else: return parse_error(term, reader)
-    log("rules: " + str(term.rules()))
-    log("term.leaves: " + str(term.leaves))
-    rules = reduce_rules(term, reader.peek(end))
-    log("rules after reduce: " + str(rules))
-    errors = []
-    for rule in rules:
-        log("trying rule " + rule.name + "...")
+    node = Node(name = term.var)
+    while not reader.eof(end) and (max==None or len(node.children) < max):
         pos = reader.pos
-        child_ast = parse_rule(rule, reader, end)
-        if not has_errors(child_ast): 
-            log("success!")
-            return child_ast
-        log("failed!")
+        child = parse_single_term(term, reader, end)
+        child.name = ""
+        node.add(child)
+        if child.in_error(): 
+            reader.restore(pos)
+            log(f"child has error; restoring ({reader})")
+            break
+    if len(node.children) < min:
+        node.errors.append(error_message(term, term.rule, reader.ls, reader.pos))
+    return node
+
+# singular-term, either a terminal or a list of rules (ignores decorator)
+@log_indent
+def parse_single_term(term: Term, reader: Reader, end: int) -> Node:
+    if term.is_terminal():
+        if reader.matches(term, end):
+            return Node(name = term.var, lex=reader.next(end))
+        else:
+            return parse_error(term, reader, end)
+    rules = reduce_rules(term, reader.peek(end))
+    child = None
+    for rule in rules:
+        pos = reader.pos
+        child = parse_rule(rule, reader, end)
+        if not child.in_error(): return child
         reader.restore(pos)
-        errors.append(child_ast["_errors"] if "_errors" in child_ast else child_ast)
-    return { "_errors" : errors }
+    return child or parse_error(term, reader, end)
 
-# return True if separator matched, False if error
-@log_indent
-def parse_separator(term: Term, reader: Reader, end: int) -> bool:
-    if term.sep == "": return True
-    if reader.eof(end): return True # don't require a trailing separator
-    if lex_matches(reader.peek(end), '"' + term.sep + '"'):
-        reader.next(end)
-        return True
-    return False
+# term is in error, so return a readable message for it
+def parse_error(term: Term, reader: Reader, end: int) -> Node:
+    return Node(term.var, errors=[Error(term, term.rule, reader.ls, reader.pos)])
 
-def parse_error(term: Term, reader: Reader) -> Dict:
-    return { "_errors" : [ { "_term" : term, "_loc" : reader.location() } ] }
+# parses a separator if appropriate
+def parse_separator(term: Term, reader: Reader, end: int):
+    if term.sep:
+        if reader.matches(f'"{term.sep}"'): reader.next(end)
 
-@log_indent
-def parse_error_separator(term: Term, reader: Reader) -> Dict:
-    return { "_errors" : [ { "_term" : term, "_sep" : term.sep,"_loc" : reader.location() } ] }
 #--------------------------------------------------------------------------------------------------
+# Parser test
+
+@log_indent
+def parse(code: str, rule_name ="feature") -> Node:
+    ls = lexer(Source(code=code))
+    reader = Reader(ls)
+    rule = s_grammar.rule_named[rule_name]
+    node = parse_rule(rule, reader, len(ls))
+    log("------------------------------------------------------------")
+    log("readout:")
+    log(readout(node))
+    ast = get_ast(node)
+    log("------------------------------------------------------------")
+    log("AST:")
+    log(format(ast))
+    return ast
 
 @this_is_the_test
 def test_parser():
     log("test_parser")
     grammar = build_grammar(s_zero_grammar_spec)
-    test("feature_0", parse(""), """{'_type': 'feature', '_errors': [{'_term': 'feature', '_loc': '<eof>'}]}""")
-    test("feature_1", parse("feature"), """{'_type': 'feature', 'name': {'_errors': [{'_term': name:<identifier>, '_loc': '<eof>'}]}}""")
-    test("feature_2", parse("feature MyFeature"), """{'_type': 'feature', 'name': MyFeature, '_errors': [{'_term': '{', '_loc': '<eof>'}]}""")
-    test("feature_3", parse("feature MyFeature extends"), """{'_type': 'feature', 'name': MyFeature, '_errors': [{'_term': parent:<identifier>, '_loc': '<eof>'}, {'_term': '{', '_loc': ':...:19'}]}""")
-    test("feature_4", parse("feature MyFeature extends Another"), """{'_type': 'feature', 'name': MyFeature, 'parent': Another, '_errors': [{'_term': '{', '_loc': '<eof>'}]}""")
-    test("feature_5", parse("feature MyFeature {}"), """{'_type': 'feature', 'name': MyFeature, 'body': []}""")
-    test("feature_6", parse("feature MyFeature extends Another {}"), """{'_type': 'feature', 'name': MyFeature, 'parent': Another, 'body': []}""")
+    # simplest: check the 
+    test("feature_0", parse(""), """{'_type': 'feature', '_errors': ['expected "feature" (feature.term0) at <eof> ("")']}""")
+    test("feature_1", parse("feature"), """{'_type': 'feature', '_errors': ['expected <identifier> (feature.name) at <eof> ("")']}""")
+    test("feature_2", parse("feature MyFeature"), """{'_type': 'feature', 'name': MyFeature, '_errors': ['expected feature_2 (feature.term2) at <eof> ("")']}""")
+    test("feature_3", parse("feature MyFeature extrnds"), """{'_type': 'feature', 'name': MyFeature, '_errors': [expected 'extends' (feature_2.term0) at :...:19 ('extrnds'), expected '{' (feature.term3) at :...:19 ('extrnds')]}""")
+    test("feature_4", parse("feature MyFeature extends"), """{'_type': 'feature', 'name': MyFeature, '_errors': ['expected <identifier> (feature_2.parent) at <eof> ("")', expected '{' (feature.term3) at :...:19 ('extends')]}""")
+    test("feature_5", parse("feature MyFeature extends Another"), """{'_type': 'feature', 'name': MyFeature, 'parent': Another, '_errors': ['expected "{" (feature.term3) at <eof> ("")']}""")
+    test("feature_6", parse("feature MyFeature {}"), """{'_type': 'feature', 'name': MyFeature, 'body': {'_list': []}}""")
+    test("feature_7", parse("feature MyFeature extends Another {}"), """{'_type': 'feature', 'name': MyFeature, 'parent': Another, 'body': {'_list': []}}""")
+    # ok cool first set done; now we look at the rest.
+    # expressions; declarations; types; structures; and functions
+    # then get on with semantic analysis and code generation
     test("expression_0", parse("1", "expression"), """{'_type': 'expression', '_list': [{'_type': 'constant', '_lex': 1}]}""")
     test("expression_1", parse("a", "expression"), """{'_type': 'expression', '_list': [{'_type': 'word', '_lex': a}]}""")
     test("expression_2", parse("a + b", "expression"), """{'_type': 'expression', '_list': [{'_type': 'word', '_lex': a}, {'_type': 'operator', '_lex': +}, {'_type': 'word', '_lex': b}]}""")
-    test("parameter_0", parse("a = 1", "parameter"), """{'_type': 'parameter', 'names': [a], 'value': {'_type': 'expression', '_list': [{'_type': 'constant', '_lex': 1}]}}""")
-    test("parameter_1", parse("a + b", "parameter"), """{'_type': 'parameter', 'value': {'_type': 'expression', '_list': [{'_type': 'word', '_lex': a}, {'_type': 'operator', '_lex': +}, {'_type': 'word', '_lex': b}]}}""")
-    test("brackets_0", parse("(a + b)", "brackets"), """{'_type': 'brackets', '_list': [{'_type': 'parameter', 'value': {'_type': 'expression', '_list': [{'_type': 'word', '_lex': a}, {'_type': 'operator', '_lex': +}, {'_type': 'word', '_lex': b}]}}]}""")
-    test("brackets_1", parse("(v = a + b)", "expression"), """{'_type': 'expression', '_list': [{'_type': 'brackets', '_list': [{'_type': 'parameter', 'names': [v], 'value': {'_type': 'expression', '_list': [{'_type': 'word', '_lex': a}, {'_type': 'operator', '_lex': +}, {'_type': 'word', '_lex': b}]}}]}]}""")
-    test("expression_3", parse("a + (2 - c)", "expression"), """{'_type': 'expression', '_list': [{'_type': 'word', '_lex': a}, {'_type': 'operator', '_lex': +}, {'_type': 'brackets', '_list': [{'_type': 'parameter', 'value': {'_type': 'expression', '_list': [{'_type': 'constant', '_lex': 2}, {'_type': 'operator', '_lex': -}, {'_type': 'word', '_lex': c}]}}]}]}""")
-    test("test_0", parse("> a", "test"), """{'_type': 'test', 'lhs': {'_type': 'expression', '_list': [{'_type': 'word', '_lex': a}]}}""")
-    test("test_1", parse("> a =>", "test"), """{'_type': 'test', 'lhs': {'_type': 'expression', '_list': [{'_type': 'word', '_lex': a}]}, '_errors': [[{'_term': (constant | operator | word | brackets)+, '_loc': '<eof>'}]]}""")
-    test("test_2", parse("> a => b", "test"), """{'_type': 'test', 'lhs': {'_type': 'expression', '_list': [{'_type': 'word', '_lex': a}]}, 'rhs': {'_type': 'expression', '_list': [{'_type': 'word', '_lex': b}]}}""")
-    test("variable_0", parse("int a", "c_name_type"), """{'_type': 'c_name_type', 'type': int, 'names': [{'_type': 'name_decl', 'name': a}]}""")
-    test("variable_1", parse("a : int", "ts_name_type"), """{'_type': 'ts_name_type', 'names': [{'_type': 'name_decl', 'name': a}], 'type': int}""")
-    test("variable_2", parse("a : int", "c_name_type"), """{'_type': 'c_name_type', 'type': a, 'names': [{'_type': 'name_decl', 'name': {'_errors': [{'_term': name:<identifier>, '_loc': ':1:3'}]}}]}""")
-    test("variable_4", parse("int a", "ts_name_type"), """{'_type': 'ts_name_type', 'names': {'_errors': [{'_term': names:name_decl+,, '_sep': ',', '_loc': ':1:5'}]}}""")
-    test("variable_5", parse("int a", "name_type"), """{'_type': 'name_type', 'type': int, 'names': [{'_type': 'name_decl', 'name': a}]}""")
-    test("variable_6", parse("a : int", "name_type"), """{'_type': 'name_type', 'names': [{'_type': 'name_decl', 'name': a}], 'type': int}""")
+    test("expression_3", parse("v = a + b", "parameter"))
