@@ -879,7 +879,7 @@ def parse_term(term: Term, reader: Reader, end: int) -> Dict|List|Lex:
     #log(f"scanning for {term.followers}")
     end = reader.scan(end, term.followers)
     items = []
-    safe_count = 4
+    safe_count = 20
     while not reader.eof(end) and (max==None or len(items) < max):
         #log(f"---------- item {len(items)} ------------")
         item_ast = parse_single_term(term, reader, end)
@@ -964,3 +964,4 @@ def test_parser():
     test("type_2", parse("type int > i8, i16", "type"), """{'_type': 'type', 'name': int, 'children': {'_list': [i8, i16]}}""")
     test("type_3", parse("type distance < vector", "type"), """{'_type': 'type', 'name': distance, 'parent': vector}""")
     test("type_4", parse("type evil = no | yes | maybe", "type"), """{'_type': 'type', 'name': evil, 'values': {'_list': [no, yes, maybe]}}""")
+    test("function_0", parse("on (int r) = min (int a, b) { r = if (a < b) then a else b }", "function"), """{'_type': 'function', 'modifier': on, 'signature': {'_type': 'signature', '_list': [{'_type': 'param_group', '_list': [{'_type': 'variable', 'type': int, 'names': {'_list': [{'_type': 'name_decl', 'name': r}]}}]}, {'_type': 'operator', '_lex': =}, {'_type': 'word', '_lex': min}, {'_type': 'param_group', '_list': [{'_type': 'variable', 'type': int, 'names': {'_list': [{'_type': 'name_decl', 'name': a}, {'_type': 'name_decl', 'name': b}]}}]}]}, 'body': {'_type': 'function_body', '_list': [{'_type': 'statement', 'lhs': {'_type': 'statement_dest', '_lex': r}, 'assign': =, 'rhs': {'_type': 'expression', '_list': [{'_type': 'word', '_lex': if}, {'_type': 'brackets', '_list': [{'_type': 'parameter', 'value': {'_type': 'expression', '_list': [{'_type': 'word', '_lex': a}, {'_type': 'operator', '_lex': <}, {'_type': 'word', '_lex': b}]}}]}, {'_type': 'word', '_lex': then}, {'_type': 'word', '_lex': a}, {'_type': 'word', '_lex': else}, {'_type': 'word', '_lex': b}]}}]}}""")
