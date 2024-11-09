@@ -839,39 +839,39 @@ def parse_rule(rule: Rule, reader: Reader, end: int) -> Dict:
     n_errors = 0
     for i_term, term in enumerate(rule.terms):
         pos = reader.pos
-        log_msg = f"term {i_term} ({str(term)}) : {reader} => "
+        #log_msg = f"term {i_term} ({str(term)}) : {reader} => "
         child_ast = parse_term(term, reader, end)
-        log(log_msg + str(child_ast))
+        #log(log_msg + str(child_ast))
         child_asts.append(child_ast)
         if has_errors(child_ast):
-            log("has_errors!")
+            #log("has_errors!")
             n_errors += 1
             if term.dec != "?" or n_errors > 1: 
-                log("break!")
+                #log("break!")
                 break
             else: 
-                log("restoring...")
+                #log("restoring...")
                 reader.restore(pos)
         else:
             n_errors = 0
             
     # phase 2: merge children into the top-level ast
-    log("--------------------------------")
+    #log("--------------------------------")
     ast = { "_type": rule.name }
     for i_term, child_ast in enumerate(child_asts):
         term = rule.terms[i_term]
-        log(f"term {i_term} ({str(term)}) : {child_ast}")
+        #log(f"term {i_term} ({str(term)}) : {child_ast}")
         should_merge = True
         if term.dec == "?" and has_errors(child_ast):
             if i_term < len(child_asts)-1 and not has_errors(child_asts[i_term+1]):
                 should_merge = False
         if should_merge:
-            log("merging...")
+            #log("merging...")
             merge_ast(term, ast, child_ast)
     
     return ast
 
-@log_indent
+#@log_indent
 def parse_term(term: Term, reader: Reader, end: int) -> Dict|List|Lex:
     if term.dec == "": return parse_single_term(term, reader, end)
     min = 1 if term.dec == "+" else 0
@@ -895,7 +895,7 @@ def parse_term(term: Term, reader: Reader, end: int) -> Dict|List|Lex:
     if len(items) < min: return parse_error(term, reader)
     return items
 
-@log_indent
+#@log_indent
 def parse_single_term(term: Term, reader: Reader, end: int) -> Dict|Lex:
     if term.is_terminal():
         if reader.matches(term, end): return reader.next(end)
@@ -904,19 +904,19 @@ def parse_single_term(term: Term, reader: Reader, end: int) -> Dict|Lex:
     rules = reduce_rules(term, reader.peek(end))
     errors = []
     for rule in rules:
-        log("trying rule " + rule.name + "...")
+        #log("trying rule " + rule.name + "...")
         pos = reader.pos
         child_ast = parse_rule(rule, reader, end)
         if not has_errors(child_ast): 
-            log("success!")
+            #log("success!")
             return child_ast
-        log("failed!")
+        #log("failed!")
         reader.restore(pos)
         errors.append(child_ast["_errors"] if "_errors" in child_ast else child_ast)
     return { "_errors" : errors }
 
 # return True if separator matched, False if error
-@log_indent
+#@log_indent
 def parse_separator(term: Term, reader: Reader, end: int) -> bool:
     if term.sep == "": return True
     if reader.eof(end): return True # don't require a trailing separator
