@@ -204,6 +204,7 @@ def test(name, a, b: str = None):
         print("\n----------------------------------------------------------------\nlog:")
         log_flush()
         print("----------------------------------------------------------------\n")
+        log_exit()
         
 # decorator that wraps a function, adding it to s_tests
 def this_is_a_test(fn):

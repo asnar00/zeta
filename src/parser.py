@@ -617,7 +617,7 @@ s_zero_grammar_spec : str = """
     struct := "=" "{" properties:variable* "}"
     type_relation := (child_type | parent_type)
     child_type := "<" parent:<identifier>
-    parent_type := ">" children:<indentifier>*|
+    parent_type := ">" children:<identifier>*,
     enum := "=" values:<identifier>*|
 
     variable := name_type ("=" default:expression)?
@@ -662,7 +662,7 @@ name_decl_1 := '|' alias:<identifier>
 struct := '=' '{' properties:variable* '}'
 type_relation := (child_type | parent_type)
 child_type := '<' parent:<identifier>
-parent_type := '>' children:<indentifier>*|
+parent_type := '>' children:<identifier>*,
 enum := '=' values:<identifier>*|
 variable := name_type variable_1?
 variable_1 := '=' default:expression
@@ -775,7 +775,9 @@ def merge_errors(ast, child_ast) -> bool:
 
 # given the term (which specifies a variable name, or doesn't), merge the child_ast into the ast
 def merge_ast(term: Term, ast: Dict, child_ast: Dict) -> Dict:
-    if term.var: 
+    if term.var:
+        if isinstance(child_ast, list):
+            child_ast = { "_list" : child_ast }
         ast[term.var] = child_ast
         return ast
     merge_errors(ast, child_ast)
@@ -869,6 +871,7 @@ def parse_rule(rule: Rule, reader: Reader, end: int) -> Dict:
     
     return ast
 
+@log_indent
 def parse_term(term: Term, reader: Reader, end: int) -> Dict|List|Lex:
     if term.dec == "": return parse_single_term(term, reader, end)
     min = 1 if term.dec == "+" else 0
@@ -891,15 +894,14 @@ def parse_term(term: Term, reader: Reader, end: int) -> Dict|List|Lex:
             return parse_error_separator(term, reader)
     if len(items) < min: return parse_error(term, reader)
     return items
-        
+
+@log_indent
 def parse_single_term(term: Term, reader: Reader, end: int) -> Dict|Lex:
     if term.is_terminal():
         if reader.matches(term, end): return reader.next(end)
         else: return parse_error(term, reader)
-    log("rules: " + str(term.rules()))
-    log("term.leaves: " + str(term.leaves))
+    if reader.eof(end): return parse_error(term, reader)
     rules = reduce_rules(term, reader.peek(end))
-    log("rules after reduce: " + str(rules))
     errors = []
     for rule in rules:
         log("trying rule " + rule.name + "...")
@@ -940,22 +942,25 @@ def test_parser():
     test("feature_2", parse("feature MyFeature"), """{'_type': 'feature', 'name': MyFeature, '_errors': [{'_term': '{', '_loc': '<eof>'}]}""")
     test("feature_3", parse("feature MyFeature extends"), """{'_type': 'feature', 'name': MyFeature, '_errors': [{'_term': parent:<identifier>, '_loc': '<eof>'}, {'_term': '{', '_loc': ':...:19'}]}""")
     test("feature_4", parse("feature MyFeature extends Another"), """{'_type': 'feature', 'name': MyFeature, 'parent': Another, '_errors': [{'_term': '{', '_loc': '<eof>'}]}""")
-    test("feature_5", parse("feature MyFeature {}"), """{'_type': 'feature', 'name': MyFeature, 'body': []}""")
-    test("feature_6", parse("feature MyFeature extends Another {}"), """{'_type': 'feature', 'name': MyFeature, 'parent': Another, 'body': []}""")
+    test("feature_5", parse("feature MyFeature {}"), """{'_type': 'feature', 'name': MyFeature, 'body': {'_list': []}}""")
+    test("feature_6", parse("feature MyFeature extends Another {}"), """{'_type': 'feature', 'name': MyFeature, 'parent': Another, 'body': {'_list': []}}""")
     test("expression_0", parse("1", "expression"), """{'_type': 'expression', '_list': [{'_type': 'constant', '_lex': 1}]}""")
     test("expression_1", parse("a", "expression"), """{'_type': 'expression', '_list': [{'_type': 'word', '_lex': a}]}""")
     test("expression_2", parse("a + b", "expression"), """{'_type': 'expression', '_list': [{'_type': 'word', '_lex': a}, {'_type': 'operator', '_lex': +}, {'_type': 'word', '_lex': b}]}""")
-    test("parameter_0", parse("a = 1", "parameter"), """{'_type': 'parameter', 'names': [a], 'value': {'_type': 'expression', '_list': [{'_type': 'constant', '_lex': 1}]}}""")
+    test("parameter_0", parse("a = 1", "parameter"), """{'_type': 'parameter', 'names': {'_list': [a]}, 'value': {'_type': 'expression', '_list': [{'_type': 'constant', '_lex': 1}]}}""")
     test("parameter_1", parse("a + b", "parameter"), """{'_type': 'parameter', 'value': {'_type': 'expression', '_list': [{'_type': 'word', '_lex': a}, {'_type': 'operator', '_lex': +}, {'_type': 'word', '_lex': b}]}}""")
     test("brackets_0", parse("(a + b)", "brackets"), """{'_type': 'brackets', '_list': [{'_type': 'parameter', 'value': {'_type': 'expression', '_list': [{'_type': 'word', '_lex': a}, {'_type': 'operator', '_lex': +}, {'_type': 'word', '_lex': b}]}}]}""")
-    test("brackets_1", parse("(v = a + b)", "expression"), """{'_type': 'expression', '_list': [{'_type': 'brackets', '_list': [{'_type': 'parameter', 'names': [v], 'value': {'_type': 'expression', '_list': [{'_type': 'word', '_lex': a}, {'_type': 'operator', '_lex': +}, {'_type': 'word', '_lex': b}]}}]}]}""")
+    test("brackets_1", parse("(v = a + b)", "expression"), """{'_type': 'expression', '_list': [{'_type': 'brackets', '_list': [{'_type': 'parameter', 'names': {'_list': [v]}, 'value': {'_type': 'expression', '_list': [{'_type': 'word', '_lex': a}, {'_type': 'operator', '_lex': +}, {'_type': 'word', '_lex': b}]}}]}]}""")
     test("expression_3", parse("a + (2 - c)", "expression"), """{'_type': 'expression', '_list': [{'_type': 'word', '_lex': a}, {'_type': 'operator', '_lex': +}, {'_type': 'brackets', '_list': [{'_type': 'parameter', 'value': {'_type': 'expression', '_list': [{'_type': 'constant', '_lex': 2}, {'_type': 'operator', '_lex': -}, {'_type': 'word', '_lex': c}]}}]}]}""")
     test("test_0", parse("> a", "test"), """{'_type': 'test', 'lhs': {'_type': 'expression', '_list': [{'_type': 'word', '_lex': a}]}}""")
-    test("test_1", parse("> a =>", "test"), """{'_type': 'test', 'lhs': {'_type': 'expression', '_list': [{'_type': 'word', '_lex': a}]}, '_errors': [[{'_term': (constant | operator | word | brackets)+, '_loc': '<eof>'}]]}""")
+    test("test_1", parse("> a =>", "test"), """{'_type': 'test', 'lhs': {'_type': 'expression', '_list': [{'_type': 'word', '_lex': a}]}, '_errors': [{'_term': rhs:expression, '_loc': '<eof>'}]}""")
     test("test_2", parse("> a => b", "test"), """{'_type': 'test', 'lhs': {'_type': 'expression', '_list': [{'_type': 'word', '_lex': a}]}, 'rhs': {'_type': 'expression', '_list': [{'_type': 'word', '_lex': b}]}}""")
-    test("variable_0", parse("int a", "c_name_type"), """{'_type': 'c_name_type', 'type': int, 'names': [{'_type': 'name_decl', 'name': a}]}""")
-    test("variable_1", parse("a : int", "ts_name_type"), """{'_type': 'ts_name_type', 'names': [{'_type': 'name_decl', 'name': a}], 'type': int}""")
-    test("variable_2", parse("a : int", "c_name_type"), """{'_type': 'c_name_type', 'type': a, 'names': [{'_type': 'name_decl', 'name': {'_errors': [{'_term': name:<identifier>, '_loc': ':1:3'}]}}]}""")
-    test("variable_4", parse("int a", "ts_name_type"), """{'_type': 'ts_name_type', 'names': {'_errors': [{'_term': names:name_decl+,, '_sep': ',', '_loc': ':1:5'}]}}""")
-    test("variable_5", parse("int a", "name_type"), """{'_type': 'name_type', 'type': int, 'names': [{'_type': 'name_decl', 'name': a}]}""")
-    test("variable_6", parse("a : int", "name_type"), """{'_type': 'name_type', 'names': [{'_type': 'name_decl', 'name': a}], 'type': int}""")
+    test("variable_0", parse("int a", "name_type"), """{'_type': 'name_type', 'type': int, 'names': {'_list': [{'_type': 'name_decl', 'name': a}]}}""")
+    test("variable_1", parse("a : int", "name_type"), """{'_type': 'name_type', 'names': {'_list': [{'_type': 'name_decl', 'name': a}]}, 'type': int}""")
+    test("variable_2", parse("a : int = 0", "variable"), """{'_type': 'variable', 'names': {'_list': [{'_type': 'name_decl', 'name': a}]}, 'type': int, 'default': {'_type': 'expression', '_list': [{'_type': 'constant', '_lex': 0}]}}""")
+    test("variable_3", parse("int a = 0", "variable"), """{'_type': 'variable', 'type': int, 'names': {'_list': [{'_type': 'name_decl', 'name': a}]}, 'default': {'_type': 'expression', '_list': [{'_type': 'constant', '_lex': 0}]}}""")
+    test("type_0", parse("type vec", "type"), """{'_type': 'type', 'name': vec, '_errors': [{'_term': (struct | type_relation | enum), '_loc': '<eof>'}]}""")
+    test("type_1", parse("type vec | vector = { x, y, z: number =0 }", "type"), """{'_type': 'type', 'name': vec, 'alias': vector, 'properties': {'_list': [{'_type': 'variable', 'names': {'_list': [{'_type': 'name_decl', 'name': x}, {'_type': 'name_decl', 'name': y}, {'_type': 'name_decl', 'name': z}]}, 'type': number, 'default': {'_type': 'expression', '_list': [{'_type': 'constant', '_lex': 0}]}}]}}""")
+    test("type_2", parse("type int > i8, i16", "type"), """{'_type': 'type', 'name': int, 'children': {'_list': [i8, i16]}}""")
+    test("type_3", parse("type distance < vector", "type"), """{'_type': 'type', 'name': distance, 'parent': vector}""")
+    test("type_4", parse("type evil = no | yes | maybe", "type"), """{'_type': 'type', 'name': evil, 'values': {'_list': [no, yes, maybe]}}""")
