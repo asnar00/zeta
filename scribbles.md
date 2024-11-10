@@ -2,6 +2,15 @@
 # scribblez
 "slow is smooth, smooth is fast"
 
+
+
+OK so NOW we have what seems to be a functioning parser, which is amazing news.
+It could use a bit of a tidy up, but it's working !!
+Next: return to semantic analysis. We do need to think about factoring this into modules ("features") but let's get the basics working first.
+
+=> compile hello world context and take it from there.
+
+
 -------------
 
 next step is modular grammar/parser/semantic analysis

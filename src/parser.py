@@ -475,6 +475,7 @@ def compute_meta_stuff():
     while not done: done = not (compute_initials())
     done = False
     while not done: done = not (compute_followers())
+    finish_compute_followers()
     done = False
     while not done: done = not (compute_leaves())
     compute_indices()
@@ -512,13 +513,8 @@ s_trace = ""
 def push_followers_downwards(term, followers, changed) -> bool:
     if not term.is_rule(): return changed
     for sub_rule in term.rules():
-        vb = (sub_rule.name == s_trace)
-        if vb: log(caller())
-        if vb: log("trace:", sub_rule.name)
-        if vb: log("before:", sub_rule.followers)
         filtered_followers = [f for f in followers if f not in sub_rule.initials]
         changed = merge_arrays(sub_rule.followers, filtered_followers) or changed
-        if vb: log("after:", sub_rule.followers)
     return changed
 
 def compute_followers():
@@ -550,6 +546,11 @@ def compute_followers():
             if second_last_term.is_rule():
                 changed = push_followers_downwards(second_last_term, rule.followers, changed)    
     return changed
+
+def finish_compute_followers():
+    for rule in s_grammar.rules:
+        for term in rule.terms:
+            term.followers = [f for f in term.followers if f not in term.initials]
 
 # compute leaves: for each rule, find {terminal => [rule]}
 def compute_leaves() -> bool:
@@ -871,17 +872,16 @@ def parse_rule(rule: Rule, reader: Reader, end: int) -> Dict:
     
     return ast
 
-#@log_indent
+@log_indent
 def parse_term(term: Term, reader: Reader, end: int) -> Dict|List|Lex:
     if term.dec == "": return parse_single_term(term, reader, end)
     min = 1 if term.dec == "+" else 0
     max = 1 if term.dec == "?" else None
-    #log(f"scanning for {term.followers}")
     end = reader.scan(end, term.followers)
     items = []
     safe_count = 20
     while not reader.eof(end) and (max==None or len(items) < max):
-        #log(f"---------- item {len(items)} ------------")
+        log(f"---------- item {len(items)} ------------")
         item_ast = parse_single_term(term, reader, end)
         items.append(item_ast)
         if should_stop_list(term, item_ast):
@@ -895,7 +895,7 @@ def parse_term(term: Term, reader: Reader, end: int) -> Dict|List|Lex:
     if len(items) < min: return parse_error(term, reader)
     return items
 
-#@log_indent
+@log_indent
 def parse_single_term(term: Term, reader: Reader, end: int) -> Dict|Lex:
     if term.is_terminal():
         if reader.matches(term, end): return reader.next(end)
@@ -964,4 +964,4 @@ def test_parser():
     test("type_2", parse("type int > i8, i16", "type"), """{'_type': 'type', 'name': int, 'children': {'_list': [i8, i16]}}""")
     test("type_3", parse("type distance < vector", "type"), """{'_type': 'type', 'name': distance, 'parent': vector}""")
     test("type_4", parse("type evil = no | yes | maybe", "type"), """{'_type': 'type', 'name': evil, 'values': {'_list': [no, yes, maybe]}}""")
-    test("function_0", parse("on (int r) = min (int a, b) { r = if (a < b) then a else b }", "function"), """{'_type': 'function', 'modifier': on, 'signature': {'_type': 'signature', '_list': [{'_type': 'param_group', '_list': [{'_type': 'variable', 'type': int, 'names': {'_list': [{'_type': 'name_decl', 'name': r}]}}]}, {'_type': 'operator', '_lex': =}, {'_type': 'word', '_lex': min}, {'_type': 'param_group', '_list': [{'_type': 'variable', 'type': int, 'names': {'_list': [{'_type': 'name_decl', 'name': a}, {'_type': 'name_decl', 'name': b}]}}]}]}, 'body': {'_type': 'function_body', '_list': [{'_type': 'statement', 'lhs': {'_type': 'statement_dest', '_lex': r}, 'assign': =, 'rhs': {'_type': 'expression', '_list': [{'_type': 'word', '_lex': if}, {'_type': 'brackets', '_list': [{'_type': 'parameter', 'value': {'_type': 'expression', '_list': [{'_type': 'word', '_lex': a}, {'_type': 'operator', '_lex': <}, {'_type': 'word', '_lex': b}]}}]}, {'_type': 'word', '_lex': then}, {'_type': 'word', '_lex': a}, {'_type': 'word', '_lex': else}, {'_type': 'word', '_lex': b}]}}]}}""")
+    test("function_0", parse("on (int r) = min (int a, b) { r = if (a < b) then a else b }", "function"), """{'_type': 'function', 'modifier': on, 'result': {'_type': 'result_vars', '_list': [{'_type': 'name_type', 'type': int, 'names': {'_list': [{'_type': 'name_decl', 'name': r}]}}]}, 'assign': =, 'signature': {'_type': 'signature', '_list': [{'_type': 'word', '_lex': min}, {'_type': 'param_group', '_list': [{'_type': 'variable', 'type': int, 'names': {'_list': [{'_type': 'name_decl', 'name': a}, {'_type': 'name_decl', 'name': b}]}}]}]}, 'body': {'_type': 'function_body', '_list': [{'_type': 'statement', 'lhs': {'_type': 'statement_dest', '_lex': r}, 'assign': =, 'rhs': {'_type': 'expression', '_list': [{'_type': 'word', '_lex': if}, {'_type': 'brackets', '_list': [{'_type': 'parameter', 'value': {'_type': 'expression', '_list': [{'_type': 'word', '_lex': a}, {'_type': 'operator', '_lex': <}, {'_type': 'word', '_lex': b}]}}]}, {'_type': 'word', '_lex': then}, {'_type': 'word', '_lex': a}, {'_type': 'word', '_lex': else}, {'_type': 'word', '_lex': b}]}}]}}""")
