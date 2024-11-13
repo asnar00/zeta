@@ -20,10 +20,24 @@ feature Hello
         out$ << hello("world")
 """
 
+def parse(code: str) -> Dict:
+    ls = lexer(Source(code=code))
+    reader = Reader(ls)
+    return parse_rule(Grammar.current.rule_named["feature"], reader, len(ls))
+
 #@this_is_the_test
 def test_zero():
     log("test_zero")
+    grammar = build_grammar(s_zero_grammar_spec)
+    ast = parse(s_test_program)
+    log(format(ast))
+    log_exit()
+
+
+def someFunc():
     ast = parse(s_test_program, "feature")
+    log(ast)
+    log_exit()
     if "_error" in ast:
         log(ast)
         log_exit()
