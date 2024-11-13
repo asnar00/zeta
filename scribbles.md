@@ -2,6 +2,23 @@
 # scribblez
 "slow is smooth, smooth is fast"
 
+annoying ambiguity requiring more complexity
+
+    string result, out, int x, y, z
+
+rules are:
+
+    c_name_decl = type name*,
+    result_vars = "(" c_name_decl*, ")"
+
+The point is here that we have two competing separators ","
+
+So given a particular separator, it could match the lower one (the one in c_name_decl) or a higher one (the one in result_vars).
+
+The algorithm to parse this is a bit more complex. So we have to figure it out, and it has to work on all the previous tests also.
+
+
+-------------------
 
 
 OK so NOW we have what seems to be a functioning parser, which is amazing news.
