@@ -2,6 +2,79 @@
 # scribblez
 "slow is smooth, smooth is fast"
 
+Two cases:
+
+    incomplete test:
+
+        > a => [missing rhs]
+
+    name but no alias
+
+        x [no "|" alias], y, z          => expected "|", got ","
+
+I think we can fix this by doing a scan-forward for the separator?
+But that can only happen if we're not nested-separator.
+
+-----------------
+
+how to handle nested separators...
+
+    name_decl := type:<identifier> names:<identifier>*,
+    results := "(" name_decl+, ")"
+
+So what does a list-parsing algorithm look like that could handle this?
+
+first: identifying nested separator "," : that's done and working.
+
+there are two basic approaches to this:
+
+    the "eat what you can" approach, vs the "scan forward" approach
+
+eat-what-you-can just reads forward in the list until an error, and then *does something*
+The "does something" is a backtrack of some sort, where we invalidate the last N items, rewind to that point, and continue.
+
+Let's look at this in action on an example:
+
+    (int x,y, float k)
+
+so here we'll do:
+
+    results "(int x,y, float k)"
+        "("
+        name_decl+, "int x,y, float k
+            name_decl "int x,y, float k"
+                type: "int"
+                name[0]: "x"
+                sep: ","
+                name[1]: "y"
+                sep: ","
+                name[2]: "float"
+                sep: !!! separator mismatch
+
+The problem with this is that there's no way to distinguish between two scenarios:
+
+    1- this is correct code, "float" is a type and "int" is a type
+    2- this represents a user error: "float" is a variable name, and the user meant to put a comma in between.
+
+In case 1, we should backtrack to before the last separator; so we have
+
+    name_decl "int x,y"
+    remaining: ", float k"
+
+    and then pop up to the level above. i mean it might really be that simple.
+    Of course, this can only happen IF we're in a nested-separator situation, otherwise it's a straight error. So we have to have some kind of way of storing the nesting, and knowing that we're in a nesting situation (because that depends on what rules are further up the stack).
+
+OK let's try it.
+
+I think to speed up progress, we need to :
+
+1- fix the output ast format (which I think we can settle on now)
+2- move to a modular grammar so we can do semantic analysis etc in modules.
+
+    
+
+----------
+
 annoying ambiguity requiring more complexity
 
     string result, out, int x, y, z
@@ -16,6 +89,8 @@ The point is here that we have two competing separators ","
 So given a particular separator, it could match the lower one (the one in c_name_decl) or a higher one (the one in result_vars).
 
 The algorithm to parse this is a bit more complex. So we have to figure it out, and it has to work on all the previous tests also.
+
+We'll call this the "nested separator problem"
 
 
 -------------------

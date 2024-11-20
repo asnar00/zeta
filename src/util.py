@@ -17,6 +17,8 @@ from functools import wraps
 
 # set if logging is enabled
 s_log_enabled: bool = True
+s_n_log_calls = 0
+s_log_max_depth = 1000
 
 # indent level
 s_log_indent = 0
@@ -28,16 +30,28 @@ s_log = ""
 def log_enabled() -> bool:
     return s_log_enabled
 
+# set log max-depth
+def log_max_depth(n: int):
+    global s_log_max_depth
+    s_log_max_depth = n * 2 # two levels per call
+
 # log: prints stuff if logging is enabled
 def log(*args):
+    global s_n_log_calls
+    s_n_log_calls += 1
     if s_log_enabled:
         # print args to a string instead of the output
-        s = " " * s_log_indent
+        n_tabs = s_log_indent // 2
+        n_rem = s_log_indent % 2
+        s = log_grey(" |") * n_tabs + " " * n_rem
         for a in args:
             s += str(a) + " "
         # add it to the global s_log string
         global s_log
         s_log += s + "\n"
+    if s_n_log_calls > 1000:
+        print("------------------- stopping: too many log calls ---------------------")
+        log_exit()
 
 # clear
 def log_clear():
@@ -53,34 +67,41 @@ def log_flush():
 # log_indent is a decorator that increases indent level within a function
 def log_indent(fn):
     def wrapper(*args, **kwargs):
-        global s_log_indent
+        global s_log_indent, s_log_max_depth, s_log_enabled
         s_log_indent += 1
-
-        # Get function signature
-        sig = inspect.signature(fn)
-        
-        # Get type hints
-        type_hints = get_type_hints(fn)
-        # Check if return type hint exists
-        has_return_hint = 'return' in type_hints
-        
-        # Combine positional and keyword arguments
-        bound_args = sig.bind(*args, **kwargs)
-        bound_args.apply_defaults()
-        
-        # Prepare parameter info
-        param_info = []
-        for name, value in bound_args.arguments.items():
-            param_type = type_hints.get(name, type(value).__name__)
-            param_info.append(f"{name}: {log_short(repr(value))}")
-        
-        # Log function call with parameters
-        log(f"{fn.__name__}({', '.join(param_info)})")
+        has_return_hint = False
+        if s_log_indent < s_log_max_depth:
+            # Get function signature
+            sig = inspect.signature(fn)
+            
+            # Get type hints
+            type_hints = get_type_hints(fn)
+            # Check if return type hint exists
+            has_return_hint = 'return' in type_hints
+            
+            # Combine positional and keyword arguments
+            bound_args = sig.bind(*args, **kwargs)
+            bound_args.apply_defaults()
+            
+            # Prepare parameter info
+            param_info = []
+            for name, value in bound_args.arguments.items():
+                param_type = type_hints.get(name, type(value).__name__)
+                param_info.append(f"{name}: {log_short(repr(value))}")
+            
+            # Log function call with parameters
+            log(f"{fn.__name__}({', '.join(param_info)})")
+            s_log_enabled = True
+        else:
+            s_log_enabled = False
         s_log_indent += 1
 
         result = fn(*args, **kwargs)
         s_log_indent -= 1
-        if has_return_hint: log(f"returning:", result)
+
+        if s_log_indent < s_log_max_depth: 
+            s_log_enabled = True
+        if has_return_hint: log(f"{log_grey('=>')}", result)
         s_log_indent -= 1
         return result
     return wrapper

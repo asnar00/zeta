@@ -301,7 +301,7 @@ class Term:
         self.leaves = {}    # maps match => rule-names
         self.index = 0      # index in the original term list
         self.rule = None    # the rule we're in, if any
-        self.contains_nested_sep = False     # True if this term points to sub-rules with the same separator
+        self.nested_sep = False     # True if this term points to sub-rules with the same separator
     def __str__(self):
         out = " | ".join(self.vals)
         if len(self.vals) > 1: out = f"({out})"
@@ -442,7 +442,7 @@ def split_terms(rhs: str) -> str:
 # 1- all referred to rules actually exist
 # 2- any unbound list terms are the only variable term in the rule
 # 3- a term's values are all the same type ("keyword", <type>, or rule)
-
+# 4- there are no nested separators
 def get_errors(grammar: Grammar) -> str:
     out = ""
     for rule in grammar.rules:
@@ -469,53 +469,48 @@ def get_errors(grammar: Grammar) -> str:
             n_vals = len(term.vals)
             ok = (n_keywords == n_vals) or (n_types == n_vals) or (n_rules == n_vals)
             if not ok:
-                out += f"term {i_term} of {rule.name}: values are mixed types\n" 
+                out += f"term {i_term} of {rule.name}: values are mixed types\n"
+            # 4- are there nested separators?
+            if contains_nested_separator(term): 
+                term.nested_sep = True
         if len(unbound_list_terms) > 0 and len(variable_terms) > 1:
             out += f"rule {rule.name} has unbound list terms: {str(unbound_list_terms).replace("[", "").replace("]", "")}\n"
     return out
 
-# computes all nested-separators
-def compute_nested_separators():
-    for rule in Grammar.current.rules:
-        for term in rule.terms:
-            found_terms =contains_nested_separator(term)
-            if len(found_terms) > 0:
-                log(f"rule {rule.name}: term {term.index} has nested separator {term.sep}")
-                term.contains_nested_sep = True
-
-# checks a term to see if it has one or more nested separators
-def contains_nested_separator(term: Term) -> List[Term]:
-    if term.sep == "": return []
+# checks a term to see if it has a nested separator
+def contains_nested_separator(term: Term) -> bool:
+    if term.sep == "": return False
     visited = {}   # map Rule.name => bool
-    if not term.is_rule(): return []
+    if not term.is_rule(): return False
     # returns True if the rule, or any reachable sub-rule, contains the separator outside of braces ("{}()")
-    def check_nested_separator(rule: Rule, visited: Dict[Rule, bool], sep: str) -> List[Term]:
+    def check_nested_separator(rule: Rule, visited: Dict[Rule, bool], sep: str) -> bool:
         if rule.name in visited: return visited[rule.name]
+        result = False # doesn't contain the separator
         visited[rule.name] = False
         in_braces = False
-        found_terms = []
         for term in rule.terms:
             if not in_braces:
                 if term.sep == sep:
-                    found_terms.append(term)
+                    result = True
+                    break
                 if term.is_rule():
                     for sub_rule in term.rules():
-                        new_terms= check_nested_separator(sub_rule, visited, sep)
-                        found_terms += new_terms
+                        if check_nested_separator(sub_rule, visited, sep): 
+                            result = True
+                            break
             if term.is_keyword() and term.is_singular():
                 val = term.vals[0][1:-1]
                 if val in "{(" : in_braces = True
                 elif val in "})": in_braces = False
 
-        visited[rule.name] = found_terms
-        return found_terms
+        visited[rule.name] = result
+        return result
 
-    all_sub_terms_found = []
     for sub_rule in term.rules():
         if sub_rule.name in visited: continue
-        sub_terms_found = check_nested_separator(sub_rule, visited, term.sep)
-        all_sub_terms_found += sub_terms_found
-    return all_sub_terms_found
+        contains_sep = check_nested_separator(sub_rule, visited, term.sep)
+        if contains_sep: return True
+    return False
     
 
 # computes the initiators and followers for each rule and term
@@ -528,7 +523,6 @@ def compute_meta_stuff():
     done = False
     while not done: done = not (compute_leaves())
     compute_indices()
-    compute_nested_separators()
 
 def compute_initials() -> bool:
     changed = False
@@ -663,18 +657,18 @@ s_zero_grammar_spec : str = """
 
     test := ">" lhs:expression ("=>" rhs:expression)?
 
-    type := "type" name (struct | type_relation | enum)
-    name := name:<identifier> ("|" alias:<identifier>)?
+    type := "type" name_decl (struct | type_relation | enum)
+    name_decl := name:<identifier> ("|" alias:<identifier>)?
     struct := "=" "{" properties:variable* "}"
     type_relation := (child_type | parent_type)
     child_type := "<" parent:<identifier>
     parent_type := ">" children:<identifier>*,
     enum := "=" values:<identifier>*|
 
-    variable := name_type ("=" default:expression)?
+    variable := names:name_type*, ("=" default:expression)?
     name_type := (c_type_name | ts_name_type)
-    c_type_name := type:<identifier> names:name+,
-    ts_name_type := names:name+, ":" type:<identifier>?
+    c_type_name := type:<identifier> names:name_decl*,
+    ts_name_type := name:name_decl ":" type:<identifier>?
 
     function := modifier:("on" | "replace" | "after" | "before") function_result? signature:signature "{" body:function_body "}"
     function_result := result:result_vars assign:("=" | "<<")
@@ -707,19 +701,19 @@ feature_2 := 'extends' parent:<identifier>
 component := (test | type | variable | function)
 test := '>' lhs:expression test_2?
 test_2 := '=>' rhs:expression
-type := 'type' name (struct | type_relation | enum)
-name := name:<identifier> name_1?
-name_1 := '|' alias:<identifier>
+type := 'type' name_decl (struct | type_relation | enum)
+name_decl := name:<identifier> name_decl_1?
+name_decl_1 := '|' alias:<identifier>
 struct := '=' '{' properties:variable* '}'
 type_relation := (child_type | parent_type)
 child_type := '<' parent:<identifier>
 parent_type := '>' children:<identifier>*,
 enum := '=' values:<identifier>*|
-variable := name_type variable_1?
+variable := names:name_type*, variable_1?
 variable_1 := '=' default:expression
 name_type := (c_type_name | ts_name_type)
-c_type_name := type:<identifier> names:name+,
-ts_name_type := names:name+, ':' type:<identifier>?
+c_type_name := type:<identifier> names:name_decl*,
+ts_name_type := name:name_decl ':' type:<identifier>?
 function := modifier:('on' | 'replace' | 'after' | 'before') function_result? signature:signature '{' body:function_body '}'
 function_result := result:result_vars assign:('=' | '<<')
 result_vars := '(' name_type*, ')'
@@ -826,10 +820,9 @@ class LsReader:
         self.pos = 0
 
 class Reader:
-    def __init__(self, lsReader: LsReader, end: int = None, nested_sep: str = None):
+    def __init__(self, lsReader: LsReader, end: int = None):
         self.lsReader = lsReader
         self.end = end or len(lsReader.ls)
-        self.nested_sep = nested_sep
     def __str__(self):
         return '"' + " ".join([str(lex) for lex in self.lsReader.ls[self.pos():self.end]]) + '"' if self.pos() < len(self.lsReader.ls) else "<eof>"
     def __repr__(self): return self.__str__()
@@ -847,63 +840,126 @@ class Reader:
             lex = self.lsReader.ls[i_lex]
             if lex_matches(lex, terminals): break
             i_lex += self.lsReader.ls[i_lex].jump + 1
-        return Reader(self.lsReader, i_lex, self.nested_sep)
+        return Reader(self.lsReader, i_lex)
     def location(self) -> str:
         return self.lsReader.ls[self.lsReader.pos].location() if self.pos() < len(self.lsReader.ls) else "<eof>"
-    def set_nested_separator(self, nested_sep: str): self.nested_sep = nested_sep
-
+        
 #--------------------------------------------------------------------------------------------------
 # Parser
 
-# parse a rule and return an ast
 @log_indent
 def parse_rule(rule: Rule, reader: Reader) -> Dict:
-    children = parse_terms(rule, reader)
-    handle_optional_errors(rule, children)
-    ast = merge_children(rule, children)
-    check_premature_end(rule, ast, children, reader)
-    return ast
+    children = []
 
-# dispatch term parser to the correct case (take term.dec into account)
-def parse_term(term: Term, reader: Reader) -> Dict:
-    if term.is_singular(): return parse_singular_term(term, reader)
-    elif term.is_optional(): return parse_optional(term, reader.scan(term.followers))
-    else: return parse_list_term(term, reader.scan(term.followers))
-
-# dispatch singular term parser to the correct case (ignore term.dec)
-def parse_singular_term(term: Term, reader: Reader) -> Dict:
-    if term.is_terminal(): return parse_terminal(term, reader)
-    elif term.is_rule(): return parse_rule_term(term, reader.scan(term.followers))
-    else: raise Exception(f"unknown term type: {term.vals}")
-
-@log_indent
-def parse_list_term(term: Term, reader: Reader) -> Dict:
-    items = []
-    pos = reader.pos()
-    while not reader.eof():
-        term_reader = scan_separator(reader, term)
-        child = parse_singular_term(term, term_reader)
-        items.append(child)
-        if has_errors(child):
-            reader.restore(pos)
+    # get a list of all children, with the flattest callstack we can manage
+    for term in rule.terms:
+        child = None
+        if term.is_terminal() and term.is_singular(): child = parse_terminal(term, reader)
+        else:
+            term_reader = reader.scan(term.followers)
+            if term.is_list(): 
+                if term.nested_sep == True: child = parse_nested_list(term, term_reader)
+                else: child = parse_list(term, term_reader)
+            elif term.is_optional(): child = parse_optional(term, term_reader)
+            elif term.is_rule(): child = parse_rule_term(term, term_reader)
+        children.append(child)
+        if has_errors(child) and not term.is_optional(): 
+            log("breaking on error")
             break
-        if reader.eof(): break
-        pos = reader.pos()
-        if term.sep != "":
-            if not lex_matches(reader.peek(), [f'"{term.sep}"']): 
-                log(log_red(f"separator error: expected {term.sep} but got {reader.peek()}"))
-                break
-            reader.next()
-    items = truncate_list(term, reader, items, pos)
-    ast = { "_list" : items }
-    return ast
 
+    # handle optional terms with errors
+    # 1- if an optional term with errors is followed by a term without errors (or is the last term), remove the errors
+    for i_term, term in enumerate(rule.terms):
+        if i_term >= len(children): break
+        if not term.is_optional(): continue
+        child = children[i_term]
+        if not has_errors(child): continue
+        if (i_term+1) == len(children) or not has_errors(children[i_term+1]):
+            children[i_term] = {}
+
+    # merge children into ast
+    ast = { "_rule" : rule.name }
+    for i_term, term in enumerate(rule.terms):
+        if i_term < len(children): 
+            ast = merge_ast(term, ast, children[i_term])
+
+    # if we didn't match all terms, add error
+    log("n_children:", len(children), "n_terms:", len(rule.terms))
+    if len(children) < len(rule.terms):
+        log("whoops, premature end")
+        if not has_errors(ast):
+            err = parse_error("premature end", rule.terms[len(children)-1], reader)
+            ast["_errors"] = [err]
+
+    return ast
+ 
+# simplest: either a single keyword or identifier
+@log_indent
+def parse_terminal(term: Term, reader: Reader) -> Dict:
+    if reader.matches(term):
+        lex = reader.next()
+        return lex
+    else:
+        return parse_error("mismatch",term, reader)
+    
+# a list of items (either zero-or-more or one-or-more)
+@log_indent
+def parse_list(term: Term, reader: Reader) -> Dict:
+    items = []
+    safe_count = 0
+    while not reader.eof():
+        safe_count += 1
+        if safe_count > 1000:
+            log("whoops, infinite loop")
+            break
+        # parse item
+        item = None
+        item_reader = reader.scan([f'"{term.sep}"'])
+        if term.is_terminal():
+            item = parse_terminal(term, item_reader)
+        elif term.is_rule():
+            item = parse_rule_term(term, item_reader)
+        items.append(item)
+        # parse separator
+        if term.sep and not reader.eof():
+            if lex_matches(reader.peek(), '"' + term.sep + '"'):
+                reader.next()
+            else:
+                items.append(parse_error("separator", term, reader))
+                break
+    # if we expect at least one item, error if we got none
+    if term.dec == "+" and len(items) == 0:
+        items.append(parse_error("needed at least one", term, reader))
+    return { "_list" : items }
+
+# parse a list with nested separators
+@log_indent
+def parse_nested_list(term: Term, reader: Reader) -> Dict:
+    items = []
+    while not reader.eof():
+        if term.is_terminal():
+            item = parse_terminal(term, reader)
+        elif term.is_rule():
+            item = parse_rule_term(term, reader)
+        items.append(item)
+        if term.sep and not reader.eof():
+            if lex_matches(reader.peek(), f'"{term.sep}"'):
+                reader.next()
+            else:
+                items.append(parse_error("separator", term, reader))
+                break
+    return { "_list" : items }
+
+# an optional item
 @log_indent
 def parse_optional(term: Term, reader: Reader) -> Dict:
     if reader.eof(): return {}
+    ast = {}
     pos = reader.pos()
-    child = parse_singular_term(term, reader)
-    if has_errors(child): reader.restore(pos)
+    if term.is_terminal(): child = parse_terminal(term, reader)
+    elif term.is_rule(): child = parse_rule_term(term, reader)
+    if has_errors(child):
+        reader.restore(pos)
     return child
 
 @log_indent
@@ -911,7 +967,6 @@ def parse_rule_term(term: Term, reader: Reader) -> Dict:
     if reader.eof(): return parse_error("premature end", term, reader)
     rules = reduce_rules(term, reader.peek())
     log("rules:", rules)
-    if len(rules) == 0: return parse_error("no matched rules", term, reader)
     ast = {}
     for rule in rules:
         pos = reader.pos()
@@ -919,70 +974,10 @@ def parse_rule_term(term: Term, reader: Reader) -> Dict:
         if not has_errors(ast): return ast
         reader.restore(pos)
     return ast
-
-# parse a terminal singular term
-@log_indent
-def parse_terminal(term: Term, reader: Reader) -> Dict:
-    return reader.next() if reader.matches(term) else parse_error("mismatch",term, reader)
-
-#--------------------------------------------------------------------------------------------------
-# these are parts of the main functions
-
-# parse each term in turn, return array of children
-def parse_terms(rule: Rule, reader: Reader) -> List[Dict]:
-    children = []
-    for term in rule.terms:
-        child = parse_term(term, reader)
-        children.append(child)
-        if has_errors(child) and not term.is_optional(): break
-    return children
-
-# if an optional term has errors but is followed by a successfully parsed term, remove the errors
-def handle_optional_errors(rule: Rule, children: List[Dict]):
-    for i_term, term in enumerate(rule.terms):
-        if i_term >= len(children): break
-        if not term.is_optional(): continue
-        child = children[i_term]
-        if not has_errors(child): continue
-        if (i_term+1) < len(children) and not has_errors(children[i_term+1]):
-            log("dropping errors from optional term")
-            children[i_term] = {}
-
-# merge children into a single ast
-def merge_children(rule: Rule, children: List[Dict]) -> Dict:
-    # merge children into ast
-    ast = { "_rule" : rule.name }
-    for i_term, term in enumerate(rule.terms):
-        if i_term < len(children): 
-            ast = merge_ast(term, ast, children[i_term])
-    return ast
-
-# if we didn't match all terms, add error
-def check_premature_end(rule: Rule, ast: Dict, children: List[Dict], reader: Reader):
-    if len(children) < len(rule.terms):
-        log("premature end!")
-        if not has_errors(ast):
-            err = parse_error("premature end", rule.terms[len(children)-1], reader)
-            ast["_errors"] = [err]
-
+    
 def parse_error(message: str, term: Term, reader: Reader) -> Dict:
     err = { "_err" : message, "_expected" : str(term), "_got" : reader.peek_unrestricted(), "_at" : reader.location()}
     return { "_errors" : [err]}
-
-def scan_separator(reader: Reader, term: Term) -> Reader:
-    term_reader = reader.scan([f'"{term.sep}"']) if (term.sep and term.contains_nested_sep == False) else reader
-    if term.contains_nested_sep: term_reader.set_nested_separator(term.sep)
-    return term_reader
-
-def truncate_list(term: Term, reader: Reader, items: List[Dict], pos: int) -> List[Dict]:
-    if reader.nested_sep == None: return items
-    last_item = items[-1]
-    if not has_errors(last_item): return items
-    log("truncating list!")
-    if term.dec == "+" and len(items) == 1: return items
-    items = items[:-1]
-    reader.restore(pos)
-    return items
 
 #--------------------------------------------------------------------------------------------------
 # Parser test
@@ -992,40 +987,37 @@ def parse_test(code: str, rule_name: str = "feature") -> str:
     reader = Reader(LsReader(ls))
     rule = Grammar.current.rule_named[rule_name]
     ast = parse_rule(rule, reader)
-    log(format(ast))
+    print(format(ast))
     return ast
+
 
 @this_is_the_test
 def test_parser():
     log("test_parser")
     grammar = build_grammar(s_zero_grammar_spec)
     log_max_depth(8)
-    #test_verbose(False)
-    test("feature_0", parse_test(""), """{'_rule': 'feature', '_errors': [{'_err': 'mismatch', '_expected': "'feature'", '_got': None, '_at': '<eof>'}]}""")
-    test("feature_1", parse_test("feature"), """{'_rule': 'feature', 'name': {'_errors': [{'_err': 'mismatch', '_expected': 'name:<identifier>', '_got': None, '_at': '<eof>'}]}}""")
-    test("feature_2", parse_test("feature MyFeature"), """{'_rule': 'feature', 'name': MyFeature, '_errors': [{'_err': 'mismatch', '_expected': "'{'", '_got': None, '_at': '<eof>'}]}""")
-    test("feature_3", parse_test("feature MyFeature extends"), """{'_rule': 'feature', 'name': MyFeature, 'parent': {'_errors': [{'_err': 'mismatch', '_expected': 'parent:<identifier>', '_got': None, '_at': '<eof>'}]}, '_errors': [{'_err': 'mismatch', '_expected': "'{'", '_got': extends, '_at': ':1:19'}]}""")
-    test("feature_4", parse_test("feature MyFeature extends Another"), """{'_rule': 'feature', 'name': MyFeature, 'parent': Another, '_errors': [{'_err': 'mismatch', '_expected': "'{'", '_got': None, '_at': '<eof>'}]}""")
-    test("feature_5", parse_test("feature MyFeature {}"), """{'_rule': 'feature', 'name': MyFeature, 'body': {'_list': []}}""")
-    test("feature_6", parse_test("feature MyFeature extends Another {}"), """{'_rule': 'feature', 'name': MyFeature, 'parent': Another, 'body': {'_list': []}}""")
-    test("expression_0", parse_test("1", "expression"), """{'_rule': 'expression', '_list': [{'_rule': 'constant', '_val': 1}]}""")
-    test("expression_1", parse_test("a", "expression"), """{'_rule': 'expression', '_list': [{'_rule': 'word', '_val': a}]}""")
-    test("expression_2", parse_test("a + b", "expression"), """{'_rule': 'expression', '_list': [{'_rule': 'word', '_val': a}, {'_rule': 'operator', '_val': +}, {'_rule': 'word', '_val': b}]}""")
-    test("parameter_0", parse_test("a = 1", "parameter"), """{'_rule': 'parameter', 'name': a, 'value': {'_rule': 'expression', '_list': [{'_rule': 'constant', '_val': 1}]}}""")
-    test("parameter_1", parse_test("a + b", "parameter"), """{'_rule': 'parameter', 'value': {'_rule': 'expression', '_list': [{'_rule': 'word', '_val': a}, {'_rule': 'operator', '_val': +}, {'_rule': 'word', '_val': b}]}}""")
-    test("brackets_0", parse_test("(a + b)", "brackets"), """{'_rule': 'brackets', '_list': [{'_rule': 'parameter', 'value': {'_rule': 'expression', '_list': [{'_rule': 'word', '_val': a}, {'_rule': 'operator', '_val': +}, {'_rule': 'word', '_val': b}]}}]}""")
-    test("brackets_1", parse_test("(v = a + b)", "expression"), """{'_rule': 'expression', '_list': [{'_rule': 'brackets', '_list': [{'_rule': 'parameter', 'name': v, 'value': {'_rule': 'expression', '_list': [{'_rule': 'word', '_val': a}, {'_rule': 'operator', '_val': +}, {'_rule': 'word', '_val': b}]}}]}]}""")
-    test("expression_3", parse_test("a + (2 - c)", "expression"), """{'_rule': 'expression', '_list': [{'_rule': 'word', '_val': a}, {'_rule': 'operator', '_val': +}, {'_rule': 'brackets', '_list': [{'_rule': 'parameter', 'value': {'_rule': 'expression', '_list': [{'_rule': 'constant', '_val': 2}, {'_rule': 'operator', '_val': -}, {'_rule': 'word', '_val': c}]}}]}]}""")
-    test("test_0", parse_test("> a", "test"), """{'_rule': 'test', 'lhs': {'_rule': 'expression', '_list': [{'_rule': 'word', '_val': a}]}}""")
-    test("test_1", parse_test("> a =>", "test"), """{'_rule': 'test', 'lhs': {'_rule': 'expression', '_list': [{'_rule': 'word', '_val': a}]}, 'rhs': {'_errors': [{'_err': 'premature end', '_expected': 'rhs:expression', '_got': None, '_at': '<eof>'}]}}""")
-    test("test_2", parse_test("> a => b", "test"), """{'_rule': 'test', 'lhs': {'_rule': 'expression', '_list': [{'_rule': 'word', '_val': a}]}, 'rhs': {'_rule': 'expression', '_list': [{'_rule': 'word', '_val': b}]}}""")
-    test("variable_0", parse_test("int a", "name_type"), """{'_rule': 'c_type_name', 'type': int, 'names': {'_list': [{'_rule': 'name', 'name': a}]}}""")
-    test("variable_1", parse_test("a : int", "name_type"), """{'_rule': 'ts_name_type', 'names': {'_list': [{'_rule': 'name', 'name': a}]}, 'type': int}""")
-    test("variable_2", parse_test("a : int = 0", "variable"), """{'_rule': 'variable', 'names': {'_list': [{'_rule': 'name', 'name': a}]}, 'type': int, 'default': {'_rule': 'expression', '_list': [{'_rule': 'constant', '_val': 0}]}}""")
-    test("variable_3", parse_test("int a = 0", "variable"), """{'_rule': 'variable', 'type': int, 'names': {'_list': [{'_rule': 'name', 'name': a}]}, 'default': {'_rule': 'expression', '_list': [{'_rule': 'constant', '_val': 0}]}}""")
-    test("variable_4", parse_test("r|red, g|green, b|blue: number = 0", "variable"), """{'_rule': 'variable', 'names': {'_list': [{'_rule': 'name', 'name': r, 'alias': red}, {'_rule': 'name', 'name': g, 'alias': green}, {'_rule': 'name', 'name': b, 'alias': blue}]}, 'type': number, 'default': {'_rule': 'expression', '_list': [{'_rule': 'constant', '_val': 0}]}}""")
-    test("variable_5", parse_test("int x,y = 0", "variable"), """{'_rule': 'variable', 'type': int, 'names': {'_list': [{'_rule': 'name', 'name': x}, {'_rule': 'name', 'name': y}]}, 'default': {'_rule': 'expression', '_list': [{'_rule': 'constant', '_val': 0}]}}""")
-    test("type_0", parse_test("type vec", "type"), """{'_rule': 'type', 'name': vec, '_errors': [{'_err': 'premature end', '_expected': '(struct | type_relation | enum)', '_got': None, '_at': '<eof>'}]}""")
-    test("type_1", parse_test("type vec | vector = { x, y, z: number =0 }", "type"), """{'_rule': 'type', 'name': vec, 'alias': vector, 'properties': {'_list': [{'_rule': 'variable', 'names': {'_list': [{'_rule': 'name', 'name': x}, {'_rule': 'name', 'name': y}, {'_rule': 'name', 'name': z}]}, 'type': number, 'default': {'_rule': 'expression', '_list': [{'_rule': 'constant', '_val': 0}]}}]}}""")
-    test("result_vars_1", parse_test("(a, b: int, k, l: float)", "result_vars"), """{'_rule': 'result_vars', '_list': [{'_rule': 'ts_name_type', 'names': {'_list': [{'_rule': 'name', 'name': a}, {'_rule': 'name', 'name': b}]}, 'type': int}, {'_rule': 'ts_name_type', 'names': {'_list': [{'_rule': 'name', 'name': k}, {'_rule': 'name', 'name': l}]}, 'type': float}]}""")
-    test("result_vars_2", parse_test("(int a, b, float k)", "result_vars"), """{'_rule': 'result_vars', '_list': [{'_rule': 'c_type_name', 'type': int, 'names': {'_list': [{'_rule': 'name', 'name': a}, {'_rule': 'name', 'name': b}]}}, {'_rule': 'c_type_name', 'type': float, 'names': {'_list': [{'_rule': 'name', 'name': k}]}}]}""")
+    # test("feature_0", parse_test(""), """{'_rule': 'feature', '_errors': [{'_err': 'mismatch', '_expected': "'feature'", '_got': None, '_at': '<eof>'}]}""")
+    # test("feature_1", parse_test("feature"), """{'_rule': 'feature', 'name': {'_errors': [{'_err': 'mismatch', '_expected': 'name:<identifier>', '_got': None, '_at': '<eof>'}]}}""")
+    # test("feature_2", parse_test("feature MyFeature"), """{'_rule': 'feature', 'name': MyFeature, '_errors': [{'_err': 'mismatch', '_expected': "'{'", '_got': None, '_at': '<eof>'}]}""")
+    # test("feature_3", parse_test("feature MyFeature extends"), """{'_rule': 'feature', 'name': MyFeature, 'parent': {'_errors': [{'_err': 'mismatch', '_expected': 'parent:<identifier>', '_got': None, '_at': '<eof>'}]}, '_errors': [{'_err': 'mismatch', '_expected': "'{'", '_got': extends, '_at': ':1:19'}]}""")
+    # test("feature_4", parse_test("feature MyFeature extends Another"), """{'_rule': 'feature', 'name': MyFeature, 'parent': Another, '_errors': [{'_err': 'mismatch', '_expected': "'{'", '_got': None, '_at': '<eof>'}]}""")
+    # test("feature_5", parse_test("feature MyFeature {}"), """{'_rule': 'feature', 'name': MyFeature, 'body': {'_list': []}}""")
+    # test("feature_6", parse_test("feature MyFeature extends Another {}"), """{'_rule': 'feature', 'name': MyFeature, 'parent': Another, 'body': {'_list': []}}""")
+    # test("expression_0", parse_test("1", "expression"), """{'_rule': 'expression', '_list': [{'_rule': 'constant', '_val': 1}]}""")
+    # test("expression_1", parse_test("a", "expression"), """{'_rule': 'expression', '_list': [{'_rule': 'word', '_val': a}]}""")
+    # test("expression_2", parse_test("a + b", "expression"), """{'_rule': 'expression', '_list': [{'_rule': 'word', '_val': a}, {'_rule': 'operator', '_val': +}, {'_rule': 'word', '_val': b}]}""")
+    # test("parameter_0", parse_test("a = 1", "parameter"), """{'_rule': 'parameter', 'name': a, 'value': {'_rule': 'expression', '_list': [{'_rule': 'constant', '_val': 1}]}}""")
+    # test("parameter_1", parse_test("a + b", "parameter"), """{'_rule': 'parameter', 'value': {'_rule': 'expression', '_list': [{'_rule': 'word', '_val': a}, {'_rule': 'operator', '_val': +}, {'_rule': 'word', '_val': b}]}}""")
+    # test("brackets_0", parse_test("(a + b)", "brackets"), """{'_rule': 'brackets', '_list': [{'_rule': 'parameter', 'value': {'_rule': 'expression', '_list': [{'_rule': 'word', '_val': a}, {'_rule': 'operator', '_val': +}, {'_rule': 'word', '_val': b}]}}]}""")
+    # test("brackets_1", parse_test("(v = a + b)", "expression"), """{'_rule': 'expression', '_list': [{'_rule': 'brackets', '_list': [{'_rule': 'parameter', 'name': v, 'value': {'_rule': 'expression', '_list': [{'_rule': 'word', '_val': a}, {'_rule': 'operator', '_val': +}, {'_rule': 'word', '_val': b}]}}]}]}""")
+    # test("expression_3", parse_test("a + (2 - c)", "expression"), """{'_rule': 'expression', '_list': [{'_rule': 'word', '_val': a}, {'_rule': 'operator', '_val': +}, {'_rule': 'brackets', '_list': [{'_rule': 'parameter', 'value': {'_rule': 'expression', '_list': [{'_rule': 'constant', '_val': 2}, {'_rule': 'operator', '_val': -}, {'_rule': 'word', '_val': c}]}}]}]}""")
+    # test("test_0", parse_test("> a", "test"), """{'_rule': 'test', 'lhs': {'_rule': 'expression', '_list': [{'_rule': 'word', '_val': a}]}}""")
+    # test("test_1", parse_test("> a =>", "test"), """{'_rule': 'test', 'lhs': {'_rule': 'expression', '_list': [{'_rule': 'word', '_val': a}]}, 'rhs': {'_errors': [{'_err': 'premature end', '_expected': 'rhs:expression', '_got': None, '_at': '<eof>'}]}}""")
+    # test("test_2", parse_test("> a => b", "test"), """{'_rule': 'test', 'lhs': {'_rule': 'expression', '_list': [{'_rule': 'word', '_val': a}]}, 'rhs': {'_rule': 'expression', '_list': [{'_rule': 'word', '_val': b}]}}""")
+    # test("variable_0", parse_test("int a", "name_type"), """{'_rule': 'c_type_name', 'type': int, 'name': {'_rule': 'name_decl', 'name': a}}""")
+    # test("variable_1", parse_test("a : int", "name_type"), """{'_rule': 'ts_name_type', 'name': {'_rule': 'name_decl', 'name': a}, 'type': int}""")
+    # test("variable_2", parse_test("a : int = 0", "variable"), """{'_rule': 'variable', 'name': {'_rule': 'name_decl', 'name': a}, 'type': int, 'default': {'_rule': 'expression', '_list': [{'_rule': 'constant', '_val': 0}]}}""")
+    # test("variable_3", parse_test("int a = 0", "variable"), """{'_rule': 'variable', 'type': int, 'name': {'_rule': 'name_decl', 'name': a}, 'default': {'_rule': 'expression', '_list': [{'_rule': 'constant', '_val': 0}]}}""")
+    # test("type_0", parse_test("type vec", "type"), """{'_rule': 'type', 'name': vec, '_errors': [{'_err': 'premature end', '_expected': '(struct | type_relation | enum)', '_got': None, '_at': '<eof>'}]}""")
+    # #test("type_1", parse_test("type vec | vector = { x, y, z: number =0 }", "type"))
+    test("variable_4", parse_test("int x,y = 0, float k=1", "variable"))
