@@ -669,7 +669,7 @@ s_zero_grammar_spec : str = """
     type_relation := (child_type | parent_type)
     child_type := "<" parent:<identifier>
     parent_type := ">" children:<identifier>*,
-    enum := "=" values:<identifier>*|
+    enum := "=" options:<identifier>*|
 
     variable := name_type ("=" default:expression)?
     name_type := (c_type_name | ts_name_type)
@@ -714,7 +714,7 @@ struct := '=' '{' properties:variable* '}'
 type_relation := (child_type | parent_type)
 child_type := '<' parent:<identifier>
 parent_type := '>' children:<identifier>*,
-enum := '=' values:<identifier>*|
+enum := '=' options:<identifier>*|
 variable := name_type variable_1?
 variable_1 := '=' default:expression
 name_type := (c_type_name | ts_name_type)
@@ -880,21 +880,25 @@ def parse_singular_term(term: Term, reader: Reader) -> Dict:
 def parse_list_term(term: Term, reader: Reader) -> Dict:
     items = []
     pos = reader.pos()
+    before_sep_pos = pos
     while not reader.eof():
         term_reader = scan_separator(reader, term)
         child = parse_singular_term(term, term_reader)
         items.append(child)
         if has_errors(child):
-            reader.restore(pos)
+            log(log_red("last item has errors!"))
+            items = truncate_list(term, reader, items, pos)
+            log(f"reader after restore: {reader}")
             break
         if reader.eof(): break
         pos = reader.pos()
         if term.sep != "":
             if not lex_matches(reader.peek(), [f'"{term.sep}"']): 
                 log(log_red(f"separator error: expected {term.sep} but got {reader.peek()}"))
+                items = truncate_list(term, reader, items, before_sep_pos)
                 break
             reader.next()
-    items = truncate_list(term, reader, items, pos)
+        before_sep_pos = pos
     ast = { "_list" : items }
     return ast
 
@@ -939,14 +943,27 @@ def parse_terms(rule: Rule, reader: Reader) -> List[Dict]:
 
 # if an optional term has errors but is followed by a successfully parsed term, remove the errors
 def handle_optional_errors(rule: Rule, children: List[Dict]):
+    log("handle_optional_errors")
     for i_term, term in enumerate(rule.terms):
+        log("i_term:", i_term, "term:", term)
         if i_term >= len(children): break
         if not term.is_optional(): continue
         child = children[i_term]
         if not has_errors(child): continue
-        if (i_term+1) < len(children) and not has_errors(children[i_term+1]):
-            log("dropping errors from optional term")
-            children[i_term] = {}
+        if (i_term+1) < len(children):
+            if not has_errors(children[i_term+1]):
+                log("dropping errors from optional term")
+                children[i_term] = {}
+        else:
+            log(log_red("optional term at end of rule has errors!"))
+            log(child)
+            if "_errors" in child:
+                count = sum(1 for key in child if key not in ["_rule", "_errors"])
+                log(log_red("dropping errors from optional term"))
+                if count == 0: children[i_term] = {}
+                
+                    
+
 
 # merge children into a single ast
 def merge_children(rule: Rule, children: List[Dict]) -> Dict:
@@ -960,7 +977,7 @@ def merge_children(rule: Rule, children: List[Dict]) -> Dict:
 # if we didn't match all terms, add error
 def check_premature_end(rule: Rule, ast: Dict, children: List[Dict], reader: Reader):
     if len(children) < len(rule.terms):
-        log("premature end!")
+        log(log_red("premature end!"))
         if not has_errors(ast):
             err = parse_error("premature end", rule.terms[len(children)-1], reader)
             ast["_errors"] = [err]
@@ -974,15 +991,16 @@ def scan_separator(reader: Reader, term: Term) -> Reader:
     if term.contains_nested_sep: term_reader.set_nested_separator(term.sep)
     return term_reader
 
+@log_indent
 def truncate_list(term: Term, reader: Reader, items: List[Dict], pos: int) -> List[Dict]:
     if reader.nested_sep == None: return items
-    last_item = items[-1]
-    if not has_errors(last_item): return items
-    log("truncating list!")
     if term.dec == "+" and len(items) == 1: return items
+    log(log_red("truncating list!"))
     items = items[:-1]
     reader.restore(pos)
+    log(f"reader after restore: {reader}")
     return items
+
 
 #--------------------------------------------------------------------------------------------------
 # Parser test
@@ -992,6 +1010,7 @@ def parse_test(code: str, rule_name: str = "feature") -> str:
     reader = Reader(LsReader(ls))
     rule = Grammar.current.rule_named[rule_name]
     ast = parse_rule(rule, reader)
+    log("----------------------------------------")
     log(format(ast))
     return ast
 
@@ -999,8 +1018,8 @@ def parse_test(code: str, rule_name: str = "feature") -> str:
 def test_parser():
     log("test_parser")
     grammar = build_grammar(s_zero_grammar_spec)
-    log_max_depth(8)
-    #test_verbose(False)
+    log_max_depth(14)
+    test_verbose(False)
     test("feature_0", parse_test(""), """{'_rule': 'feature', '_errors': [{'_err': 'mismatch', '_expected': "'feature'", '_got': None, '_at': '<eof>'}]}""")
     test("feature_1", parse_test("feature"), """{'_rule': 'feature', 'name': {'_errors': [{'_err': 'mismatch', '_expected': 'name:<identifier>', '_got': None, '_at': '<eof>'}]}}""")
     test("feature_2", parse_test("feature MyFeature"), """{'_rule': 'feature', 'name': MyFeature, '_errors': [{'_err': 'mismatch', '_expected': "'{'", '_got': None, '_at': '<eof>'}]}""")
@@ -1025,7 +1044,14 @@ def test_parser():
     test("variable_3", parse_test("int a = 0", "variable"), """{'_rule': 'variable', 'type': int, 'names': {'_list': [{'_rule': 'name', 'name': a}]}, 'default': {'_rule': 'expression', '_list': [{'_rule': 'constant', '_val': 0}]}}""")
     test("variable_4", parse_test("r|red, g|green, b|blue: number = 0", "variable"), """{'_rule': 'variable', 'names': {'_list': [{'_rule': 'name', 'name': r, 'alias': red}, {'_rule': 'name', 'name': g, 'alias': green}, {'_rule': 'name', 'name': b, 'alias': blue}]}, 'type': number, 'default': {'_rule': 'expression', '_list': [{'_rule': 'constant', '_val': 0}]}}""")
     test("variable_5", parse_test("int x,y = 0", "variable"), """{'_rule': 'variable', 'type': int, 'names': {'_list': [{'_rule': 'name', 'name': x}, {'_rule': 'name', 'name': y}]}, 'default': {'_rule': 'expression', '_list': [{'_rule': 'constant', '_val': 0}]}}""")
+    test("result_vars_1", parse_test("(a, b: int, k, l: float)", "result_vars"), """{'_rule': 'result_vars', '_list': [{'_rule': 'ts_name_type', 'names': {'_list': [{'_rule': 'name', 'name': a}, {'_rule': 'name', 'name': b}]}, 'type': int}, {'_rule': 'ts_name_type', 'names': {'_list': [{'_rule': 'name', 'name': k}, {'_rule': 'name', 'name': l}]}, 'type': float}]}""")
     test("type_0", parse_test("type vec", "type"), """{'_rule': 'type', 'name': vec, '_errors': [{'_err': 'premature end', '_expected': '(struct | type_relation | enum)', '_got': None, '_at': '<eof>'}]}""")
     test("type_1", parse_test("type vec | vector = { x, y, z: number =0 }", "type"), """{'_rule': 'type', 'name': vec, 'alias': vector, 'properties': {'_list': [{'_rule': 'variable', 'names': {'_list': [{'_rule': 'name', 'name': x}, {'_rule': 'name', 'name': y}, {'_rule': 'name', 'name': z}]}, 'type': number, 'default': {'_rule': 'expression', '_list': [{'_rule': 'constant', '_val': 0}]}}]}}""")
-    test("result_vars_1", parse_test("(a, b: int, k, l: float)", "result_vars"), """{'_rule': 'result_vars', '_list': [{'_rule': 'ts_name_type', 'names': {'_list': [{'_rule': 'name', 'name': a}, {'_rule': 'name', 'name': b}]}, 'type': int}, {'_rule': 'ts_name_type', 'names': {'_list': [{'_rule': 'name', 'name': k}, {'_rule': 'name', 'name': l}]}, 'type': float}]}""")
+    test("type_2", parse_test("type int > i8, i16", "type"), """{'_rule': 'type', 'name': int, 'children': {'_list': [i8, i16]}}""")
+    test("type_3", parse_test("type distance < vector", "type"), """{'_rule': 'type', 'name': distance, 'parent': vector}""")
+    test("type_4", parse_test("type evil = no | yes | maybe", "type"), """{'_rule': 'type', 'name': evil, 'options': {'_list': [no, yes, maybe]}}""")
     test("result_vars_2", parse_test("(int a, b, float k)", "result_vars"), """{'_rule': 'result_vars', '_list': [{'_rule': 'c_type_name', 'type': int, 'names': {'_list': [{'_rule': 'name', 'name': a}, {'_rule': 'name', 'name': b}]}}, {'_rule': 'c_type_name', 'type': float, 'names': {'_list': [{'_rule': 'name', 'name': k}]}}]}""")
+    test("param_group_0", parse_test("(int a, b=0, float k=0)", "param_group"), """{'_rule': 'param_group', '_list': [{'_rule': 'variable', 'type': int, 'names': {'_list': [{'_rule': 'name', 'name': a}, {'_rule': 'name', 'name': b}]}, 'default': {'_rule': 'expression', '_list': [{'_rule': 'constant', '_val': 0}]}}, {'_rule': 'variable', 'type': float, 'names': {'_list': [{'_rule': 'name', 'name': k}]}, 'default': {'_rule': 'expression', '_list': [{'_rule': 'constant', '_val': 0}]}}]}""")
+    test("param_group_0", parse_test("(int a, b, float k)", "param_group"), """{'_rule': 'param_group', '_list': [{'_rule': 'variable', 'type': int, 'names': {'_list': [{'_rule': 'name', 'name': a}, {'_rule': 'name', 'name': b}]}}, {'_rule': 'variable', 'type': float, 'names': {'_list': [{'_rule': 'name', 'name': k}]}}]}""")
+    test("param_group_1", parse_test("(a, b: int, k: float)", "param_group"), """{'_rule': 'param_group', '_list': [{'_rule': 'variable', 'names': {'_list': [{'_rule': 'name', 'name': a}, {'_rule': 'name', 'name': b}]}, 'type': int}, {'_rule': 'variable', 'names': {'_list': [{'_rule': 'name', 'name': k}]}, 'type': float}]}""")
+    test("function_0", parse_test("on (int r) = min (int a, b) { r = if (a < b) then a else b }", "function"), """{'_rule': 'function', 'modifier': on, 'result': {'_rule': 'result_vars', '_list': [{'_rule': 'c_type_name', 'type': int, 'names': {'_list': [{'_rule': 'name', 'name': r}]}}]}, 'assign': =, 'signature': {'_rule': 'signature', '_list': [{'_rule': 'word', '_val': min}, {'_rule': 'param_group', '_list': [{'_rule': 'variable', 'type': int, 'names': {'_list': [{'_rule': 'name', 'name': a}, {'_rule': 'name', 'name': b}]}}]}]}, 'body': {'_rule': 'function_body', '_list': [{'_rule': 'statement', 'lhs': {'_rule': 'c_type_name', 'type': r, 'names': {'_list': []}}, 'assign': =, 'rhs': {'_rule': 'expression', '_list': [{'_rule': 'word', '_val': if}, {'_rule': 'brackets', '_list': [{'_rule': 'parameter', 'value': {'_rule': 'expression', '_list': [{'_rule': 'word', '_val': a}, {'_rule': 'operator', '_val': <}, {'_rule': 'word', '_val': b}]}}]}, {'_rule': 'word', '_val': then}, {'_rule': 'word', '_val': a}, {'_rule': 'word', '_val': else}, {'_rule': 'word', '_val': b}]}}]}}""")

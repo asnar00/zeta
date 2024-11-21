@@ -49,7 +49,7 @@ def log(*args):
         # add it to the global s_log string
         global s_log
         s_log += s + "\n"
-    if s_n_log_calls > 1000:
+    if s_n_log_calls > 10000:
         print("------------------- stopping: too many log calls ---------------------")
         log_exit()
 
