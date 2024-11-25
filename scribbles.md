@@ -2,7 +2,7 @@
 # scribblez
 "slow is smooth, smooth is fast"
 
-todo: get the ; separator special-case working
+DONE: get the ; separator special-case working
 todo: explore some "real errors" in lists, unify the optional- and list- error handler cases.
 todo: do some actual semantic processing
 todo: modularise the whole thing
