@@ -2,6 +2,13 @@
 # scribblez
 "slow is smooth, smooth is fast"
 
+todo: get the ; separator special-case working
+todo: explore some "real errors" in lists, unify the optional- and list- error handler cases.
+todo: do some actual semantic processing
+todo: modularise the whole thing
+todo: get some actual output typescript running ("hello world")
+------
+
 Nested separators work! Still a little gnarly - we have to store nested state in the reader, because it's dynamic; we only handle one level of nesting; and we haven't considered what happens if there's a genuine error (right now we're assuming that an error in the last item means we overran a separator that's actually at a higher level). So the next step would be to try that.
 
 ---------------------

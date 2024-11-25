@@ -892,12 +892,8 @@ def parse_list_term(term: Term, reader: Reader) -> Dict:
             break
         if reader.eof(): break
         pos = reader.pos()
-        if term.sep != "":
-            if not lex_matches(reader.peek(), [f'"{term.sep}"']): 
-                log(log_red(f"separator error: expected {term.sep} but got {reader.peek()}"))
-                items = truncate_list(term, reader, items, before_sep_pos)
-                break
-            reader.next()
+        items, cont = parse_separator(term, reader, items, before_sep_pos)
+        if not cont: break
         before_sep_pos = pos
     ast = { "_list" : items }
     return ast
@@ -943,16 +939,14 @@ def parse_terms(rule: Rule, reader: Reader) -> List[Dict]:
 
 # if an optional term has errors but is followed by a successfully parsed term, remove the errors
 def handle_optional_errors(rule: Rule, children: List[Dict]):
-    log("handle_optional_errors")
     for i_term, term in enumerate(rule.terms):
-        log("i_term:", i_term, "term:", term)
         if i_term >= len(children): break
         if not term.is_optional(): continue
         child = children[i_term]
         if not has_errors(child): continue
         if (i_term+1) < len(children):
             if not has_errors(children[i_term+1]):
-                log("dropping errors from optional term")
+                log(log_red("dropping errors from optional term"))
                 children[i_term] = {}
         else:
             log(log_red("optional term at end of rule has errors!"))
@@ -984,6 +978,7 @@ def check_premature_end(rule: Rule, ast: Dict, children: List[Dict], reader: Rea
 
 def parse_error(message: str, term: Term, reader: Reader) -> Dict:
     err = { "_err" : message, "_expected" : str(term), "_got" : reader.peek_unrestricted(), "_at" : reader.location()}
+    log(log_red(f"parse error: {err}"))
     return { "_errors" : [err]}
 
 def scan_separator(reader: Reader, term: Term) -> Reader:
@@ -1001,7 +996,16 @@ def truncate_list(term: Term, reader: Reader, items: List[Dict], pos: int) -> Li
     log(f"reader after restore: {reader}")
     return items
 
-
+@log_indent
+def parse_separator(term: Term, reader: Reader, items: List[Dict], restore_pos: int) -> Tuple[List[Dict], bool]:
+    if term.sep == "": return items, True
+    if lex_matches(reader.peek(), [f'"{term.sep}"']):
+        reader.next()
+        return items, True
+    if term.sep == ";": return items, True
+    log(log_red(f"separator error: expected {term.sep} but got {reader.peek()}"))
+    items = truncate_list(term, reader, items, restore_pos)
+    return items,False
 #--------------------------------------------------------------------------------------------------
 # Parser test
 
@@ -1055,3 +1059,4 @@ def test_parser():
     test("param_group_0", parse_test("(int a, b, float k)", "param_group"), """{'_rule': 'param_group', '_list': [{'_rule': 'variable', 'type': int, 'names': {'_list': [{'_rule': 'name', 'name': a}, {'_rule': 'name', 'name': b}]}}, {'_rule': 'variable', 'type': float, 'names': {'_list': [{'_rule': 'name', 'name': k}]}}]}""")
     test("param_group_1", parse_test("(a, b: int, k: float)", "param_group"), """{'_rule': 'param_group', '_list': [{'_rule': 'variable', 'names': {'_list': [{'_rule': 'name', 'name': a}, {'_rule': 'name', 'name': b}]}, 'type': int}, {'_rule': 'variable', 'names': {'_list': [{'_rule': 'name', 'name': k}]}, 'type': float}]}""")
     test("function_0", parse_test("on (int r) = min (int a, b) { r = if (a < b) then a else b }", "function"), """{'_rule': 'function', 'modifier': on, 'result': {'_rule': 'result_vars', '_list': [{'_rule': 'c_type_name', 'type': int, 'names': {'_list': [{'_rule': 'name', 'name': r}]}}]}, 'assign': =, 'signature': {'_rule': 'signature', '_list': [{'_rule': 'word', '_val': min}, {'_rule': 'param_group', '_list': [{'_rule': 'variable', 'type': int, 'names': {'_list': [{'_rule': 'name', 'name': a}, {'_rule': 'name', 'name': b}]}}]}]}, 'body': {'_rule': 'function_body', '_list': [{'_rule': 'statement', 'lhs': {'_rule': 'c_type_name', 'type': r, 'names': {'_list': []}}, 'assign': =, 'rhs': {'_rule': 'expression', '_list': [{'_rule': 'word', '_val': if}, {'_rule': 'brackets', '_list': [{'_rule': 'parameter', 'value': {'_rule': 'expression', '_list': [{'_rule': 'word', '_val': a}, {'_rule': 'operator', '_val': <}, {'_rule': 'word', '_val': b}]}}]}, {'_rule': 'word', '_val': then}, {'_rule': 'word', '_val': a}, {'_rule': 'word', '_val': else}, {'_rule': 'word', '_val': b}]}}]}}""")
+    test("feature_7", parse_test("feature Hello { type str | string = { char c$ }; string out$ | output$; }", "feature"), """{'_rule': 'feature', 'name': Hello, 'body': {'_list': [{'_rule': 'type', 'name': str, 'alias': string, 'properties': {'_list': [{'_rule': 'variable', 'type': char, 'names': {'_list': [{'_rule': 'name', 'name': c$}]}}]}}, {'_rule': 'variable', 'type': string, 'names': {'_list': [{'_rule': 'name', 'name': out$, 'alias': output$}]}}]}}""")
