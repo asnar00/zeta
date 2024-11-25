@@ -14,7 +14,7 @@ feature Hello
         char c$
     string out$ | output$
     on (string result$, int yi) << hello(string name)
-        int my_var = 0
+        int my_var = yi + 20
         result$ << "hello \(name)"
     replace run()
         out$ << hello("world")
@@ -39,8 +39,14 @@ def test_zero():
             log(error)
         log_exit()
     log_clear()
+    test_symbol_tables(ast)
+    test_resolve_expressions(ast)
+#--------------------------------------------------------------------------------------------------
+# symbol tables
+
+def test_symbol_tables(ast):
+    log("test_symbol_tables")
     st = build_feature_symbol_tables(ast)
-    log("finished building symbol tables")
     test("symbol_tables", show_symbol_tables(ast), """
 feature st: 
 "str" => type:0
@@ -107,6 +113,7 @@ def build_feature_symbol_tables(feature_ast):
     for component in feature_ast["body"]["_list"]:
         if component["_rule"] == "function":
             merge_st(component["_st"], st)
+    return st
 
 def show_symbol_tables(feature_ast: Dict) -> str:
     out = show_st("feature st: ", feature_ast["_st"])
@@ -200,8 +207,59 @@ def merge_st(child_st: Dict, parent_st: Dict):
             child_st[key] = list
 
 #--------------------------------------------------------------------------------------------------
-# resolve expression
+# resolve expressions
+
+def test_resolve_expressions(ast):
+    log("test_resolve_expressions")
+    log_max_depth(20)
+    resolve_expressions(ast, ast["_st"])
+
+def resolve_expressions(ast, st):
+    if isinstance(ast, Dict):
+        new_st = ast["_st"] if "_st" in ast else st
+        if "_rule" in ast and ast["_rule"] == "expression": 
+            resolve_expression(ast, new_st)
+        else:
+            for key, value in ast.items():
+                if key == "_rule": continue
+                if isinstance(value, Dict):
+                    resolve_expressions(value, new_st)
+                elif isinstance(value, List):
+                    for item in value:
+                        resolve_expressions(item, new_st)
+
 
 # resolve expressions to function calls and variable references
-def resolve_expression(expr_ast : Dict):
+@log_indent
+def resolve_expression(ast, st):
+    log(f"expression: {ast}")
+    log(f"st: {dbg_st(st)}")
+    items = ast["_list"]
+    for item in items:
+        if item["_rule"] == "brackets":
+            resolve_expressions(item, st)
+        elif item["_rule"] == "word":
+            log("word:", item["_val"])
+            key = str(item["_val"])
+            if not (key in st):
+                log(log_red(f"word not found: {item["_val"].dbg()}"))
+            else:
+                list = st[key]
+                if len(list) > 1:log(log_red("ambiguous word"))
+                object = list[0][0]
+                index = list[0][1]
+                object_rule = object["_rule"]
+                log(log_green(f"word found! {object["_rule"]}:{index}"))
+                if object_rule == "variable":
+                    item["_variable"] = key
+                elif object_rule == "function":
+                    item["_function"] = function_shortname(object)
+                    item["_index"] = index
+    log(ast)
     pass
+
+def dbg_st(st):
+    out = "("
+    for key, list in st.items():
+        out += f"{key} "
+    return out + ")"
