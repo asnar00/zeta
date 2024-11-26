@@ -1,265 +1,154 @@
 # ᕦ(ツ)ᕤ
-# zero.py
+# grammar.py
 # author: asnaroo
 # zero to anything
 
+from typing import List
 from util import *
+from lexer import *
+from grammar import *
 from parser import *
-from typing import List, Dict, Tuple, Union
 
 #--------------------------------------------------------------------------------------------------
+# Zero grammar: using classes
+# idea is to have a class per AST node type, but with the most economical possible specification
+
+#--------------------------------------------------------------------------------------------------
+# Root entities and Program entities
+
+class Named(Entity):
+    def __init__(self): super().__init__(); self.name: str = None; self.alias: str = None
+    
+# NameDef holds name and alias; parse as <name> or <name> | <alias>
+# note keywords are 'keyword'; class property names are just name; optional is (xxx)?; :<type> does lex type matching
+class NameDef(Entity):
+    def __init__(self): self.name: str = ""; self.alias: str = None
+    def rule(self): return "name:<identifier> ('|' alias:<identifier>)?"
+
+# Variable isn't a grammar object, but a program object; created by VariableDef (further down)
+class Variable(Named):
+    def __init__(self): super().__init__(); self.type : Type = None; self.value: Expression = None
+
+# Type is also not a grammar object, but a program object; created by TypeDef (further down)
+class Type(Named):
+    def __init__(self): super().__init__(); self.properties: List[Variable] = []; self.parents: List[Type] = []; self.children: List[Type] = []
+
+# Feature is the feature clause; note 'parent&' means 'reference to parent, i.e. matches a string, but looks it up to find a Feature
+# components; means "component list separated by semicolon" - we know it's a list because we look at the type annotations
+class Feature(Named):
+    def __init__(self): super().__init__(); self.parent: Feature = None; self.components: List[Component] = []
+    def rule(self): return "'feature' name ('extends' parent&)? '{' components*; '}'"
+
+# Component is an abstract class; it gets extended by Test, TypeDef, VariableDef, FunctionDef
+# we know it's abstract because it has no rule() method :-)
+class Component(Named):
+    def __init__(self): super().__init__()
+
+#--------------------------------------------------------------------------------------------------
+# Tests
+# we're going to try and be modular here and express all compilation steps for tests in one place
+
+# Test has an expression to be evalued (lhs) and potentially a result to compare it to (rhs)
+class Test(Component):
+    def __init__(self): self.lhs: Expression = None; self.rhs: Expression = None
+    def rule(self): return "'>' lhs ('=>' rhs)?"
+
+#--------------------------------------------------------------------------------------------------
+# TypeDefs
+
+# TypeDef is abstract because there are three potential declarations, '=' struct, '>' children or '<' parents
+class TypeDef(Component):    
+    def __init__(self): super().__init__()
+
+# StructDef just declares a list of properties
+class StructDef(TypeDef):
+    def __init__(self): self.properties: List[VariableDef] = []
+    def rule(self): return "'type' name '=' '{' properties*; '}'"
+
+# ParentDef declares that type is a child of some other type(s)
+class TypeParentDef(TypeDef):
+    def __init__(self): self.parents: List[Type] = []
+    def rule(self): return "'type' name '>' parents+,"
+
+# ChildrenDef declares that type is a parent of some other type(s)
+class TypeChildrenDef(TypeDef):
+    def __init__(self): self.children: List[Type] = []
+    def rule(self): return "'type' name '>' children+,"
+
+#--------------------------------------------------------------------------------------------------
+# VariableDefs
+
+# VariableDef declares one or more variables with the same type and default value, using either c or ts notation
+# the '+' indicates one or more, "," at the end is the separator
+class VariableDef(Entity):
+    def __init__(self): super().__init__(); self.type : Type = None; self.names: List[NameDef] = []; self.value: Expression = None
+    def rule(self): return "((type& names+,) | (names+, ':' type&)) ('=' value)?"
+
+#--------------------------------------------------------------------------------------------------
+# Expressions
+
+# Expression is abstract: either a constant, variable, bracketed expression, or function call
+class Expression(Entity):
+    def __init__(self): super().__init__()
+
+# Constant is a literal: either number of string
+class Constant(Expression):
+    def __init__(self): super().__init__(); self.value: str = None
+    def rule(self): return "(<number> | <string>)"
+
+# VariableRef just refers to a variable; we use '&' to indicate that it's a reference
+class VariableRef(Expression):
+    def __init__(self): super().__init__(); self.variable: Variable = None
+    def rule(self): return "variable&"
+
+class Bracketed(Expression):
+    def __init__(self): super().__init__(); self.expression: Expression = None
+    def rule(self): return "'(' expression ')'"
+
+class FunctionCall(Expression):
+    def __init__(self): super().__init__(); self.items: List[FunctionCallItem] = []
+    def rule(self): return "items+"
+
+class FunctionCallItem(Entity):
+    def __init__(self): super().__init__()
+
+class FunctionCallOperator(FunctionCallItem):
+    def __init__(self): super().__init__(); self.operator: str = None
+    def rule(self): return "operator:<operator>"
+
+class FunctionCallWord(FunctionCallItem):
+    def __init__(self): super().__init__(); self.word: str = None
+    def rule(self): return "word:<identifier>"
+
+class FunctionCallArguments(FunctionCallItem):
+    def __init__(self): super().__init__(); self.arguments: List[FunctionCallArgument] = []
+    def rule(self): return "'(' arguments+, ')'"
+
+class FunctionCallArgument(FunctionCallItem):
+    def __init__(self): super().__init__(); self.argument: str = None; self.value: Expression = None
+    def rule(self): return "(argument '=')? value"
+
+
+#--------------------------------------------------------------------------------------------------
+# okay lets write some code
+
 s_test_program = """
-feature Hello
-    type str | string =
-        char c$
+feature Hello extends Run
+    type str | string = char$
     string out$ | output$
-    on (string result$, int yi) << hello(string name)
-        int my_var = yi + 20
-        result$ << "hello \(name)"
+    on (string out$) << hello(string name)
+        out$ << "hello \(name)"
     replace run()
-        out$ << hello("world")
+        output$ << hello("world")
 """
 
-@log_disable
-def parse(code: str) -> Dict:
-    ls = lexer(Source(code=code))
-    reader = Reader(ls)
-    return parse_rule(Grammar.current.rule_named["feature"], reader)
 
 @this_is_the_test
-def test_zero():
+def test_zero():    
     log("test_zero")
-    grammar = build_grammar(s_zero_grammar_spec)
-    log_max_depth(3)
-    ast = parse(s_test_program)
-    if has_errors(ast):
-        errors = get_ast_errors(ast)
-        log("errors:")
-        for error in errors:
-            log(error)
-        log_exit()
+    log(get_attribute_type(VariableDef, "type"))
+    grammar = Grammar()
     log_clear()
-    test_symbol_tables(ast)
-    test_resolve_expressions(ast)
-#--------------------------------------------------------------------------------------------------
-# symbol tables
-
-def test_symbol_tables(ast):
-    log("test_symbol_tables")
-    st = build_feature_symbol_tables(ast)
-    test("symbol_tables", show_symbol_tables(ast), """
-feature st: 
-"str" => type:0
-"string" => type:0
-"out$" => variable:0
-"output$" => variable:0
-"hello" => function:0
-"run" => function:0
-function st: hello_
-"result$" => variable:0
-"yi" => variable:0
-"name" => variable:0
-"my_var" => variable:1
-"str" => type:0
-"string" => type:0
-"out$" => variable:0
-"output$" => variable:0
-"hello" => function:0
-"run" => function:0
-function st: run_
-"str" => type:0
-"string" => type:0
-"out$" => variable:0
-"output$" => variable:0
-"hello" => function:0
-"run" => function:0
-         """)
-
-#--------------------------------------------------------------------------------------------------
-# helpers
-
-# merge an item into a dictionary mapping str-> list[x]
-def merge(dict, key, item):
-    if not isinstance(key, str): key = str(key)
-    if key in dict:
-        if not (item in dict[key]):
-            dict[key].append(item)
-    else:
-        dict[key] = [item]
-
-# function shortname
-def function_shortname(function_ast) -> str:
-    name = ""
-    for item in function_ast["signature"]["_list"]:
-        if item["_rule"] in ["word", "operator"]:
-            name += str(item["_val"])
-        else: name += "_"
-    return name
-
-#--------------------------------------------------------------------------------------------------
-# symbol table: maps name => (item, index)
-
-# sets feature_ast["_st"] to a symbol table of all feature-scope stuff
-@log_indent
-def build_feature_symbol_tables(feature_ast):
-    st = {}
-    for component in feature_ast["body"]["_list"]:
-        _rule = component["_rule"]
-        if _rule == "type": build_type_st(st, component)
-        elif _rule == "variable": build_variable_st(st, component)
-        elif _rule == "function": build_function_st(st, component)
-    feature_ast["_st"] = st
-    # merge down feature scope into each function scope
-    for component in feature_ast["body"]["_list"]:
-        if component["_rule"] == "function":
-            merge_st(component["_st"], st)
-    return st
-
-def show_symbol_tables(feature_ast: Dict) -> str:
-    out = show_st("feature st: ", feature_ast["_st"])
-    for component in feature_ast["body"]["_list"]:
-        if component["_rule"] == "function":
-            out += show_st(f"function st: {function_shortname(component)}", component["_st"])
-    return out
-
-# updates feature's symbol table with function names/aliases
-# and computes internal sts for the function
-@log_indent
-def build_function_st(st, function_ast) -> Dict:
-    # the function words
-    for i, item in enumerate(function_ast["signature"]["_list"]):
-        if item["_rule"] in ["word", "operator"]:
-            merge(st, item["_val"], (function_ast, i))
-    function_st = {}
-    # the function result
-    if "result" in function_ast:
-        result = function_ast["result"]
-        log(log_green("result:"))
-        log(format(result))
-        for item in result["_list"]:
-            type = item["type"]
-            names = item["names"]["_list"] # declaring multiple vars
-            for name in names:
-                variable = { "_rule": "variable", "type": type, "name": name["name"] }
-                if "alias" in name: variable["alias"] = name["alias"]
-                add_to_st(function_st, variable, variable)
-    # the function parameters
-    for i, item in enumerate(function_ast["signature"]["_list"]):
-        if item["_rule"] == "param_group":
-            for param in item["_list"]:
-                add_multiple_to_st(function_st, param["names"]["_list"], param, 0)
-    # and finally the statements
-    for i, statement in enumerate(function_ast["body"]["_list"]):
-        lhs = statement["lhs"]
-        if "names" in lhs:
-            variable = { "_rule" : "variable", "type" : lhs["type"], "names" : lhs["names"]}
-            log(log_green("lhs:"), variable)
-            add_multiple_to_st(function_st, lhs["names"]["_list"], variable, i+1)
-    function_ast["_st"] = function_st
-    return st
-
-# updates feature's symbol table, and sets an internal one within the type
-@log_indent
-def build_type_st(st, type_ast) -> Dict:
-    add_to_st(st, type_ast, type_ast)
-    type_st = {}
-    for property in type_ast["properties"]["_list"]:
-        add_multiple_to_st(type_st, property["names"]["_list"], property)
-    type_ast["_st"] = type_st
-    return st
-
-# updates feature's symbol table with variable names/aliases
-@log_indent
-def build_variable_st(st, variable_ast) -> Dict:
-    add_multiple_to_st(st, variable_ast["names"]["_list"], variable_ast)
-    return st
-
-# given a list of name/alias, add each of them to the st
-@log_indent
-def add_multiple_to_st(st, names: List[Dict], item_to_add, index:int =0) -> Dict:
-    for name in names:
-        add_to_st(st, name, item_to_add, index)
-    return st
-
-# adds a single name/alias to the st
-@log_indent
-def add_to_st(st, component, item_to_add, index:int =0) -> Dict:
-    name = component["name"]
-    merge(st, name, (item_to_add, index))
-    if "alias" in component:
-        merge(st, component["alias"], (item_to_add, index))
-    return st
-
-# compact printout of symbol table
-def show_st(label, st: Dict)-> str:
-    out = label + "\n"
-    for key, list in st.items():
-        out += f'   "{key}" => '
-        for item in list:
-            out += f"{item[0]["_rule"]}:{item[1]}"
-        out += "\n"
-    return out
-
-# merge child_st into parent_st, child_st gets modified, and takes precedence
-def merge_st(child_st: Dict, parent_st: Dict):
-    for key, list in parent_st.items():
-        if not key in child_st:
-            child_st[key] = list
-
-#--------------------------------------------------------------------------------------------------
-# resolve expressions
-
-def test_resolve_expressions(ast):
-    log("test_resolve_expressions")
-    log_max_depth(20)
-    resolve_expressions(ast, ast["_st"])
-
-def resolve_expressions(ast, st):
-    if isinstance(ast, Dict):
-        new_st = ast["_st"] if "_st" in ast else st
-        if "_rule" in ast and ast["_rule"] == "expression": 
-            resolve_expression(ast, new_st)
-        else:
-            for key, value in ast.items():
-                if key == "_rule": continue
-                if isinstance(value, Dict):
-                    resolve_expressions(value, new_st)
-                elif isinstance(value, List):
-                    for item in value:
-                        resolve_expressions(item, new_st)
-
-
-# resolve expressions to function calls and variable references
-@log_indent
-def resolve_expression(ast, st):
-    log(f"expression: {ast}")
-    log(f"st: {dbg_st(st)}")
-    items = ast["_list"]
-    for item in items:
-        if item["_rule"] == "brackets":
-            resolve_expressions(item, st)
-        elif item["_rule"] == "word":
-            log("word:", item["_val"])
-            key = str(item["_val"])
-            if not (key in st):
-                log(log_red(f"word not found: {item["_val"].dbg()}"))
-            else:
-                list = st[key]
-                if len(list) > 1:log(log_red("ambiguous word"))
-                object = list[0][0]
-                index = list[0][1]
-                object_rule = object["_rule"]
-                log(log_green(f"word found! {object["_rule"]}:{index}"))
-                if object_rule == "variable":
-                    item["_variable"] = key
-                elif object_rule == "function":
-                    item["_function"] = function_shortname(object)
-                    item["_index"] = index
-    log(ast)
-    pass
-
-def dbg_st(st):
-    out = "("
-    for key, list in st.items():
-        out += f"{key} "
-    return out + ")"
+    log(grammar.dbg())
+    ls = lexer(Source(code= s_test_program))
+    log(ls)

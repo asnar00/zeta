@@ -186,6 +186,7 @@ def log_short(obj: Any, maxLen=32) -> str:
 
 # flushes and exits
 def log_exit():
+    log("-------- exit --------")
     log_flush()
     exit(0)
 
@@ -531,6 +532,54 @@ def memoise(func):
     
     return wrapper
 
+#--------------------------------------------------------------------------------------------------
+# get_attribute_type
+
+import ast
+import inspect
+import textwrap
+
+class MyClass:
+    def __init__(self):
+        self.my_str : str = None
+
+def get_attribute_type(cls, attr_name):
+    # Check the current class and all its superclasses
+    current_cls = cls
+    while current_cls is not None:
+        try:
+            # Get source code and dedent it
+            source = inspect.getsource(current_cls.__init__)
+            source = textwrap.dedent(source)
+            
+            # Parse it into an AST
+            tree = ast.parse(source)
+            
+            # Look for assignment with annotation
+            for node in ast.walk(tree):
+                if isinstance(node, ast.AnnAssign) and \
+                   isinstance(node.target, ast.Attribute) and \
+                   isinstance(node.target.value, ast.Name) and \
+                   node.target.value.id == 'self' and \
+                   node.target.attr == attr_name:
+                    # Found the annotated assignment
+                    return ast.unparse(node.annotation)
+            
+            # Move up to the parent class
+            current_cls = current_cls.__base__
+            
+        except (TypeError, OSError, AttributeError) as e:
+            # If we can't get source for this class (e.g., built-in classes),
+            # move up to the parent
+            current_cls = current_cls.__base__
+            continue
+                
+    return None
+
+@this_is_a_test
+def test_get_attribute_type():
+    log("test_get_attribute_type")
+    test("get_attribute_type", get_attribute_type(MyClass, "my_str"), "str")
 
 #------------------------------------------------------------------------------
 # startup
