@@ -43,7 +43,7 @@ def log(*args):
         # print args to a string instead of the output
         n_tabs = s_log_indent // 2
         n_rem = s_log_indent % 2
-        s = log_grey(" |") * n_tabs + " " * n_rem
+        s = log_grey(" ⏐") * n_tabs + " " * n_rem
         for a in args:
             s += str(a) + " "
         # add it to the global s_log string
@@ -101,7 +101,7 @@ def log_indent(fn):
 
         if s_log_indent < s_log_max_depth: 
             s_log_enabled = True
-        if has_return_hint: log(f"{log_grey('=>')}", result)
+        if has_return_hint: log(f"{log_grey('+->')}", result)
         s_log_indent -= 1
         return result
     return wrapper

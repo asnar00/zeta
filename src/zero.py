@@ -208,6 +208,61 @@ class ResultVariableAssign(ResultVariable):
     def rule(self): return "assignOp:('=' | '<<')"
 
 #--------------------------------------------------------------------------------------------------
+# test grammar
+@this_is_the_test
+def test_grammar():
+    log("test_grammar")
+    grammar = Grammar(Entity)
+    test("grammar", grammar.dbg(), """
+Named := (Variable | Type | Feature | Component)
+NameDef := name:<identifier> NameDef_?
+NameDef_ := '|' alias:<identifier>
+TypeRhs := (TypeAlias | StructDef | TypeParentDef | TypeChildrenDef)
+Expression := (Constant | VariableRef | Bracketed | FunctionCall)
+FunctionCallItem := (FunctionCallOperator | FunctionCallWord | FunctionCallArguments)
+FunctionCallArgument := FunctionCallArgument_? value:Expression
+FunctionCallArgument_ := argument:<identifier> '='
+FunctionModifier := modifier:('on' | 'before' | 'after' | 'replace')
+FunctionSignature := elements:FunctionSignatureElement+
+FunctionSignatureElement := (FunctionSignatureWord | FunctionSignatureParams)
+FunctionBody := statements:Statement*;
+Statement := lhs:StatementLhs assignOp:<identifier> rhs:Expression
+StatementLhs := variables:ResultVariable+,
+ResultVariable := (ResultVariableDef | ResultVariableRef | ResultVariableAssign)
+Variable := 
+Type := 
+Feature := 'feature' name:NameDef Feature_? '{' components:Component*; '}'
+Feature_ := 'extends' parent:Feature&
+Component := (Test | TypeDef | VariableDef | FunctionDef)
+Test := '>' lhs:Expression Test_?
+Test_ := '=>' rhs:Expression
+TypeDef := 'type' name:NameDef rhs:TypeRhs
+VariableDef := (VariableDef_ | VariableDef__) VariableDef___?
+VariableDef___ := '=' value:Expression
+VariableDef__ := names:NameDef+, ':' type:Type&
+VariableDef_ := type:Type& names:NameDef+,
+FunctionDef := modifier:FunctionModifier '(' results:ResultVariableDef+, ')' assignOp:('=' | '<<') signature:FunctionSignature '{' body:FunctionBody '}'
+TypeAlias := '=' alias:Type&
+StructDef := '=' '{' properties:VariableDef*; '}'
+TypeParentDef := '<' parents:Type+,
+TypeChildrenDef := '>' children:Type+,
+Constant := (<number> | <string>)
+VariableRef := variable:Variable&
+Bracketed := '(' expression:Expression ')'
+FunctionCall := items:FunctionCallItem+
+FunctionCallOperator := operator:<operator>
+FunctionCallWord := word:<identifier>
+FunctionCallArguments := '(' arguments:FunctionCallArgument+, ')'
+FunctionSignatureWord := word:(<identifier> | <operator>)
+FunctionSignatureParams := params:VariableDef+,
+ResultVariableDef := (ResultVariableDef_ | ResultVariableDef__)
+ResultVariableDef__ := name:NameDef ':' type:Type&
+ResultVariableDef_ := type:Type& name:NameDef
+ResultVariableRef := variable:Variable&
+ResultVariableAssign := assignOp:('=' | '<<')
+         """)
+
+#--------------------------------------------------------------------------------------------------
 # okay lets write some code
 
 s_test_program = """
@@ -220,12 +275,10 @@ feature Hello extends Run
         output$ << hello("world")
 """
 
-@this_is_the_test
+#@this_is_the_test
 def test_zero():    
     log("test_zero")
     log(get_attribute_type(VariableDef, "type"))
     grammar = Grammar(Entity)
-    log_clear()
-    log(grammar.dbg())
     ls = lexer(Source(code= s_test_program))
     log(ls)

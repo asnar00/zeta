@@ -141,7 +141,7 @@ class Grammar:
     def build_complex_term(self, rule: Rule, term_str: str, var: str, dec: str, sep: str, ref: str) -> Term:
         if " | " in term_str: # todo: this is kind of dumb
             sub_terms = [val.strip() for val in term_str.split("|")]
-            log(log_red("rules case! sub_terms:"), sub_terms)
+            log("rules case! sub_terms:", sub_terms)
             vals = []
             for sub_term in sub_terms:
                 sub_term = self.build_term(rule, sub_term)
@@ -358,7 +358,6 @@ def compute_initials() -> bool:
     # now apply this transitively to the terms:
     # if a term is a bunch of rules, that term's initials come from those rules
     for rule in Grammar.current.rules:
-        log("computing initials for rule:", rule.dbg())
         for term in rule.terms:
             if term.is_rule():
                 for sub_rule in term.rules():
