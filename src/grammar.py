@@ -77,6 +77,7 @@ class Rule:
         self.initials = []      # keywords that can start this rule
         self.followers = []     # keywords that can follow this rule
         self.leaves = {}        # maps match => rule-names
+        self.complexity: int=0  # estimate of how complex a rule is
     def __str__(self):
         return self.name
     def __repr__(self): return self.__str__()
@@ -310,6 +311,7 @@ def compute_meta_stuff():
     while not done: done = not (compute_leaves())
     compute_indices()
     compute_nested_separators()
+    compute_complexity()
 
 def compute_initials() -> bool:
     changed = False
@@ -457,6 +459,30 @@ def contains_nested_separator(term: Term) -> List[Entity]:
         sub_terms_found = check_nested_separator(sub_rule, visited, term.sep)
         all_sub_terms_found += sub_terms_found
     return all_sub_terms_found
+
+def compute_complexity():
+    visited = {}
+    def compute_complexity_rec(rule: Rule, visited: Dict[Rule, int]) -> int:
+        if rule.name in visited: return visited[rule.name]
+        sum = len(rule.terms)
+        visited[rule.name] = sum
+        for term in rule.terms:
+            if term.is_reference() or (not term.is_rule()): continue
+            for sub_rule in term.rules():
+                term_complexity = compute_complexity_rec(sub_rule, visited)
+                if term.dec != "": term_complexity *= 2
+                sum += term_complexity
+        visited[rule.name] = sum
+        return sum
+    for rule in Grammar.current.rules:
+        rule.complexity = compute_complexity_rec(rule, visited)
+    # finally, sort rule-lists by complexity
+    for rule in Grammar.current.rules:
+        for term in rule.terms:
+            if not term.is_rule(): continue
+            sub_rules = term.rules()
+            sub_rules.sort(key=lambda x: x.complexity, reverse=True)
+            term.vals = [sub_rule.name for sub_rule in sub_rules]
     
 # merge two dicts (name => [vals]): return true if d1 changed
 def merge_dicts(d1: Dict, d2: Dict) -> bool:

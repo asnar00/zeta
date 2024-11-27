@@ -214,17 +214,17 @@ def test_grammar():
     log("test_grammar")
     grammar = Grammar(Entity)
     test("grammar", grammar.dbg(), """
-Named := (Variable | Type | Feature | Component)
+Named := (Feature | Component | Variable | Type)
 NameDef := name:<identifier> NameDef_?
 NameDef_ := '|' alias:<identifier>
-TypeRhs := (TypeAlias | StructDef | TypeParentDef | TypeChildrenDef)
-Expression := (Constant | VariableRef | Bracketed | FunctionCall)
-FunctionCallItem := (FunctionCallOperator | FunctionCallWord | FunctionCallArguments)
+TypeRhs := (StructDef | TypeParentDef | TypeChildrenDef | TypeAlias)
+Expression := (FunctionCall | Bracketed | Constant | VariableRef)
+FunctionCallItem := (FunctionCallArguments | FunctionCallOperator | FunctionCallWord)
 FunctionCallArgument := FunctionCallArgument_? value:Expression
 FunctionCallArgument_ := argument:<identifier> '='
 FunctionModifier := modifier:('on' | 'before' | 'after' | 'replace')
 FunctionSignature := elements:FunctionSignatureElement+
-FunctionSignatureElement := (FunctionSignatureWord | FunctionSignatureParams)
+FunctionSignatureElement := (FunctionSignatureParams | FunctionSignatureWord)
 FunctionBody := statements:Statement*;
 Statement := lhs:StatementLhs assignOp:<identifier> rhs:Expression
 StatementLhs := variables:ResultVariable+,
@@ -233,11 +233,11 @@ Variable :=
 Type := 
 Feature := 'feature' name:NameDef Feature_? '{' components:Component*; '}'
 Feature_ := 'extends' parent:Feature&
-Component := (Test | TypeDef | VariableDef | FunctionDef)
+Component := (FunctionDef | TypeDef | Test | VariableDef)
 Test := '>' lhs:Expression Test_?
 Test_ := '=>' rhs:Expression
 TypeDef := 'type' name:NameDef rhs:TypeRhs
-VariableDef := (VariableDef_ | VariableDef__) VariableDef___?
+VariableDef := (VariableDef__ | VariableDef_) VariableDef___?
 VariableDef___ := '=' value:Expression
 VariableDef__ := names:NameDef+, ':' type:Type&
 VariableDef_ := type:Type& names:NameDef+,
@@ -255,7 +255,7 @@ FunctionCallWord := word:<identifier>
 FunctionCallArguments := '(' arguments:FunctionCallArgument+, ')'
 FunctionSignatureWord := word:(<identifier> | <operator>)
 FunctionSignatureParams := params:VariableDef+,
-ResultVariableDef := (ResultVariableDef_ | ResultVariableDef__)
+ResultVariableDef := (ResultVariableDef__ | ResultVariableDef_)
 ResultVariableDef__ := name:NameDef ':' type:Type&
 ResultVariableDef_ := type:Type& name:NameDef
 ResultVariableRef := variable:Variable&

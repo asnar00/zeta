@@ -2,6 +2,10 @@
 # scribblez
 "slow is smooth, smooth is fast"
 
+ok: seems like we have a kind of functional parser.
+still need to: sort abstract sub-rules by most-complex first.
+-----
+
 need to figure out testing strategy: do it using test classes.
 next: grammar second-order properties computed
 then: parser.
