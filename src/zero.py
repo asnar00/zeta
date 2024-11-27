@@ -32,7 +32,7 @@ class Variable(Named):
 
 # Type is also not a grammar object, but a program object; created by TypeDef (further down)
 class Type(Named):
-    def __init__(self): super().__init__(); self.properties: List[Variable] = []; self.parents: List[Type] = []; self.children: List[Type] = []
+    def __init__(self): super().__init__(); self.properties: List[Variable] = None; self.parents: List[Type] = None; self.children: List[Type] = None
 
 #--------------------------------------------------------------------------------------------------
 # Feature
@@ -40,7 +40,7 @@ class Type(Named):
 # Feature is the feature clause; note 'parent&' means 'reference to parent, i.e. matches a string, but looks it up to find a Feature
 # components; means "component list separated by semicolon" - we know it's a list because we look at the type annotations
 class Feature(Named):
-    def __init__(self): super().__init__(); self.parent: Feature = None; self.components: List[Component] = []
+    def __init__(self): super().__init__(); self.parent: Feature = None; self.components: List[Component] = None
     def rule(self): return "'feature' name ('extends' parent&)? '{' components*; '}'"
 
 # Component is an abstract class; it gets extended by Test, TypeDef, VariableDef, FunctionDef
@@ -76,17 +76,17 @@ class TypeAlias(TypeRhs):
 
 # StructDef just declares a list of properties
 class StructDef(TypeRhs):
-    def __init__(self): super().__init__(); self.properties: List[VariableDef] = []
+    def __init__(self): super().__init__(); self.properties: List[VariableDef] = None
     def rule(self): return "'=' '{' properties*; '}'"
 
 # ParentDef declares that type is a child of some other type(s)
 class TypeParentDef(TypeRhs):
-    def __init__(self): self.parents: List[Type] = []
+    def __init__(self): self.parents: List[Type] = None
     def rule(self): return "'<' parents+,"
 
 # ChildrenDef declares that type is a parent of some other type(s)
 class TypeChildrenDef(TypeRhs):
-    def __init__(self): self.children: List[Type] = []
+    def __init__(self): self.children: List[Type] = None
     def rule(self): return "'>' children+,"
 
 #--------------------------------------------------------------------------------------------------
@@ -95,7 +95,7 @@ class TypeChildrenDef(TypeRhs):
 # VariableDef declares one or more variables with the same type and default value, using either c or ts notation
 # the '+' indicates one or more, "," at the end is the separator
 class VariableDef(Component):
-    def __init__(self): super().__init__(); self.type : Type = None; self.names: List[NameDef] = []; self.value: Expression = None
+    def __init__(self): super().__init__(); self.type : Type = None; self.names: List[NameDef] = None; self.value: Expression = None
     def rule(self): return "((type& names+,) | (names+, ':' type&)) ('=' value)?"
 
 #--------------------------------------------------------------------------------------------------
@@ -120,7 +120,7 @@ class Bracketed(Expression):
     def rule(self): return "'(' expression ')'"
 
 class FunctionCall(Expression):
-    def __init__(self): super().__init__(); self.items: List[FunctionCallItem] = []
+    def __init__(self): super().__init__(); self.items: List[FunctionCallItem] = None
     def rule(self): return "items+"
 
 class FunctionCallItem(Entity):
@@ -135,7 +135,7 @@ class FunctionCallWord(FunctionCallItem):
     def rule(self): return "word:<identifier>"
 
 class FunctionCallArguments(FunctionCallItem):
-    def __init__(self): super().__init__(); self.arguments: List[FunctionCallArgument] = []
+    def __init__(self): super().__init__(); self.arguments: List[FunctionCallArgument] = None
     def rule(self): return "'(' arguments+, ')'"
 
 class FunctionCallArgument(Entity):
@@ -149,11 +149,10 @@ class FunctionDef(Component):
     def __init__(self): 
         super().__init__()
         self.modifier : FunctionModifier = None
-        self.results: List[ResultVariableDef] = []
+        self.results: List[ResultVariableDef] = None
         self.assignOp: str = None
         self.signature: FunctionSignature = None
         self.body: FunctionBody = None
-
     def rule(self):
         return "modifier '(' results+, ')' assignOp:('=' | '<<') signature '{' body '}'"
     
@@ -162,11 +161,11 @@ class FunctionModifier(Entity):
     def rule(self): return "modifier:('on' | 'before' | 'after' | 'replace')"
 
 class ResultVariableDef(Entity):
-    def __init__(self): super().__init__(); self.names: List[NameDef] = []; self.type: Type = None
+    def __init__(self): super().__init__(); self.names: List[NameDef] = None; self.type: Type = None
     def rule(self): return "((type& names+,) | (names+, ':' type&))"
 
 class FunctionSignature(Entity):
-    def __init__(self): super().__init__(); self.elements: List[FunctionSignatureElement] = []
+    def __init__(self): super().__init__(); self.elements: List[FunctionSignatureElement] = None
     def rule(self): return "elements+"
 
 class FunctionSignatureElement(Entity):
@@ -177,11 +176,11 @@ class FunctionSignatureWord(FunctionSignatureElement):
     def rule(self): return "word:(<identifier> | <operator>)"
 
 class FunctionSignatureParams(FunctionSignatureElement):
-    def __init__(self): super().__init__(); self.params : List[VariableDef] = []
+    def __init__(self): super().__init__(); self.params : List[VariableDef] = None
     def rule(self): return "params+,"
 
 class FunctionBody(Entity):
-    def __init__(self): super().__init__(); self.statements: List[Statement] = []
+    def __init__(self): super().__init__(); self.statements: List[Statement] = None
     def rule(self): return "statements*;"
 
 class Statement(Entity):
@@ -189,7 +188,7 @@ class Statement(Entity):
     def rule(self): return "lhs assignOp rhs"
 
 class StatementLhs(Entity):
-    def __init__(self): super().__init__(); self.variables: List[ResultVariable] = []
+    def __init__(self): super().__init__(); self.variables: List[ResultVariable] = None
     def rule(self): return "variables+,"
 
 class ResultVariable(Entity):
@@ -209,7 +208,8 @@ class ResultVariableAssign(ResultVariable):
 
 #--------------------------------------------------------------------------------------------------
 # test grammar
-@this_is_the_test
+
+@this_is_a_test
 def test_grammar():
     log("test_grammar")
     grammar = Grammar(Entity)
@@ -263,22 +263,87 @@ ResultVariableAssign := assignOp:('=' | '<<')
          """)
 
 #--------------------------------------------------------------------------------------------------
-# okay lets write some code
+# parser testing
 
-s_test_program = """
-feature Hello extends Run
-    type str | string = char$
-    string out$ | output$
-    on (string out$) << hello(string name)
-        out$ << "hello \(name)"
-    replace run()
-        output$ << hello("world")
-"""
+def test_parser_feature():
+    test("feature_0", parse_code("", "Feature"), """
+        Feature
+            !!! premature end (expected 'feature', got 'None' at <eof>)
+            name: NameDef = None
+            parent: Feature = None
+            components: List[Component] = None
+        """)
+    
+    test("feature_1", parse_code("feature", "Feature"), """
+        Feature
+            name: NameDef =
+                !!! premature end (expected name:NameDef, got 'None' at <eof>)
+            parent: Feature = None
+            components: List[Component] = None
+        """)
 
-#@this_is_the_test
-def test_zero():    
-    log("test_zero")
-    log(get_attribute_type(VariableDef, "type"))
-    grammar = Grammar(Entity)
-    ls = lexer(Source(code= s_test_program))
-    log(ls)
+    test("feature_2", parse_code("feature MyFeature", "Feature"), """
+         Feature
+            !!! premature end (expected '{', got 'None' at <eof>)
+            name: NameDef =
+                NameDef
+                    name: str = MyFeature
+                    alias: str = None
+            parent: Feature = None
+            components: List[Component] = None
+        """)
+
+    test("feature_3", parse_code("feature MyFeature extends", "Feature"), """
+        Feature
+            !!! premature end (expected '{', got 'None' at <eof>)
+            name: NameDef =
+                NameDef
+                    name: str = MyFeature
+                    alias: str = None
+            parent: Feature =
+                !!! premature end (expected parent:Feature&, got 'None' at <eof>)
+            components: List[Component] = None
+        """)
+    
+    test("feature_4", parse_code("feature MyFeature extends Another", "Feature"), """
+        Feature
+            !!! premature end (expected '{', got 'None' at <eof>)
+            name: NameDef =
+                NameDef
+                    name: str = MyFeature
+                    alias: str = None
+            parent: Feature => Another
+            components: List[Component] = None        
+        """)
+    
+    test("feature_5", parse_code("feature MyFeature {}", "Feature"), """
+        Feature
+            name: NameDef =
+                NameDef
+                    name: str = MyFeature
+                    alias: str = None
+            parent: Feature = None
+            components: List[Component] = []
+        """)
+    
+    test("feature_6", parse_code("feature MyFeature extends Another {}", "Feature"), """
+        Feature
+            name: NameDef =
+                NameDef
+                    name: str = MyFeature
+                    alias: str = None
+            parent: Feature => Another
+            components: List[Component] = []    
+        """)
+#--------------------------------------------------------------------------------------------------
+
+@this_is_the_test
+def test_parser():
+    log("test_parser")
+    if Grammar.current == None: raise Exception("no current grammar!")
+    test_parser_feature()
+    log("------------------------")
+    
+
+    
+

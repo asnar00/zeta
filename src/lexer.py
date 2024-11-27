@@ -323,6 +323,6 @@ class Reader:
 # returns true if a lex matches a set of terminals
 def lex_matches(lex: Lex, matches: List[str]) -> bool:
     if lex==None or len(matches)==0: return False
-    if matches[0][0]=='"': return f'"{lex.val}"' in matches
+    if matches[0][0]=="'": return f"'{lex.val}'" in matches
     elif matches[0][0]=='<': return f'<{lex.type}>' in matches
     else: return False

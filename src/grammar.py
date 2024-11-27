@@ -6,13 +6,28 @@
 from typing import List, Type, Tuple, Dict
 from util import *
 from typing import get_type_hints
+from lexer import Lex
+
+#--------------------------------------------------------------------------------------------------
+# Error represents something that went wrong
+class Error:
+    def __init__(self, message: str, expected: str, got: str, at: str):
+        self.message = message
+        self.expected = expected
+        self.got = got
+        self.at = at
+    def __str__(self):
+        return f"!!! {self.message} (expected {self.expected}, got '{self.got}' at {self.at})"
+    def __repr__(self): return self.__str__()
 
 #--------------------------------------------------------------------------------------------------
 # Entity is the base class for all AST Nodes
 
 # Entity is the base class; all entities have a name and an alias
 class Entity:
-    def __init__(self): pass
+    def __init__(self): self._error : Error = None
+    def __str__(self): return f"{self.__class__.__name__}(..)"
+    def __repr__(self): return self.__str__()
 
 #--------------------------------------------------------------------------------------------------
 # Term: a single term of a rule
@@ -54,8 +69,8 @@ class Term:
 # Rule: a name and a list of terms
 
 class Rule:
-    def __init__(self, name: str, rhs: str, cls=None):
-        self.cls = cls
+    def __init__(self, name: str, rhs: str, entity_cls: Type=None):
+        self.entity_cls = entity_cls
         self.name = name
         self.rhs = rhs
         self.terms = []
@@ -105,7 +120,7 @@ class Grammar:
 
     @log_disable
     def build_abstract(self, rule: Rule):
-        subclasses = all_subclasses(rule.cls)
+        subclasses = all_subclasses(rule.entity_cls)
         vals = [subcls.__name__ for subcls in subclasses]
         rule.terms = [Term(var=None, vals=vals)]
 
@@ -132,7 +147,7 @@ class Grammar:
         if term_str.startswith("<") or term_str.startswith("'"):
             vals = [term_str]
         else:
-            var, vals = find_var_vals(term_str, dec, rule.cls)
+            var, vals = find_var_vals(term_str, dec, rule.entity_cls)
         term = Term(var, vals, dec, sep, ref)
         log("simple term:", term)
         return term
@@ -153,7 +168,7 @@ class Grammar:
             sub_rule_name = rule.name + "_"
             while(sub_rule_name in self.rule_named):
                 sub_rule_name += "_"
-            sub_rule = Rule(sub_rule_name, term_str, rule.cls)
+            sub_rule = Rule(sub_rule_name, term_str, rule.entity_cls)
             self.add_rule(sub_rule, rule.name)
             self.build_rule(sub_rule)
             vals = [ sub_rule.name ]
@@ -168,9 +183,6 @@ class Grammar:
             self.rules.append(new_rule)
         self.rule_named[new_rule.name] = new_rule
         return new_rule
-    
-    
-
 
 #--------------------------------------------------------------------------------------------------
 # helpers
@@ -465,3 +477,30 @@ def merge_arrays(a1, a2)->bool:
             a1.append(v)
             changed = True
     return changed
+
+#-----------------------------------------------------------------------------------------------------------------------
+# print out an Entity tree
+
+@log_indent
+def dbg_entity(e: Entity, indent: int=0):
+    out = ""
+    start = "    " * indent
+    if isinstance(e, Error): 
+        return f"{start}{log_red(e)}\n"
+    out += f"{start}{e.__class__.__name__}\n"
+    for attr in vars(e):
+        if attr == "_error":
+            if e._error != None:
+                out += f"{start}    {log_red(e._error)}\n"
+            continue
+        val = getattr(e, attr)
+        type_name = get_attribute_type(e.__class__, attr)
+        if val == None or isinstance(val, Lex) or (isinstance(val, List) and len(val)==0):
+            ref = ">" if isinstance(val, Lex) and type_name != "str" else ""
+            out += f"{start}    {attr}: {type_name} ={ref} {val}\n"
+        else:
+            out += f"{start}    {attr}: {type_name} =\n"
+            out += dbg_entity(val, indent+2)
+    return out
+
+    
