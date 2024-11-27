@@ -82,12 +82,18 @@ class StructDef(TypeRhs):
 # ParentDef declares that type is a child of some other type(s)
 class TypeParentDef(TypeRhs):
     def __init__(self): self.parents: List[Type] = None
-    def rule(self): return "'<' parents+,"
+    def rule(self): return "'<' parents&+,"
 
 # ChildrenDef declares that type is a parent of some other type(s)
 class TypeChildrenDef(TypeRhs):
     def __init__(self): self.children: List[Type] = None
-    def rule(self): return "'>' children+,"
+    def rule(self): return "'>' children&+,"
+
+# TypeEnumDef defines one or more options
+class TypeEnumDef(TypeRhs):
+    def __init__(self): super().__init__(); self.options: List[str] = None
+    def rule(self): return "'=' options+|"
+    def post_parse_check(self) -> str: return "" if len(self.options) > 1 else "enum must have at least two options"
 
 #--------------------------------------------------------------------------------------------------
 # VariableDefs
@@ -228,7 +234,7 @@ def test_grammar():
 Named := (Feature | Component | Variable | Type)
 NameDef := name:<identifier> NameDef_?
 NameDef_ := '|' alias:<identifier>
-TypeRhs := (StructDef | TypeParentDef | TypeChildrenDef | TypeAlias)
+TypeRhs := (StructDef | TypeParentDef | TypeChildrenDef | TypeEnumDef | TypeAlias)
 Expression := (FunctionCall | Bracketed | Constant | VariableRef)
 FunctionCallItem := (FunctionCallArguments | FunctionCallConstant | FunctionCallOperator | FunctionCallWord)
 FunctionCallArgument := FunctionCallArgument_? value:Expression
@@ -259,8 +265,9 @@ VariableDef_ := type:Type& names:NameDef+,
 FunctionDef := modifier:FunctionModifier '(' results:FunctionResultVariableDef+, ')' assignOp:('=' | '<<') signature:FunctionSignature '{' body:FunctionBody '}'
 TypeAlias := '=' alias:Type&
 StructDef := '=' '{' properties:VariableDef*; '}'
-TypeParentDef := '<' parents:Type+,
-TypeChildrenDef := '>' children:Type+,
+TypeParentDef := '<' parents:Type&+,
+TypeChildrenDef := '>' children:Type&+,
+TypeEnumDef := '=' options:<identifier>+|
 Constant := value:(<number> | <string>)
 VariableRef := variable:Variable&
 Bracketed := '(' expression:Expression ')'
@@ -591,24 +598,108 @@ def test_parser_variables():
 # typedefs
 
 def test_parser_typedefs():
-    pass
+    test("type_0", parse_code("type vec | vector", "TypeDef"), """
+        TypeDef
+            name: NameDef
+                NameDef
+                    name: str = vec
+                    alias: str = vector
+            rhs: TypeRhs
+                !!! premature end (expected rhs:TypeRhs, got 'None' at <eof>)        
+        """)
 
+    test("type_1", parse_code("type vec | vector = { x, y, z: number =0 }", "TypeDef"), """
+        TypeDef
+            name: NameDef
+                NameDef
+                    name: str = vec
+                    alias: str = vector
+            rhs: TypeRhs
+                StructDef
+                    properties: List[VariableDef]
+                        VariableDef
+                            name: NameDef = None
+                            type: Type => number
+                            names: List[NameDef]
+                                NameDef
+                                    name: str = x
+                                    alias: str = None
+                                NameDef
+                                    name: str = y
+                                    alias: str = None
+                                NameDef
+                                    name: str = z
+                                    alias: str = None
+                            value: Expression
+                                Constant
+                                    value: str = 0
+        """)
+
+    test("type_2", parse_code("type int > i8, i16", "TypeDef"), """
+        TypeDef
+            name: NameDef
+                NameDef
+                    name: str = int
+                    alias: str = None
+            rhs: TypeRhs
+                TypeChildrenDef
+                    children: List[Type]
+                        => i8
+                        => i16
+    """)
+
+    test("type_3", parse_code("type offset < vector", "TypeDef"), """
+        TypeDef
+            name: NameDef
+                NameDef
+                    name: str = offset
+                    alias: str = None
+            rhs: TypeRhs
+                TypeParentDef
+                    parents: List[Type]
+                        => vector
+        """)
+    
+    test("type_4", parse_code("type evil = no | yes | maybe", "TypeDef"), """
+        TypeDef
+            name: NameDef
+                NameDef
+                    name: str = evil
+                    alias: str = None
+            rhs: TypeRhs
+                TypeEnumDef
+                    options: List[str]
+                        no
+                        yes
+                        maybe
+        """)
+
+    test("type_5", parse_code("type str | string = char$", "TypeDef"), """
+        TypeDef
+            name: NameDef
+                NameDef
+                    name: str = str
+                    alias: str = string
+            rhs: TypeRhs
+                TypeAlias
+                    alias: Type => char$
+        """)
+    
 #--------------------------------------------------------------------------------------------------
 
 @this_is_the_test
 def test_parser():
     log("test_parser")
     if Grammar.current == None: raise Exception("no current grammar!")
+    test_verbose(False)
     test_parser_feature()
     test_parser_expressions()
     test_parser_tests()
     test_parser_variables()
     test_parser_typedefs()
     log_clear()
+    test_verbose(True)
     log("------------------------")
-    #test("type_0", parse_code("type vec | vector", "TypeDef"))
-    #test("type_1", parse_code("type vec | vector = { x, y, z: number =0 }", "TypeDef"))
-    
 
 
 
@@ -622,4 +713,5 @@ def test_parser():
     
 
     
+
 

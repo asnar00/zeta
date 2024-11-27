@@ -242,6 +242,7 @@ def find_var_vals(term_str: str, dec: str, cls: Type) -> Tuple[str, str]:
         log("list case!")
         rule_name = rule_name[5:-1]
         log("rule_name:", rule_name)
+        if rule_name == "str": return [term_str, ["<identifier>"]]
         return [term_str, [rule_name]]
     else:
         if rule_name == "str": rule_name = "<identifier>"
@@ -482,9 +483,13 @@ def compute_complexity():
         sum = len(rule.terms)
         visited[rule.name] = sum
         for term in rule.terms:
-            if term.is_reference() or (not term.is_rule()): continue
-            for sub_rule in term.rules():
-                term_complexity = compute_complexity_rec(sub_rule, visited)
+            if term.is_rule():
+                for sub_rule in term.rules():
+                    term_complexity = compute_complexity_rec(sub_rule, visited)
+                    if term.dec != "": term_complexity *= 2
+                    sum += term_complexity
+            else:
+                term_complexity = 1
                 if term.dec != "": term_complexity *= 2
                 sum += term_complexity
         visited[rule.name] = sum
@@ -528,7 +533,7 @@ def dbg_entity(e: Entity|List[Entity], indent: int=0):
     start = "    " * indent
     if isinstance(e, Error): 
         return f"{start}{log_red(e)}\n"
-    if isinstance(e, Entity):
+    elif isinstance(e, Entity):
         out += f"{start}{e.__class__.__name__}\n"
         for attr in vars(e):
             if attr == "_error":
@@ -544,8 +549,14 @@ def dbg_entity(e: Entity|List[Entity], indent: int=0):
                 out += f"{start}    {attr}: {type_name}"
                 if isinstance(val, list) and len(val) > 0:
                     out += "\n"
-                    for item in val:
-                        out += dbg_entity(item, indent+2)
+                    if isinstance(val[0], Entity):
+                        for item in val:
+                            out += dbg_entity(item, indent+2)
+                    else:
+                        type_in_brackets = type_name[5:-1]
+                        ref = "=> " if type_in_brackets != "str" else ""
+                        for item in val:
+                            out += f"{start}        {ref}{item}\n"
                 else: 
                     out += "\n"
                     out += dbg_entity(val, indent+2)
