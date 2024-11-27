@@ -100,19 +100,24 @@ class Rule:
 class Grammar:
     current: 'Grammar' = None
     def __init__(self, cls: Type):
+        if Grammar.current != None:
+            raise Exception("trying to build grammar twice")
         Grammar.current = self
         self.rules : List[Rule] = []
         self.rule_named = {}
         self.build(all_subclasses_rec(cls))
         compute_meta_stuff()
+        log_clear()
 
     def dbg(self):
         out = ""
         for rule in self.rules:
             out += rule.dbg() + "\n"
         return out
-
+    
     def build(self, classes: List[Type]):
+        self.rules = []
+        self.rule_named = {}
         for cls in classes:
             rule = Rule(cls.__name__, cls().rule() if hasattr(cls, "rule") else "", cls)
             self.add_rule(rule)
@@ -120,7 +125,6 @@ class Grammar:
             if len(rule.terms) == 0: self.build_rule(rule)
             else: log("already built:", rule.name)
 
-    
     def build_rule(self, rule: Rule):
         if rule.rhs == "": self.build_abstract(rule)
         else: self.build_concrete(rule)
@@ -309,7 +313,6 @@ def get_errors(grammar: Grammar) -> str:
 # computes the initiators and followers for each rule and term
 def compute_meta_stuff():
     compute_complexity()
-    log_clear()
     done = False
     while not done: done = not (compute_initials())
     done = False
@@ -411,8 +414,6 @@ def compute_leaves() -> bool:
     for rule in Grammar.current.rules:
         term = rule.terms[0]
         if term.is_rule():
-            vb = (rule.name == "FunctionCallItem")
-            if vb: log(f"rule {rule.name}, term {term} <= leaves {term.leaves}")
             changed = merge_dicts(rule.leaves, term.leaves) or changed
     return changed
 

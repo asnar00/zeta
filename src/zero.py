@@ -160,7 +160,7 @@ class FunctionDef(Component):
     def __init__(self): 
         super().__init__()
         self.modifier : FunctionModifier = None
-        self.results: List[ResultVariableDef] = None
+        self.results: List[FunctionResultVariableDef] = None
         self.assignOp: str = None
         self.signature: FunctionSignature = None
         self.body: FunctionBody = None
@@ -171,7 +171,7 @@ class FunctionModifier(Entity):
     def __init__(self): super().__init__(); self.modifier : str = None
     def rule(self): return "modifier:('on' | 'before' | 'after' | 'replace')"
 
-class ResultVariableDef(Entity):
+class FunctionResultVariableDef(Entity):
     def __init__(self): super().__init__(); self.names: List[NameDef] = None; self.type: Type = None
     def rule(self): return "((type& names+,) | (names+, ':' type&))"
 
@@ -195,7 +195,7 @@ class FunctionBody(Entity):
     def rule(self): return "statements*;"
 
 class Statement(Entity):
-    def __init__(self): super().__init__(); self.lhs : StatementLhs = None; self.assignOp: str = None; self.rhs: Expression = None
+    def __init__(self): super().__init__(); self.lhs : StatementLhs = None; self.assignOp: ResultVariableAssign = None; self.rhs: Expression = None
     def rule(self): return "lhs assignOp rhs"
 
 class StatementLhs(Entity):
@@ -213,7 +213,7 @@ class ResultVariableRef(ResultVariable):
     def __init__(self): super().__init__(); self.variable: Variable = None
     def rule(self): return "variable&"
 
-class ResultVariableAssign(ResultVariable):
+class ResultVariableAssign(Entity):
     def __init__(self): super().__init__(); self.assignOp: str = None
     def rule(self): return "assignOp:('=' | '<<')"
 
@@ -234,12 +234,16 @@ FunctionCallItem := (FunctionCallArguments | FunctionCallConstant | FunctionCall
 FunctionCallArgument := FunctionCallArgument_? value:Expression
 FunctionCallArgument_ := argument:Variable& '='
 FunctionModifier := modifier:('on' | 'before' | 'after' | 'replace')
+FunctionResultVariableDef := (FunctionResultVariableDef__ | FunctionResultVariableDef_)
+FunctionResultVariableDef__ := names:NameDef+, ':' type:Type&
+FunctionResultVariableDef_ := type:Type& names:NameDef+,
 FunctionSignature := elements:FunctionSignatureElement+
 FunctionSignatureElement := (FunctionSignatureParams | FunctionSignatureWord)
 FunctionBody := statements:Statement*;
-Statement := lhs:StatementLhs assignOp:<identifier> rhs:Expression
+Statement := lhs:StatementLhs assignOp:ResultVariableAssign rhs:Expression
 StatementLhs := variables:ResultVariable+,
-ResultVariable := (ResultVariableDef | ResultVariableRef | ResultVariableAssign)
+ResultVariable := (ResultVariableDef | ResultVariableRef)
+ResultVariableAssign := assignOp:('=' | '<<')
 Variable := 
 Type := 
 Feature := 'feature' name:NameDef Feature_? '{' components:Component*; '}'
@@ -252,7 +256,7 @@ VariableDef := (VariableDef__ | VariableDef_) VariableDef___?
 VariableDef___ := '=' value:Expression
 VariableDef__ := names:NameDef+, ':' type:Type&
 VariableDef_ := type:Type& names:NameDef+,
-FunctionDef := modifier:FunctionModifier '(' results:ResultVariableDef+, ')' assignOp:('=' | '<<') signature:FunctionSignature '{' body:FunctionBody '}'
+FunctionDef := modifier:FunctionModifier '(' results:FunctionResultVariableDef+, ')' assignOp:('=' | '<<') signature:FunctionSignature '{' body:FunctionBody '}'
 TypeAlias := '=' alias:Type&
 StructDef := '=' '{' properties:VariableDef*; '}'
 TypeParentDef := '<' parents:Type+,
@@ -271,7 +275,6 @@ ResultVariableDef := (ResultVariableDef__ | ResultVariableDef_)
 ResultVariableDef__ := name:NameDef ':' type:Type&
 ResultVariableDef_ := type:Type& name:NameDef
 ResultVariableRef := variable:Variable&
-ResultVariableAssign := assignOp:('=' | '<<')
          """)
 
 #--------------------------------------------------------------------------------------------------
@@ -603,6 +606,7 @@ def test_parser():
     test_parser_typedefs()
     log_clear()
     log("------------------------")
+    #test("type_0", parse_code("type vec | vector", "TypeDef"))
     #test("type_1", parse_code("type vec | vector = { x, y, z: number =0 }", "TypeDef"))
     
 

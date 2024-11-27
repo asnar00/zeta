@@ -4,7 +4,6 @@
 # zero to anything
 
 from util import *
-from parser import *
 from zero import *
 
 #--------------------------------------------------------------------------------------------------
