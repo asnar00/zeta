@@ -222,7 +222,7 @@ def truncate_list(term: Term, reader: Reader, items: List[Dict], pos: int) -> Li
 #@log_indent
 def parse_separator(term: Term, reader: Reader, items: List[Dict], restore_pos: int) -> Tuple[List[Dict], bool]:
     if term.sep == "": return items, True
-    if lex_matches(reader.peek(), [f'"{term.sep}"']):
+    if lex_matches(reader.peek(), [f"'{term.sep}'"]):
         reader.next()
         return items, True
     if term.sep == ";": return items, True
