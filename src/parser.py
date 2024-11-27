@@ -152,9 +152,10 @@ def check_child_errors(rule: Rule, children: List[Entity]):
             log(log_red("optional term at end of rule has errors!"))
             log(child)
             if has_errors(child):
-                count = sum(1 for attr in vars(child) if getattr(child, attr) is not None)
-                log(log_red("dropping errors from optional term"))
-                if count == 0: children[i_term] = remove_errors(children[i_term])
+                count = sum(1 for attr in vars(child) if attr != "_error" and getattr(child, attr) is not None)
+                if count == 0: 
+                    log(log_red("dropping errors from optional term"))
+                    children[i_term] = None
 
 # merge children into the parent entity
 @log_indent
@@ -256,6 +257,7 @@ def truncate_list(term: Term, reader: Reader, items: List[Dict], pos: int) -> Li
     items = items[:-1]
     reader.restore(pos)
     log(f"reader after restore: {reader}")
+    log(f"items after truncate: {items}")
     return items
 
 #@log_indent

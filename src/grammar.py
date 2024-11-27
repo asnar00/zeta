@@ -109,9 +109,10 @@ class Grammar:
         compute_meta_stuff()
         log_clear()
 
-    def dbg(self):
+    def dbg(self, rule_names: List[str] = None) -> str:
+        rules = self.rules if rule_names is None else find_rules(rule_names)
         out = ""
-        for rule in self.rules:
+        for rule in rules:
             out += rule.dbg() + "\n"
         return out
     
@@ -523,6 +524,14 @@ def merge_arrays(a1, a2)->bool:
             a1.append(v)
             changed = True
     return changed
+
+# returns a list of all rules referred to by (rule)
+def find_rules(rule_names: List[str]):
+    rules = []
+    for rule in Grammar.current.rules:
+        if rule.name.replace("_", "") in rule_names:
+            rules.append(rule)
+    return rules
 
 #-----------------------------------------------------------------------------------------------------------------------
 # print out an Entity tree
