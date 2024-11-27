@@ -108,7 +108,7 @@ class Expression(Entity):
 # Constant is a literal: either number of string
 class Constant(Expression):
     def __init__(self): super().__init__(); self.value: str = None
-    def rule(self): return "(<number> | <string>)"
+    def rule(self): return "value:(<number> | <string>)"
 
 # VariableRef just refers to a variable; we use '&' to indicate that it's a reference
 class VariableRef(Expression):
@@ -122,9 +122,20 @@ class Bracketed(Expression):
 class FunctionCall(Expression):
     def __init__(self): super().__init__(); self.items: List[FunctionCallItem] = None
     def rule(self): return "items+"
-
+    def post_parse_check(self) -> str:
+        n_bracketed = 0; n_operators = 0
+        for item in self.items:
+            if isinstance(item, FunctionCallArguments): n_bracketed += 1
+            if isinstance(item, FunctionCallOperator): n_operators += 1
+        if n_bracketed ==0 and n_operators ==0: return "function call must have at least one argument or operation"
+        return ""
+    
 class FunctionCallItem(Entity):
     def __init__(self): super().__init__()
+
+class FunctionCallConstant(FunctionCallItem):
+    def __init__(self): super().__init__(); self.constant : Constant = None
+    def rule(self): return "constant"
 
 class FunctionCallOperator(FunctionCallItem):
     def __init__(self): super().__init__(); self.operator: str = None
@@ -139,8 +150,8 @@ class FunctionCallArguments(FunctionCallItem):
     def rule(self): return "'(' arguments+, ')'"
 
 class FunctionCallArgument(Entity):
-    def __init__(self): super().__init__(); self.argument: str = None; self.value: Expression = None
-    def rule(self): return "(argument '=')? value"
+    def __init__(self): super().__init__(); self.argument: Variable = None; self.value: Expression = None
+    def rule(self): return "(argument& '=')? value"
 
 #--------------------------------------------------------------------------------------------------
 # FunctionDef
@@ -219,9 +230,9 @@ NameDef := name:<identifier> NameDef_?
 NameDef_ := '|' alias:<identifier>
 TypeRhs := (StructDef | TypeParentDef | TypeChildrenDef | TypeAlias)
 Expression := (FunctionCall | Bracketed | Constant | VariableRef)
-FunctionCallItem := (FunctionCallArguments | FunctionCallOperator | FunctionCallWord)
+FunctionCallItem := (FunctionCallArguments | FunctionCallConstant | FunctionCallOperator | FunctionCallWord)
 FunctionCallArgument := FunctionCallArgument_? value:Expression
-FunctionCallArgument_ := argument:<identifier> '='
+FunctionCallArgument_ := argument:Variable& '='
 FunctionModifier := modifier:('on' | 'before' | 'after' | 'replace')
 FunctionSignature := elements:FunctionSignatureElement+
 FunctionSignatureElement := (FunctionSignatureParams | FunctionSignatureWord)
@@ -246,10 +257,11 @@ TypeAlias := '=' alias:Type&
 StructDef := '=' '{' properties:VariableDef*; '}'
 TypeParentDef := '<' parents:Type+,
 TypeChildrenDef := '>' children:Type+,
-Constant := (<number> | <string>)
+Constant := value:(<number> | <string>)
 VariableRef := variable:Variable&
 Bracketed := '(' expression:Expression ')'
 FunctionCall := items:FunctionCallItem+
+FunctionCallConstant := constant:Constant
 FunctionCallOperator := operator:<operator>
 FunctionCallWord := word:<identifier>
 FunctionCallArguments := '(' arguments:FunctionCallArgument+, ')'
@@ -265,6 +277,9 @@ ResultVariableAssign := assignOp:('=' | '<<')
 #--------------------------------------------------------------------------------------------------
 # parser testing
 
+#--------------------------------------------------------------------------------------------------
+# feature clause
+
 def test_parser_feature():
     test("feature_0", parse_code("", "Feature"), """
         Feature
@@ -276,7 +291,7 @@ def test_parser_feature():
     
     test("feature_1", parse_code("feature", "Feature"), """
         Feature
-            name: NameDef =
+            name: NameDef
                 !!! premature end (expected name:NameDef, got 'None' at <eof>)
             parent: Feature = None
             components: List[Component] = None
@@ -285,7 +300,7 @@ def test_parser_feature():
     test("feature_2", parse_code("feature MyFeature", "Feature"), """
          Feature
             !!! premature end (expected '{', got 'None' at <eof>)
-            name: NameDef =
+            name: NameDef
                 NameDef
                     name: str = MyFeature
                     alias: str = None
@@ -296,11 +311,11 @@ def test_parser_feature():
     test("feature_3", parse_code("feature MyFeature extends", "Feature"), """
         Feature
             !!! premature end (expected '{', got 'None' at <eof>)
-            name: NameDef =
+            name: NameDef
                 NameDef
                     name: str = MyFeature
                     alias: str = None
-            parent: Feature =
+            parent: Feature
                 !!! premature end (expected parent:Feature&, got 'None' at <eof>)
             components: List[Component] = None
         """)
@@ -308,7 +323,7 @@ def test_parser_feature():
     test("feature_4", parse_code("feature MyFeature extends Another", "Feature"), """
         Feature
             !!! premature end (expected '{', got 'None' at <eof>)
-            name: NameDef =
+            name: NameDef
                 NameDef
                     name: str = MyFeature
                     alias: str = None
@@ -318,7 +333,7 @@ def test_parser_feature():
     
     test("feature_5", parse_code("feature MyFeature {}", "Feature"), """
         Feature
-            name: NameDef =
+            name: NameDef
                 NameDef
                     name: str = MyFeature
                     alias: str = None
@@ -328,13 +343,105 @@ def test_parser_feature():
     
     test("feature_6", parse_code("feature MyFeature extends Another {}", "Feature"), """
         Feature
-            name: NameDef =
+            name: NameDef
                 NameDef
                     name: str = MyFeature
                     alias: str = None
             parent: Feature => Another
             components: List[Component] = []    
         """)
+
+#--------------------------------------------------------------------------------------------------
+# expressions
+
+def test_parser_expressions():
+    test("expression_0", parse_code("1", "Expression"), """
+        Constant
+            value: str = 1
+        """)
+    
+    test("expression_1", parse_code("a", "Expression"), """
+        VariableRef
+            variable: Variable => a
+        """)
+
+    test("expression_2", parse_code("a + b", "Expression"), """
+        FunctionCall
+            items: List[FunctionCallItem]
+                FunctionCallWord
+                    word: str = a
+                FunctionCallOperator
+                    operator: str = +
+                FunctionCallWord
+                    word: str = b
+        """)
+    
+    test("parameter_0", parse_code("a = 1", "FunctionCallArgument"), """
+            FunctionCallArgument
+                argument: Variable => a
+                value: Expression
+                    Constant
+                        value: str = 1
+            """)
+
+    test("parameter_1", parse_code("a + b", "FunctionCallArgument"), """
+        FunctionCallArgument
+            argument: Variable = None
+            value: Expression
+                FunctionCall
+                    items: List[FunctionCallItem]
+                        FunctionCallWord
+                            word: str = a
+                        FunctionCallOperator
+                            operator: str = +
+                        FunctionCallWord
+                            word: str = b
+        """)
+
+    test("brackets_0", parse_code("(a + b)", "Bracketed"), """
+        Bracketed
+            expression: Expression
+                FunctionCall
+                    items: List[FunctionCallItem]
+                        FunctionCallWord
+                            word: str = a
+                        FunctionCallOperator
+                            operator: str = +
+                        FunctionCallWord
+                            word: str = b
+        """)
+    
+    test("brackets_1", parse_code("(v = a + b)", "Expression"), """
+        FunctionCall
+            items: List[FunctionCallItem]
+                FunctionCallArguments
+                    arguments: List[FunctionCallArgument]
+                        FunctionCallArgument
+                            argument: Variable => v
+                            value: Expression
+                                FunctionCall
+                                    items: List[FunctionCallItem]
+                                        FunctionCallWord
+                                            word: str = a
+                                        FunctionCallOperator
+                                            operator: str = +
+                                        FunctionCallWord
+                                            word: str = b
+        """)
+    
+    test("expression_3", parse_code("2 - c", "Expression"), """
+        FunctionCall
+            items: List[FunctionCallItem]
+                FunctionCallConstant
+                    constant: Constant
+                        Constant
+                            value: str = 2
+                FunctionCallOperator
+                    operator: str = -
+                FunctionCallWord
+                    word: str = c
+    """)
+
 #--------------------------------------------------------------------------------------------------
 
 @this_is_the_test
@@ -342,7 +449,11 @@ def test_parser():
     log("test_parser")
     if Grammar.current == None: raise Exception("no current grammar!")
     test_parser_feature()
+    test_parser_expressions()
     log("------------------------")
+
+
+
     
 
     

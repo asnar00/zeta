@@ -17,7 +17,8 @@ class Error:
         self.got = got
         self.at = at
     def __str__(self):
-        return f"!!! {self.message} (expected {self.expected}, got '{self.got}' at {self.at})"
+        expected = f"(expected {self.expected}, got '{self.got}'" if self.expected else ""
+        return f"!!! {self.message} {expected} at {self.at})"
     def __repr__(self): return self.__str__()
 
 #--------------------------------------------------------------------------------------------------
@@ -28,27 +29,32 @@ class Entity:
     def __init__(self): self._error : Error = None
     def __str__(self): return f"{self.__class__.__name__}(..)"
     def __repr__(self): return self.__str__()
+    def post_parse_check(self) -> str: return ""
 
 #--------------------------------------------------------------------------------------------------
 # Term: a single term of a rule
 
 class Term:
     def __init__(self, var: str, vals: List[str], dec:str ="", sep:str ="", ref: str = ""):
+        if ref=="&":                    # if there's a reference
+            ref = vals[0] + "&"         # note down the type of entity we're pointing at
+            vals = ["<identifier>"]     # but the term should just match an <identifier>
         self.var = var      # variable to assign in the AST, if any
-        self.vals = vals    # a set of keywords ('word'), types (<type>), or rules (Rule)
+        self.vals = vals   # a set of keywords ('word'), types (<type>), or rules (Rule)
         self.dec = dec      # one of "?" (optional), "*" (zero-or-more), "+" (one-or-more)
         self.sep = sep      # separator: one of "", ",", ";" or "|" 
         self.ref = ref      # "", or "&" if the term is a reference to an entity
         self.initials = []  # keywords that can initiate this term
         self.followers = [] # keywords that can follow this term
-        self.leaves = {}    # maps match => rule-names
+        self.leaves = {}    # maps match => [rule]s
         self.index = 0      # index in the original term list
         self.rule = None    # the rule we're in, if any
         self.contains_nested_sep = False     # True if this term points to sub-rules with the same separator
     def __str__(self):
-        out = " | ".join(self.vals)
-        if len(self.vals) > 1: out = f"({out})"
-        if self.ref: out += self.ref
+        if self.ref: out = self.ref
+        else: 
+            out = " | ".join(self.vals)
+            if len(self.vals) > 1: out = f"({out})"
         if self.dec: out += self.dec
         if self.sep: out += self.sep
         if self.var: out = f"{self.var}:{out}"
@@ -85,7 +91,7 @@ class Rule:
         out = self.name + " := " + " ".join([str(term) for term in self.terms])
         return out
     def is_abstract(self):
-        return len(self.terms)==1 and self.terms[0].is_rule() and not self.terms[0].dec
+        return len(self.terms)==1 and self.terms[0].is_rule() and not self.terms[0].dec and not self.terms[0].var
     
 
 #--------------------------------------------------------------------------------------------------
@@ -302,6 +308,8 @@ def get_errors(grammar: Grammar) -> str:
 
 # computes the initiators and followers for each rule and term
 def compute_meta_stuff():
+    compute_complexity()
+    log_clear()
     done = False
     while not done: done = not (compute_initials())
     done = False
@@ -309,9 +317,9 @@ def compute_meta_stuff():
     finish_compute_followers()
     done = False
     while not done: done = not (compute_leaves())
+    sort_leaves_by_complexity()
     compute_indices()
     compute_nested_separators()
-    compute_complexity()
 
 def compute_initials() -> bool:
     changed = False
@@ -341,7 +349,6 @@ def compute_initials() -> bool:
                 break
     return changed
 
-s_trace = ""
 
 def push_followers_downwards(term, followers, changed) -> bool:
     if not term.is_rule(): return changed
@@ -398,18 +405,25 @@ def compute_leaves() -> bool:
         for term in rule.terms:
             if term.is_rule():
                 for sub_rule in term.rules():
-                    if sub_rule.is_abstract():
-                        changed = merge_dicts(term.leaves, sub_rule.terms[0].leaves) or changed
-                    else:
-                        for val in sub_rule.leaves.keys():
-                            changed = merge_dicts(term.leaves, { val : [sub_rule] }) or changed             
+                    for val in sub_rule.leaves.keys():
+                        changed = merge_dicts(term.leaves, { val : [sub_rule] }) or changed             
     # and then back to the rules
     for rule in Grammar.current.rules:
         term = rule.terms[0]
         if term.is_rule():
+            vb = (rule.name == "FunctionCallItem")
+            if vb: log(f"rule {rule.name}, term {term} <= leaves {term.leaves}")
             changed = merge_dicts(rule.leaves, term.leaves) or changed
     return changed
 
+def sort_leaves_by_complexity():
+    for rule in Grammar.current.rules:
+        for term in rule.terms:
+            if not term.is_rule(): continue
+            for key, rule_list in term.leaves.items():
+                rule_list.sort(key=lambda x: x.complexity, reverse=True)
+                term.leaves[key] = rule_list
+                
 # compute indices
 def compute_indices():
     for rule in Grammar.current.rules:
@@ -508,25 +522,32 @@ def merge_arrays(a1, a2)->bool:
 # print out an Entity tree
 
 @log_indent
-def dbg_entity(e: Entity, indent: int=0):
+def dbg_entity(e: Entity|List[Entity], indent: int=0):
     out = ""
     start = "    " * indent
     if isinstance(e, Error): 
         return f"{start}{log_red(e)}\n"
-    out += f"{start}{e.__class__.__name__}\n"
-    for attr in vars(e):
-        if attr == "_error":
-            if e._error != None:
-                out += f"{start}    {log_red(e._error)}\n"
-            continue
-        val = getattr(e, attr)
-        type_name = get_attribute_type(e.__class__, attr)
-        if val == None or isinstance(val, Lex) or (isinstance(val, List) and len(val)==0):
-            ref = ">" if isinstance(val, Lex) and type_name != "str" else ""
-            out += f"{start}    {attr}: {type_name} ={ref} {val}\n"
-        else:
-            out += f"{start}    {attr}: {type_name} =\n"
-            out += dbg_entity(val, indent+2)
+    if isinstance(e, Entity):
+        out += f"{start}{e.__class__.__name__}\n"
+        for attr in vars(e):
+            if attr == "_error":
+                if e._error != None:
+                    out += f"{start}    {log_red(e._error)}\n"
+                continue
+            val = getattr(e, attr)
+            type_name = get_attribute_type(e.__class__, attr)
+            if val == None or isinstance(val, Lex) or (isinstance(val, List) and len(val)==0):
+                ref = ">" if isinstance(val, Lex) and type_name != "str" else ""
+                out += f"{start}    {attr}: {type_name} ={ref} {val}\n"
+            else:
+                out += f"{start}    {attr}: {type_name}"
+                if isinstance(val, list) and len(val) > 0:
+                    out += "\n"
+                    for item in val:
+                        out += dbg_entity(item, indent+2)
+                else: 
+                    out += "\n"
+                    out += dbg_entity(val, indent+2)
     return out
 
     

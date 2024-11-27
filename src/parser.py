@@ -18,9 +18,8 @@ from grammar import *
 def parse_rule(rule: Rule, reader: Reader) -> Entity:
     children = parse_terms(rule, reader)
     check_child_errors(rule, children)
-    entity = rule.entity_cls()
-    merge_children(rule, children, entity)
-    return entity
+    entity = merge_children(rule, children, rule.entity_cls())
+    return post_parse(entity)
 
 # parse each term in the rule, returns list of results
 def parse_terms(rule: Rule, reader: Reader) -> List[Term]:
@@ -42,7 +41,6 @@ def parse_singular_term(term: Term, reader: Reader) -> Dict:
     if term.is_terminal() or term.is_reference(): return parse_terminal(term, reader)
     elif term.is_rule(): return parse_rule_term(term, reader.scan(term.followers))
     else: raise Exception(f"unknown term type: {term.vals}")
-
 
 # simplest case: parse a terminal singular term
 @log_indent
@@ -107,6 +105,30 @@ def parse_list_term(term: Term, reader: Reader) -> Dict:
 #--------------------------------------------------------------------------------------------------
 # "below the line" parser functions
 
+# post-parse: hand the finished entity to its checker to handle things we can't express in the grammar
+def post_parse(entity: Entity) -> Entity:
+    if isinstance(entity, Error): return entity
+    msg = entity.post_parse_check()
+    if msg=="": return entity
+    log(log_red(f"post-parse error: {msg}"))
+    lex = find_first_lex(entity)
+    return Error(msg, "", "", lex.location() if lex else "")
+
+# search through for the first lex you find in the entity tree, return its location
+def find_first_lex(entity: Entity) -> Lex:
+    if entity == None: return None
+    if isinstance(entity, Lex): return entity
+    if isinstance(entity, Error): return None
+    if isinstance(entity, List):
+        for item in entity:
+            lex = find_first_lex(item)
+            if lex: return lex
+        return None
+    for attr in vars(entity):
+        lex = find_first_lex(getattr(entity, attr))
+        if lex: return lex
+    return None
+
 # check for errors in back-trackable children (needs a little work)
 @log_indent
 def check_child_errors(rule: Rule,children: List[Dict]):
@@ -118,22 +140,29 @@ def check_child_errors(rule: Rule,children: List[Dict]):
         if (i_term+1) < len(children):
             if not has_errors(children[i_term+1]):
                 log(log_red("dropping errors from optional term"))
-                children[i_term] = {}
+                children[i_term] = None
         else:
             log(log_red("optional term at end of rule has errors!"))
             log(child)
-            if "_errors" in child:
+            if has_errors(child):
                 count = sum(1 for key in child if key not in ["_rule", "_errors"])
                 log(log_red("dropping errors from optional term"))
-                if count == 0: children[i_term] = {}
+                if count == 0: children[i_term] = None
 
 # merge children into the parent entity
 @log_indent
-def merge_children(rule: Rule, children: List[Entity], parent: Entity):
-    for i_term, term in enumerate(rule.terms):
-        if i_term < len(children): 
-            ast = merge_child(term, children[i_term], parent)
-    return ast
+def merge_children(rule: Rule, children: List[Entity], parent: Entity) -> Entity:
+    if rule.is_abstract():
+        if len(children) != 1: raise Exception("abstract rule must have only one matched child!")
+        if isinstance(children[0], Error): return children[0]
+        if not isinstance(children[0], rule.entity_cls):
+            raise Exception(f"First child ({children[0].__class__.__name__}) is not a subclass of the rule's class ({rule.entity_cls.__name__})!")
+        return children[0]
+    else:
+        for i_term, term in enumerate(rule.terms):
+            if i_term < len(children): 
+                merge_child(term, children[i_term], parent)
+        return parent
 
 # merge single child into parent entity
 @log_indent
