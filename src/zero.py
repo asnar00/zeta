@@ -1,5 +1,5 @@
 # ᕦ(ツ)ᕤ
-# grammar.py
+# zero.py
 # author: asnaroo
 # zero to anything
 
