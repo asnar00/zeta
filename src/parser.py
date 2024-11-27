@@ -205,7 +205,7 @@ def reduce_rules(term: Term, lex: Lex) -> List[Rule]:
     return leaf_rules
 
 def scan_separator(reader: Reader, term: Term) -> Reader:
-    term_reader = reader.scan([f'"{term.sep}"']) if (term.sep and term.contains_nested_sep == False) else reader
+    term_reader = reader.scan([f"'{term.sep}'"]) if (term.sep and term.contains_nested_sep == False) else reader
     if term.contains_nested_sep: term_reader.set_nested_separator(term.sep)
     return term_reader
 

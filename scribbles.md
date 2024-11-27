@@ -3,7 +3,10 @@
 "slow is smooth, smooth is fast"
 
 ok: seems like we have a kind of functional parser.
-still need to: sort abstract sub-rules by most-complex first.
+still need to: sort abstract sub-rules by most-complex first. DONE!
+next: finish all the tests from parser10.py
+then: let's kick on with symbol table and semantic analysis.
+
 -----
 
 need to figure out testing strategy: do it using test classes.
