@@ -298,49 +298,6 @@ def get_errors(grammar: Grammar) -> str:
             out += f"rule {rule.name} has unbound list terms: {str(unbound_list_terms).replace("[", "").replace("]", "")}\n"
     return out
 
-# computes all nested-separators
-def compute_nested_separators():
-    for rule in Grammar.current.rules:
-        for term in rule.terms:
-            found_terms =contains_nested_separator(term)
-            if len(found_terms) > 0:
-                #log(f"rule {rule.name}: term {term.index} has nested separator {term.sep}")
-                term.contains_nested_sep = True
-
-# checks a term to see if it has one or more nested separators
-def contains_nested_separator(term: Term) -> List[Term]:
-    if term.sep == "": return []
-    visited = {}   # map Rule.name => bool
-    if not term.is_rule(): return []
-    # returns True if the rule, or any reachable sub-rule, contains the separator outside of braces ("{}()")
-    def check_nested_separator(rule: Rule, visited: Dict[Rule, bool], sep: str) -> List[Term]:
-        if rule.name in visited: return visited[rule.name]
-        visited[rule.name] = False
-        in_braces = False
-        found_terms = []
-        for term in rule.terms:
-            if not in_braces:
-                if term.sep == sep:
-                    found_terms.append(term)
-                if term.is_rule():
-                    for sub_rule in term.rules():
-                        new_terms= check_nested_separator(sub_rule, visited, sep)
-                        found_terms += new_terms
-            if term.is_keyword() and term.is_singular():
-                val = term.vals[0][1:-1]
-                if val in "{(" : in_braces = True
-                elif val in "})": in_braces = False
-
-        visited[rule.name] = found_terms
-        return found_terms
-
-    all_sub_terms_found = []
-    for sub_rule in term.rules():
-        if sub_rule.name in visited: continue
-        sub_terms_found = check_nested_separator(sub_rule, visited, term.sep)
-        all_sub_terms_found += sub_terms_found
-    return all_sub_terms_found
-    
 
 # computes the initiators and followers for each rule and term
 def compute_meta_stuff():
@@ -457,7 +414,50 @@ def compute_indices():
         for i_term, term in enumerate(rule.terms):
             term.rule = rule
             term.index = i_term
+            
+# computes all nested-separators
+def compute_nested_separators():
+    for rule in Grammar.current.rules:
+        for term in rule.terms:
+            found_terms =contains_nested_separator(term)
+            if len(found_terms) > 0:
+                #log(f"rule {rule.name}: term {term.index} has nested separator {term.sep}")
+                term.contains_nested_sep = True
 
+# checks a term to see if it has one or more nested separators
+def contains_nested_separator(term: Term) -> List[Term]:
+    if term.sep == "": return []
+    visited = {}   # map Rule.name => bool
+    if not term.is_rule(): return []
+    # returns True if the rule, or any reachable sub-rule, contains the separator outside of braces ("{}()")
+    def check_nested_separator(rule: Rule, visited: Dict[Rule, bool], sep: str) -> List[Term]:
+        if rule.name in visited: return visited[rule.name]
+        visited[rule.name] = False
+        in_braces = False
+        found_terms = []
+        for term in rule.terms:
+            if not in_braces:
+                if term.sep == sep:
+                    found_terms.append(term)
+                if term.is_rule():
+                    for sub_rule in term.rules():
+                        new_terms= check_nested_separator(sub_rule, visited, sep)
+                        found_terms += new_terms
+            if term.is_keyword() and term.is_singular():
+                val = term.vals[0][1:-1]
+                if val in "{(" : in_braces = True
+                elif val in "})": in_braces = False
+
+        visited[rule.name] = found_terms
+        return found_terms
+
+    all_sub_terms_found = []
+    for sub_rule in term.rules():
+        if sub_rule.name in visited: continue
+        sub_terms_found = check_nested_separator(sub_rule, visited, term.sep)
+        all_sub_terms_found += sub_terms_found
+    return all_sub_terms_found
+    
 # merge two dicts (name => [vals]): return true if d1 changed
 def merge_dicts(d1: Dict, d2: Dict) -> bool:
     changed = False
