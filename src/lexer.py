@@ -32,7 +32,7 @@ def test_source():
 
     # or from markdown text directly
     source = Source(text = "some code:\n    a b c\n    d e f\n\nsome text.")
-    test("source_markdown", source.code, "a b c\n    d e f")
+    test("source_markdown", source.code, "a b c\nd e f")
 
     # or from a markdown file path
     source = Source(path = 'src/test/Hello.zero.md')

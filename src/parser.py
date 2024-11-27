@@ -16,6 +16,7 @@ from grammar import *
 # given a rule and a reader, parse the rule and return an entity
 @log_indent
 def parse_rule(rule: Rule, reader: Reader) -> Entity:
+    log("rule:", rule.dbg())
     children = parse_terms(rule, reader)
     check_child_errors(rule, children)
     entity = merge_children(rule, children, rule.entity_cls())
@@ -73,12 +74,16 @@ def parse_rule_term(term: Term, reader: Reader) -> Entity:
 # parse an optional term, return None if eof or error
 @log_indent
 def parse_optional(term: Term, reader: Reader) -> Entity:
+    vb = (str(term) == "FunctionCallArgument_?")
     if reader.eof(): 
         log(log_red("optional: eof"))
         return None
     pos = reader.pos()
     child = parse_singular_term(term, reader)
-    if has_errors(child): reader.restore(pos)
+    if has_errors(child): 
+        log(log_red("parse_optional: child has errors- restoring"))
+        reader.restore(pos)
+        log("reader after restore:", reader)
     return child
 
 @log_indent
@@ -131,12 +136,14 @@ def find_first_lex(entity: Entity) -> Lex:
 
 # check for errors in back-trackable children (needs a little work)
 @log_indent
-def check_child_errors(rule: Rule,children: List[Dict]):
+def check_child_errors(rule: Rule, children: List[Entity]):
     for i_term, term in enumerate(rule.terms):
         if i_term >= len(children): break
+        log(f"i_term: {i_term}, term: {term}, child: {children[i_term]}")
         if not term.is_optional(): continue
         child = children[i_term]
         if not has_errors(child): continue
+        log(log_red("found errors in optional term"))
         if (i_term+1) < len(children):
             if not has_errors(children[i_term+1]):
                 log(log_red("dropping errors from optional term"))
@@ -145,9 +152,9 @@ def check_child_errors(rule: Rule,children: List[Dict]):
             log(log_red("optional term at end of rule has errors!"))
             log(child)
             if has_errors(child):
-                count = sum(1 for key in child if key not in ["_rule", "_errors"])
+                count = sum(1 for attr in vars(child) if getattr(child, attr) is not None)
                 log(log_red("dropping errors from optional term"))
-                if count == 0: children[i_term] = None
+                if count == 0: children[i_term] = remove_errors(children[i_term])
 
 # merge children into the parent entity
 @log_indent
@@ -170,7 +177,7 @@ def merge_child(term: Term, child: Entity, parent: Entity|Lex|List):
     if term.var != None:
         if not hasattr(parent, term.var):
             log(log_red(f"parent {parent} has no attribute {term.var}"))
-            log_exit()
+            raise Exception("parent term-var not found")
         log(f"setting attribute {term.var} to {child}")
         setattr(parent, term.var, child)
         return
@@ -185,13 +192,14 @@ def merge_child(term: Term, child: Entity, parent: Entity|Lex|List):
     elif isinstance(child, Entity):
         log("merging child attributes into parent!")
         for attr in vars(child):
-            if getattr(child, attr) == None: continue
+            if getattr(child, attr) is None: continue
             if hasattr(parent, attr):
                 if getattr(parent, attr) is not None:
                     log(log_red(f"parent attribute {attr} is already set to {getattr(parent, attr)}; conflict"))
-                    raise Exception("conflict found in merge-child!")
-                log(f"setting parent attribute {attr} to {getattr(child, attr)}")
-                setattr(parent, attr, getattr(child, attr))
+                    log(f"incidentially, child attr is: {getattr(child, attr)}")
+                else:
+                    log(f"setting parent attribute {attr} to {getattr(child, attr)}")
+                    setattr(parent, attr, getattr(child, attr))
         return
     raise Exception("not implemented yet")
 
@@ -207,11 +215,13 @@ def has_errors(entity: Entity | Lex | None) -> bool:
         return False
     if hasattr(entity, "_error") and entity._error != None: return True
     for attr in vars(entity):
-        if isinstance(getattr(entity, attr), list):
-            if any(has_errors(item) for item in getattr(entity, attr)):
+        val = getattr(entity, attr)
+        if isinstance(val, Error): return True
+        elif isinstance(val, list):
+            if any(has_errors(item) for item in val):
                 return True
-        elif isinstance(getattr(entity, attr), Entity):
-            if has_errors(getattr(entity, attr)):
+        elif isinstance(val, Entity):
+            if has_errors(val):
                 return True
     
     return False
@@ -258,6 +268,20 @@ def parse_separator(term: Term, reader: Reader, items: List[Dict], restore_pos: 
     log(log_red(f"separator error: expected {term.sep} but got {reader.peek()}"))
     items = truncate_list(term, reader, items, restore_pos)
     return items,False
+
+def remove_errors(e: Entity) -> Entity:
+    if isinstance(e, Error): return None
+    if isinstance(e, Entity):
+        e._error = None
+        found_attributes = False
+        for attr in vars(e):
+            sub_e = getattr(e, attr)
+            if sub_e != None:
+                found_attributes = True
+                setattr(e, attr, remove_errors(sub_e))
+        return e if found_attributes else None
+    if isinstance(e, List): return List([remove_errors(item) for item in e])
+    return e
 
 #--------------------------------------------------------------------------------------------------
 # test routine: returns a nicely formatted AST

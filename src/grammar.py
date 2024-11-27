@@ -521,7 +521,7 @@ def merge_arrays(a1, a2)->bool:
 #-----------------------------------------------------------------------------------------------------------------------
 # print out an Entity tree
 
-@log_indent
+#@log_indent
 def dbg_entity(e: Entity|List[Entity], indent: int=0):
     out = ""
     start = "    " * indent

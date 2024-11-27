@@ -298,7 +298,7 @@ def test_parser_feature():
         """)
 
     test("feature_2", parse_code("feature MyFeature", "Feature"), """
-         Feature
+        Feature
             !!! premature end (expected '{', got 'None' at <eof>)
             name: NameDef
                 NameDef
@@ -310,7 +310,7 @@ def test_parser_feature():
 
     test("feature_3", parse_code("feature MyFeature extends", "Feature"), """
         Feature
-            !!! premature end (expected '{', got 'None' at <eof>)
+            !!! mismatch (expected '{', got 'extends' at :...:19)
             name: NameDef
                 NameDef
                     name: str = MyFeature
@@ -442,6 +442,154 @@ def test_parser_expressions():
                     word: str = c
     """)
 
+    test("expression_4", parse_code("a + (2 - c)", "Expression"), """
+        FunctionCall
+            items: List[FunctionCallItem]
+                FunctionCallWord
+                    word: str = a
+                FunctionCallOperator
+                    operator: str = +
+                FunctionCallArguments
+                    arguments: List[FunctionCallArgument]
+                        FunctionCallArgument
+                            argument: Variable = None
+                            value: Expression
+                                FunctionCall
+                                    items: List[FunctionCallItem]
+                                        FunctionCallConstant
+                                            constant: Constant
+                                                Constant
+                                                    value: str = 2
+                                        FunctionCallOperator
+                                            operator: str = -
+                                        FunctionCallWord
+                                            word: str = c
+    """)
+
+#--------------------------------------------------------------------------------------------------
+# tests
+
+def test_parser_tests():
+    test("test_0", parse_code("> a", "Test"), """
+        Test
+            lhs: Expression
+                VariableRef
+                    variable: Variable => a
+            rhs: Expression = None
+    """)
+
+    test("test_1", parse_code("> a =>", "Test"), """
+        Test
+            lhs: Expression
+                VariableRef
+                    variable: Variable => a
+            rhs: Expression
+                !!! premature end (expected rhs:Expression, got 'None' at <eof>)
+    """)
+
+    test("test_2", parse_code("> a => b", "Test"), """
+        Test
+            lhs: Expression
+                VariableRef
+                    variable: Variable => a
+            rhs: Expression
+                VariableRef
+                    variable: Variable => b
+    """)
+
+#-------------------------------------------------------------------------------------------------- var
+# variables
+
+def test_parser_variables():
+    test("variable_0", parse_code("int a", "VariableDef"), """
+        VariableDef
+            name: NameDef = None
+            type: Type => int
+            names: List[NameDef]
+                NameDef
+                    name: str = a
+                    alias: str = None
+            value: Expression = None
+        """)
+    
+    test("variable_1", parse_code("a : int", "VariableDef"), """
+            VariableDef
+                name: NameDef = None
+                type: Type => int
+                names: List[NameDef]
+                    NameDef
+                        name: str = a
+                        alias: str = None
+                value: Expression = None
+        """)
+
+    test("variable_2", parse_code("a : int = 0", "VariableDef"), """
+        VariableDef
+            name: NameDef = None
+            type: Type => int
+            names: List[NameDef]
+                NameDef
+                    name: str = a
+                    alias: str = None
+            value: Expression
+                Constant
+                    value: str = 0
+        """) 
+       
+    test("variable_3", parse_code("int a = 0", "VariableDef"), """
+        VariableDef
+            name: NameDef = None
+            type: Type => int
+            names: List[NameDef]
+                NameDef
+                    name: str = a
+                    alias: str = None
+            value: Expression
+                Constant
+                    value: str = 0
+    """)
+
+    test("variable_4", parse_code("r|red, g|green, b|blue: number = 0", "VariableDef"), """
+        VariableDef
+            name: NameDef = None
+            type: Type => number
+            names: List[NameDef]
+                NameDef
+                    name: str = r
+                    alias: str = red
+                NameDef
+                    name: str = g
+                    alias: str = green
+                NameDef
+                    name: str = b
+                    alias: str = blue
+            value: Expression
+                Constant
+                    value: str = 0
+        """)
+
+    test("variable_5", parse_code("int x,y = 0", "VariableDef"), """
+        VariableDef
+            name: NameDef = None
+            type: Type => int
+            names: List[NameDef]
+                NameDef
+                    name: str = x
+                    alias: str = None
+                NameDef
+                    name: str = y
+                    alias: str = None
+            value: Expression
+                Constant
+                    value: str = 0
+        """)
+
+#--------------------------------------------------------------------------------------------------
+# typedefs
+
+def test_parser_typedefs():
+    pass
+
 #--------------------------------------------------------------------------------------------------
 
 @this_is_the_test
@@ -450,7 +598,20 @@ def test_parser():
     if Grammar.current == None: raise Exception("no current grammar!")
     test_parser_feature()
     test_parser_expressions()
+    test_parser_tests()
+    test_parser_variables()
+    test_parser_typedefs()
+    log_clear()
     log("------------------------")
+    #test("type_1", parse_code("type vec | vector = { x, y, z: number =0 }", "TypeDef"))
+    
+
+
+
+
+
+
+
 
 
 

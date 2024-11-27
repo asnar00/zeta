@@ -161,11 +161,21 @@ def log_green_background(str) -> str:
 
 # strips all colour-related codes and dynamic things out of a string (so we can compare test results)
 def log_strip(str) -> str:
+    str = str.rstrip()
     str = re.sub(r'\033\[[0-9;]*m', '', str)
     str = re.sub(r':\d+:', ':...:', str) # strip out :number:, replace with :...:
     str = re.sub(r"0x[0-9a-f]+", "...", str)  # replace any hex-addresses ("0x....") with "..."
-    str = re.sub(r"\n +", "\n", str) # replace (cr followed by multiple spaces) with (cr)
-    return str.strip()
+    return log_deindent(str).rstrip()
+
+# de-indent; find the smallest non-zero spacing at the start of each line, and remove that
+def log_deindent(str) -> str:
+    lines = str.split("\n")
+    min_indent = 1000000
+    for line in lines:
+        if len(line) > 0:
+            indent = len(line) - len(line.lstrip())
+            if indent < min_indent: min_indent = indent
+    return "\n".join([line[min_indent:] for line in lines])
 
 # log_disclose shows CRs and tabs and spaces within a string
 def log_disclose(str) -> str:
