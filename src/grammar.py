@@ -414,7 +414,7 @@ def compute_indices():
         for i_term, term in enumerate(rule.terms):
             term.rule = rule
             term.index = i_term
-            
+
 # computes all nested-separators
 def compute_nested_separators():
     for rule in Grammar.current.rules:
@@ -425,7 +425,7 @@ def compute_nested_separators():
                 term.contains_nested_sep = True
 
 # checks a term to see if it has one or more nested separators
-def contains_nested_separator(term: Term) -> List[Term]:
+def contains_nested_separator(term: Term) -> List[Entity]:
     if term.sep == "": return []
     visited = {}   # map Rule.name => bool
     if not term.is_rule(): return []
