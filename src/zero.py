@@ -16,8 +16,9 @@ from parser import *
 #--------------------------------------------------------------------------------------------------
 # Root entities and Program entities
 
+# Named is an abstract base class; we know it's abstract because it has no rule() method
 class Named(Entity):
-    def __init__(self): super().__init__(); self.name: str = None; self.alias: str = None
+    def __init__(self): super().__init__(); self.name: NameDef = None
     
 # NameDef holds name and alias; parse as <name> or <name> | <alias>
 # note keywords are 'keyword'; class property names are just name; optional is (xxx)?; :<type> does lex type matching
@@ -32,6 +33,9 @@ class Variable(Named):
 # Type is also not a grammar object, but a program object; created by TypeDef (further down)
 class Type(Named):
     def __init__(self): super().__init__(); self.properties: List[Variable] = []; self.parents: List[Type] = []; self.children: List[Type] = []
+
+#--------------------------------------------------------------------------------------------------
+# Feature
 
 # Feature is the feature clause; note 'parent&' means 'reference to parent, i.e. matches a string, but looks it up to find a Feature
 # components; means "component list separated by semicolon" - we know it's a list because we look at the type annotations
@@ -58,29 +62,39 @@ class Test(Component):
 
 # TypeDef is abstract because there are three potential declarations, '=' struct, '>' children or '<' parents
 class TypeDef(Component):    
+    def __init__(self): super().__init__(); self.rhs: TypeRhs = None
+    def rule(self): return "'type' name rhs"
+
+# TypeRhs is abstract: one of TypeAlias, StructDef, TypeParentDef or TypeChildrenDef
+class TypeRhs(Entity):
     def __init__(self): super().__init__()
 
+# TypeAlias assigns the type to be the same as some other type
+class TypeAlias(TypeRhs):
+    def __init__(self): super().__init__(); self.alias: Type = None
+    def rule(self): return "'=' alias&"
+
 # StructDef just declares a list of properties
-class StructDef(TypeDef):
-    def __init__(self): self.properties: List[VariableDef] = []
-    def rule(self): return "'type' name '=' '{' properties*; '}'"
+class StructDef(TypeRhs):
+    def __init__(self): super().__init__(); self.properties: List[VariableDef] = []
+    def rule(self): return "'=' '{' properties*; '}'"
 
 # ParentDef declares that type is a child of some other type(s)
-class TypeParentDef(TypeDef):
+class TypeParentDef(TypeRhs):
     def __init__(self): self.parents: List[Type] = []
-    def rule(self): return "'type' name '>' parents+,"
+    def rule(self): return "'<' parents+,"
 
 # ChildrenDef declares that type is a parent of some other type(s)
-class TypeChildrenDef(TypeDef):
+class TypeChildrenDef(TypeRhs):
     def __init__(self): self.children: List[Type] = []
-    def rule(self): return "'type' name '>' children+,"
+    def rule(self): return "'>' children+,"
 
 #--------------------------------------------------------------------------------------------------
 # VariableDefs
 
 # VariableDef declares one or more variables with the same type and default value, using either c or ts notation
 # the '+' indicates one or more, "," at the end is the separator
-class VariableDef(Entity):
+class VariableDef(Component):
     def __init__(self): super().__init__(); self.type : Type = None; self.names: List[NameDef] = []; self.value: Expression = None
     def rule(self): return "((type& names+,) | (names+, ':' type&)) ('=' value)?"
 
@@ -124,10 +138,74 @@ class FunctionCallArguments(FunctionCallItem):
     def __init__(self): super().__init__(); self.arguments: List[FunctionCallArgument] = []
     def rule(self): return "'(' arguments+, ')'"
 
-class FunctionCallArgument(FunctionCallItem):
+class FunctionCallArgument(Entity):
     def __init__(self): super().__init__(); self.argument: str = None; self.value: Expression = None
     def rule(self): return "(argument '=')? value"
 
+#--------------------------------------------------------------------------------------------------
+# FunctionDef
+
+class FunctionDef(Component):
+    def __init__(self): 
+        super().__init__()
+        self.modifier : FunctionModifier = None
+        self.results: List[ResultVariableDef] = []
+        self.assignOp: str = None
+        self.signature: FunctionSignature = None
+        self.body: FunctionBody = None
+
+    def rule(self):
+        return "modifier '(' results+, ')' assignOp:('=' | '<<') signature '{' body '}'"
+    
+class FunctionModifier(Entity):
+    def __init__(self): super().__init__(); self.modifier : str = None
+    def rule(self): return "modifier:('on' | 'before' | 'after' | 'replace')"
+
+class ResultVariableDef(Entity):
+    def __init__(self): super().__init__(); self.names: List[NameDef] = []; self.type: Type = None
+    def rule(self): return "((type& names+,) | (names+, ':' type&))"
+
+class FunctionSignature(Entity):
+    def __init__(self): super().__init__(); self.elements: List[FunctionSignatureElement] = []
+    def rule(self): return "elements+"
+
+class FunctionSignatureElement(Entity):
+    def __init__(self): super().__init__()
+
+class FunctionSignatureWord(FunctionSignatureElement):
+    def __init__(self): super().__init__(); self.word : str = None
+    def rule(self): return "word:(<identifier> | <operator>)"
+
+class FunctionSignatureParams(FunctionSignatureElement):
+    def __init__(self): super().__init__(); self.params : List[VariableDef] = []
+    def rule(self): return "params+,"
+
+class FunctionBody(Entity):
+    def __init__(self): super().__init__(); self.statements: List[Statement] = []
+    def rule(self): return "statements*;"
+
+class Statement(Entity):
+    def __init__(self): super().__init__(); self.lhs : StatementLhs = None; self.assignOp: str = None; self.rhs: Expression = None
+    def rule(self): return "lhs assignOp rhs"
+
+class StatementLhs(Entity):
+    def __init__(self): super().__init__(); self.variables: List[ResultVariable] = []
+    def rule(self): return "variables+,"
+
+class ResultVariable(Entity):
+    def __init__(self): super().__init__()
+
+class ResultVariableDef(ResultVariable):
+    def __init__(self): super().__init__(); self.name: NameDef = None; self.type: Type = None
+    def rule(self): return "((type& name) | (name ':' type&))"
+
+class ResultVariableRef(ResultVariable):
+    def __init__(self): super().__init__(); self.variable: Variable = None
+    def rule(self): return "variable&"
+
+class ResultVariableAssign(ResultVariable):
+    def __init__(self): super().__init__(); self.assignOp: str = None
+    def rule(self): return "assignOp:('=' | '<<')"
 
 #--------------------------------------------------------------------------------------------------
 # okay lets write some code
@@ -142,12 +220,11 @@ feature Hello extends Run
         output$ << hello("world")
 """
 
-
 @this_is_the_test
 def test_zero():    
     log("test_zero")
     log(get_attribute_type(VariableDef, "type"))
-    grammar = Grammar()
+    grammar = Grammar(Entity)
     log_clear()
     log(grammar.dbg())
     ls = lexer(Source(code= s_test_program))

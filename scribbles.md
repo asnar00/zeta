@@ -2,6 +2,24 @@
 # scribblez
 "slow is smooth, smooth is fast"
 
+need to figure out testing strategy: do it using test classes.
+next: grammar second-order properties computed
+then: parser.
+then: symbol table.
+then: semantic analysis.
+then: code generation.
+
+Just because: using classes for AST types, get away from this silly dictionary approach.
+Found a quite nice, compact representation that allows us to refer to things of type X.
+So that's nice. Grammar builder works now. Parser should be a straight lift.
+Altogether rather sweet, and will make codegen so much easier.
+The most important thing will be the ability to specify everything from language form to final output, in a modular, incremental way.
+Tomorrow: couple of silly bugs in the output grammar, but we're good basically.
+Don't know how to do the test, because the dynamic list will change. 
+Guess I'll have to construct the test grammar from a known list of classes.
+
+-----
+
 DONE: get the ; separator special-case working
 todo: explore some "real errors" in lists, unify the optional- and list- error handler cases.
 todo: do some actual semantic processing

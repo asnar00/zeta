@@ -543,6 +543,12 @@ class MyClass:
     def __init__(self):
         self.my_str : str = None
 
+class MySub(MyClass):
+    def __init__(self): super().__init__(); self.my_int : int = None
+
+def has_attribute(cls, attr_name):
+    return hasattr(cls(), attr_name)
+
 def get_attribute_type(cls, attr_name):
     # Check the current class and all its superclasses
     current_cls = cls
@@ -580,6 +586,7 @@ def get_attribute_type(cls, attr_name):
 def test_get_attribute_type():
     log("test_get_attribute_type")
     test("get_attribute_type", get_attribute_type(MyClass, "my_str"), "str")
+    test("has_attribute", has_attribute(MySub, "my_str"), True)
 
 #------------------------------------------------------------------------------
 # startup

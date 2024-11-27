@@ -429,7 +429,7 @@ class Rule:
 #--------------------------------------------------------------------------------------------------
 # Grammar: a list of rules
 
-ar:
+class Grammar:
     current = None
     def __init__(self):
         self.rules = []
