@@ -2,6 +2,10 @@
 # scribblez
 "slow is smooth, smooth is fast"
 
+OK: so we now have auto-generated ast classes, and we've learned quite a bit about python internals.
+The result is that we now have some really nice things!
+Next, we are going to see how this works when we come to building and resolving symbol tables.
+
 ----
 
 Note that there's an even better format:

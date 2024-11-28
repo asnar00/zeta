@@ -287,7 +287,7 @@ class Type: pass
 
 def define_variables(grammar):
     grammar.add("""
-        VariableDef := ((type:Type& names:NameDef+,) | (names:NameDef+, ":" type:Type&)) ("=" value:Expression)?
+        VariableDef < Component := ((type:Type& names:NameDef+,) | (names:NameDef+, ":" type:Type&)) ("=" value:Expression)?
         """)
     
     test("variable_0", parse_code("int a", "VariableDef"), """
@@ -366,7 +366,348 @@ def define_variables(grammar):
                 Constant
                     value: str = 0
         """)
+
+#--------------------------------------------------------------------------------------------------
+# types
+
+def define_types(grammar):
+    grammar.add("""
+        TypeDef < Component := "type" name:NameDef rhs:TypeRhs
+        TypeRhs :=
+        TypeAlias < TypeRhs := "=" alias:Type&
+        StructDef < TypeRhs := "=" "{" properties:VariableDef+; "}"
+        TypeParentDef < TypeRhs := "<" parents:Type&+,
+        TypeChildrenDef < TypeRhs := ">" children:Type&+,
+        TypeEnumDef < TypeRhs := "=" options:<identifier>+|
+        """)
+    grammar.add_method("TypeEnumDef", """
+        def post_parse_check(self) -> str: 
+            return "" if len(self.options) > 1 else "enum must have at least two options"
+                       """)
     
+    test("type_0", parse_code("type vec | vector", "TypeDef"), """
+        TypeDef
+            name: NameDef
+                NameDef
+                    name: str = vec
+                    alias: str = vector
+            rhs: TypeRhs
+                !!! premature end (expected rhs:TypeRhs, got 'None' at <eof>)        
+        """)
+    
+    test("type_1", parse_code("type vec | vector = { x, y, z: number =0 }", "TypeDef"), """
+        TypeDef
+            name: NameDef
+                NameDef
+                    name: str = vec
+                    alias: str = vector
+            rhs: TypeRhs
+                StructDef
+                    properties: List[VariableDef]
+                        VariableDef
+                            type: Type => number
+                            names: List[NameDef]
+                                NameDef
+                                    name: str = x
+                                    alias: str = None
+                                NameDef
+                                    name: str = y
+                                    alias: str = None
+                                NameDef
+                                    name: str = z
+                                    alias: str = None
+                            value: Expression
+                                Constant
+                                    value: str = 0
+        """)
+    test("type_2", parse_code("type int > i8, i16", "TypeDef"), """
+        TypeDef
+            name: NameDef
+                NameDef
+                    name: str = int
+                    alias: str = None
+            rhs: TypeRhs
+                TypeChildrenDef
+                    children: List[Type]
+                        => i8
+                        => i16
+        """)
+    
+    test("type_3", parse_code("type offset < vector", "TypeDef"), """
+        TypeDef
+            name: NameDef
+                NameDef
+                    name: str = offset
+                    alias: str = None
+            rhs: TypeRhs
+                TypeParentDef
+                    parents: List[Type]
+                        => vector
+        """)
+    
+    test("type_4", parse_code("type evil = no | yes | maybe", "TypeDef"), """
+        TypeDef
+            name: NameDef
+                NameDef
+                    name: str = evil
+                    alias: str = None
+            rhs: TypeRhs
+                TypeEnumDef
+                    options: List[str]
+                        no
+                        yes
+                        maybe
+        """)
+    
+    test("type_5", parse_code("type str | string = char$", "TypeDef"), """
+        TypeDef
+            name: NameDef
+                NameDef
+                    name: str = str
+                    alias: str = string
+            rhs: TypeRhs
+                TypeAlias
+                    alias: Type => char$
+        """)
+
+#--------------------------------------------------------------------------------------------------
+# functions
+
+def define_functions(grammar):
+    grammar.add("""
+        FunctionDef < Component := modifier:FunctionModifier results:FunctionResults? assignOp:("=" | "<<") signature:FunctionSignature body:FunctionBody
+        FunctionModifier := modifier:("on" | "before" | "after" | "replace")
+        FunctionResults := "(" results:FunctionResultVariableDef+, ")"
+        FunctionResultVariableDef := ((type:Type& names:NameDef+,) | (names:NameDef+, ":" type:Type&))
+        FunctionSignature := elements:FunctionSignatureElement+
+        FunctionSignatureElement :=
+        FunctionSignatureWord < FunctionSignatureElement := word:(<identifier> | <operator>)
+        FunctionSignatureParams < FunctionSignatureElement := "(" params:VariableDef+, ")"
+        FunctionBody := "{" statements:Statement*; "}"
+        Statement := lhs:StatementLhs assignOp:("=" | "<<") rhs:Expression
+        StatementLhs := variables:ResultVariable+,
+        ResultVariable :=
+        ResultVariableRef < ResultVariable := variable:Variable&
+        ResultVariableDef < ResultVariable := ((type:Type& name:NameDef) | (name:NameDef ":" type:Type&))
+        """)
+    
+    test("result_vars_1", parse_code("(a, b: int, k, l: float)", "FunctionResults"), """
+        FunctionResults
+            results: List[FunctionResultVariableDef]
+                FunctionResultVariableDef
+                    type: Type => int
+                    names: List[NameDef]
+                        NameDef
+                            name: str = a
+                            alias: str = None
+                        NameDef
+                            name: str = b
+                            alias: str = None
+                FunctionResultVariableDef
+                    type: Type => float
+                    names: List[NameDef]
+                        NameDef
+                            name: str = k
+                            alias: str = None
+                        NameDef
+                            name: str = l
+                            alias: str = None
+        """)
+    
+    test("result_vars_2", parse_code("(int a, b, float k)", "FunctionResults"), """
+        FunctionResults
+            results: List[FunctionResultVariableDef]
+                FunctionResultVariableDef
+                    type: Type => int
+                    names: List[NameDef]
+                        NameDef
+                            name: str = a
+                            alias: str = None
+                        NameDef
+                            name: str = b
+                            alias: str = None
+                FunctionResultVariableDef
+                    type: Type => float
+                    names: List[NameDef]
+                        NameDef
+                            name: str = k
+                            alias: str = None
+        """)
+    
+    test("param_group_0", parse_code("(int a, b=0, float k=0)", "FunctionSignatureParams"), """
+        FunctionSignatureParams
+            params: List[VariableDef]
+                VariableDef
+                    type: Type => int
+                    names: List[NameDef]
+                        NameDef
+                            name: str = a
+                            alias: str = None
+                        NameDef
+                            name: str = b
+                            alias: str = None
+                    value: Expression
+                        Constant
+                            value: str = 0
+                VariableDef
+                    type: Type => float
+                    names: List[NameDef]
+                        NameDef
+                            name: str = k
+                            alias: str = None
+                    value: Expression
+                        Constant
+                            value: str = 0
+        """)
+    
+    test("param_group_1", parse_code("(int a, b, float k)", "FunctionSignatureParams"), """
+        FunctionSignatureParams
+            params: List[VariableDef]
+                VariableDef
+                    type: Type => int
+                    names: List[NameDef]
+                        NameDef
+                            name: str = a
+                            alias: str = None
+                        NameDef
+                            name: str = b
+                            alias: str = None
+                    value: Expression = None
+                VariableDef
+                    type: Type => float
+                    names: List[NameDef]
+                        NameDef
+                            name: str = k
+                            alias: str = None
+                    value: Expression = None
+        """)
+    
+    test("param_group_2", parse_code("(a, b: int, k: float)", "FunctionSignatureParams"), """
+        FunctionSignatureParams
+            params: List[VariableDef]
+                VariableDef
+                    type: Type => int
+                    names: List[NameDef]
+                        NameDef
+                            name: str = a
+                            alias: str = None
+                        NameDef
+                            name: str = b
+                            alias: str = None
+                    value: Expression = None
+                VariableDef
+                    type: Type => float
+                    names: List[NameDef]
+                        NameDef
+                            name: str = k
+                            alias: str = None
+                    value: Expression = None
+                """)
+       
+    test("function_0", parse_code("on (int r) = min (int a, b) { r = if (a < b) then a else b }", "FunctionDef"), """
+        FunctionDef
+            modifier: FunctionModifier
+                FunctionModifier
+                    modifier: str = on
+            results: FunctionResults
+                FunctionResults
+                    results: List[FunctionResultVariableDef]
+                        FunctionResultVariableDef
+                            type: Type => int
+                            names: List[NameDef]
+                                NameDef
+                                    name: str = r
+                                    alias: str = None
+            assignOp: str = =
+            signature: FunctionSignature
+                FunctionSignature
+                    elements: List[FunctionSignatureElement]
+                        FunctionSignatureWord
+                            word: str = min
+                        FunctionSignatureParams
+                            params: List[VariableDef]
+                                VariableDef
+                                    type: Type => int
+                                    names: List[NameDef]
+                                        NameDef
+                                            name: str = a
+                                            alias: str = None
+                                        NameDef
+                                            name: str = b
+                                            alias: str = None
+                                    value: Expression = None
+            body: FunctionBody
+                FunctionBody
+                    statements: List[Statement]
+                        Statement
+                            lhs: StatementLhs
+                                StatementLhs
+                                    variables: List[ResultVariable]
+                                        ResultVariableRef
+                                            variable: Variable => r
+                            assignOp: str = =
+                            rhs: Expression
+                                FunctionCall
+                                    items: List[FunctionCallItem]
+                                        FunctionCallWord
+                                            word: str = if
+                                        FunctionCallArguments
+                                            arguments: List[FunctionCallArgument]
+                                                FunctionCallArgument
+                                                    argument: Variable = None
+                                                    value: Expression
+                                                        FunctionCall
+                                                            items: List[FunctionCallItem]
+                                                                FunctionCallWord
+                                                                    word: str = a
+                                                                FunctionCallOperator
+                                                                    operator: str = <
+                                                                FunctionCallWord
+                                                                    word: str = b
+                                        FunctionCallWord
+                                            word: str = then
+                                        FunctionCallWord
+                                            word: str = a
+                                        FunctionCallWord
+                                            word: str = else
+                                        FunctionCallWord
+                                            word: str = b
+        """)
+    
+#--------------------------------------------------------------------------------------------------
+# tests
+
+def define_tests(grammar):
+    grammar.add("""
+        Test < Component := ">" lhs:Expression ("=>" rhs:Expression)?
+    """)
+
+    test("test_0", parse_code("> a", "Test"), """
+        Test
+            lhs: Expression
+                VariableRef
+                    variable: Variable => a
+            rhs: Expression = None
+    """)
+
+    test("test_1", parse_code("> a =>", "Test"), """
+        Test
+            lhs: Expression
+                VariableRef
+                    variable: Variable => a
+            rhs: Expression
+                !!! premature end (expected rhs:Expression, got 'None' at <eof>)
+    """)
+
+    test("test_2", parse_code("> a => b", "Test"), """
+        Test
+            lhs: Expression
+                VariableRef
+                    variable: Variable => a
+            rhs: Expression
+                VariableRef
+                    variable: Variable => b
+    """)
 #--------------------------------------------------------------------------------------------------
 # main
 
@@ -377,3 +718,6 @@ def test_zero_grammar():
     define_feature(grammar)
     define_expressions(grammar)
     define_variables(grammar)
+    define_types(grammar)
+    define_functions(grammar)
+    define_tests(grammar)

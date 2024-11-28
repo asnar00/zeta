@@ -165,10 +165,12 @@ class Grammar:
         else: return self.build_sub_rule_term(rule, term_str, var, dec, sep, ref)
 
     def build_or_list_term(self, rule: Rule, term_str: str, var: str, dec: str, sep: str, ref: str) -> Term:
-        sub_terms = [val.strip() for val in term_str.split("|")]
+        sub_term_strs = [val.strip() for val in term_str.split("|")]
+        if sub_term_strs[0][0] in '<"':
+            return Term(var, sub_term_strs, dec, sep, ref)
         vals = []
-        for sub_term in sub_terms:
-            sub_term = self.build_term(rule, sub_term)
+        for sub_term_str in sub_term_strs:
+            sub_term = self.build_term(rule, sub_term_str)
             vals.append(str(sub_term))
         return Term(var, vals, dec, sep, ref)
     
@@ -221,9 +223,11 @@ class Grammar:
                exec(class_def, self.namespace)
             cls = self.namespace[rule.name.replace("_", "")]
             rule.entity_cls = cls
-        for cls_name, methods in self.class_methods.items():
-            for method_def in methods:
-                self.add_method_to_class(cls_name, method_def)
+        for rule in rules:
+            if rule.name in self.class_methods:
+                methods = self.class_methods[rule.name]
+                for method_def in methods:
+                    self.add_method_to_class(rule.name, method_def)
 
     def build_class_def(self, rule: Rule) -> str:
         def get_named_terms(rule: Rule) -> List[Term]:
@@ -249,7 +253,7 @@ class Grammar:
             name = term.var
             type = term.vals[0]
             if term.ref: type = term.ref
-            elif type.startswith("<"): type = "str"
+            elif type.startswith("<") or type.startswith('"'): type = "str"
             elif term.dec != "" and term.dec in "*+": type = f"List[{type}]"
             ref = "         # ref" if term.ref else ""
             class_def += f"        self.{name}: {type} = None{ref}\n"
@@ -607,10 +611,7 @@ def find_rules(rule_names: List[str]):
 #-----------------------------------------------------------------------------------------------------------------------
 # print out an Entity tree
 
-@log_indent
 def dbg_entity(e: Entity|List[Entity], indent: int=0) ->str:
-    log(e.__class__.__name__)
-    log("isinstance(Feature)", isinstance(e, Entity))
     out = ""
     start = "    " * indent
     if isinstance(e, Error): 
@@ -628,6 +629,8 @@ def dbg_entity(e: Entity|List[Entity], indent: int=0) ->str:
                 ref = ">" if isinstance(val, Lex) and type_name != "str" else ""
                 out += f"{start}    {attr}: {type_name} ={ref} {val}\n"
             else:
+                if isinstance(val, list) and "List[" not in type_name:
+                    type_name = f"List[{type_name}]"
                 out += f"{start}    {attr}: {type_name}"
                 if isinstance(val, list) and len(val) > 0:
                     out += "\n"
