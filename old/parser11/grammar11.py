@@ -36,11 +36,14 @@ class Entity:
 
 class Term:
     def __init__(self, var: str, vals: List[str], dec:str ="", sep:str ="", ref: str = ""):
+        if ref=="&":                    # if there's a reference
+            ref = vals[0] + "&"         # note down the type of entity we're pointing at
+            vals = ["<identifier>"]     # but the term should just match an <identifier>
         self.var = var      # variable to assign in the AST, if any
         self.vals = vals   # a set of keywords ('word'), types (<type>), or rules (Rule)
         self.dec = dec      # one of "?" (optional), "*" (zero-or-more), "+" (one-or-more)
         self.sep = sep      # separator: one of "", ",", ";" or "|" 
-        self.ref = ref      # "", or "RuleName" if the term is a reference to an entity
+        self.ref = ref      # "", or "&" if the term is a reference to an entity
         self.initials = []  # keywords that can initiate this term
         self.followers = [] # keywords that can follow this term
         self.leaves = {}    # maps match => [rule]s
@@ -48,7 +51,7 @@ class Term:
         self.rule = None    # the rule we're in, if any
         self.contains_nested_sep = False     # True if this term points to sub-rules with the same separator
     def __str__(self):
-        if self.ref: out = self.ref + "&"
+        if self.ref: out = self.ref
         else: 
             out = " | ".join(self.vals)
             if len(self.vals) > 1: out = f"({out})"
@@ -57,7 +60,7 @@ class Term:
         if self.var: out = f"{self.var}:{out}"
         return out.replace('"', "'")
     def __repr__(self): return self.__str__()
-    def is_keyword(self): return self.vals[0][0] == '"' if len(self.vals) > 0 else False
+    def is_keyword(self): return self.vals[0][0] == "'" if len(self.vals) > 0 else False
     def is_type(self): return self.vals[0][0] == '<' if len(self.vals) > 0 else False
     def is_terminal(self): return (self.is_keyword() or self.is_type())
     def is_rule(self): return not (self.is_keyword() or self.is_type())
@@ -67,16 +70,16 @@ class Term:
     def is_reference(self): return self.ref == "&"
     def rules(self): return [Grammar.current.rule_named[r] for r in self.vals]
 
+
 #--------------------------------------------------------------------------------------------------
 # Rule: a name and a list of terms
 
 class Rule:
-    def __init__(self, name: str, parent_name: str, rhs: str):
-        self.entity_cls = None
+    def __init__(self, name: str, rhs: str, entity_cls: Type=None):
+        self.entity_cls = entity_cls
         self.name = name
-        self.parent_name = parent_name
         self.rhs = rhs
-        self.terms = []         # list of Terms
+        self.terms = []
         self.initials = []      # keywords that can start this rule
         self.followers = []     # keywords that can follow this rule
         self.leaves = {}        # maps match => rule-names
@@ -85,91 +88,103 @@ class Rule:
         return self.name
     def __repr__(self): return self.__str__()
     def dbg(self):
-        parent = f" < {self.parent_name}" if self.parent_name else ""
-        out = self.name + f"{parent} := " + " ".join([str(term) for term in self.terms])
+        out = self.name + " := " + " ".join([str(term) for term in self.terms])
         return out
-    def is_abstract(self): return self.rhs == ""
-    def is_placeholder(self): return self.is_abstract() and (len(self.terms)==0 or len(self.terms[0].vals)==0)
+    def is_abstract(self):
+        return len(self.terms)==1 and self.terms[0].is_rule() and not self.terms[0].dec and not self.terms[0].var
+    
 
 #--------------------------------------------------------------------------------------------------
 # Grammar
 
 class Grammar:
     current: 'Grammar' = None
-    def __init__(self):
+    def __init__(self, cls: Type):
         if Grammar.current != None:
             raise Exception("trying to build grammar twice")
         Grammar.current = self
         self.rules : List[Rule] = []
         self.rule_named = {}
-        self.new_rules = []
-        entity_rule = Rule("Entity", "", "")
-        entity_rule.entity_cls = Entity
-        self.add_rule(entity_rule)
-        self.namespace = {}
-        self.class_types = {}
+        self.build(all_subclasses_rec(cls))
+        compute_meta_stuff()
+        log_clear()
 
-    def add(self, rules_str: str):
-        lines = rules_str.strip().split("\n")
-        self.new_rules = []
-        for rule_str in lines:
-            lhs, rhs = split_str(rule_str, ":=")
-            rule_name, parent_name = split_str(lhs, "<")
-            rule = Rule(rule_name, parent_name,rhs)
+    def dbg(self, rule_names: List[str] = None) -> str:
+        rules = self.rules if rule_names is None else find_rules(rule_names)
+        out = ""
+        for rule in rules:
+            out += rule.dbg() + "\n"
+        return out
+    
+    def build(self, classes: List[Type]):
+        self.rules = []
+        self.rule_named = {}
+        for cls in classes:
+            rule = Rule(cls.__name__, cls().rule() if hasattr(cls, "rule") else "", cls)
             self.add_rule(rule)
-        for rule in self.new_rules:
-            if len(rule.terms) == 0:
-                self.build_rule(rule)
-        for rule in self.new_rules:
-            self.connect_parent(rule)
-        self.build_classes()
+        for rule in self.rules:
+            if len(rule.terms) == 0: self.build_rule(rule)
+            else: log("already built:", rule.name)
 
     def build_rule(self, rule: Rule):
-        if rule.rhs == "": self.build_abstract_rule(rule)
-        else: self.build_concrete_rule(rule)
+        if rule.rhs == "": self.build_abstract(rule)
+        else: self.build_concrete(rule)
 
-    def build_abstract_rule(self, rule: Rule):
-        rule.terms = [Term(var=None, vals=[], dec="", sep="", ref="")]
+    @log_disable
+    def build_abstract(self, rule: Rule):
+        subclasses = all_subclasses(rule.entity_cls)
+        vals = [subcls.__name__ for subcls in subclasses]
+        rule.terms = [Term(var=None, vals=vals)]
 
-    def build_concrete_rule(self, rule: Rule):
+    @log_indent
+    def build_concrete(self, rule: Rule):
+        log("rhs:", rule.rhs)
         term_strs = split_terms(rule.rhs)
+        log("term_strs:", term_strs)
         for term_str in term_strs:
             term = self.build_term(rule, term_str)
             rule.terms.append(term)
+        pass
 
+    @log_indent
     def build_term(self, rule: Rule, term_str: str) -> Term:
         parts = re.match(r"(\w+):(.+)", term_str)
         var = parts.group(1) if parts else None
+        log("var:", var)
         term_str = parts.group(2) if parts else term_str 
         term_str, dec, sep, ref = analyse_decorators(term_str)
+        log("term_str:", term_str, "dec:", dec, "sep:", sep, "ref:", ref)
         if term_str.startswith("(") and term_str.endswith(")"):
             return self.build_complex_term(rule, term_str[1:-1], var, dec, sep, ref)
+        if term_str.startswith("<") or term_str.startswith("'"):
+            vals = [term_str]
         else:
-            return self.build_simple_term(rule, term_str, var, dec, sep, ref)
-        
-    def build_simple_term(self, rule: Rule, term_str: str, var: str, dec: str, sep: str, ref: str) -> Term:
-        return Term(var, [term_str], dec, sep, ref)
+            var, vals = find_var_vals(term_str, dec, rule.entity_cls)
+        term = Term(var, vals, dec, sep, ref)
+        log("simple term:", term)
+        return term
     
+    @log_indent
     def build_complex_term(self, rule: Rule, term_str: str, var: str, dec: str, sep: str, ref: str) -> Term:
-        if " | " in term_str: return self.build_or_list_term(rule, term_str, var, dec, sep, ref)
-        else: return self.build_sub_rule_term(rule, term_str, var, dec, sep, ref)
-
-    def build_or_list_term(self, rule: Rule, term_str: str, var: str, dec: str, sep: str, ref: str) -> Term:
-        sub_terms = [val.strip() for val in term_str.split("|")]
-        vals = []
-        for sub_term in sub_terms:
-            sub_term = self.build_term(rule, sub_term)
-            vals.append(str(sub_term))
-        return Term(var, vals, dec, sep, ref)
-    
-    def build_sub_rule_term(self, rule: Rule, term_str: str, var: str, dec: str, sep: str, ref: str) -> Term:
-        sub_rule_name = rule.name + "_"
-        while(sub_rule_name in self.rule_named): sub_rule_name += "_"
-        sub_rule = Rule(sub_rule_name, "", term_str)
-        self.add_rule(sub_rule, rule.name)
-        self.build_rule(sub_rule)
-        vals = [ sub_rule.name ]
-        return Term(var, vals, dec, sep)
+        if " | " in term_str: # todo: this is kind of dumb
+            sub_terms = [val.strip() for val in term_str.split("|")]
+            log("rules case! sub_terms:", sub_terms)
+            vals = []
+            for sub_term in sub_terms:
+                sub_term = self.build_term(rule, sub_term)
+                log("sub_term:", sub_term)
+                vals.append(str(sub_term))
+            log("vals:", vals)
+            return Term(var, vals, dec, sep, ref)
+        else:
+            sub_rule_name = rule.name + "_"
+            while(sub_rule_name in self.rule_named):
+                sub_rule_name += "_"
+            sub_rule = Rule(sub_rule_name, term_str, rule.entity_cls)
+            self.add_rule(sub_rule, rule.name)
+            self.build_rule(sub_rule)
+            vals = [ sub_rule.name ]
+            return Term(var, vals, dec, sep)
 
     def add_rule(self, new_rule: Rule, after_rule_name: str=None) -> Rule:
         if after_rule_name:
@@ -179,88 +194,20 @@ class Grammar:
         else:
             self.rules.append(new_rule)
         self.rule_named[new_rule.name] = new_rule
-        self.new_rules.append(new_rule)
         return new_rule
-    
-    def connect_parent(self, rule: Rule):
-        if not rule.parent_name: return
-        parent = self.rule_named[rule.parent_name]
-        if not parent.is_abstract(): raise Exception(f"parent {parent.name} of {rule.name} is not abstract")
-        if len(parent.terms) == 0:
-            parent.terms.append(Term(var=None, vals=[], dec="", sep="", ref=""))
-        if not (rule.name in parent.terms[0].vals):
-            parent.terms[0].vals.append(rule.name)
 
-    def dbg(self) -> str:
-        rules = self.rules
-        out = ""
-        for rule in rules:
-            out += rule.dbg() + "\n"
-        return out
-    
-    #-----------------------------------------------------------------------------------
-    # make classes from rules
-
-    def build_classes(self):
-        log("building classes ------------------------------")
-        self.namespace = {'List': List, 'Entity': Entity }
-        self.class_types = {}
-        for rule in self.rules:
-            if rule.name == "Entity": continue
-            if not rule.name.endswith("_"):
-               class_def = self.build_class_def(rule) + "\n"
-               log(class_def)
-               exec(class_def, self.namespace)
-            cls = self.namespace[rule.name.replace("_", "")]
-            rule.entity_cls = cls
-
-    def build_class_def(self, rule: Rule) -> str:
-        def get_named_terms(rule: Rule) -> List[Term]:
-            terms = []
-            for term in rule.terms:
-                if term.var: terms.append(term)
-                elif term.is_rule():
-                    for sub_rule in term.rules():
-                        if sub_rule.name.replace("_", "") == rule.name:
-                            terms += get_named_terms(sub_rule)
-            return terms
-        named_terms = get_named_terms(rule)
-        parent = rule.parent_name
-        if not parent: parent = "Entity"
-        class_def = f"""
-            class {rule.name}({parent}):
-                def __init__(self):
-                    super().__init__()
-            """
-        class_def = log_deindent(class_def)
-        for term in named_terms:
-            name = term.var
-            type = term.vals[0]
-            if term.ref: type = term.ref
-            elif type.startswith("<"): type = "str"
-            elif term.dec != "" and term.dec in "*+": type = f"List[{type}]"
-            ref = "         # ref" if term.ref else ""
-            class_def += f"        self.{name}: {type} = None{ref}\n"
-            self.class_types[f"{rule.name}.{name}"] = type
-
-        class_def += """    def post_parse_check(self): return ""
-"""
-        return class_def.strip()
-    
-    def get_class_type(self, cls, name: str) -> str:
-        key = f"{cls.__name__}.{name}"
-        return self.class_types[key]
-    
-            
 #--------------------------------------------------------------------------------------------------
 # helpers
 
-def split_str(rule_str: str, sep: str) -> Tuple[str, str]:
-    rule_str = rule_str.strip()
-    i_sep = rule_str.find(sep)
-    if i_sep == -1: return rule_str, ""
-    return rule_str[:i_sep].strip(), rule_str[i_sep+len(sep):].strip()
+def all_subclasses_rec(cls: Type) -> List[Type]:
+    out = all_subclasses(cls)
+    for subcls in cls.__subclasses__():
+        out += all_subclasses_rec(subcls)
+    return out
 
+def all_subclasses(cls: Type) -> List[Type]:
+    return [subcls for subcls in cls.__subclasses__()]
+    
 def split_terms(rhs: str) -> List[str]:
     terms = []
     current_term = ""
@@ -284,6 +231,24 @@ def split_terms(rhs: str) -> List[str]:
         terms.append(current_term)
     return terms
 
+@log_indent
+def find_var_vals(term_str: str, dec: str, cls: Type) -> Tuple[str, str]:
+    rule_name = get_attribute_type(cls, term_str)
+    log("rule:", rule_name)
+    if rule_name == None:
+        raise Exception(f"class {cls.__name__} attribute '{term_str}' has no type")
+    if dec == "&":
+        return (term_str, ["<identifier>"])
+    elif rule_name.startswith("List["):
+        log("list case!")
+        rule_name = rule_name[5:-1]
+        log("rule_name:", rule_name)
+        if rule_name == "str": return [term_str, ["<identifier>"]]
+        return [term_str, [rule_name]]
+    else:
+        if rule_name == "str": rule_name = "<identifier>"
+        return [term_str, [rule_name]]
+
 def analyse_decorators(term_str: str) -> Tuple[str, str, str, str]:
     decs = "&?*+,;|"
     i_char = len(term_str)-1
@@ -291,6 +256,7 @@ def analyse_decorators(term_str: str) -> Tuple[str, str, str, str]:
     while i_char >= 0 and term_str[i_char] in decs:
         decorators = term_str[i_char] + decorators
         i_char -= 1
+    log("decorators:", decorators)
     term_str = term_str[:i_char+1]
     list_decs = "?*+"
     dec = ""
@@ -299,15 +265,13 @@ def analyse_decorators(term_str: str) -> Tuple[str, str, str, str]:
     for ld in list_decs: 
         if ld in decorators: 
             dec = ld
+    ref = "&" if "&" in decorators else ""
     seps = ",;|"
     for s in seps:
         if s in decorators:
             sep = s
-    if "&" in decorators:
-        ref = term_str
-        term_str = "<identifier>"
     return term_str, dec, sep, ref
-
+    
 #--------------------------------------------------------------------------------------------------
 # second-order grammar properties
 
@@ -572,10 +536,8 @@ def find_rules(rule_names: List[str]):
 #-----------------------------------------------------------------------------------------------------------------------
 # print out an Entity tree
 
-@log_indent
-def dbg_entity(e: Entity|List[Entity], indent: int=0) ->str:
-    log(e.__class__.__name__)
-    log("isinstance(Feature)", isinstance(e, Entity))
+#@log_indent
+def dbg_entity(e: Entity|List[Entity], indent: int=0):
     out = ""
     start = "    " * indent
     if isinstance(e, Error): 
@@ -588,7 +550,7 @@ def dbg_entity(e: Entity|List[Entity], indent: int=0) ->str:
                     out += f"{start}    {log_red(e._error)}\n"
                 continue
             val = getattr(e, attr)
-            type_name = Grammar.current.get_class_type(e.__class__, attr)
+            type_name = get_attribute_type(e.__class__, attr)
             if val == None or isinstance(val, Lex) or (isinstance(val, List) and len(val)==0):
                 ref = ">" if isinstance(val, Lex) and type_name != "str" else ""
                 out += f"{start}    {attr}: {type_name} ={ref} {val}\n"

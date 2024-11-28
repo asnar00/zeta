@@ -245,16 +245,12 @@ def reduce_rules(term: Term, lex: Lex) -> List[Rule]:
     return leaf_rules
 
 def scan_separator(reader: Reader, term: Term) -> Reader:
-    term_reader = reader.scan([f'"{term.sep}"']) if (term.sep and term.contains_nested_sep == False) else reader
+    term_reader = reader.scan([f"'{term.sep}'"]) if (term.sep and term.contains_nested_sep == False) else reader
     if term.contains_nested_sep: term_reader.set_nested_separator(term.sep)
     return term_reader
 
 #@log_indent
 def truncate_list(term: Term, reader: Reader, items: List[Dict], pos: int) -> List[Dict]:
-    if isinstance(items[-1], Error):
-        if term.is_rule() and term.rules()[0].is_placeholder(): 
-            log(log_red("item is a placeholder... returning empty list"))
-            return []
     if reader.nested_sep == None: return items
     if term.dec == "+" and len(items) == 1: return items
     log(log_red("truncating list!"))
@@ -267,7 +263,7 @@ def truncate_list(term: Term, reader: Reader, items: List[Dict], pos: int) -> Li
 #@log_indent
 def parse_separator(term: Term, reader: Reader, items: List[Dict], restore_pos: int) -> Tuple[List[Dict], bool]:
     if term.sep == "": return items, True
-    if lex_matches(reader.peek(), [f'"{term.sep}"']):
+    if lex_matches(reader.peek(), [f"'{term.sep}'"]):
         reader.next()
         return items, True
     if term.sep == ";": return items, True
@@ -292,7 +288,6 @@ def remove_errors(e: Entity) -> Entity:
 #--------------------------------------------------------------------------------------------------
 # test routine: returns a nicely formatted AST
 
-@log_indent
 def parse_code(code: str, rule_name: str) -> str:
     ls = lexer(Source(code=code))
     reader = Reader(ls)

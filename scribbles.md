@@ -2,10 +2,38 @@
 # scribblez
 "slow is smooth, smooth is fast"
 
-ok: seems like we have a kind of functional parser.
-still need to: sort abstract sub-rules by most-complex first. DONE!
-next: finish all the tests from parser10.py
-then: let's kick on with symbol table and semantic analysis.
+----
+
+Note that there's an even better format:
+
+    Feature = "feature" name:NameDef ("extends" parent:Feature&)? "{" body: Component*; "}"
+
+If we could use this to define the class:
+
+    class Feature:
+        name: NameDef
+        parent: Feature | None
+        body: List[Component]
+
+and define the rules directly:
+
+    Rule(Feature, terms=[Term(["'feature'"]), Term([var="name", vals=["NameDef"]])])
+
+So in other words, something that writes python code based on the grammar input.
+
+That would be amazing, wouldn't it? To be able to actually create the classes from the grammar, rather than the other way round.
+Classes in python are actually super clumsy, not the best way at all.
+
+---
+
+OK! So next we are going to look at symbol tables.
+There are two scopes: Feature scope and Function scope.
+There will be two passes: the first to build the symbol table, and the second to resolve references.
+Then we can look at expression resolution (mapping vars to vars, function calls to functions)
+Finally look at composing Functions from individual FunctionDefs;
+and then look at how to output Functions in multiple backends.
+
+Some kind of "emit" thing is what we need, I suspect. But let's go step by step.
 
 -----
 
