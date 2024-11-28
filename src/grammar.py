@@ -106,8 +106,9 @@ class Grammar:
         entity_rule = Rule("Entity", "", "")
         entity_rule.entity_cls = Entity
         self.add_rule(entity_rule)
-        self.namespace = {}
-        self.class_types = {}
+        self.namespace = {'List': List, 'Entity': Entity }       # holds all classes created from rules
+        self.class_methods = {}     # class => [method_def]
+        self.class_types = {}       # class.name => type name
 
     def add(self, rules_str: str):
         lines = rules_str.strip().split("\n")
@@ -122,7 +123,16 @@ class Grammar:
                 self.build_rule(rule)
         for rule in self.new_rules:
             self.connect_parent(rule)
-        self.build_classes()
+        self.build_classes(self.new_rules)
+        compute_meta_stuff()
+
+    def add_method(self, cls_name: str, method_def: str):
+        method_def = log_deindent(method_def)
+        method_name = self.get_method_name(method_def)
+        if not cls_name in self.class_methods: self.class_methods[cls_name] = []
+        self.class_methods[cls_name].append(method_def)
+        rule = self.rule_named[cls_name]
+        self.build_classes([rule])
 
     def build_rule(self, rule: Rule):
         if rule.rhs == "": self.build_abstract_rule(rule)
@@ -201,18 +211,19 @@ class Grammar:
     #-----------------------------------------------------------------------------------
     # make classes from rules
 
-    def build_classes(self):
+    def build_classes(self, rules: List[Rule]):
         log("building classes ------------------------------")
-        self.namespace = {'List': List, 'Entity': Entity }
-        self.class_types = {}
-        for rule in self.rules:
+        for rule in rules:
             if rule.name == "Entity": continue
             if not rule.name.endswith("_"):
                class_def = self.build_class_def(rule) + "\n"
-               log(class_def)
+               #log(class_def)
                exec(class_def, self.namespace)
             cls = self.namespace[rule.name.replace("_", "")]
             rule.entity_cls = cls
+        for cls_name, methods in self.class_methods.items():
+            for method_def in methods:
+                self.add_method_to_class(cls_name, method_def)
 
     def build_class_def(self, rule: Rule) -> str:
         def get_named_terms(rule: Rule) -> List[Term]:
@@ -225,6 +236,7 @@ class Grammar:
                             terms += get_named_terms(sub_rule)
             return terms
         named_terms = get_named_terms(rule)
+        named_terms = remove_duplicate_terms(named_terms)
         parent = rule.parent_name
         if not parent: parent = "Entity"
         class_def = f"""
@@ -243,15 +255,26 @@ class Grammar:
             class_def += f"        self.{name}: {type} = None{ref}\n"
             self.class_types[f"{rule.name}.{name}"] = type
 
-        class_def += """    def post_parse_check(self): return ""
-"""
+        class_def += "    def post_parse_check(self): return \"\"\n"
         return class_def.strip()
     
     def get_class_type(self, cls, name: str) -> str:
         key = f"{cls.__name__}.{name}"
         return self.class_types[key]
     
-            
+    def add_method_to_class(self, cls_name: str, method_def: str):
+        method_name = self.get_method_name(method_def)
+        exec(method_def, self.namespace)  # adds method to existing namespace
+        setattr(self.namespace[cls_name], method_name, self.namespace[method_name])
+
+    def get_method_name(self, method_def: str) -> str:
+        pattern = r'\s*def\s+(\w+)\('
+        match = re.search(pattern, method_def)
+        if match: method_name = match.group(1)
+        else: raise Exception(f"can't find method name in {method_def}")
+        return method_name
+
+        
 #--------------------------------------------------------------------------------------------------
 # helpers
 
@@ -276,7 +299,7 @@ def split_terms(rhs: str) -> List[str]:
                 bracket_depth += 1
             elif char == ')' and not in_quotes:
                 bracket_depth -= 1
-            elif char == "'":
+            elif char == '"':
                 in_quotes = not in_quotes
             
             current_term += char
@@ -307,6 +330,15 @@ def analyse_decorators(term_str: str) -> Tuple[str, str, str, str]:
         ref = term_str
         term_str = "<identifier>"
     return term_str, dec, sep, ref
+
+def remove_duplicate_terms(terms: List[Term]) -> List[Term]:
+    out = []
+    for term in terms:
+        already_there = False
+        for o in out:
+            if o.var == term.var: already_there = True
+        if not already_there: out.append(term)
+    return out
 
 #--------------------------------------------------------------------------------------------------
 # second-order grammar properties
@@ -417,6 +449,7 @@ def compute_followers():
 
     # for the last term in each rule, set its followers to the followers of its rule
     for rule in Grammar.current.rules:
+        if len(rule.terms) == 0: continue
         last_term = rule.terms[-1]
         changed = merge_arrays(last_term.followers, rule.followers)
         if last_term.is_rule():
@@ -437,6 +470,7 @@ def finish_compute_followers():
 def compute_leaves() -> bool:
     changed = False
     for rule in Grammar.current.rules:
+        if len(rule.terms) == 0: continue
         term = rule.terms[0]
         if term.is_terminal():
             for val in term.vals:
@@ -450,6 +484,7 @@ def compute_leaves() -> bool:
                         changed = merge_dicts(term.leaves, { val : [sub_rule] }) or changed             
     # and then back to the rules
     for rule in Grammar.current.rules:
+        if len(rule.terms) == 0: continue
         term = rule.terms[0]
         if term.is_rule():
             changed = merge_dicts(rule.leaves, term.leaves) or changed
