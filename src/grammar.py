@@ -29,7 +29,6 @@ class Entity:
     def __init__(self): self._error : Error = None
     def __str__(self): return f"{self.__class__.__name__}(..)"
     def __repr__(self): return self.__str__()
-    def validate(self) -> str: return ""
 
 #--------------------------------------------------------------------------------------------------
 # Term: a single term of a rule
