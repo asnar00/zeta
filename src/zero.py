@@ -20,7 +20,7 @@ def test_zero_grammar():
     zero.setup()
 
 #--------------------------------------------------------------------------------------------------
-# modular grammar using auto-created entity subclasses
+# modular language definition; so we can add a bit at a time
 
 # LanguageModule collects all compilation stages (grammar, parser, resolver, etc) for some part of the language
 class LanguageModule:
@@ -30,10 +30,11 @@ class LanguageModule:
 
 # Language collects all modules into one unit
 class Language:
-    def __init__(self): self.modules = []
+    def __init__(self): 
+        self.modules = []
+        self.grammar = Grammar()
     def add_modules(self, modules: List[LanguageModule]): self.modules.extend(modules)
     def setup(self):
-        self.grammar = Grammar()
         for module in self.modules: 
             module.define_grammar(self.grammar)
             module.test_parser()
