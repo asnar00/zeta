@@ -497,9 +497,17 @@ def sort_leaves_by_complexity():
     for rule in Grammar.current.rules:
         for term in rule.terms:
             if not term.is_rule(): continue
+            keyword_leaves = [] 
+            type_leaves = []
+            # first sort the individual rules within each list by complexity
             for key, rule_list in term.leaves.items():
                 rule_list.sort(key=lambda x: x.complexity, reverse=True)
                 term.leaves[key] = rule_list
+                if key.startswith('"'): keyword_leaves.append((key, rule_list))
+                else: type_leaves.append((key, rule_list))
+            term.leaves = {}
+            for k in keyword_leaves: term.leaves[k[0]] = k[1]
+            for t in type_leaves: term.leaves[t[0]] = t[1]
                 
 # compute indices
 def compute_indices():
@@ -571,13 +579,6 @@ def compute_complexity():
         return sum
     for rule in Grammar.current.rules:
         rule.complexity = compute_complexity_rec(rule, visited)
-    # finally, sort rule-lists by complexity
-    for rule in Grammar.current.rules:
-        for term in rule.terms:
-            if not term.is_rule(): continue
-            sub_rules = term.rules()
-            sub_rules.sort(key=lambda x: x.complexity, reverse=True)
-            term.vals = [sub_rule.name for sub_rule in sub_rules]
     
 # merge two dicts (name => [vals]): return true if d1 changed
 def merge_dicts(d1: Dict, d2: Dict) -> bool:

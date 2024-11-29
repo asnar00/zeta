@@ -60,7 +60,6 @@ def parse_rule_term(term: Term, reader: Reader) -> Entity:
     if reader.eof():
         return parse_error("premature end", term, reader)
     rules = reduce_rules(term, reader.peek())
-    log("rules:", rules)
     if len(rules) == 0: return parse_error("no matched rules", term, reader)
     entity = None
     for rule in rules:
@@ -202,7 +201,7 @@ def merge_child(term: Term, child: Entity, parent: Entity|Lex|List):
                     log(f"setting parent attribute {attr} to {getattr(child, attr)}")
                     setattr(parent, attr, getattr(child, attr))
         return
-    raise Exception("not implemented yet")
+    raise Exception(f"not implemented yet: merging {child} into {parent}")
 
 # recursively search through all properties, return true if _errors exist
 #@log_indent

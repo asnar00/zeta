@@ -16,8 +16,26 @@ from parser import *
 def test_zero_grammar():
     log("test_zero_grammar")
     zero = Language()
-    zero.add_modules([module_Features(), module_Expressions(), module_Variables(), module_Types(), module_Functions(), module_Tests()])
+    zero.add_modules([module_Features(), module_Expressions(), module_Variables(), module_Types(), module_Functions(), module_Tests(), module_Contexts()])
+    test_verbose(False)
+    log_max_depth(8)
     zero.setup()
+    ast =zero.compile(s_test_program)
+    log_clear()
+    log(dbg_entity(ast))
+
+
+s_test_program = """
+feature Hello
+    type str | string = char$
+    str out$
+    on hello(string name)
+        out$ << "hello, \\(name)!"
+    replace run()
+        hello("world")
+
+context Program = Hello
+"""
 
 #--------------------------------------------------------------------------------------------------
 # modular language definition; so we can add a bit at a time
@@ -27,6 +45,7 @@ class LanguageModule:
     def __init__(self): pass
     def define_grammar(self, grammar: Grammar): pass      # add grammar rules and validation functions
     def test_parser(self): pass                           # test parser with some examples
+
 
 # Language collects all modules into one unit
 class Language:
@@ -38,6 +57,12 @@ class Language:
         for module in self.modules: 
             module.define_grammar(self.grammar)
             module.test_parser()
+    def compile(self, code: str) -> 'Program':
+        ls = lexer(Source(code = code))
+        reader = Reader(ls)
+        rule = Grammar.current.rule_named["Program"]
+        ast= parse_rule(rule, reader)
+        return ast
 
 #--------------------------------------------------------------------------------------------------
 # feature clause
@@ -475,24 +500,24 @@ def validate(self) -> str:
 class module_Functions(LanguageModule):
     def define_grammar(self, grammar: Grammar):
         grammar.add("""
-            FunctionDef < Component := modifier:FunctionModifier results:FunctionResults? assignOp:("=" | "<<") signature:FunctionSignature body:FunctionBody
+            FunctionDef < Component := modifier:FunctionModifier results:FunctionResults? signature:FunctionSignature body:FunctionBody
             FunctionModifier := modifier:("on" | "before" | "after" | "replace")
-            FunctionResults := "(" results:FunctionResultVariableDef+, ")"
+            FunctionResults := "(" results:FunctionResultVariableDef+, ")" assignOp:("=" | "<<")
             FunctionResultVariableDef := ((type:Type& names:NameDef+,) | (names:NameDef+, ":" type:Type&))
             FunctionSignature := elements:FunctionSignatureElement+
             FunctionSignatureElement :=
             FunctionSignatureWord < FunctionSignatureElement := word:(<identifier> | <operator>)
             FunctionSignatureParams < FunctionSignatureElement := "(" params:VariableDef+, ")"
             FunctionBody := "{" statements:Statement*; "}"
-            Statement := lhs:StatementLhs assignOp:("=" | "<<") rhs:Expression
-            StatementLhs := variables:ResultVariable+,
+            Statement := (lhs:StatementLhs)? rhs:Expression
+            StatementLhs := variables:ResultVariable+, assignOp:("=" | "<<") 
             ResultVariable :=
             ResultVariableRef < ResultVariable := variable:Variable&
             ResultVariableDef < ResultVariable := ((type:Type& name:NameDef) | (name:NameDef ":" type:Type&))
         """)
     
     def test_parser(self):
-        test("result_vars_1", parse_code("(a, b: int, k, l: float)", "FunctionResults"), """
+        test("result_vars_1", parse_code("(a, b: int, k, l: float) =", "FunctionResults"), """
             FunctionResults
                 results: List[FunctionResultVariableDef]
                     FunctionResultVariableDef
@@ -513,9 +538,10 @@ class module_Functions(LanguageModule):
                             NameDef
                                 name: str = l
                                 alias: str = None
+                assignOp: str = =
             """)
     
-        test("result_vars_2", parse_code("(int a, b, float k)", "FunctionResults"), """
+        test("result_vars_2", parse_code("(int a, b, float k) <<", "FunctionResults"), """
             FunctionResults
                 results: List[FunctionResultVariableDef]
                     FunctionResultVariableDef
@@ -533,6 +559,7 @@ class module_Functions(LanguageModule):
                             NameDef
                                 name: str = k
                                 alias: str = None
+                assignOp: str = <<
             """)
         
         test("param_group_0", parse_code("(int a, b=0, float k=0)", "FunctionSignatureParams"), """
@@ -619,7 +646,7 @@ class module_Functions(LanguageModule):
                                     NameDef
                                         name: str = r
                                         alias: str = None
-                assignOp: str = =
+                        assignOp: str = =
                 signature: FunctionSignature
                     FunctionSignature
                         elements: List[FunctionSignatureElement]
@@ -646,7 +673,7 @@ class module_Functions(LanguageModule):
                                         variables: List[ResultVariable]
                                             ResultVariableRef
                                                 variable: Variable => r
-                                assignOp: str = =
+                                        assignOp: str = =
                                 rhs: Expression
                                     FunctionCall
                                         items: List[FunctionCallItem]
@@ -711,3 +738,26 @@ class module_Tests(LanguageModule):
                     VariableRef
                         variable: Variable => b
         """)
+
+
+#--------------------------------------------------------------------------------------------------
+# contexts
+
+class module_Contexts(LanguageModule):
+    def define_grammar(self, grammar: Grammar):
+        grammar.add("""
+            ContextDef := "context" name:NameDef "=" feature:Feature&*,
+            Program := components:(FeatureDef | ContextDef)+;
+            """)
+    def test_parser(self):
+        test("context_0", parse_code("context MyContext = Hello, Goodbye, Countdown", "ContextDef"), """
+            ContextDef
+                name: NameDef
+                    NameDef
+                        name: str = MyContext
+                        alias: str = None
+                feature: List[Feature]
+                    => Hello
+                    => Goodbye
+                    => Countdown
+             """)
