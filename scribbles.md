@@ -2,6 +2,14 @@
 # scribblez
 "slow is smooth, smooth is fast"
 
+Introduce language modules!
+which are a great site to add symbol table stuff.
+we can now add "build_symbols" and "resolve_symbols" to each one.
+Context scope: Feature scope: Function scope.
+
+
+---
+
 OK: so we now have auto-generated ast classes, and we've learned quite a bit about python internals.
 The result is that we now have some really nice things!
 Next, we are going to see how this works when we come to building and resolving symbol tables.

@@ -118,14 +118,15 @@ class module_Expressions(LanguageModule):
             FunctionCallArguments < FunctionCallItem := "(" arguments:FunctionCallArgument+, ")"
             FunctionCallArgument := (argument:Variable& "=")? value:Expression
                     """)
+        
         grammar.add_method("FunctionCall", """
-    def validate(self) -> str:
-        n_bracketed = 0; n_operators = 0
-        for item in self.items:
-            if isinstance(item, FunctionCallArguments): n_bracketed += 1
-            if isinstance(item, FunctionCallOperator): n_operators += 1
-        if n_bracketed ==0 and n_operators ==0: return "function call must have at least one argument or operation"
-        return ""
+        def validate(self) -> str:
+            n_bracketed = 0; n_operators = 0
+            for item in self.items:
+                if isinstance(item, FunctionCallArguments): n_bracketed += 1
+                if isinstance(item, FunctionCallOperator): n_operators += 1
+            if n_bracketed ==0 and n_operators ==0: return "function call must have at least one argument or operation"
+            return ""
         """)
 
     def test_parser(self):

@@ -172,7 +172,7 @@ def log_deindent(str) -> str:
     lines = str.split("\n")
     min_indent = 1000000
     for line in lines:
-        if len(line) > 0:
+        if len(line.strip()) > 0:
             indent = len(line) - len(line.lstrip())
             if indent < min_indent: min_indent = indent
     return "\n".join([line[min_indent:] for line in lines])
