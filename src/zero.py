@@ -10,13 +10,33 @@ from grammar import *
 from parser import *
 
 #--------------------------------------------------------------------------------------------------
+# main
+
+@this_is_the_test
+def test_zero_grammar():
+    log("test_zero_grammar")
+    zero = Language()
+    zero.add_modules([module_Features(), module_Expressions(), module_Variables(), module_Types(), module_Functions(), module_Tests()])
+    zero.setup()
+
+#--------------------------------------------------------------------------------------------------
 # modular grammar using auto-created entity subclasses
 
 # LanguageModule collects all compilation stages (grammar, parser, resolver, etc) for some part of the language
 class LanguageModule:
     def __init__(self): pass
     def define_grammar(self, grammar: Grammar): pass      # add grammar rules and validation functions
-    def test_parser(self): pass                           # test parser with some examples         
+    def test_parser(self): pass                           # test parser with some examples
+
+# Language collects all modules into one unit
+class Language:
+    def __init__(self): self.modules = []
+    def add_modules(self, modules: List[LanguageModule]): self.modules.extend(modules)
+    def setup(self):
+        self.grammar = Grammar()
+        for module in self.modules: 
+            module.define_grammar(self.grammar)
+            module.test_parser()
 
 #--------------------------------------------------------------------------------------------------
 # feature clause
@@ -690,14 +710,3 @@ class module_Tests(LanguageModule):
                     VariableRef
                         variable: Variable => b
         """)
-#--------------------------------------------------------------------------------------------------
-# main
-
-@this_is_the_test
-def test_zero_grammar():
-    log("test_zero_grammar")
-    grammar = Grammar()
-    modules = [module_Features(), module_Expressions(), module_Variables(), module_Types(), module_Functions(), module_Tests()]
-    for module in modules:
-        module.define_grammar(grammar)
-        module.test_parser()
