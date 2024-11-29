@@ -10,36 +10,38 @@ from grammar import *
 from parser import *
 
 #--------------------------------------------------------------------------------------------------
-# modular Zero grammar using auto-generated classes
+# modular grammar using auto-created entity subclasses
 
 #--------------------------------------------------------------------------------------------------
 # feature clause
 
+class Feature: pass
+
 def define_feature(grammar: Grammar):
     grammar.add("""
         NameDef := name:<identifier> ("|" alias:<identifier>)?
-        Feature := "feature" name:NameDef ("extends" parent:Feature&)? "{" components:Component*; "}"
+        FeatureDef := "feature" name:NameDef ("extends" parent:Feature&)? "{" components:Component*; "}"
         Component
                 """)
 
-    test("feature_0", parse_code("", "Feature"), """
-        Feature
+    test("feature_0", parse_code("", "FeatureDef"), """
+        FeatureDef
             !!! premature end (expected 'feature', got 'None' at <eof>)
             name: NameDef = None
             parent: Feature = None
             components: List[Component] = None
         """)
     
-    test("feature_1", parse_code("feature", "Feature"), """
-        Feature
+    test("feature_1", parse_code("feature", "FeatureDef"), """
+        FeatureDef
             name: NameDef
                 !!! premature end (expected name:NameDef, got 'None' at <eof>)
             parent: Feature = None
             components: List[Component] = None
         """)
 
-    test("feature_2", parse_code("feature MyFeature", "Feature"), """
-        Feature
+    test("feature_2", parse_code("feature MyFeature", "FeatureDef"), """
+        FeatureDef
             !!! premature end (expected '{', got 'None' at <eof>)
             name: NameDef
                 NameDef
@@ -49,8 +51,8 @@ def define_feature(grammar: Grammar):
             components: List[Component] = None
         """)
 
-    test("feature_3", parse_code("feature MyFeature extends", "Feature"), """
-        Feature
+    test("feature_3", parse_code("feature MyFeature extends", "FeatureDef"), """
+        FeatureDef
             !!! mismatch (expected '{', got 'extends' at :...:19)
             name: NameDef
                 NameDef
@@ -61,8 +63,8 @@ def define_feature(grammar: Grammar):
             components: List[Component] = None
         """)
     
-    test("feature_4", parse_code("feature MyFeature extends Another", "Feature"), """
-        Feature
+    test("feature_4", parse_code("feature MyFeature extends Another", "FeatureDef"), """
+        FeatureDef
             !!! premature end (expected '{', got 'None' at <eof>)
             name: NameDef
                 NameDef
@@ -72,8 +74,8 @@ def define_feature(grammar: Grammar):
             components: List[Component] = None        
         """)
     
-    test("feature_5", parse_code("feature MyFeature {}", "Feature"), """
-        Feature
+    test("feature_5", parse_code("feature MyFeature {}", "FeatureDef"), """
+        FeatureDef
             name: NameDef
                 NameDef
                     name: str = MyFeature
@@ -82,8 +84,8 @@ def define_feature(grammar: Grammar):
             components: List[Component] = []
         """)
     
-    test("feature_6", parse_code("feature MyFeature extends Another {}", "Feature"), """
-        Feature
+    test("feature_6", parse_code("feature MyFeature extends Another {}", "FeatureDef"), """
+        FeatureDef
             name: NameDef
                 NameDef
                     name: str = MyFeature
@@ -109,7 +111,7 @@ def define_expressions(grammar):
         FunctionCallArgument := (argument:Variable& "=")? value:Expression
                 """)
     grammar.add_method("FunctionCall", """
-        def post_parse_check(self) -> str:
+        def validate(self) -> str:
             n_bracketed = 0; n_operators = 0
             for item in self.items:
                 if isinstance(item, FunctionCallArguments): n_bracketed += 1
@@ -244,24 +246,24 @@ def define_expressions(grammar):
         """)
     
 #--------------------------------------------------------------------------------------------------
-# Tests
+# TestDefs
 
 def define_test():
-    test("test_grammar", Grammar.current.dbg(["Test"]), """
-        Test := '>' lhs:Expression Test_?
-        Test_ := '=>' rhs:Expression
+    test("test_grammar", Grammar.current.dbg(["TestDef"]), """
+        TestDef := '>' lhs:Expression TestDef_?
+        TestDef_ := '=>' rhs:Expression
         """)
     
-    test("test_0", parse_code("> a", "Test"), """
-        Test
+    test("test_0", parse_code("> a", "TestDef"), """
+        TestDef
             lhs: Expression
                 VariableRef
                     variable: Variable => a
             rhs: Expression = None
     """)
 
-    test("test_1", parse_code("> a =>", "Test"), """
-        Test
+    test("test_1", parse_code("> a =>", "TestDef"), """
+        TestDef
             lhs: Expression
                 VariableRef
                     variable: Variable => a
@@ -269,8 +271,8 @@ def define_test():
                 !!! premature end (expected rhs:Expression, got 'None' at <eof>)
     """)
 
-    test("test_2", parse_code("> a => b", "Test"), """
-        Test
+    test("test_2", parse_code("> a => b", "TestDef"), """
+        TestDef
             lhs: Expression
                 VariableRef
                     variable: Variable => a
@@ -284,6 +286,8 @@ def define_test():
 
 class Variable: pass
 class Type: pass
+class Struct(Type): pass
+class Enum(Type): pass
 
 def define_variables(grammar):
     grammar.add("""
@@ -381,7 +385,7 @@ def define_types(grammar):
         TypeEnumDef < TypeRhs := "=" options:<identifier>+|
         """)
     grammar.add_method("TypeEnumDef", """
-        def post_parse_check(self) -> str: 
+        def validate(self) -> str: 
             return "" if len(self.options) > 1 else "enum must have at least two options"
                        """)
     
@@ -472,6 +476,8 @@ def define_types(grammar):
 
 #--------------------------------------------------------------------------------------------------
 # functions
+
+class Function: pass
 
 def define_functions(grammar):
     grammar.add("""
@@ -677,21 +683,23 @@ def define_functions(grammar):
 #--------------------------------------------------------------------------------------------------
 # tests
 
+class Test: pass
+
 def define_tests(grammar):
     grammar.add("""
-        Test < Component := ">" lhs:Expression ("=>" rhs:Expression)?
+        TestDef < Component := ">" lhs:Expression ("=>" rhs:Expression)?
     """)
 
-    test("test_0", parse_code("> a", "Test"), """
-        Test
+    test("test_0", parse_code("> a", "TestDef"), """
+        TestDef
             lhs: Expression
                 VariableRef
                     variable: Variable => a
             rhs: Expression = None
     """)
 
-    test("test_1", parse_code("> a =>", "Test"), """
-        Test
+    test("test_1", parse_code("> a =>", "TestDef"), """
+        TestDef
             lhs: Expression
                 VariableRef
                     variable: Variable => a
@@ -699,8 +707,8 @@ def define_tests(grammar):
                 !!! premature end (expected rhs:Expression, got 'None' at <eof>)
     """)
 
-    test("test_2", parse_code("> a => b", "Test"), """
-        Test
+    test("test_2", parse_code("> a => b", "TestDef"), """
+        TestDef
             lhs: Expression
                 VariableRef
                     variable: Variable => a

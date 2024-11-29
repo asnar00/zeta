@@ -29,7 +29,7 @@ class Entity:
     def __init__(self): self._error : Error = None
     def __str__(self): return f"{self.__class__.__name__}(..)"
     def __repr__(self): return self.__str__()
-    def post_parse_check(self) -> str: return ""
+    def validate(self) -> str: return ""
 
 #--------------------------------------------------------------------------------------------------
 # Term: a single term of a rule
@@ -259,7 +259,7 @@ class Grammar:
             class_def += f"        self.{name}: {type} = None{ref}\n"
             self.class_types[f"{rule.name}.{name}"] = type
 
-        class_def += "    def post_parse_check(self): return \"\"\n"
+        class_def += "    def validate(self): return \"\"\n"
         return class_def.strip()
     
     def get_class_type(self, cls, name: str) -> str:

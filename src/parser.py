@@ -113,7 +113,7 @@ def parse_list_term(term: Term, reader: Reader) -> Dict:
 # post-parse: hand the finished entity to its checker to handle things we can't express in the grammar
 def post_parse(entity: Entity) -> Entity:
     if isinstance(entity, Error): return entity
-    msg = entity.post_parse_check()
+    msg = entity.validate()
     if msg=="": return entity
     log(log_red(f"post-parse error: {msg}"))
     lex = find_first_lex(entity)
