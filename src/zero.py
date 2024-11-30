@@ -29,7 +29,7 @@ def test_zero_grammar():
             str out$
         feature Hello extends Program
             on hello ( string name )
-                out$ << "hello, \(name)!"
+                out$ << "hello, \\(name)!"
             replace run ( )
                 hello ( "world" )
         context MyContext = Program, Hello
