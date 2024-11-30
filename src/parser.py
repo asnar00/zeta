@@ -112,7 +112,7 @@ def parse_list_term(term: Term, reader: Reader) -> Dict:
 # post-parse: hand the finished entity to its checker to handle things we can't express in the grammar
 def post_parse(entity: Entity) -> Entity:
     if isinstance(entity, Error): return entity
-    msg = entity.validate()
+    msg = entity.validate() if hasattr(entity, "validate") else ""
     if msg=="": return entity
     log(log_red(f"post-parse error: {msg}"))
     lex = find_first_lex(entity)
@@ -299,3 +299,73 @@ def parse_code(code: str, rule_name: str) -> str:
     ast= parse_rule(rule, reader)
     return dbg_entity(ast)
     
+#--------------------------------------------------------------------------------------------------
+# print routines : the inverse of parse
+
+def print_code_formatted(e: Entity) -> str:
+    def cleanup(out: str) -> str:
+        return out.replace("•", " ").strip()
+    out = print_code(e)
+    fmt = ""
+    ic = 0
+    indent_level = 0
+    while ic < len(out):
+        i_indent = out.find("•{•", ic); i_indent = len(out) if i_indent == -1 else i_indent
+        i_cr = out.find("•;•", ic); i_cr = len(out) if i_cr == -1 else i_cr
+        i_undent = out.find("•}•", ic); i_undent = len(out) if i_undent == -1 else i_undent
+        start = "    " * indent_level
+        if i_indent < i_cr and i_indent < i_undent:
+            fmt += start + cleanup(out[ic:i_indent]) + "\n"
+            indent_level += 1
+            ic = i_indent + 2
+        elif i_cr < i_undent:
+            fmt += start + cleanup(out[ic:i_cr]) + "\n"
+            ic = i_cr + 2
+        elif i_undent < len(out):
+            fmt += start + cleanup(out[ic:i_undent]) + "\n"
+            indent_level -= 1
+            ic = i_undent + 2
+        else:
+            fmt += start + cleanup(out[ic:])
+            break
+
+    return fmt.replace("    \n", "").replace("\n\n", "\n")
+
+def print_code(e: Entity) -> str|List[str]:
+    if e is None: return ""
+    if isinstance(e, Lex) or isinstance(e, str): return str(e)
+    if isinstance(e, List): return [print_code(item) for item in e]
+    rule = Grammar.current.rule_named[e.__class__.__name__]
+    return print_code_rule(rule, e)
+
+def print_code_rule(rule: Rule, e: Entity) -> str:
+    out = ""
+    for term in rule.terms:
+        if term.var:
+            if hasattr(e, term.var):
+                code = print_code(getattr(e, term.var))
+                if isinstance(code, str):
+                    out += code
+                elif isinstance(code, List):
+                    out += (term.sep + "•").join(code)
+        else:
+            if term.is_keyword():
+                out += term.vals[0][1:-1]
+            elif term.is_type():
+                out += log_red("unnamed type")
+            elif term.is_rule():
+                sub_rules = term.rules()
+                for sub_rule in sub_rules:
+                    if can_print_rule(sub_rule, e):
+                        out += print_code_rule(sub_rule, e)
+                        break
+        if (len(out) > 0 and out[-1] != "•"): out += "•"
+    return out.replace("••", "•")
+
+def can_print_rule(rule: Rule, e: Entity) -> bool:
+    for term in rule.terms:
+        if not term.var: continue
+        if (not hasattr(e, term.var)) or (getattr(e, term.var) == None):
+            return False
+    return True
+        

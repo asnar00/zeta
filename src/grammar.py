@@ -218,7 +218,7 @@ class Grammar:
             if rule.name == "Entity": continue
             if not rule.name.endswith("_"):
                class_def = self.build_class_def(rule) + "\n"
-               #log(class_def)
+               log(class_def)
                exec(class_def, self.namespace)
             cls = self.namespace[rule.name.replace("_", "")]
             rule.entity_cls = cls
@@ -229,37 +229,43 @@ class Grammar:
                     self.add_method_to_class(rule.name, method_def)
 
     def build_class_def(self, rule: Rule) -> str:
-        def get_named_terms(rule: Rule) -> List[Term]:
-            terms = []
-            for term in rule.terms:
-                if term.var: terms.append(term)
-                elif term.is_rule():
-                    for sub_rule in term.rules():
-                        if sub_rule.name.replace("_", "") == rule.name:
-                            terms += get_named_terms(sub_rule)
-            return terms
-        named_terms = get_named_terms(rule)
-        named_terms = remove_duplicate_terms(named_terms)
+        attributes = self.build_class_attributes(rule, {})   # name -> type
+        log("attributes:", attributes)
         parent = rule.parent_name
         if not parent: parent = "Entity"
-        class_def = f"""
+        class_def = log_deindent(f"""
             class {rule.name}({parent}):
                 def __init__(self):
                     super().__init__()
-            """
-        class_def = log_deindent(class_def)
-        for term in named_terms:
-            name = term.var
-            type = term.vals[0]
-            if term.ref: type = term.ref
-            elif type.startswith("<") or type.startswith('"'): type = "str"
-            elif term.dec != "" and term.dec in "*+": type = f"List[{type}]"
-            ref = "         # ref" if term.ref else ""
+            """)
+        for name, type in attributes.items():
+            ref = ""
+            if "&" in type:
+                ref = "        # ref"
+                type = type.replace("&", "")
             class_def += f"        self.{name}: {type} = None{ref}\n"
             self.class_types[f"{rule.name}.{name}"] = type
+        #log(class_def)
+        #log_exit("build_class_def")
+        return class_def
 
-        class_def += "    def validate(self): return \"\"\n"
-        return class_def.strip()
+    def build_class_attributes(self, rule: Rule, attributes: Dict[str, str]) -> Dict[str, str]:
+        if rule.is_abstract(): return {}
+        log("rule:", rule.dbg())
+        for term in rule.terms:
+            if term.var:
+                attribute_type = get_attribute_type(term)
+                if term.var in attributes:
+                    if not (attribute_type in attributes[term.var]):
+                        attributes[term.var] += " | " + attribute_type
+                else:
+                    attributes[term.var] = attribute_type
+            elif term.is_rule():
+                for sub_rule in term.rules():
+                    attributes = self.build_class_attributes(sub_rule, attributes)
+            elif not term.is_keyword():
+                raise Exception(f"unnamed non-rule type")
+        return attributes
     
     def get_class_type(self, cls, name: str) -> str:
         key = f"{cls.__name__}.{name}"
@@ -608,9 +614,26 @@ def find_rules(rule_names: List[str]):
             rules.append(rule)
     return rules
 
+# returns a type string for a term
+def get_attribute_type(term: Term) -> str:
+    vb = term.var == "modifier"
+    type_name = ""
+    if vb: log(term.vals)
+    if term.is_keyword() and len(term.vals) > 1:
+        type_name = "str"
+    elif term.is_type():
+        if term.ref: type_name = term.ref + "&"
+        else: type_name = "str"
+    elif term.is_rule():
+        type_name = "|".join([rule.name for rule in term.rules()])
+    if term.dec != "" and term.dec in "*+":
+        type_name = f"List[{type_name}]"
+    return type_name
+
 #-----------------------------------------------------------------------------------------------------------------------
 # print out an Entity tree
 
+# detailed printout of every property of an entity
 def dbg_entity(e: Entity|List[Entity], indent: int=0) ->str:
     out = ""
     start = "    " * indent
@@ -646,5 +669,3 @@ def dbg_entity(e: Entity|List[Entity], indent: int=0) ->str:
                     out += "\n"
                     out += dbg_entity(val, indent+2)
     return out
-
-    

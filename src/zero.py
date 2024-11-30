@@ -22,19 +22,33 @@ def test_zero_grammar():
     zero.setup()
     ast =zero.compile(s_test_program)
     log_clear()
-    log(dbg_entity(ast))
+    
+    test("print_formatted", print_code_formatted(ast), """
+        feature Program
+            type str | string = char$
+            str out$
+        feature Hello extends Program
+            on hello ( string name )
+                out$ << "hello, \(name)!"
+            replace run ( )
+                hello ( "world" )
+        context MyContext = Program, Hello
+         """)
+    #log(dbg_entity(ast))
 
 
 s_test_program = """
-feature Hello
+feature Program
     type str | string = char$
     str out$
+
+feature Hello extends Program
     on hello(string name)
         out$ << "hello, \\(name)!"
     replace run()
         hello("world")
 
-context Program = Hello
+context MyContext = Program, Hello
 """
 
 #--------------------------------------------------------------------------------------------------
@@ -71,7 +85,7 @@ class module_Features(LanguageModule):
     def define_grammar(self, grammar: Grammar):
         grammar.add("""
             NameDef := name:<identifier> ("|" alias:<identifier>)?
-            FeatureDef := "feature" name:NameDef ("extends" parent:Feature&)? "{" components:Component*; "}"
+            FeatureDef := "feature" NameDef ("extends" parent:Feature&)? "{" components:Component*; "}"
             Component
             """)
 
@@ -79,15 +93,17 @@ class module_Features(LanguageModule):
         test("feature_0", parse_code("", "FeatureDef"), """
             FeatureDef
                 !!! premature end (expected 'feature', got 'None' at <eof>)
-                name: NameDef = None
+                name: str = None
+                alias: str = None
                 parent: Feature = None
                 components: List[Component] = None
             """)
         
         test("feature_1", parse_code("feature", "FeatureDef"), """
             FeatureDef
-                name: NameDef
-                    !!! premature end (expected name:NameDef, got 'None' at <eof>)
+                !!! premature end (expected NameDef, got 'None' at <eof>)
+                name: str = None
+                alias: str = None
                 parent: Feature = None
                 components: List[Component] = None
             """)
@@ -95,10 +111,8 @@ class module_Features(LanguageModule):
         test("feature_2", parse_code("feature MyFeature", "FeatureDef"), """
             FeatureDef
                 !!! premature end (expected '{', got 'None' at <eof>)
-                name: NameDef
-                    NameDef
-                        name: str = MyFeature
-                        alias: str = None
+                name: str = MyFeature
+                alias: str = None
                 parent: Feature = None
                 components: List[Component] = None
             """)
@@ -106,10 +120,8 @@ class module_Features(LanguageModule):
         test("feature_3", parse_code("feature MyFeature extends", "FeatureDef"), """
             FeatureDef
                 !!! mismatch (expected '{', got 'extends' at :...:19)
-                name: NameDef
-                    NameDef
-                        name: str = MyFeature
-                        alias: str = None
+                name: str = MyFeature
+                alias: str = None
                 parent: Feature
                     !!! premature end (expected parent:Feature&, got 'None' at <eof>)
                 components: List[Component] = None
@@ -118,32 +130,26 @@ class module_Features(LanguageModule):
         test("feature_4", parse_code("feature MyFeature extends Another", "FeatureDef"), """
             FeatureDef
                 !!! premature end (expected '{', got 'None' at <eof>)
-                name: NameDef
-                    NameDef
-                        name: str = MyFeature
-                        alias: str = None
+                name: str = MyFeature
+                alias: str = None
                 parent: Feature => Another
                 components: List[Component] = None        
             """)
         
         test("feature_5", parse_code("feature MyFeature {}", "FeatureDef"), """
             FeatureDef
-                name: NameDef
-                    NameDef
-                        name: str = MyFeature
-                        alias: str = None
+                name: str = MyFeature
+                alias: str = None
                 parent: Feature = None
                 components: List[Component] = []
             """)
         
         test("feature_6", parse_code("feature MyFeature extends Another {}", "FeatureDef"), """
             FeatureDef
-                name: NameDef
-                    NameDef
-                        name: str = MyFeature
-                        alias: str = None
+                name: str = MyFeature
+                alias: str = None
                 parent: Feature => Another
-                components: List[Component] = []    
+                components: List[Component] = []
             """)
 
 #--------------------------------------------------------------------------------------------------
@@ -500,7 +506,7 @@ def validate(self) -> str:
 class module_Functions(LanguageModule):
     def define_grammar(self, grammar: Grammar):
         grammar.add("""
-            FunctionDef < Component := modifier:FunctionModifier results:FunctionResults? signature:FunctionSignature body:FunctionBody
+            FunctionDef < Component := FunctionModifier results:FunctionResults? signature:FunctionSignature body:FunctionBody
             FunctionModifier := modifier:("on" | "before" | "after" | "replace")
             FunctionResults := "(" results:FunctionResultVariableDef+, ")" assignOp:("=" | "<<")
             FunctionResultVariableDef := ((type:Type& names:NameDef+,) | (names:NameDef+, ":" type:Type&))
@@ -634,9 +640,7 @@ class module_Functions(LanguageModule):
         
         test("function_0", parse_code("on (int r) = min (int a, b) { r = if (a < b) then a else b }", "FunctionDef"), """
             FunctionDef
-                modifier: FunctionModifier
-                    FunctionModifier
-                        modifier: str = on
+                modifier: str = on
                 results: FunctionResults
                     FunctionResults
                         results: List[FunctionResultVariableDef]
@@ -746,16 +750,14 @@ class module_Tests(LanguageModule):
 class module_Contexts(LanguageModule):
     def define_grammar(self, grammar: Grammar):
         grammar.add("""
-            ContextDef := "context" name:NameDef "=" feature:Feature&*,
+            ContextDef := "context" NameDef "=" feature:Feature&*,
             Program := components:(FeatureDef | ContextDef)+;
             """)
     def test_parser(self):
         test("context_0", parse_code("context MyContext = Hello, Goodbye, Countdown", "ContextDef"), """
             ContextDef
-                name: NameDef
-                    NameDef
-                        name: str = MyContext
-                        alias: str = None
+                name: str = MyContext
+                alias: str = None
                 feature: List[Feature]
                     => Hello
                     => Goodbye

@@ -195,8 +195,8 @@ def log_short(obj: Any, maxLen=32) -> str:
     return s[:maxLen-12] + " " + log_grey("...") + " " + s[-12:]
 
 # flushes and exits
-def log_exit():
-    log("-------- exit --------")
+def log_exit(msg: str = ""):
+    log(f"-------- exit {msg} --------")
     log_flush()
     exit(0)
 
