@@ -1,5 +1,5 @@
 # ᕦ(ツ)ᕤ
-# classes.py
+# classman.py
 # author: asnaroo
 # zero to anything
 
