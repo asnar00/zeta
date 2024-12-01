@@ -8,6 +8,7 @@ from util import *
 from lexer import *
 from grammar import *
 from parser import *
+from symbols import *
 
 #--------------------------------------------------------------------------------------------------
 # main
@@ -16,11 +17,11 @@ from parser import *
 def test_zero_grammar():
     log("test_zero_grammar")
     zero = Language()
-    zero.add_modules([module_Features(), module_Expressions(), module_Variables(), module_Types(), module_Functions(), module_Tests(), module_Contexts()])
+    zero.add_modules([module_Features(), module_Expressions(), module_Variables(), module_Types(), module_Functions(), module_Tests()])
     test_verbose(False)
     log_max_depth(8)
     zero.setup()
-    ast =zero.compile(s_test_program)
+    ast = zero.compile(s_test_program)
     log_clear()
     
     test("print_formatted", print_code_formatted(ast), """
@@ -34,7 +35,6 @@ def test_zero_grammar():
                 hello ( "world" )
         context MyContext = Program, Hello
          """)
-    #log(dbg_entity(ast))
 
 
 s_test_program = """
@@ -57,8 +57,8 @@ context MyContext = Program, Hello
 # LanguageModule collects all compilation stages (grammar, parser, resolver, etc) for some part of the language
 class LanguageModule:
     def __init__(self): pass
-    def define_grammar(self, grammar: Grammar): pass      # add grammar rules and validation functions
-    def test_parser(self): pass                           # test parser with some examples
+    def define(self, grammar: Grammar): pass      # add grammar rules and validation functions
+    def test(self): pass                           # test parser with some examples
 
 
 # Language collects all modules into one unit
@@ -69,8 +69,8 @@ class Language:
     def add_modules(self, modules: List[LanguageModule]): self.modules.extend(modules)
     def setup(self):
         for module in self.modules: 
-            module.define_grammar(self.grammar)
-            module.test_parser()
+            module.define(self.grammar)
+            module.test()
     def compile(self, code: str) -> 'Program':
         ls = lexer(Source(code = code))
         reader = Reader(ls)
@@ -79,17 +79,19 @@ class Language:
         return ast
 
 #--------------------------------------------------------------------------------------------------
-# feature clause
+# features and contexts 
 
 class module_Features(LanguageModule):
-    def define_grammar(self, grammar: Grammar):
+    def define(self, grammar: Grammar):
         grammar.add("""
             NameDef := name:<identifier> ("|" alias:<identifier>)?
             FeatureDef := "feature" NameDef ("extends" parent:Feature&)? "{" components:Component*; "}"
             Component
+            ContextDef := "context" NameDef "=" feature:Feature&*,
+            Program := components:(FeatureDef | ContextDef)+;
             """)
 
-    def test_parser(self):
+    def test(self):
         test("feature_0", parse_code("", "FeatureDef"), """
             FeatureDef
                 !!! premature end (expected 'feature', got 'None' at <eof>)
@@ -151,12 +153,22 @@ class module_Features(LanguageModule):
                 parent: Feature => Another
                 components: List[Component] = []
             """)
+        test("context_0", parse_code("context MyContext = Hello, Goodbye, Countdown", "ContextDef"), """
+            ContextDef
+                name: str = MyContext
+                alias: str = None
+                feature: List[Feature]
+                    => Hello
+                    => Goodbye
+                    => Countdown
+             """)
+
 
 #--------------------------------------------------------------------------------------------------
 # Expressions
 
 class module_Expressions(LanguageModule):
-    def define_grammar(self, grammar: Grammar):
+    def define(self, grammar: Grammar):
         grammar.add("""
             Expression :=
             Constant < Expression := value:(<number> | <string>)
@@ -172,16 +184,16 @@ class module_Expressions(LanguageModule):
                     """)
         
         grammar.add_method("FunctionCall", """
-        def validate(self) -> str:
-            n_bracketed = 0; n_operators = 0
-            for item in self.items:
-                if isinstance(item, FunctionCallArguments): n_bracketed += 1
-                if isinstance(item, FunctionCallOperator): n_operators += 1
-            if n_bracketed ==0 and n_operators ==0: return "function call must have at least one argument or operation"
-            return ""
+            def validate(self) -> str:
+                n_bracketed = 0; n_operators = 0
+                for item in self.items:
+                    if isinstance(item, FunctionCallArguments): n_bracketed += 1
+                    if isinstance(item, FunctionCallOperator): n_operators += 1
+                if n_bracketed ==0 and n_operators ==0: return "function call must have at least one argument or operation"
+                return ""
         """)
 
-    def test_parser(self):
+    def test(self):
         test("expression_0", parse_code("1", "Expression"), """
             Constant
                 value: str = 1
@@ -311,12 +323,12 @@ class module_Expressions(LanguageModule):
 # variables
 
 class module_Variables(LanguageModule):
-    def define_grammar(self, grammar: Grammar):
+    def define(self, grammar: Grammar):
         grammar.add("""
             VariableDef < Component := ((type:Type& names:NameDef+,) | (names:NameDef+, ":" type:Type&)) ("=" value:Expression)?
         """)
 
-    def test_parser(self):
+    def test(self):
         test("variable_0", parse_code("int a", "VariableDef"), """
             VariableDef
                 type: Type => int
@@ -398,7 +410,7 @@ class module_Variables(LanguageModule):
 # types
 
 class module_Types(LanguageModule):
-    def define_grammar(self, grammar: Grammar):
+    def define(self, grammar: Grammar):
         grammar.add("""
             TypeDef < Component := "type" name:NameDef rhs:TypeRhs
             TypeRhs :=
@@ -413,7 +425,7 @@ def validate(self) -> str:
     return "" if len(self.options) > 1 else "enum must have at least two options"
         """)
     
-    def test_parser(self):
+    def test(self):
         test("type_0", parse_code("type vec | vector", "TypeDef"), """
             TypeDef
                 name: NameDef
@@ -504,7 +516,7 @@ def validate(self) -> str:
 # functions
 
 class module_Functions(LanguageModule):
-    def define_grammar(self, grammar: Grammar):
+    def define(self, grammar: Grammar):
         grammar.add("""
             FunctionDef < Component := FunctionModifier results:FunctionResults? signature:FunctionSignature body:FunctionBody
             FunctionModifier := modifier:("on" | "before" | "after" | "replace")
@@ -522,7 +534,7 @@ class module_Functions(LanguageModule):
             ResultVariableDef < ResultVariable := ((type:Type& name:NameDef) | (name:NameDef ":" type:Type&))
         """)
     
-    def test_parser(self):
+    def test(self):
         test("result_vars_1", parse_code("(a, b: int, k, l: float) =", "FunctionResults"), """
             FunctionResults
                 results: List[FunctionResultVariableDef]
@@ -710,12 +722,12 @@ class module_Functions(LanguageModule):
 # tests
 
 class module_Tests(LanguageModule):
-    def define_grammar(self, grammar: Grammar):
+    def define(self, grammar: Grammar):
         grammar.add("""
         TestDef < Component := ">" lhs:Expression ("=>" rhs:Expression)?
         """)
 
-    def test_parser(self):
+    def test(self):
         test("test_0", parse_code("> a", "TestDef"), """
             TestDef
                 lhs: Expression
@@ -743,23 +755,3 @@ class module_Tests(LanguageModule):
                         variable: Variable => b
         """)
 
-
-#--------------------------------------------------------------------------------------------------
-# contexts
-
-class module_Contexts(LanguageModule):
-    def define_grammar(self, grammar: Grammar):
-        grammar.add("""
-            ContextDef := "context" NameDef "=" feature:Feature&*,
-            Program := components:(FeatureDef | ContextDef)+;
-            """)
-    def test_parser(self):
-        test("context_0", parse_code("context MyContext = Hello, Goodbye, Countdown", "ContextDef"), """
-            ContextDef
-                name: str = MyContext
-                alias: str = None
-                feature: List[Feature]
-                    => Hello
-                    => Goodbye
-                    => Countdown
-             """)

@@ -3,6 +3,25 @@
 "slow is smooth, smooth is fast"
 
 Now we're ready to do scoping.
+"feature scope" = names declared in features
+"function scope" = names declared in functions
+"type scope" = names declared inside structures
+
+when we add stuff, we'll add (symbol, item-pointed-to, scope-object)
+and scope-object will be a feature, a function, or a type.
+
+when we read stuff, we'll look for symbol, *maybe* we'll specify a scope (usually a function or type) and we'll want item-pointed-to, and the scope it was defined in.
+
+so the data structure we want is 
+
+    symbol => { item, scope }
+
+if we inherit from some feature, we should be able to see its symbols; eg. types and so on.
+
+so basically we have
+
+    symbol => array { scope, item }
+
 
 ----
 
