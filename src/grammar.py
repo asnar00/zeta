@@ -7,6 +7,7 @@ from typing import List, Type, Tuple, Dict
 from util import *
 from typing import get_type_hints
 from lexer import Lex
+from classman import ClassManager
 
 #--------------------------------------------------------------------------------------------------
 # Error represents something that went wrong
@@ -105,9 +106,8 @@ class Grammar:
         entity_rule = Rule("Entity", "", "")
         entity_rule.entity_cls = Entity
         self.add_rule(entity_rule)
-        self.namespace = {'List': List, 'Entity': Entity }       # holds all classes created from rules
-        self.class_methods = {}     # class => [method_def]
-        self.class_types = {}       # class.name => type name
+        self.class_manager = ClassManager()
+        self.class_manager.add_class(Entity)
 
     def add(self, rules_str: str):
         lines = rules_str.strip().split("\n")
@@ -126,12 +126,7 @@ class Grammar:
         compute_meta_stuff()
 
     def add_method(self, cls_name: str, method_def: str):
-        method_def = log_deindent(method_def)
-        method_name = self.get_method_name(method_def)
-        if not cls_name in self.class_methods: self.class_methods[cls_name] = []
-        self.class_methods[cls_name].append(method_def)
-        rule = self.rule_named[cls_name]
-        self.build_classes([rule])
+        self.class_manager.add_method_to_class(cls_name, method_def)
 
     def build_rule(self, rule: Rule):
         if rule.rhs == "": self.build_abstract_rule(rule)
@@ -214,40 +209,21 @@ class Grammar:
 
     def build_classes(self, rules: List[Rule]):
         log("building classes ------------------------------")
+        log("classes:", rules)
         for rule in rules:
             if rule.name == "Entity": continue
             if not rule.name.endswith("_"):
-               class_def = self.build_class_def(rule) + "\n"
-               log(class_def)
-               exec(class_def, self.namespace)
-            cls = self.namespace[rule.name.replace("_", "")]
+               self.build_class(rule)
+            cls = self.class_manager.find_class(rule.name.replace("_", ""))
             rule.entity_cls = cls
-        for rule in rules:
-            if rule.name in self.class_methods:
-                methods = self.class_methods[rule.name]
-                for method_def in methods:
-                    self.add_method_to_class(rule.name, method_def)
 
-    def build_class_def(self, rule: Rule) -> str:
+    def build_class(self, rule: Rule) -> Type:
         attributes = self.build_class_attributes(rule, {})   # name -> type
         log("attributes:", attributes)
         parent = rule.parent_name
         if not parent: parent = "Entity"
-        class_def = log_deindent(f"""
-            class {rule.name}({parent}):
-                def __init__(self):
-                    super().__init__()
-            """)
-        for name, type in attributes.items():
-            ref = ""
-            if "&" in type:
-                ref = "        # ref"
-                type = type.replace("&", "")
-            class_def += f"        self.{name}: {type} = None{ref}\n"
-            self.class_types[f"{rule.name}.{name}"] = type
-        #log(class_def)
-        #log_exit("build_class_def")
-        return class_def
+        cls = self.class_manager.build_class(rule.name, parent, attributes)
+        return cls
 
     def build_class_attributes(self, rule: Rule, attributes: Dict[str, str]) -> Dict[str, str]:
         if rule.is_abstract(): return {}
@@ -267,21 +243,10 @@ class Grammar:
                 raise Exception(f"unnamed non-rule type")
         return attributes
     
-    def get_class_type(self, cls, name: str) -> str:
-        key = f"{cls.__name__}.{name}"
-        return self.class_types[key]
+    def get_attribute_type(self, cls, name: str) -> str:
+        return self.class_manager.get_attribute_type(cls, name)
     
-    def add_method_to_class(self, cls_name: str, method_def: str):
-        method_name = self.get_method_name(method_def)
-        exec(method_def, self.namespace)  # adds method to existing namespace
-        setattr(self.namespace[cls_name], method_name, self.namespace[method_name])
 
-    def get_method_name(self, method_def: str) -> str:
-        pattern = r'\s*def\s+(\w+)\('
-        match = re.search(pattern, method_def)
-        if match: method_name = match.group(1)
-        else: raise Exception(f"can't find method name in {method_def}")
-        return method_name
 
         
 #--------------------------------------------------------------------------------------------------
@@ -647,7 +612,7 @@ def dbg_entity(e: Entity|List[Entity], indent: int=0) ->str:
                     out += f"{start}    {log_red(e._error)}\n"
                 continue
             val = getattr(e, attr)
-            type_name = Grammar.current.get_class_type(e.__class__, attr)
+            type_name = Grammar.current.get_attribute_type(e.__class__, attr)
             if val == None or isinstance(val, Lex) or (isinstance(val, List) and len(val)==0):
                 ref = ">" if isinstance(val, Lex) and type_name != "str" else ""
                 out += f"{start}    {attr}: {type_name} ={ref} {val}\n"

@@ -2,6 +2,10 @@
 # scribblez
 "slow is smooth, smooth is fast"
 
+Now we're ready to do scoping.
+
+----
+
 Introduce language modules!
 which are a great site to add symbol table stuff.
 we can now add "build_symbols" and "resolve_symbols" to each one.
