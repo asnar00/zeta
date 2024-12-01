@@ -13,43 +13,72 @@ from symbols import *
 #--------------------------------------------------------------------------------------------------
 # main
 
+s_test_program = """
+feature Program
+    type string | str = char$
+    string out$
+
+feature Hello extends Program
+    on hello(string name)
+        string message = "hello, \\(name)!"
+        out$ << message
+    replace run()
+        hello("world")
+
+feature Goodbye extends Hello
+    on bye()
+        out$ << "kthxbye."
+    after hello(string name)
+        bye()
+
+feature VectorMath
+    type vector | vec = 
+        number x, y, z = 0
+    on (vec r) = (vec a) + (vec b)
+        r = vec(a.x + b.x, a.y + b.y, a.z + b.z)
+
+context MyContext = Program, Hello, VectorMath
+"""
+
 @this_is_the_test
-def test_zero_grammar():
-    log("test_zero_grammar")
+def test_zero():
+    log("test_zero")
     zero = Language()
     zero.add_modules([module_Features(), module_Expressions(), module_Variables(), module_Types(), module_Functions(), module_Tests()])
     test_verbose(False)
     log_max_depth(8)
     zero.setup()
-    ast = zero.compile(s_test_program)
+    ast, st = zero.compile(s_test_program)
+    log_clear()
+    #test_print_code(ast)
+    log(s_test_program)
+    log("--------------------------------")
+    log(st.dbg())
+
+#--------------------------------------------------------------------------------------------------
+# print ast as nicely formatted code
+
+def test_print_code(ast):
     log_clear()
     
     test("print_formatted", print_code_formatted(ast), """
         feature Program
-            type str | string = char$
-            str out$
+            type string | str = char$
+            string out$
         feature Hello extends Program
             on hello ( string name )
-                out$ << "hello, \\(name)!"
+                string message = "hello, \(name)!"
+                out$ << message
             replace run ( )
                 hello ( "world" )
+        feature Goodbye extends Hello
+            on bye ( )
+                out$ << "kthxbye."
+            after hello ( string name )
+                bye ( )
         context MyContext = Program, Hello
          """)
 
-
-s_test_program = """
-feature Program
-    type str | string = char$
-    str out$
-
-feature Hello extends Program
-    on hello(string name)
-        out$ << "hello, \\(name)!"
-    replace run()
-        hello("world")
-
-context MyContext = Program, Hello
-"""
 
 #--------------------------------------------------------------------------------------------------
 # modular language definition; so we can add a bit at a time
@@ -59,7 +88,6 @@ class LanguageModule:
     def __init__(self): pass
     def define(self, grammar: Grammar): pass      # add grammar rules and validation functions
     def test(self): pass                           # test parser with some examples
-
 
 # Language collects all modules into one unit
 class Language:
@@ -75,8 +103,11 @@ class Language:
         ls = lexer(Source(code = code))
         reader = Reader(ls)
         rule = Grammar.current.rule_named["Program"]
-        ast= parse_rule(rule, reader)
-        return ast
+        ast = parse_rule(rule, reader)
+        st = SymbolTable()
+        st.add_symbols(ast, None)
+
+        return ast, st
 
 #--------------------------------------------------------------------------------------------------
 # features and contexts 
@@ -89,6 +120,9 @@ class module_Features(LanguageModule):
             Component
             ContextDef := "context" NameDef "=" feature:Feature&*,
             Program := components:(FeatureDef | ContextDef)+;
+            """)
+        grammar.add_method("NameDef", """
+            def add_symbols(self, scope, symbol_table): pass
             """)
 
     def test(self):
@@ -327,6 +361,12 @@ class module_Variables(LanguageModule):
         grammar.add("""
             VariableDef < Component := ((type:Type& names:NameDef+,) | (names:NameDef+, ":" type:Type&)) ("=" value:Expression)?
         """)
+        grammar.add_method("VariableDef", """
+            def add_symbols(self, scope, symbol_table):
+                for name in self.names:
+                    symbol_table.add(name.name, self, scope)
+                    if name.alias: symbol_table.add(name.alias, self, scope)
+        """)
 
     def test(self):
         test("variable_0", parse_code("int a", "VariableDef"), """
@@ -412,36 +452,32 @@ class module_Variables(LanguageModule):
 class module_Types(LanguageModule):
     def define(self, grammar: Grammar):
         grammar.add("""
-            TypeDef < Component := "type" name:NameDef rhs:TypeRhs
+            TypeDef < Component := "type" NameDef rhs:TypeRhs
             TypeRhs :=
-            TypeAlias < TypeRhs := "=" alias:Type&
+            TypeAlias < TypeRhs := "=" type:Type&
             StructDef < TypeRhs := "=" "{" properties:VariableDef+; "}"
             TypeParentDef < TypeRhs := "<" parents:Type&+,
             TypeChildrenDef < TypeRhs := ">" children:Type&+,
             TypeEnumDef < TypeRhs := "=" options:<identifier>+|
         """)
         grammar.add_method("TypeEnumDef", """
-def validate(self) -> str: 
-    return "" if len(self.options) > 1 else "enum must have at least two options"
+            def validate(self) -> str: 
+                return "" if len(self.options) > 1 else "enum must have at least two options"
         """)
     
     def test(self):
         test("type_0", parse_code("type vec | vector", "TypeDef"), """
-            TypeDef
-                name: NameDef
-                    NameDef
-                        name: str = vec
-                        alias: str = vector
-                rhs: TypeRhs
-                    !!! premature end (expected rhs:TypeRhs, got 'None' at <eof>)        
+        TypeDef
+            name: str = vec
+            alias: str = vector
+            rhs: TypeRhs
+                !!! premature end (expected rhs:TypeRhs, got 'None' at <eof>) 
             """)
     
         test("type_1", parse_code("type vec | vector = { x, y, z: number =0 }", "TypeDef"), """
             TypeDef
-                name: NameDef
-                    NameDef
-                        name: str = vec
-                        alias: str = vector
+                name: str = vec
+                alias: str = vector
                 rhs: TypeRhs
                     StructDef
                         properties: List[VariableDef]
@@ -464,10 +500,8 @@ def validate(self) -> str:
         
         test("type_2", parse_code("type int > i8, i16", "TypeDef"), """
             TypeDef
-                name: NameDef
-                    NameDef
-                        name: str = int
-                        alias: str = None
+                name: str = int
+                alias: str = None
                 rhs: TypeRhs
                     TypeChildrenDef
                         children: List[Type]
@@ -477,10 +511,8 @@ def validate(self) -> str:
         
         test("type_3", parse_code("type offset < vector", "TypeDef"), """
             TypeDef
-                name: NameDef
-                    NameDef
-                        name: str = offset
-                        alias: str = None
+                name: str = offset
+                alias: str = None
                 rhs: TypeRhs
                     TypeParentDef
                         parents: List[Type]
@@ -489,10 +521,8 @@ def validate(self) -> str:
         
         test("type_4", parse_code("type evil = no | yes | maybe", "TypeDef"), """
             TypeDef
-                name: NameDef
-                    NameDef
-                        name: str = evil
-                        alias: str = None
+                name: str = evil
+                alias: str = None
                 rhs: TypeRhs
                     TypeEnumDef
                         options: List[str]
@@ -503,13 +533,11 @@ def validate(self) -> str:
         
         test("type_5", parse_code("type str | string = char$", "TypeDef"), """
             TypeDef
-                name: NameDef
-                    NameDef
-                        name: str = str
-                        alias: str = string
+                name: str = str
+                alias: str = string
                 rhs: TypeRhs
                     TypeAlias
-                        alias: Type => char$
+                        type: Type => char$
             """)
 
 #--------------------------------------------------------------------------------------------------
@@ -531,7 +559,15 @@ class module_Functions(LanguageModule):
             StatementLhs := variables:ResultVariable+, assignOp:("=" | "<<") 
             ResultVariable :=
             ResultVariableRef < ResultVariable := variable:Variable&
-            ResultVariableDef < ResultVariable := ((type:Type& name:NameDef) | (name:NameDef ":" type:Type&))
+            ResultVariableDef < ResultVariable := ((type:Type& NameDef) | (NameDef ":" type:Type&))
+        """)
+        grammar.add_method("FunctionDef", """
+            def add_symbols(self, scope, symbol_table):
+                i_word = 0
+                for element in self.signature.elements:
+                    if isinstance(element, FunctionSignatureWord):
+                        symbol_table.add(element.word, self, scope, {"i_word": i_word})
+                        i_word += 1
         """)
     
     def test(self):

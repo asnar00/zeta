@@ -28,7 +28,10 @@ class Error:
 # Entity is the base class; all entities have a name and an alias
 class Entity:
     def __init__(self): self._error : Error = None
-    def __str__(self): return f"{self.__class__.__name__}(..)"
+    def __str__(self):
+        name = ""
+        if hasattr(self, "name"): name = f'("{self.name}")'
+        return f"{self.__class__.__name__}{name}"
     def __repr__(self): return self.__str__()
 
 #--------------------------------------------------------------------------------------------------
