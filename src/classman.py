@@ -12,23 +12,34 @@ from util import *
 class ClassManager:
     def __init__(self):
         self.namespace = {'List': List}       # holds all classes created from rules
-        self.class_methods = {}     # class => [method_def]
-        self.class_types = {}       # class.name => type name
+
+        # Add everything from util to namespace
+        import util
+        for name in dir(util):
+            if not name.startswith('_'):  # Skip private names
+                self.namespace[name] = getattr(util, name)
+                self.class_methods = {}     # class => [method_def]
+                self.class_types = {}       # class.name => type name
 
     # given { name: type, ... }, builds a class and returns it
     def build_class(self, name: str, parent: str, attributes: Dict[str, str]) -> Type:
+        names = attributes.keys()
+        types = attributes.values()
+        init_param_list = ", ".join([f"{name}: '{type.replace("&", "")}' =None" for name, type in zip(names, types)])
         class_def = log_deindent(f"""
             class {name}({parent}):
-                def __init__(self):
+                def __init__(self, {init_param_list}):
                     super().__init__()
             """)
         for attribute_name, attribute_type in attributes.items():
             ref = ""
+            py_attribute_type = attribute_type
             if "&" in attribute_type:
                 ref = "        # ref"
-                attribute_type = attribute_type.replace("&", "")
-            class_def += f"        self.{attribute_name}: {attribute_type} = None{ref}\n"
+                py_attribute_type = attribute_type.replace("&", "")
+            class_def += f"        self.{attribute_name}: {py_attribute_type} = {attribute_name}{ref}\n"
             self.class_types[f"{name}.{attribute_name}"] = attribute_type
+        log(class_def)
         exec(class_def, self.namespace)
         cls = self.namespace[name]
         return cls
@@ -43,7 +54,9 @@ class ClassManager:
     
     # given class name and attribute name, return type
     def get_attribute_type(self, cls: Type, name: str) -> str:
-        return self.class_types[f"{cls.__name__}.{name}"]
+        key = f"{cls.__name__}.{name}"
+        if key not in self.class_types: return "None"
+        return self.class_types[key]
     
     # adds a method to a class; gets automatically re-added if the class is rebuilt
     def add_method_to_class(self, class_name: str, method_def: str):
@@ -55,8 +68,11 @@ class ClassManager:
             exec(method_def, self.namespace)  # adds method to existing namespace
             setattr(self.namespace[class_name], method_name, self.namespace[method_name])
         except Exception as e:
-            log(f"error adding method {method_name} to class {class_name}: {e}")
-            log(method_def)
+            log(f"error adding method '{method_name}' to class {class_name}: {e}")
+            lines = method_def.split("\n")
+            for i, line in enumerate(lines):
+                si = f"{i+1:3}"
+                log(f"{log_grey(si)} {line}")
             log_exit()
 
     def get_method_name(self, method_def: str) -> str:

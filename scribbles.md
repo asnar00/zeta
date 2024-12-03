@@ -2,6 +2,10 @@
 # scribblez
 "slow is smooth, smooth is fast"
 
+today: add/resolve needs to be able to check if a symbol exists already
+eg. for type structure extension, adding a stub to a function, and so on.
+---
+
 Now we're ready to do scoping.
 "feature scope" = names declared in features
 "function scope" = names declared in functions

@@ -29,7 +29,7 @@ class Error:
 class Entity:
     def __init__(self): self._error : Error = None
     def __str__(self):
-        name = ""
+        name = "(..)"
         if hasattr(self, "name"): name = f'("{self.name}")'
         return f"{self.__class__.__name__}{name}"
     def __repr__(self): return self.__str__()
@@ -128,7 +128,7 @@ class Grammar:
         self.build_classes(self.new_rules)
         compute_meta_stuff()
 
-    def add_method(self, cls_name: str, method_def: str):
+    def method(self, cls_name: str, method_def: str):
         self.class_manager.add_method_to_class(cls_name, method_def)
 
     def build_rule(self, rule: Rule):
@@ -618,11 +618,11 @@ def dbg_entity(e: Entity|List[Entity], indent: int=0) ->str:
             type_name = Grammar.current.get_attribute_type(e.__class__, attr)
             if val == None or isinstance(val, Lex) or (isinstance(val, List) and len(val)==0):
                 ref = ">" if isinstance(val, Lex) and type_name != "str" else ""
-                out += f"{start}    {attr}: {type_name} ={ref} {val}\n"
+                out += f"{start}    {attr}: {type_name.replace("&", "")} ={ref} {val}\n"
             else:
                 if isinstance(val, list) and "List[" not in type_name:
                     type_name = f"List[{type_name}]"
-                out += f"{start}    {attr}: {type_name}"
+                out += f"{start}    {attr}: {type_name.replace("&", "")}"
                 if isinstance(val, list) and len(val) > 0:
                     out += "\n"
                     if isinstance(val[0], Entity):
