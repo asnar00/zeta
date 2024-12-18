@@ -125,7 +125,6 @@ class Grammar:
                 self.build_rule(rule)
         for rule in self.new_rules:
             self.connect_parent(rule)
-        self.build_classes(self.new_rules)
         compute_meta_stuff()
 
     def method(self, cls_name: str, method_def: str):
@@ -210,10 +209,10 @@ class Grammar:
     #-----------------------------------------------------------------------------------
     # make classes from rules
 
-    def build_classes(self, rules: List[Rule]):
+    def build_classes(self):
         log("building classes ------------------------------")
-        log("classes:", rules)
-        for rule in rules:
+        log("classes:", self.rules)
+        for rule in self.rules:
             if rule.name == "Entity": continue
             if not rule.name.endswith("_"):
                self.build_class(rule)

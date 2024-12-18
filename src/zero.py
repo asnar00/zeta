@@ -30,14 +30,11 @@ feature Goodbye extends Hello
         out$ << "kthxbye."
     after hello(string name)
         bye()
-context MyContext = Program, Hello, Goodbye
-"""
-
-s_test_math = """
+        
 feature Math
     type int > i8, i16, i32, i64
     type float > f32, f64
-    type number = int | float
+    type number > int, float
     on (number r) = (number a) + (number b)
         emit("add r, a, b")
     on (number r) = (number a) * (number b)
@@ -48,10 +45,10 @@ feature VectorMath extends Math
         number x, y, z = 0
     on (vec r) = (vec a) + (vec b)
         r = vec(a.x + b.x, a.y + b.y, a.z + b.z)
-    on (number p) = (vec a) dot (vec b)
-        p = a.x * b.x + a.y * b.y + a.z * b.z
+    on (number d) = (vec a) dot (vec b)
+        d = a.x * b.x + a.y * b.y + a.z * b.z
 
-context MathContext = Math, VectorMath
+context MyContext = Program, Hello, Goodbye, Math, VectorMath
 """
 
 @this_is_the_test
@@ -103,7 +100,8 @@ def test_print_code(ast):
 class LanguageModule:
     def __init__(self): pass
     def define(self, grammar: Grammar): pass      # add grammar rules and validation functions
-    def test(self): pass                           # test parser with some examples
+    def extend(self, grammar: Grammar): pass      # add methods to existing rule classes
+    def test(self): pass                          # test parser with some examples
 
 # Language collects all modules into one unit
 class Language:
@@ -112,8 +110,10 @@ class Language:
         self.grammar = Grammar()
     def add_modules(self, modules: List[LanguageModule]): self.modules.extend(modules)
     def setup(self):
+        for module in self.modules: module.define(self.grammar)
+        self.grammar.build_classes()
         for module in self.modules: 
-            module.define(self.grammar)
+            module.extend(self.grammar)
             module.test()
     def compile(self, code: str) -> 'Program':
         ls = lexer(Source(code = code))
@@ -123,6 +123,7 @@ class Language:
         st = SymbolTable()
         log_clear()
         st.add_symbols(ast, None)
+        log(st.dbg())
         st.resolve_symbols(ast)
         log_exit("done resolving")
 
@@ -141,6 +142,8 @@ class module_Features(LanguageModule):
             ContextDef := "context" NameDef "=" feature:Feature&*,
             Program := components:(FeatureDef | ContextDef)+;
             """)
+        
+    def extend(self, grammar: Grammar):
         grammar.method("NameDef", """
             def add_symbols(self, scope, symbol_table): pass
             """)
@@ -244,6 +247,7 @@ class module_Expressions(LanguageModule):
             FunctionCallArgument := (argument:Variable& "=")? value:Expression
                     """)
         
+    def extend(self, grammar: Grammar):
         # function call must have at least one bracketed term or operator
         grammar.method("FunctionCall", """
             def validate(self) -> str:
@@ -254,6 +258,7 @@ class module_Expressions(LanguageModule):
                 if n_bracketed ==0 and n_operators ==0: return "function call must have at least one argument or operation"
                 return ""
         """)
+    
         grammar.method("FunctionCall", """
             def resolve(self, symbol_table) -> str:
                 # first replace any variable names with variables
@@ -261,8 +266,8 @@ class module_Expressions(LanguageModule):
                     if isinstance(item, FunctionCallWord):
                         vars = symbol_table.find(item.word)
                         if len(vars)==1 and isinstance(vars[0].element, Variable):
-                            log(log_red(f"replacing {item.word} with {vars[0]}"))
-                            self.items[i] = FunctionCallVariable(variable=vars[0])
+                            log(log_green(f"replacing {item.word} with {vars[0]}"))
+                            self.items[i] = VariableRef(variable=vars[0])
                 # now find a single function for all word/operators
                 i_word = -1
                 found_function = None
@@ -275,7 +280,6 @@ class module_Expressions(LanguageModule):
                             func = found[0].element
                             if not isinstance(func, Function): return f"{item.word} is not a function"
                             tag = found[0].tag["i_word"]
-                            log(f"found function {func.handle}, tag {tag}")
                             if found_function == None:
                                 found_function = func
                                 if tag != 0: return "starting with nonzero tag"
@@ -424,6 +428,8 @@ class module_Variables(LanguageModule):
             Variable := type:Type& NameDef "=" value:Expression
             VariableDef < Component := ((type:Type& names:NameDef+,) | (names:NameDef+, ":" type:Type&)) ("=" value:Expression)?
         """)
+
+    def extend(self, grammar: Grammar):
         grammar.method("VariableDef", """
             def add_symbols(self, scope, symbol_table):
                 for name in self.names:
@@ -525,6 +531,8 @@ class module_Types(LanguageModule):
             TypeChildrenDef < TypeRhs := ">" children:Type&+,
             TypeEnumDef < TypeRhs := "=" options:<identifier>+|
         """)
+
+    def extend(self, grammar: Grammar):
         grammar.method("TypeEnumDef", """
             def validate(self) -> str: 
                 return "" if len(self.options) > 1 else "enum must have at least two options"
@@ -632,6 +640,8 @@ class module_Functions(LanguageModule):
             ResultVariableRef < ResultVariable := variable:Variable&
             ResultVariableDef < ResultVariable := ((type:Type& NameDef) | (NameDef ":" type:Type&))
         """)
+
+    def extend(self, grammar: Grammar):
         grammar.method("FunctionResultVariableDef", """
             def add_symbols(self, scope, symbol_table):
                 for name in self.names:
@@ -649,16 +659,19 @@ class module_Functions(LanguageModule):
                 for item in self.elements:
                     if isinstance(item, FunctionSignatureWord): name += str(item.word) + "_"
                     elif isinstance(item, FunctionSignatureParams):
-                       name += "()_"
+                        brace = "("
+                        for param in item.params:
+                            brace += str(param.type) + "_"
+                        if brace[-1]=="_": brace = brace[:-1]
+                        brace += ")_"
+                        name += brace
                 return name[:-1]
         """)
         grammar.method("FunctionDef", """
             def add_symbols(self, scope, symbol_table):
                 handle = self.signature.handle()
-                log("add_symbols: handle", handle)
                 functions = symbol_table.find(handle, None)
                 if len(functions) == 0:
-                    log("creating function:", handle)
                     function = Function(handle=handle, results=self.results, signature=self.signature, body=self.body)
                     symbol_table.add(handle, function, None)
                     i_word = 0
@@ -668,7 +681,7 @@ class module_Functions(LanguageModule):
                             i_word += 1
                 else: 
                     function = functions[0]
-                    log("function exists already; extending")
+                    log(f"function {handle} exists already; extending")
                 
         """)
     

@@ -30,7 +30,9 @@ class SymbolTable:
         if isinstance(name, Lex): name = name.val
         item = SymbolItem(scope, element, tag)
         self.add_item(name, item)
-        if alias != None: self.add_item(alias, item)
+        if alias != None: 
+            if isinstance(alias, Lex): alias = alias.val
+            self.add_item(alias, item)
 
     def add_item(self, name: str, item: SymbolItem):
         if not name in self.symbols: self.symbols[name] = []
@@ -42,7 +44,6 @@ class SymbolTable:
         if not name in self.symbols: return []
         return [item for item in self.symbols[name] if self.scope_can_see(scope, item.scope)]
     
-
     def scope_can_see(self, scope1: Any, scope2: Any) -> bool:
         if scope1 is None: return True
         if hasattr(scope1, "inherits_from"):
@@ -52,6 +53,7 @@ class SymbolTable:
     # run recursively through all properties of an Entity, collecting a symbol table
     def add_symbols(self, e: Entity, scope: Any):
         self.add_symbols_rec(e, scope)
+
 
     def add_symbols_rec(self, e: Entity, scope: Any):
         if hasattr(e, "add_symbols"):
@@ -69,6 +71,7 @@ class SymbolTable:
                         self.add_symbols_rec(item, scope)
 
     # this is actually a hack, but it's a quick way to avoid having to add a method to every named entities
+
     def add_symbols_for_entity(self, e: Entity, scope: Any) -> bool:
         added = False
         if hasattr(e, "name"):
@@ -89,12 +92,11 @@ class SymbolTable:
             out += "\n"
         return out
     
-    @log_indent
     def resolve_symbols(self, e: Entity):
         if hasattr(e, "resolve"):
             log(log_green(f"{e.__class__.__name__}.resolve"))
             err = e.resolve(self)
-            if err != "": raise Exception(err)
+            if err != "": log(log_red(f"{e.__class__.__name__}.resolve: {err}"))
         for attr in vars(e):
             if attr == "_error": continue
             attr_type = Grammar.current.get_attribute_type(e.__class__, attr)

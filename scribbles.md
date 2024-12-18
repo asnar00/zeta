@@ -2,6 +2,47 @@
 # scribblez
 "slow is smooth, smooth is fast"
 
+solution: add the overridden method names in the grammar; define them *outside* (in normal code)
+using eg.
+
+    FunctionCall[validate, resolve] < Expression := etcetc
+
+    def validate_FunctionCall(fc: FunctionCall, etcetc):
+        xxx
+
+    def resolve_FunctionCall(fc: FunctionCall, etcetc):
+        xxx
+
+That's super compact and easy, all you're doing is registering that the system can call the externally defined function NodeName_function(blah).
+
+----
+
+non-smoothness:
+1- coding in text form isn't actually a good way of doing things; find a better way.
+   -> I think it might be: just call normal functions defined in global scope somehow
+   -> that way your text-methods are just oneliners
+2- function-scope stuff isn't clearly defined: need some way to say "this entity can be a scope"
+   -> pass scope into .resolve(), track it in the resolve routine in symbol_table
+3- need to figure out the function-matching, because there'll have to be type stuff
+
+just feels non-smooth at the moment, have to figure out why.
+maybe having all the different stages jammed up together actually isn't that great a win.
+maybe you want to separate them out into their own area, while keeping it modular.
+
+yeah-don't do it that way. do define_grammar, define_symbols => that way there's proper separation of concerns.
+can we have test code snippets for each feature, and just test that, rather than the whole thing?
+there's definitely a smarter way of handing this.
+
+----
+
+tomorrow: type-vars, structure extension test (Math, VectorMath)
+try parsing a + b properly
+then do the actual replace
+report errors properly (including lex locations etc)
+operator precedence (parse the dot-product expression)
+declare concrete types (i8 etc) somehow
+
+---
 today: add/resolve needs to be able to check if a symbol exists already
 eg. for type structure extension, adding a stub to a function, and so on.
 ---
