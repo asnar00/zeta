@@ -3,12 +3,8 @@
 # author: asnaroo
 # zero to anything
 
-from typing import List
-from util import *
-from lexer import *
-from grammar import *
-from parser import *
-from symbols import *
+from compiler import *
+import zero_classes as zc
 
 #--------------------------------------------------------------------------------------------------
 # main
@@ -54,7 +50,7 @@ context MyContext = Program, Hello, Goodbye, Math, VectorMath
 @this_is_the_test
 def test_zero():
     log("test_zero")
-    zero = Language()
+    zero = Language(zc)
     zero.add_modules([module_Features(), module_Expressions(), module_Variables(), module_Types(), module_Functions(), module_Tests()])
     test_verbose(False)
     log_max_depth(8)
@@ -93,41 +89,6 @@ def test_print_code(ast):
          """)
 
 
-#--------------------------------------------------------------------------------------------------
-# modular language definition; so we can add a bit at a time
-
-# LanguageModule collects all compilation stages (grammar, parser, resolver, etc) for some part of the language
-class LanguageModule:
-    def __init__(self): pass
-    def define(self, grammar: Grammar): pass      # add grammar rules and validation functions
-    def extend(self, grammar: Grammar): pass      # add methods to existing rule classes
-    def test(self): pass                          # test parser with some examples
-
-# Language collects all modules into one unit
-class Language:
-    def __init__(self): 
-        self.modules = []
-        self.grammar = Grammar()
-    def add_modules(self, modules: List[LanguageModule]): self.modules.extend(modules)
-    def setup(self):
-        for module in self.modules: module.define(self.grammar)
-        self.grammar.build_classes()
-        for module in self.modules: 
-            module.extend(self.grammar)
-            module.test()
-    def compile(self, code: str) -> 'Program':
-        ls = lexer(Source(code = code))
-        reader = Reader(ls)
-        rule = Grammar.current.rule_named["Program"]
-        ast = parse_rule(rule, reader)
-        st = SymbolTable()
-        log_clear()
-        st.add_symbols(ast, None)
-        log(st.dbg())
-        st.resolve_symbols(ast)
-        log_exit("done resolving")
-
-        return ast, st
 
 #--------------------------------------------------------------------------------------------------
 # features and contexts 
@@ -143,17 +104,15 @@ class module_Features(LanguageModule):
             Program := components:(FeatureDef | ContextDef)+;
             """)
         
-    def extend(self, grammar: Grammar):
-        grammar.method("NameDef", """
-            def add_symbols(self, scope, symbol_table): pass
-            """)
+    def methods(self, grammar: Grammar):
+        @grammar.method(zc.NameDef)
+        def add_symbols(self, scope, symbol_table): pass
         
         # def add(self, name: str, element: Any, scope: Any, tag: Dict=None) -> str:
-        grammar.method("FeatureDef", """
-            def add_symbols(self, scope, symbol_table):
-                feature = Feature(name=self.name, alias=self.alias, parent=self.parent)
-                symbol_table.add(self.name, feature, scope, alias=self.alias)  
-            """)
+        @grammar.method(zc.FeatureDef)
+        def add_symbols(self, scope, symbol_table):
+            feature = zc.Feature(name=self.name, alias=self.alias, parent=self.parent)
+            symbol_table.add(self.name, feature, scope, alias=self.alias)
 
     def test(self):
         test("feature_0", parse_code("", "FeatureDef"), """
@@ -247,51 +206,49 @@ class module_Expressions(LanguageModule):
             FunctionCallArgument := (argument:Variable& "=")? value:Expression
                     """)
         
-    def extend(self, grammar: Grammar):
+    def methods(self, grammar: Grammar):
         # function call must have at least one bracketed term or operator
-        grammar.method("FunctionCall", """
-            def validate(self) -> str:
-                n_bracketed = 0; n_operators = 0
-                for item in self.items:
-                    if isinstance(item, FunctionCallArguments): n_bracketed += 1
-                    if isinstance(item, FunctionCallOperator): n_operators += 1
-                if n_bracketed ==0 and n_operators ==0: return "function call must have at least one argument or operation"
-                return ""
-        """)
+        @grammar.method(zc.FunctionCall)
+        def validate(self) -> str:
+            n_bracketed = 0; n_operators = 0
+            for item in self.items:
+                if isinstance(item, zc.FunctionCallArguments): n_bracketed += 1
+                if isinstance(item, zc.FunctionCallOperator): n_operators += 1
+            if n_bracketed == 0 and n_operators == 0: return "function call must have at least one argument or operation"
+            return ""
     
-        grammar.method("FunctionCall", """
-            def resolve(self, symbol_table) -> str:
-                # first replace any variable names with variables
-                for i, item in enumerate(self.items):
-                    if isinstance(item, FunctionCallWord):
-                        vars = symbol_table.find(item.word)
-                        if len(vars)==1 and isinstance(vars[0].element, Variable):
-                            log(log_green(f"replacing {item.word} with {vars[0]}"))
-                            self.items[i] = VariableRef(variable=vars[0])
-                # now find a single function for all word/operators
-                i_word = -1
-                found_function = None
-                for i, item in enumerate(self.items):
-                    if isinstance(item, FunctionCallWord):
-                        found = symbol_table.find(item.word)
-                        if len(found) == 0: return f"can't find {item.word}"
-                        elif len(found) > 1: return f"symbol clash: {item.word} => {found}"
+        @grammar.method(zc.FunctionCall)
+        def resolve(self, symbol_table) -> str:
+            # first replace any variable names with variables
+            for i, item in enumerate(self.items):
+                if isinstance(item, zc.FunctionCallWord):
+                    vars = symbol_table.find(item.word)
+                    if len(vars) == 1 and isinstance(vars[0].element, zc.Variable):
+                        log(log_green(f"replacing {item.word} with {vars[0]}"))
+                        self.items[i] = zc.VariableRef(variable=vars[0])
+            # now find a single function for all word/operators
+            i_word = -1
+            found_function = None
+            for i, item in enumerate(self.items):
+                if isinstance(item, zc.FunctionCallWord):
+                    found = symbol_table.find(item.word)
+                    if len(found) == 0: return f"can't find {item.word}"
+                    elif len(found) > 1: return f"symbol clash: {item.word} => {found}"
+                    else:
+                        func = found[0].element
+                        if not isinstance(func, zc.Function): return f"{item.word} is not a function"
+                        tag = found[0].tag["i_word"]
+                        if found_function is None:
+                            found_function = func
+                            if tag != 0: return "starting with nonzero tag"
+                            i_word = 0
                         else:
-                            func = found[0].element
-                            if not isinstance(func, Function): return f"{item.word} is not a function"
                             tag = found[0].tag["i_word"]
-                            if found_function == None:
-                                found_function = func
-                                if tag != 0: return "starting with nonzero tag"
-                                i_word = 0
-                            else:
-                                tag = found[0].tag["i_word"]
-                                if found[0] != found_function or tag != (i_word+1):
-                                    return "mismatched word"
-                                i_word = tag
-                log(log_green(f"found function {found_function.handle}"))
-                return ""
-        """)
+                            if found[0] != found_function or tag != (i_word + 1):
+                                return "mismatched word"
+                            i_word = tag
+            log(log_green(f"found function {found_function.handle}"))
+            return ""
 
     def test(self):
         test("expression_0", parse_code("1", "Expression"), """
@@ -429,14 +386,13 @@ class module_Variables(LanguageModule):
             VariableDef < Component := ((type:Type& names:NameDef+,) | (names:NameDef+, ":" type:Type&)) ("=" value:Expression)?
         """)
 
-    def extend(self, grammar: Grammar):
-        grammar.method("VariableDef", """
-            def add_symbols(self, scope, symbol_table):
-                for name in self.names:
-                    var = Variable(type=self.type, name=name.name, alias=name.alias, value=self.value)
-                    symbol_table.add(name.name, var, scope)
-                    if name.alias: symbol_table.add(name.alias, var, scope)
-        """)
+    def methods(self, grammar: Grammar):
+        @grammar.method(zc.VariableDef)
+        def add_symbols(self, scope, symbol_table):
+            for name in self.names:
+                var = zc.Variable(type=self.type, name=name.name, alias=name.alias, value=self.value)
+                symbol_table.add(name.name, var, scope)
+                if name.alias: symbol_table.add(name.alias, var, scope)
 
     def test(self):
         test("variable_0", parse_code("int a", "VariableDef"), """
@@ -532,16 +488,15 @@ class module_Types(LanguageModule):
             TypeEnumDef < TypeRhs := "=" options:<identifier>+|
         """)
 
-    def extend(self, grammar: Grammar):
-        grammar.method("TypeEnumDef", """
-            def validate(self) -> str: 
-                return "" if len(self.options) > 1 else "enum must have at least two options"
-        """)
-        grammar.method("TypeDef", """
-            def add_symbols(self, scope, symbol_table):
-                type = Type(name=self.name, alias=self.alias)
-                symbol_table.add(self.name, type, scope, alias=self.alias)
-        """)
+    def methods(self, grammar: Grammar):
+        @grammar.method(zc.TypeEnumDef)
+        def validate(self) -> str: 
+            return "" if len(self.options) > 1 else "enum must have at least two options"
+
+        @grammar.method(zc.TypeDef)
+        def add_symbols(self, scope, symbol_table):
+            type = zc.Type(name=self.name, alias=self.alias)
+            symbol_table.add(self.name, type, scope, alias=self.alias)
     
     def test(self):
         test("type_0", parse_code("type vec | vector", "TypeDef"), """
@@ -641,49 +596,48 @@ class module_Functions(LanguageModule):
             ResultVariableDef < ResultVariable := ((type:Type& NameDef) | (NameDef ":" type:Type&))
         """)
 
-    def extend(self, grammar: Grammar):
-        grammar.method("FunctionResultVariableDef", """
-            def add_symbols(self, scope, symbol_table):
-                for name in self.names:
-                    var = Variable(type=self.type, name=name.name, alias=name.alias)
-                    symbol_table.add(name.name, var, scope, alias=name.alias)
-        """)
-        grammar.method("ResultVariableDef", """
-            def add_symbols(self, scope, symbol_table):
-                var = Variable(type = self.type, name = self.name, alias=self.alias)
-                symbol_table.add(var.name, var, scope, alias=var.alias)
-        """)
-        grammar.method("FunctionSignature", """
-            def handle(self)-> str:
-                name = ""
-                for item in self.elements:
-                    if isinstance(item, FunctionSignatureWord): name += str(item.word) + "_"
-                    elif isinstance(item, FunctionSignatureParams):
-                        brace = "("
-                        for param in item.params:
-                            brace += str(param.type) + "_"
-                        if brace[-1]=="_": brace = brace[:-1]
-                        brace += ")_"
-                        name += brace
-                return name[:-1]
-        """)
-        grammar.method("FunctionDef", """
-            def add_symbols(self, scope, symbol_table):
-                handle = self.signature.handle()
-                functions = symbol_table.find(handle, None)
-                if len(functions) == 0:
-                    function = Function(handle=handle, results=self.results, signature=self.signature, body=self.body)
-                    symbol_table.add(handle, function, None)
-                    i_word = 0
-                    for element in self.signature.elements:
-                        if isinstance(element, FunctionSignatureWord):
-                            symbol_table.add(element.word, function, None, tag={"i_word": i_word})
-                            i_word += 1
-                else: 
-                    function = functions[0]
-                    log(f"function {handle} exists already; extending")
-                
-        """)
+    def methods(self, grammar: Grammar):
+        @grammar.method(zc.FunctionResultVariableDef)
+        def add_symbols(self, scope, symbol_table):
+            for name in self.names:
+                var = zc.Variable(type=self.type, name=name.name, alias=name.alias)
+                symbol_table.add(name.name, var, scope, alias=name.alias)
+
+        @grammar.method(zc.ResultVariableDef)
+        def add_symbols(self, scope, symbol_table):
+            var = zc.Variable(type=self.type, name=self.name, alias=self.alias)
+            symbol_table.add(var.name, var, scope, alias=var.alias)
+
+        @grammar.method(zc.FunctionSignature)
+        def handle(self) -> str:
+            name = ""
+            for item in self.elements:
+                if isinstance(item, zc.FunctionSignatureWord):
+                    name += str(item.word) + "_"
+                elif isinstance(item, zc.FunctionSignatureParams):
+                    brace = "("
+                    for param in item.params:
+                        brace += str(param.type) + "_"
+                    if brace[-1] == "_": brace = brace[:-1]
+                    brace += ")_"
+                    name += brace
+            return name[:-1]
+
+        @grammar.method(zc.FunctionDef)
+        def add_symbols(self, scope, symbol_table):
+            handle = self.signature.handle()
+            functions = symbol_table.find(handle, None)
+            if len(functions) == 0:
+                function = zc.Function(handle=handle, results=self.results, signature=self.signature, body=self.body)
+                symbol_table.add(handle, function, None)
+                i_word = 0
+                for element in self.signature.elements:
+                    if isinstance(element, zc.FunctionSignatureWord):
+                        symbol_table.add(element.word, function, None, tag={"i_word": i_word})
+                        i_word += 1
+            else:
+                function = functions[0]
+                log(f"function {handle} exists already; extending")
     
     def test(self):
         test("result_vars_1", parse_code("(a, b: int, k, l: float) =", "FunctionResults"), """

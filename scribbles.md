@@ -2,6 +2,17 @@
 # scribblez
 "slow is smooth, smooth is fast"
 
+new method is much nicer:
+- grammar writes a .py file containing just the class definitions (__init__ methods)
+- this gets forcibly re-imported, and the classes added into the rule system
+- a decorator grammar.method(class) around a function turns it into a method and adds it to the class
+- this is put into a separate pass ("methods") so it's all super clean and lovely
+- means we can write code as code, but auto-generate the classes. it's a nice we like.
+
+Look at zero.py to see how this feels to use.
+
+-----
+
 solution: add the overridden method names in the grammar; define them *outside* (in normal code)
 using eg.
 
