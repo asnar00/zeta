@@ -17,7 +17,7 @@ import importlib
 # LanguageModule collects all compilation stages (grammar, parser, resolver, etc) for some part of the language
 class LanguageModule:
     def __init__(self): pass
-    def define(self, grammar: Grammar): pass      # add grammar rules and validation functions
+    def syntax(self, grammar: Grammar): pass      # add grammar rules and validation functions
     def methods(self, grammar: Grammar): pass      # add methods to existing rule classes
     def test(self): pass                          # test parser with some examples
 
@@ -35,7 +35,7 @@ class Language:
         self.grammar = Grammar()
     def add_modules(self, modules: List[LanguageModule]): self.modules.extend(modules)
     def setup(self):
-        for module in self.modules: module.define(self.grammar)
+        for module in self.modules: module.syntax(self.grammar)
         self.grammar.build_classes()
         self.grammar.write_classes(self.import_module.__file__)
         importlib.reload(self.import_module)

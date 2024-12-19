@@ -94,7 +94,7 @@ def test_print_code(ast):
 # features and contexts 
 
 class module_Features(LanguageModule):
-    def define(self, grammar: Grammar):
+    def syntax(self, grammar: Grammar):
         grammar.add("""
             NameDef := name:<identifier> ("|" alias:<identifier>)?
             Feature := NameDef parent:Feature& types:Type&* variables:Variable&* functions:Function&*
@@ -104,15 +104,17 @@ class module_Features(LanguageModule):
             Program := components:(FeatureDef | ContextDef)+;
             """)
         
-    def methods(self, grammar: Grammar):
+    def methods(self, grammar: Grammar) -> bool:
         @grammar.method(zc.NameDef)
         def add_symbols(self, scope, symbol_table): pass
         
-        # def add(self, name: str, element: Any, scope: Any, tag: Dict=None) -> str:
+        # def add(self, name: str, element: Any, scope: Any, tag: Dict=None) -> str; return True if we should be scope
         @grammar.method(zc.FeatureDef)
         def add_symbols(self, scope, symbol_table):
             feature = zc.Feature(name=self.name, alias=self.alias, parent=self.parent)
             symbol_table.add(self.name, feature, scope, alias=self.alias)
+        @grammar.method(zc.FeatureDef)
+        def is_scope(self): return True
 
     def test(self):
         test("feature_0", parse_code("", "FeatureDef"), """
@@ -191,7 +193,7 @@ class module_Features(LanguageModule):
 # Expressions
 
 class module_Expressions(LanguageModule):
-    def define(self, grammar: Grammar):
+    def syntax(self, grammar: Grammar):
         grammar.add("""
             Expression :=
             Constant < Expression := value:(<number> | <string>)
@@ -218,11 +220,12 @@ class module_Expressions(LanguageModule):
             return ""
     
         @grammar.method(zc.FunctionCall)
-        def resolve(self, symbol_table) -> str:
+        def resolve(self, symbol_table, scope) -> str:
+            log("resolve:", print_code_formatted(self))
             # first replace any variable names with variables
             for i, item in enumerate(self.items):
                 if isinstance(item, zc.FunctionCallWord):
-                    vars = symbol_table.find(item.word)
+                    vars = symbol_table.find(item.word, scope)
                     if len(vars) == 1 and isinstance(vars[0].element, zc.Variable):
                         log(log_green(f"replacing {item.word} with {vars[0]}"))
                         self.items[i] = zc.VariableRef(variable=vars[0])
@@ -231,9 +234,13 @@ class module_Expressions(LanguageModule):
             found_function = None
             for i, item in enumerate(self.items):
                 if isinstance(item, zc.FunctionCallWord):
-                    found = symbol_table.find(item.word)
+                    found = symbol_table.find(item.word, scope)
                     if len(found) == 0: return f"can't find {item.word}"
-                    elif len(found) > 1: return f"symbol clash: {item.word} => {found}"
+                    elif len(found) > 1:
+                        log("current scope", scope)
+                        for f in found:
+                            log(f.element, "defined in", f.scope, "matches" if f.scope==scope else "doesn't match")
+                        return f"symbol clash: {item.word} => {found}"
                     else:
                         func = found[0].element
                         if not isinstance(func, zc.Function): return f"{item.word} is not a function"
@@ -380,7 +387,7 @@ class module_Expressions(LanguageModule):
 # variables
 
 class module_Variables(LanguageModule):
-    def define(self, grammar: Grammar):
+    def syntax(self, grammar: Grammar):
         grammar.add("""
             Variable := type:Type& NameDef "=" value:Expression
             VariableDef < Component := ((type:Type& names:NameDef+,) | (names:NameDef+, ":" type:Type&)) ("=" value:Expression)?
@@ -476,7 +483,7 @@ class module_Variables(LanguageModule):
 # types
 
 class module_Types(LanguageModule):
-    def define(self, grammar: Grammar):
+    def syntax(self, grammar: Grammar):
         grammar.add("""
             Type := NameDef properties:Variable&* parents:Type&* children:Type&*
             TypeDef < Component := "type" NameDef rhs:TypeRhs
@@ -497,6 +504,8 @@ class module_Types(LanguageModule):
         def add_symbols(self, scope, symbol_table):
             type = zc.Type(name=self.name, alias=self.alias)
             symbol_table.add(self.name, type, scope, alias=self.alias)
+        @grammar.method(zc.TypeDef)    
+        def is_scope(self): return True
     
     def test(self):
         test("type_0", parse_code("type vec | vector", "TypeDef"), """
@@ -577,7 +586,7 @@ class module_Types(LanguageModule):
 # functions
 
 class module_Functions(LanguageModule):
-    def define(self, grammar: Grammar):
+    def syntax(self, grammar: Grammar):
         grammar.add("""
             Function := handle:<identifier> results:FunctionResults signature:FunctionSignature body:FunctionBody
             FunctionDef < Component := FunctionModifier results:FunctionResults? signature:FunctionSignature body:FunctionBody
@@ -622,6 +631,20 @@ class module_Functions(LanguageModule):
                     brace += ")_"
                     name += brace
             return name[:-1]
+        
+        @grammar.method(zc.FunctionSignature)
+        def untyped_handle(self) -> str:
+            name = ""
+            for item in self.elements:
+                if isinstance(item, zc.FunctionSignatureWord):
+                    name += str(item.word)
+                elif isinstance(item, zc.FunctionSignatureParams):
+                    name += "_"
+            return name       
+        
+        @grammar.method(zc.FunctionDef)
+        def short_name(self) -> str:
+            return self.signature.untyped_handle() if self.signature else ""
 
         @grammar.method(zc.FunctionDef)
         def add_symbols(self, scope, symbol_table):
@@ -638,6 +661,12 @@ class module_Functions(LanguageModule):
             else:
                 function = functions[0]
                 log(f"function {handle} exists already; extending")
+        @grammar.method(zc.FunctionDef)
+        def is_scope(self): return True
+
+        @grammar.method(zc.Function)
+        def short_name(self) -> str:
+            return self.signature.untyped_handle() if self.signature else ""
     
     def test(self):
         test("result_vars_1", parse_code("(a, b: int, k, l: float) =", "FunctionResults"), """
@@ -827,7 +856,7 @@ class module_Functions(LanguageModule):
 # tests
 
 class module_Tests(LanguageModule):
-    def define(self, grammar: Grammar):
+    def syntax(self, grammar: Grammar):
         grammar.add("""
         TestDef < Component := ">" lhs:Expression ("=>" rhs:Expression)?
         """)

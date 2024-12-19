@@ -54,11 +54,11 @@ class SymbolTable:
     def add_symbols(self, e: Entity, scope: Any):
         self.add_symbols_rec(e, scope)
 
-
     def add_symbols_rec(self, e: Entity, scope: Any):
         if hasattr(e, "add_symbols"):
             e.add_symbols(scope, self)
-            scope = e
+            if hasattr(e, "is_scope") and e.is_scope() == True:
+                scope = e
         elif self.add_symbols_for_entity(e, scope):
             scope = e
         for attr in vars(e):
@@ -71,7 +71,6 @@ class SymbolTable:
                         self.add_symbols_rec(item, scope)
 
     # this is actually a hack, but it's a quick way to avoid having to add a method to every named entities
-
     def add_symbols_for_entity(self, e: Entity, scope: Any) -> bool:
         added = False
         if hasattr(e, "name"):
@@ -92,11 +91,12 @@ class SymbolTable:
             out += "\n"
         return out
     
-    def resolve_symbols(self, e: Entity):
+    def resolve_symbols(self, e: Entity, scope: Any=None):
         if hasattr(e, "resolve"):
-            log(log_green(f"{e.__class__.__name__}.resolve"))
-            err = e.resolve(self)
+            err = e.resolve(self, scope)
             if err != "": log(log_red(f"{e.__class__.__name__}.resolve: {err}"))
+        if hasattr(e, "is_scope") and e.is_scope() == True:
+            scope = e
         for attr in vars(e):
             if attr == "_error": continue
             attr_type = Grammar.current.get_attribute_type(e.__class__, attr)
@@ -105,9 +105,9 @@ class SymbolTable:
             if isinstance(attr_value, List):
                 for item in attr_value:
                     if isinstance(item, Entity):
-                        self.resolve_symbols(item)
+                        self.resolve_symbols(item, scope)
             elif isinstance(attr_value, Entity):
-                self.resolve_symbols(attr_value)
+                self.resolve_symbols(attr_value, scope)
             elif isinstance(attr_value, Lex) and attr_type != "str":
                 log(log_green(f'{attr} = "{attr_value}" ({attr_type})'))
                 str_value = attr_value.val
