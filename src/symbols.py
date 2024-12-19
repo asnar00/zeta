@@ -45,7 +45,7 @@ class SymbolTable:
         return [item for item in self.symbols[name] if self.scope_can_see(scope, item.scope)]
     
     def scope_can_see(self, scope1: Any, scope2: Any) -> bool:
-        if scope1 is None: return True
+        if scope1 is None or scope2 is None: return True
         if hasattr(scope1, "inherits_from"):
             return scope1.inherits_from(scope2)
         return scope1 == scope2

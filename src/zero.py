@@ -235,7 +235,8 @@ class module_Expressions(LanguageModule):
             for i, item in enumerate(self.items):
                 if isinstance(item, zc.FunctionCallWord):
                     found = symbol_table.find(item.word, scope)
-                    if len(found) == 0: return f"can't find {item.word}"
+                    if len(found) == 0: 
+                        log(log_red(f"can't find {item.word}"))
                     elif len(found) > 1:
                         log("current scope", scope)
                         for f in found:
@@ -254,7 +255,7 @@ class module_Expressions(LanguageModule):
                             if found[0] != found_function or tag != (i_word + 1):
                                 return "mismatched word"
                             i_word = tag
-            log(log_green(f"found function {found_function.handle}"))
+            if found_function:log(log_green(f"found function {found_function.handle}"))
             return ""
 
     def test(self):
