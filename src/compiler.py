@@ -50,9 +50,9 @@ class Language:
         rule = Grammar.current.rule_named["Program"]
         cp.ast = parse_rule(rule, reader)
         cp.st = SymbolTable()
+        log(dbg_entity(cp.ast))
         log_clear()
         cp.st.add_symbols(cp.ast, None)
         log(cp.st.dbg())
         cp.st.resolve_symbols(cp.ast)
-        log_exit("done resolving")
         return cp

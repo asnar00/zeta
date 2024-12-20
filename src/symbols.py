@@ -57,11 +57,12 @@ class SymbolTable:
     def add_symbols_rec(self, e: Entity, scope: Any):
         if hasattr(e, "add_symbols"):
             e.add_symbols(scope, self)
-            if hasattr(e, "is_scope") and e.is_scope() == True:
-                scope = e
+            if hasattr(e, "get_scope"):
+                scope = e.get_scope()
         elif self.add_symbols_for_entity(e, scope):
             scope = e
         for attr in vars(e):
+            if attr.startswith("_"): continue # weeny-bit hacky; "_property" is a property added by a method, that wasn't in the original class def
             value = getattr(e, attr)
             if isinstance(value, Entity):
                 self.add_symbols_rec(value, scope)
@@ -95,8 +96,8 @@ class SymbolTable:
         if hasattr(e, "resolve"):
             err = e.resolve(self, scope)
             if err != "": log(log_red(f"{e.__class__.__name__}.resolve: {err}"))
-        if hasattr(e, "is_scope") and e.is_scope() == True:
-            scope = e
+        if hasattr(e, "get_scope"):
+            scope = e.get_scope()
         for attr in vars(e):
             if attr == "_error": continue
             attr_type = Grammar.current.get_attribute_type(e.__class__, attr)

@@ -56,9 +56,9 @@ class Constant(Expression):
         self.value: str = value
 
 class VariableRef(Expression):
-    def __init__(self, variable: 'Variable' =None):
+    def __init__(self, variables: 'List[Variable]' =None):
         super().__init__()
-        self.variable: Variable = variable        # ref
+        self.variables: List[Variable] = variables        # ref
 
 class Bracketed(Expression):
     def __init__(self, expression: 'Expression' =None):
@@ -88,6 +88,11 @@ class FunctionCallWord(FunctionCallItem):
     def __init__(self, word: 'str' =None):
         super().__init__()
         self.word: str = word
+
+class FunctionCallVariable(FunctionCallItem):
+    def __init__(self, variables: 'List[Variable]' =None):
+        super().__init__()
+        self.variables: List[Variable] = variables        # ref
 
 class FunctionCallArguments(FunctionCallItem):
     def __init__(self, arguments: 'List[FunctionCallArgument]' =None):

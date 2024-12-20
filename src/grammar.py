@@ -340,7 +340,7 @@ def split_terms(rhs: str) -> List[str]:
     return terms
 
 def analyse_decorators(term_str: str) -> Tuple[str, str, str, str]:
-    decs = "&?*+,;|"
+    decs = "&?*+,.;|"
     i_char = len(term_str)-1
     decorators = ""
     while i_char >= 0 and term_str[i_char] in decs:
@@ -354,7 +354,7 @@ def analyse_decorators(term_str: str) -> Tuple[str, str, str, str]:
     for ld in list_decs: 
         if ld in decorators: 
             dec = ld
-    seps = ",;|"
+    seps = ",;|."
     for s in seps:
         if s in decorators:
             sep = s

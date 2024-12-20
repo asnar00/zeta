@@ -32,17 +32,25 @@ feature Math
     type float > f32, f64
     type number > int, float
     on (number r) = (number a) + (number b)
-        emit("add r, a, b")
+        r = add(a, b)
     on (number r) = (number a) * (number b)
-        emit("mul r, a, b")
+        r = mul(a, b)
+    on (number r) = (number a) / (number b)
+        r = div(a, b)
 
 feature VectorMath extends Math
     type vector | vec = 
         number x, y, z = 0
     on (vec r) = (vec a) + (vec b)
         r = vec(a.x + b.x, a.y + b.y, a.z + b.z)
+    on (vec r) = (vec v) / (number n)
+        r = vec(v.x / n, v.y / n, v.z / n)
     on (number d) = (vec a) dot (vec b)
         d = a.x * b.x + a.y * b.y + a.z * b.z
+    on (number l) = length (vec a)
+        l = sqrt(a dot a)
+    on (vec n) = normalise (vec v)
+        n = v / length(v)
 
 context MyContext = Program, Hello, Goodbye, Math, VectorMath
 """
@@ -56,13 +64,7 @@ def test_zero():
     log_max_depth(8)
     zero.setup()
     code = s_test_program
-    ast, st = zero.compile(code)
-    log_clear()
-    #test_print_code(ast)
-    log(print_code_formatted(ast))
-    #log(dbg_entity(ast))
-    log("--------------------------------")
-    log(st.dbg())
+    program = zero.compile(code)
 
 #--------------------------------------------------------------------------------------------------
 # print ast as nicely formatted code
@@ -114,7 +116,7 @@ class module_Features(LanguageModule):
             feature = zc.Feature(name=self.name, alias=self.alias, parent=self.parent)
             symbol_table.add(self.name, feature, scope, alias=self.alias)
         @grammar.method(zc.FeatureDef)
-        def is_scope(self): return True
+        def get_scope(self): return self
 
     def test(self):
         test("feature_0", parse_code("", "FeatureDef"), """
@@ -197,13 +199,14 @@ class module_Expressions(LanguageModule):
         grammar.add("""
             Expression :=
             Constant < Expression := value:(<number> | <string>)
-            VariableRef < Expression := variable:Variable&
+            VariableRef < Expression := variables:Variable&+.
             Bracketed < Expression := "(" expression:Expression ")"
             FunctionCall < Expression := items:FunctionCallItem+
             FunctionCallItem :=
             FunctionCallConstant < FunctionCallItem := constant:Constant
             FunctionCallOperator < FunctionCallItem := operator:<operator>
             FunctionCallWord < FunctionCallItem := word:<identifier>
+            FunctionCallVariable < FunctionCallItem := variables:Variable&+.
             FunctionCallArguments < FunctionCallItem := "(" arguments:FunctionCallArgument+, ")"
             FunctionCallArgument := (argument:Variable& "=")? value:Expression
                     """)
@@ -212,23 +215,45 @@ class module_Expressions(LanguageModule):
         # function call must have at least one bracketed term or operator
         @grammar.method(zc.FunctionCall)
         def validate(self) -> str:
-            n_bracketed = 0; n_operators = 0
+            n_bracketed = 0; n_operators = 0; n_words = 0
             for item in self.items:
                 if isinstance(item, zc.FunctionCallArguments): n_bracketed += 1
-                if isinstance(item, zc.FunctionCallOperator): n_operators += 1
-            if n_bracketed == 0 and n_operators == 0: return "function call must have at least one argument or operation"
+                elif isinstance(item, zc.FunctionCallOperator): n_operators += 1
+                elif isinstance(item, zc.FunctionCallWord): n_words += 1
+            if n_bracketed == 0 and n_operators == 0 and (n_words < 2): return "function call must have at least one argument or operation, or be two or more words"
+            return ""
+    
+        @grammar.method(zc.FunctionCallVariable)
+        def validate(self) -> str:
+            if len(self.variables) < 2: return "function-call variable must have two or more names"
+            return ""
+        
+        @grammar.method(zc.FunctionCallVariable)
+        def resolve(self, symbol_table, scope):
+            log("resolve var:", print_code_formatted(self))
+            for name in self.variables:
+                vars = symbol_table.find(name, scope)
+                if len(vars) == 0: log(log_red(f"can't find {name}"))
+                elif len(vars) > 1: log(log_red(f"symbol clash: {name} => {vars}"))
+                else:
+                    var = vars[0].element
+                    if not isinstance(var, zc.Variable): log(log_red(f"{name} is not a variable"))
+                    else: 
+                        log(log_green(f"found {var} in {scope}"))
+                        var_type = var.type
+                        if var_type: scope = var_type
             return ""
     
         @grammar.method(zc.FunctionCall)
         def resolve(self, symbol_table, scope) -> str:
-            log("resolve:", print_code_formatted(self))
+            log("resolve fc:", print_code_formatted(self))
             # first replace any variable names with variables
             for i, item in enumerate(self.items):
                 if isinstance(item, zc.FunctionCallWord):
                     vars = symbol_table.find(item.word, scope)
                     if len(vars) == 1 and isinstance(vars[0].element, zc.Variable):
                         log(log_green(f"replacing {item.word} with {vars[0]}"))
-                        self.items[i] = zc.VariableRef(variable=vars[0])
+                        self.items[i] = zc.VariableRef(variables=[vars[0]])
             # now find a single function for all word/operators
             i_word = -1
             found_function = None
@@ -266,7 +291,15 @@ class module_Expressions(LanguageModule):
 
         test("expression_1", parse_code("a", "Expression"), """
             VariableRef
-                variable: Variable => a
+                variables: List[Variable]
+                    => a
+            """)
+        
+        test("expression_1a", parse_code("a.b", "Expression"), """
+            VariableRef
+                variables: List[Variable]
+                    => a
+                    => b
             """)
 
         test("expression_2", parse_code("a + b", "Expression"), """
@@ -278,6 +311,21 @@ class module_Expressions(LanguageModule):
                         operator: str = +
                     FunctionCallWord
                         word: str = b
+            """)
+        
+        test("expression_2a", parse_code("v.x + v.y", "Expression"), """
+            FunctionCall
+                items: List[FunctionCallItem]
+                    FunctionCallVariable
+                        variables: List[Variable]
+                            => v
+                            => x
+                    FunctionCallOperator
+                        operator: str = +
+                    FunctionCallVariable
+                        variables: List[Variable]
+                            => v
+                            => y
             """)
         
         test("parameter_0", parse_code("a = 1", "FunctionCallArgument"), """
@@ -401,6 +449,21 @@ class module_Variables(LanguageModule):
                 var = zc.Variable(type=self.type, name=name.name, alias=name.alias, value=self.value)
                 symbol_table.add(name.name, var, scope)
                 if name.alias: symbol_table.add(name.alias, var, scope)
+        @grammar.method(zc.VariableDef)
+        def resolve(self, symbol_table, scope):
+            for name in self.names:
+                var = symbol_table.find(name.name, scope)
+                if len(var) == 1: 
+                    var = var[0].element
+                    types = symbol_table.find(var.type)
+                    if len(types) == 0: return f"can't find type {var.type}"
+                    elif len(types) > 1: return f"symbol clash: {var.type} => {types}"
+                    else: 
+                        var.type = types[0].element
+                        log(log_green(f"resolved type of {name.name} to {var.type}"))
+                elif len(var) == 0: return f"can't find {name.name}"
+                else: return f"symbol clash: {name.name} => {var}"
+            return ""
 
     def test(self):
         test("variable_0", parse_code("int a", "VariableDef"), """
@@ -503,10 +566,21 @@ class module_Types(LanguageModule):
 
         @grammar.method(zc.TypeDef)
         def add_symbols(self, scope, symbol_table):
-            type = zc.Type(name=self.name, alias=self.alias)
-            symbol_table.add(self.name, type, scope, alias=self.alias)
+            existing_type_objects = symbol_table.find(self.name, scope)
+            if len(existing_type_objects) ==0:
+                type_object = zc.Type(name=self.name, alias=self.alias)
+                symbol_table.add(self.name, type_object, scope, alias=self.alias)
+                self._resolved_type = type_object
+                return ""
+            elif len(existing_type_objects) == 1:
+                self._resolved_type = existing_type_objects[0].element
+                return ""
+            else:
+                return f"symbol clash: {self.name} => {existing_type_objects}"
+
         @grammar.method(zc.TypeDef)    
-        def is_scope(self): return True
+        def get_scope(self):
+            return self._resolved_type or None
     
     def test(self):
         test("type_0", parse_code("type vec | vector", "TypeDef"), """
@@ -662,8 +736,9 @@ class module_Functions(LanguageModule):
             else:
                 function = functions[0]
                 log(f"function {handle} exists already; extending")
+
         @grammar.method(zc.FunctionDef)
-        def is_scope(self): return True
+        def get_scope(self): return self
 
         @grammar.method(zc.Function)
         def short_name(self) -> str:
@@ -867,7 +942,8 @@ class module_Tests(LanguageModule):
             TestDef
                 lhs: Expression
                     VariableRef
-                        variable: Variable => a
+                        variables: List[Variable]
+                            => a
                 rhs: Expression = None
         """)
 
@@ -875,7 +951,8 @@ class module_Tests(LanguageModule):
             TestDef
                 lhs: Expression
                     VariableRef
-                        variable: Variable => a
+                        variables: List[Variable]
+                            => a
                 rhs: Expression
                     !!! premature end (expected rhs:Expression, got 'None' at <eof>)
         """)
@@ -884,9 +961,11 @@ class module_Tests(LanguageModule):
             TestDef
                 lhs: Expression
                     VariableRef
-                        variable: Variable => a
+                        variables: List[Variable]
+                            => a
                 rhs: Expression
                     VariableRef
-                        variable: Variable => b
+                        variables: List[Variable]
+                            => b
         """)
 
