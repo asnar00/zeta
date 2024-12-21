@@ -2,6 +2,19 @@
 # scribblez
 "slow is smooth, smooth is fast"
 
+next: create a constructor from the typedef/struct.
+then: TypeRef, to handle char$ not found. should generate char not found.
+concrete types in the backend: => has to supply.
+we should really be generating a few backends in parallel, just because.
+we talked about typescript, but maybe it should be C or maybe even WASM.
+=> the less work we do the better. Both are good, but if we're going for risc-v, we should just go for a risc-v backend and stop fucking around.
+
+=> so then we need a dev board. Figure out the one you need for a drone.
+
+
+
+----
+
 new method is much nicer:
 - grammar writes a .py file containing just the class definitions (__init__ methods)
 - this gets forcibly re-imported, and the classes added into the rule system

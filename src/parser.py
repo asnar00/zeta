@@ -196,7 +196,7 @@ def merge_child(term: Term, child: Entity, parent: Entity|Lex|List):
             if hasattr(parent, attr):
                 if getattr(parent, attr) is not None:
                     log(log_red(f"parent attribute {attr} is already set to {getattr(parent, attr)}; conflict"))
-                    log(f"incidentially, child attr is: {getattr(child, attr)}")
+                    log(f"incidentally, child attr is: {getattr(child, attr)}")
                 else:
                     log(f"setting parent attribute {attr} to {getattr(child, attr)}")
                     setattr(parent, attr, getattr(child, attr))

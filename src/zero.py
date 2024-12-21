@@ -571,9 +571,13 @@ class module_Types(LanguageModule):
                 type_object = zc.Type(name=self.name, alias=self.alias)
                 symbol_table.add(self.name, type_object, scope, alias=self.alias)
                 self._resolved_type = type_object
+                if isinstance(self.rhs, zc.StructDef):
+                    type_object.properties = self.rhs.properties
                 return ""
             elif len(existing_type_objects) == 1:
                 self._resolved_type = existing_type_objects[0].element
+                if isinstance(self.rhs, zc.StructDef):
+                    type_object.properties += self.rhs.properties
                 return ""
             else:
                 return f"symbol clash: {self.name} => {existing_type_objects}"
