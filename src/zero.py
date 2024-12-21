@@ -11,6 +11,7 @@ import zero_classes as zc
 
 s_test_program = """
 feature Program
+    type char > u8
     type string | str = char$
     string out$
 
@@ -230,7 +231,6 @@ class module_Expressions(LanguageModule):
         
         @grammar.method(zc.FunctionCallVariable)
         def resolve(self, symbol_table, scope):
-            log("resolve var:", print_code_formatted(self))
             for name in self.variables:
                 vars = symbol_table.find(name, scope)
                 if len(vars) == 0: log(log_red(f"can't find {name}"))
@@ -248,7 +248,6 @@ class module_Expressions(LanguageModule):
     
         @grammar.method(zc.FunctionCall)
         def resolve(self, symbol_table, scope) -> str:
-            log("resolve fc:", print_code_formatted(self))
             # first replace any variable names with variables
             for i, item in enumerate(self.items):
                 if isinstance(item, zc.FunctionCallWord):
@@ -765,7 +764,7 @@ class module_Functions(LanguageModule):
                 for element in self.signature.elements:
                     if isinstance(element, zc.FunctionSignatureWord):
                         symbol_table.add(element.word, function, None, tag={"i_word": i_word})
-                        i_word += 1
+                    i_word += 1
             else:
                 function = functions[0]
                 log(f"function {handle} exists already; extending")

@@ -2,6 +2,20 @@
 # scribblez
 "slow is smooth, smooth is fast"
 
+constructors now work, apparently.
+next is to be able to add brackets into a complex functioncall, to make everything work.
+i.e. proper functioncall.resolve.
+but then we're good to go, I think.
+
+for code generation, boil things down to a simple Backend class, which has to define certain basic things, such as add(), sub(), mul(), div(), etc. The "virtual machine" so to speak. And then each backend implements those with different 'emit()' calls.
+
+For some reason I'm quite liking the idea of a python backend as the first thing to try.
+Just because we're very at home in it right now.
+
+
+
+-
+
 next: create a constructor from the typedef/struct.
 then: TypeRef, to handle char$ not found. should generate char not found.
 concrete types in the backend: => has to supply.
