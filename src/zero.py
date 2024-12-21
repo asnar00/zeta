@@ -449,12 +449,14 @@ class module_Variables(LanguageModule):
                 var = zc.Variable(type=self.type, name=name.name, alias=name.alias, value=self.value)
                 symbol_table.add(name.name, var, scope)
                 if name.alias: symbol_table.add(name.alias, var, scope)
+
         @grammar.method(zc.VariableDef)
         def resolve(self, symbol_table, scope):
             for name in self.names:
                 var = symbol_table.find(name.name, scope)
                 if len(var) == 1: 
                     var = var[0].element
+                    if not isinstance(var.type, Lex): continue
                     types = symbol_table.find(var.type)
                     if len(types) == 0: return f"can't find type {var.type}"
                     elif len(types) > 1: return f"symbol clash: {var.type} => {types}"
@@ -569,18 +571,28 @@ class module_Types(LanguageModule):
             existing_type_objects = symbol_table.find(self.name, scope)
             if len(existing_type_objects) ==0:
                 type_object = zc.Type(name=self.name, alias=self.alias)
-                symbol_table.add(self.name, type_object, scope, alias=self.alias)
+                symbol_table.add(self.name, type_object, None, alias=self.alias)
                 self._resolved_type = type_object
                 if isinstance(self.rhs, zc.StructDef):
                     type_object.properties = self.rhs.properties
+                    make_constructor(type_object)
                 return ""
             elif len(existing_type_objects) == 1:
                 self._resolved_type = existing_type_objects[0].element
                 if isinstance(self.rhs, zc.StructDef):
                     type_object.properties += self.rhs.properties
+                    make_constructor(type_object)
                 return ""
             else:
                 return f"symbol clash: {self.name} => {existing_type_objects}"
+            
+        @log_indent
+        def make_constructor(type_object: zc.Type):
+            log(print_code(type_object.properties))
+            # next: build the constructor function
+            #  on (vec v) = vec(properties) -- be sure to copy the properties, not assign
+            #      v.x = x; v.y = y; v.z = z; etc.
+            # and then plumb that into the symbol table
 
         @grammar.method(zc.TypeDef)    
         def get_scope(self):
