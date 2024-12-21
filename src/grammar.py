@@ -671,8 +671,8 @@ def dbg_entity(e: Entity|List[Entity], indent: int=0) ->str:
                 continue
             val = getattr(e, attr)
             type_name = Grammar.current.get_attribute_type(e.__class__, attr)
-            if val == None or isinstance(val, Lex) or (isinstance(val, List) and len(val)==0):
-                ref = ">" if isinstance(val, Lex) and type_name != "str" else ""
+            if val == None or (isinstance(val, Lex) or isinstance(val, str))or (isinstance(val, List) and len(val)==0):
+                ref = ">" if (isinstance(val, Lex) or isinstance(val, str)) and type_name != "str" else ""
                 out += f"{start}    {attr}: {type_name.replace("&", "")} ={ref} {val}\n"
             else:
                 if isinstance(val, list) and "List[" not in type_name:

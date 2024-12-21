@@ -241,6 +241,8 @@ class module_Expressions(LanguageModule):
                     else: 
                         log(log_green(f"found {var} in {scope}"))
                         var_type = var.type
+                        if isinstance(var_type, Lex): 
+                            var_type = symbol_table.find(var_type, of_type=zc.Type)[0].element
                         if var_type: scope = var_type
             return ""
     
@@ -259,7 +261,7 @@ class module_Expressions(LanguageModule):
             found_function = None
             for i, item in enumerate(self.items):
                 if isinstance(item, zc.FunctionCallWord):
-                    found = symbol_table.find(item.word, scope)
+                    found = symbol_table.find(item.word, scope, of_type=zc.Function)
                     if len(found) == 0: 
                         log(log_red(f"can't find {item.word}"))
                     elif len(found) > 1:
@@ -457,7 +459,7 @@ class module_Variables(LanguageModule):
                 if len(var) == 1: 
                     var = var[0].element
                     if not isinstance(var.type, Lex): continue
-                    types = symbol_table.find(var.type)
+                    types = symbol_table.find(var.type, of_type=zc.Type)
                     if len(types) == 0: return f"can't find type {var.type}"
                     elif len(types) > 1: return f"symbol clash: {var.type} => {types}"
                     else: 
@@ -575,25 +577,40 @@ class module_Types(LanguageModule):
                 self._resolved_type = type_object
                 if isinstance(self.rhs, zc.StructDef):
                     type_object.properties = self.rhs.properties
-                    make_constructor(type_object)
+                    make_constructor(type_object, symbol_table)
                 return ""
             elif len(existing_type_objects) == 1:
                 self._resolved_type = existing_type_objects[0].element
                 if isinstance(self.rhs, zc.StructDef):
                     type_object.properties += self.rhs.properties
-                    make_constructor(type_object)
+                    make_constructor(type_object, symbol_table)
                 return ""
             else:
                 return f"symbol clash: {self.name} => {existing_type_objects}"
             
-        @log_indent
-        def make_constructor(type_object: zc.Type):
-            log(print_code(type_object.properties))
-            # next: build the constructor function
-            #  on (vec v) = vec(properties) -- be sure to copy the properties, not assign
-            #      v.x = x; v.y = y; v.z = z; etc.
-            # and then plumb that into the symbol table
-
+        #@log_indent
+        def make_constructor(type_object: zc.Type, symbol_table: SymbolTable):
+            results = zc.FunctionResults(
+                results = [zc.FunctionResultVariableDef(type=type_object.name, names=[zc.NameDef(name="r")])], 
+                assign_op = "="
+            )
+            signature = zc.FunctionSignature(elements=[
+                zc.FunctionSignatureWord(word=type_object.name),
+                zc.FunctionSignatureParams(params=type_object.properties)
+            ])
+            statements = []
+            for prop in type_object.properties:
+                for name in prop.names:
+                    #log(f"name: {name.name}")
+                    out_var = zc.ResultVariableRef(variables=["r", name.name])
+                    lhs = zc.StatementLhs(variables=[out_var], assign_op="=")
+                    rhs = zc.VariableRef(variables=[name])
+                    statements.append(zc.Statement(lhs=lhs, rhs=rhs))
+            body = zc.FunctionBody(statements=statements)
+            func = zc.Function(handle=str(type_object.name)+"_", results=results, signature=signature, body=body)
+            #log(dbg_entity(func))
+            symbol_table.replace(name=str(type_object.name), element=func, scope=None, alias=str(type_object.alias), tag={"i_word": 0})
+        
         @grammar.method(zc.TypeDef)    
         def get_scope(self):
             return self._resolved_type or None
@@ -682,7 +699,7 @@ class module_Functions(LanguageModule):
             Function := handle:<identifier> results:FunctionResults signature:FunctionSignature body:FunctionBody
             FunctionDef < Component := FunctionModifier results:FunctionResults? signature:FunctionSignature body:FunctionBody
             FunctionModifier := modifier:("on" | "before" | "after" | "replace")
-            FunctionResults := "(" results:FunctionResultVariableDef+, ")" assignOp:("=" | "<<")
+            FunctionResults := "(" results:FunctionResultVariableDef+, ")" assign_op:("=" | "<<")
             FunctionResultVariableDef := ((type:Type& names:NameDef+,) | (names:NameDef+, ":" type:Type&))
             FunctionSignature := elements:FunctionSignatureElement+
             FunctionSignatureElement :=
@@ -690,9 +707,9 @@ class module_Functions(LanguageModule):
             FunctionSignatureParams < FunctionSignatureElement := "(" params:VariableDef+, ")"
             FunctionBody := "{" statements:Statement*; "}"
             Statement := (lhs:StatementLhs)? rhs:Expression
-            StatementLhs := variables:ResultVariable+, assignOp:("=" | "<<") 
+            StatementLhs := variables:ResultVariable+, assign_op:("=" | "<<") 
             ResultVariable :=
-            ResultVariableRef < ResultVariable := variable:Variable&
+            ResultVariableRef < ResultVariable := VariableRef
             ResultVariableDef < ResultVariable := ((type:Type& NameDef) | (NameDef ":" type:Type&))
         """)
 
@@ -782,7 +799,7 @@ class module_Functions(LanguageModule):
                             NameDef
                                 name: str = l
                                 alias: str = None
-                assignOp: str = =
+                assign_op: str = =
             """)
     
         test("result_vars_2", parse_code("(int a, b, float k) <<", "FunctionResults"), """
@@ -803,7 +820,7 @@ class module_Functions(LanguageModule):
                             NameDef
                                 name: str = k
                                 alias: str = None
-                assignOp: str = <<
+                assign_op: str = <<
             """)
         
         test("param_group_0", parse_code("(int a, b=0, float k=0)", "FunctionSignatureParams"), """
@@ -888,7 +905,7 @@ class module_Functions(LanguageModule):
                                     NameDef
                                         name: str = r
                                         alias: str = None
-                        assignOp: str = =
+                        assign_op: str = =
                 signature: FunctionSignature
                     FunctionSignature
                         elements: List[FunctionSignatureElement]
@@ -914,8 +931,9 @@ class module_Functions(LanguageModule):
                                     StatementLhs
                                         variables: List[ResultVariable]
                                             ResultVariableRef
-                                                variable: Variable => r
-                                        assignOp: str = =
+                                                variables: List[Variable]
+                                                    => r
+                                        assign_op: str = =
                                 rhs: Expression
                                     FunctionCall
                                         items: List[FunctionCallItem]

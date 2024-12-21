@@ -187,10 +187,10 @@ class FunctionModifier(Entity):
         self.modifier: str = modifier
 
 class FunctionResults(Entity):
-    def __init__(self, results: 'List[FunctionResultVariableDef]' =None, assignOp: 'str' =None):
+    def __init__(self, results: 'List[FunctionResultVariableDef]' =None, assign_op: 'str' =None):
         super().__init__()
         self.results: List[FunctionResultVariableDef] = results
-        self.assignOp: str = assignOp
+        self.assign_op: str = assign_op
 
 class FunctionResultVariableDef(Entity):
     def __init__(self, type: 'Type' =None, names: 'List[NameDef]' =None):
@@ -229,19 +229,19 @@ class Statement(Entity):
         self.rhs: Expression = rhs
 
 class StatementLhs(Entity):
-    def __init__(self, variables: 'List[ResultVariable]' =None, assignOp: 'str' =None):
+    def __init__(self, variables: 'List[ResultVariable]' =None, assign_op: 'str' =None):
         super().__init__()
         self.variables: List[ResultVariable] = variables
-        self.assignOp: str = assignOp
+        self.assign_op: str = assign_op
 
 class ResultVariable(Entity):
     def __init__(self, ):
         super().__init__()
 
 class ResultVariableRef(ResultVariable):
-    def __init__(self, variable: 'Variable' =None):
+    def __init__(self, variables: 'List[Variable]' =None):
         super().__init__()
-        self.variable: Variable = variable        # ref
+        self.variables: List[Variable] = variables        # ref
 
 class ResultVariableDef(ResultVariable):
     def __init__(self, type: 'Type' =None, name: 'str' =None, alias: 'str' =None):

@@ -25,7 +25,7 @@ class SymbolTable:
     def __init__(self):
         self.symbols = {}   # name.scope_type.scope_id => { element, tag }
     
-    def add(self, name: str, element: Any, scope: Any, alias=None, tag: Dict=None) -> str:
+    def add(self, name: str, element: Any, scope: Any, alias=None, tag: Dict=None):
         if name is None: return
         if isinstance(name, Lex): name = name.val
         item = SymbolItem(scope, element, tag)
@@ -34,15 +34,37 @@ class SymbolTable:
             if isinstance(alias, Lex): alias = alias.val
             self.add_item(alias, item)
 
+    def replace(self, name: str, element: Any, scope: Any, alias=None, tag: Dict=None):
+        if name is None: return
+        if isinstance(name, Lex): name = name.valitem = SymbolItem(scope, element, tag)
+        item = SymbolItem(scope, element, tag)
+        self.replace_item(name, item)
+        if alias != None: 
+            if isinstance(alias, Lex): alias = alias.val
+            self.replace_item(alias, item)
+
     def add_item(self, name: str, item: SymbolItem):
         if not name in self.symbols: self.symbols[name] = []
         if item not in self.symbols[name]:
             self.symbols[name] = [item] + self.symbols[name] # add to start; most recent takes precedence
 
-    def find(self, name: str|Lex, scope: Any|None=None) -> List[SymbolItem]:
+    def replace_item(self, name: str, item: SymbolItem):
+        if not name in self.symbols: self.add_item(name, item)
+        list = self.symbols[name]
+        # find list-item whose .element is same type as item.element; remove it
+        for i in range(len(list)):
+            if list[i].element == item.element:
+                list.pop(i)
+                break
+        list.insert(0, item)
+
+    def find(self, name: str|Lex, scope: Any|None=None, of_type: Any|None=None) -> List[SymbolItem]:
         if isinstance(name, Lex): name = name.val
         if not name in self.symbols: return []
-        return [item for item in self.symbols[name] if self.scope_can_see(scope, item.scope)]
+        result= [item for item in self.symbols[name] if self.scope_can_see(scope, item.scope)]
+        if of_type is not None:
+            result = [item for item in result if isinstance(item.element, of_type)]
+        return result
     
     def scope_can_see(self, scope1: Any, scope2: Any) -> bool:
         if scope1 is None or scope2 is None: return True
