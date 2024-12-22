@@ -2,6 +2,17 @@
 # scribblez
 "slow is smooth, smooth is fast"
 
+Ok so the next big job is function-call / operation parsing.
+I *think* it's actually pretty easy: just write a function called "embracket" which replaces sequences with Bracketed() items, using operator precedence, and using type signatures.
+=> need to add return types to the long_handle we compute
+=> or key the function off its return type signature.
+=> but this is the heart of the zero type system, so it's pretty important.
+=> so let's take it slow
+=> once it's working, we can look at how to tidy up the code.
+
+
+-----
+
 constructors now work, apparently.
 need to do resolution on type parent/child => 
 next is to be able to add brackets into a complex functioncall, to make everything work.

@@ -58,6 +58,7 @@ feature VectorMath extends Math
         n = v / length(v)
 
 feature Backend
+    type bit = 0 | 1
     type u8, u16, u32, u64
     type i8, i16, i32, i64
     type f16, f32, f64
@@ -692,10 +693,10 @@ class module_Types(LanguageModule):
                         resolved_children.append(found_types[0].element)
                 self._resolved_types[0].children = resolved_children
             elif isinstance(self.rhs, zc.TypeEnumDef):
-                if self._resolved_type.options == None:
-                    self._resolved_type.options = self.rhs.options
+                if self._resolved_types[0].options == None:
+                    self._resolved_types[0].options = self.rhs.options
                 else:
-                    self._resolved_type.options += self.rhs.options
+                    self._resolved_types[0].options += self.rhs.options
             return ""
     
     def test(self):
