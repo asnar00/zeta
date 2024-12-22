@@ -75,16 +75,16 @@ feature Backend
 context MyContext = Program, Hello, Goodbye, Math, VectorMath, Backend
 """
 
+# this is just scribble: but it's a nice way to define dependent types eg. i32, i64, etc
 s_test_concrete = """
 feature ConcreteMath extends Math
     type bit = 0 | 1
-    type sign = -1 | +1
     type u(n) = bit[n]
     type i(n) =
-        sign s
+        bit sign
         u(n-1) val
     type ieee(e, m) =
-        sign s
+        bit sign
         u(e-1) exponent
         u(m-1) mantissa
     type f16 = ieee(5, 10)
