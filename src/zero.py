@@ -33,11 +33,15 @@ feature Math
     type float > f32, f64
     type number > int, float
     on (number r) = (number a) + (number b)
-        r = add(a, b)
+        r = _add(a, b)
+    on (number r) = (number a) - (number b)
+        r = _sub(a, b)
     on (number r) = (number a) * (number b)
-        r = mul(a, b)
+        r = _mul(a, b)
     on (number r) = (number a) / (number b)
-        r = div(a, b)
+        r = _div(a, b)
+    on (number r) = sqrt(number a)
+        r = _sqrt(a)
 
 feature VectorMath extends Math
     type vector | vec = 
@@ -53,7 +57,39 @@ feature VectorMath extends Math
     on (vec n) = normalise (vec v)
         n = v / length(v)
 
-context MyContext = Program, Hello, Goodbye, Math, VectorMath
+feature Backend
+    type u8, u16, u32, u64
+    type i8, i16, i32, i64
+    type f16, f32, f64
+    on (number r) = _add(number a, b)
+        pass
+    on (number r) = _sub(number a, b)
+        pass
+    on (number r) = _mul(number a, b)
+        pass
+    on (number r) = _div(number a, b)
+        pass
+    on (number r) = _sqrt(number a)
+        pass
+
+context MyContext = Program, Hello, Goodbye, Math, VectorMath, Backend
+"""
+
+s_test_concrete = """
+feature ConcreteMath extends Math
+    type bit = 0 | 1
+    type sign = -1 | +1
+    type u(n) = bit[n]
+    type i(n) =
+        sign s
+        u(n-1) val
+    type ieee(e, m) =
+        sign s
+        u(e-1) exponent
+        u(m-1) mantissa
+    type f16 = ieee(5, 10)
+    type f32 = ieee(8, 23)
+    type f64 = ieee(11, 52)
 """
 
 @this_is_the_test
@@ -231,6 +267,7 @@ class module_Expressions(LanguageModule):
         
         @grammar.method(zc.FunctionCallVariable)
         def resolve(self, symbol_table, scope):
+            log(f"fnc.resolve: {print_code_formatted(self)}")
             for name in self.variables:
                 vars = symbol_table.find(name, scope)
                 if len(vars) == 0: log(log_red(f"can't find {name}"))
@@ -248,6 +285,7 @@ class module_Expressions(LanguageModule):
     
         @grammar.method(zc.FunctionCall)
         def resolve(self, symbol_table, scope) -> str:
+            log(f"fn.resolve: {print_code_formatted(self)}")
             # first replace any variable names with variables
             for i, item in enumerate(self.items):
                 if isinstance(item, zc.FunctionCallWord):
@@ -256,8 +294,9 @@ class module_Expressions(LanguageModule):
                         log(log_green(f"replacing {item.word} with {vars[0]}"))
                         self.items[i] = zc.VariableRef(variables=[vars[0]])
             # now find a single function for all word/operators
-            i_word = -1
             found_function = None
+            i_word = -1
+            i_item_last = -1
             for i, item in enumerate(self.items):
                 if isinstance(item, zc.FunctionCallWord):
                     found = symbol_table.find(item.word, scope, of_type=zc.Function)
@@ -270,18 +309,17 @@ class module_Expressions(LanguageModule):
                         return f"symbol clash: {item.word} => {found}"
                     else:
                         func = found[0].element
-                        if not isinstance(func, zc.Function): return f"{item.word} is not a function"
-                        tag = found[0].tag["i_word"]
+                        tag_i_word = found[0].tag["i_word"]
                         if found_function is None:
                             found_function = func
-                            if tag != 0: return "starting with nonzero tag"
-                            i_word = 0
+                            i_word = tag_i_word
+                            i_item_last = i
                         else:
-                            tag = found[0].tag["i_word"]
-                            if found[0] != found_function or tag != (i_word + 1):
+                            if func != found_function or tag_i_word != (i_word + (i - i_item_last)):
                                 return "mismatched word"
-                            i_word = tag
-            if found_function:log(log_green(f"found function {found_function.handle}"))
+                            i_word = tag_i_word
+                            i_item_last = i
+            if found_function:log(log_green(f"resolved function {found_function.handle}"))
             return ""
 
     def test(self):
@@ -453,6 +491,7 @@ class module_Variables(LanguageModule):
 
         @grammar.method(zc.VariableDef)
         def resolve(self, symbol_table, scope):
+            log(f"variableDef.resolve: {print_code_formatted(self)}")
             for name in self.names:
                 var = symbol_table.find(name.name, scope)
                 if len(var) == 1: 
@@ -552,14 +591,17 @@ class module_Variables(LanguageModule):
 class module_Types(LanguageModule):
     def syntax(self, grammar: Grammar):
         grammar.add("""
-            Type := NameDef properties:Variable&* parents:Type&* children:Type&*
-            TypeDef < Component := "type" NameDef rhs:TypeRhs
+            Type := NameDef properties:Variable&* parents:Type&* children:Type&* options:<identifier>+
+            TypeDef < Component := "type" names:NameDef+, rhs:TypeRhs?
             TypeRhs :=
             TypeAlias < TypeRhs := "=" type:Type&
             StructDef < TypeRhs := "=" "{" properties:VariableDef+; "}"
             TypeParentDef < TypeRhs := "<" parents:Type&+,
             TypeChildrenDef < TypeRhs := ">" children:Type&+,
-            TypeEnumDef < TypeRhs := "=" options:<identifier>+|
+            TypeEnumDef < TypeRhs := "=" options:EnumOption+|
+            EnumOption := 
+            EnumOptionId < EnumOption := val:<identifier>
+            EnumOptionNumber < EnumOption := val:<number>
         """)
 
     def methods(self, grammar: Grammar):
@@ -569,23 +611,24 @@ class module_Types(LanguageModule):
 
         @grammar.method(zc.TypeDef)
         def add_symbols(self, scope, symbol_table):
-            existing_type_objects = symbol_table.find(self.name, scope)
-            if len(existing_type_objects) ==0:
-                type_object = zc.Type(name=self.name, alias=self.alias)
-                symbol_table.add(self.name, type_object, None, alias=self.alias)
-                self._resolved_type = type_object
-                if isinstance(self.rhs, zc.StructDef):
-                    type_object.properties = self.rhs.properties
-                    make_constructor(type_object, symbol_table)
-                return ""
-            elif len(existing_type_objects) == 1:
-                self._resolved_type = existing_type_objects[0].element
-                if isinstance(self.rhs, zc.StructDef):
-                    type_object.properties += self.rhs.properties
-                    make_constructor(type_object, symbol_table)
-                return ""
-            else:
-                return f"symbol clash: {self.name} => {existing_type_objects}"
+            self._resolved_types = []
+            for name in self.names:
+                existing_type_objects = symbol_table.find(name.name, scope)
+                if len(existing_type_objects) == 0:
+                    type_object = zc.Type(name=name.name, alias=name.alias)
+                    symbol_table.add(name.name, type_object, None, alias=name.alias)
+                    self._resolved_types.append(type_object)
+                    if isinstance(self.rhs, zc.StructDef):
+                        type_object.properties = self.rhs.properties
+                        make_constructor(type_object, symbol_table)
+                elif len(existing_type_objects) == 1:
+                    self._resolved_types.append(existing_type_objects[0].element)
+                    if isinstance(self.rhs, zc.StructDef):
+                        type_object.properties += self.rhs.properties
+                        make_constructor(type_object, symbol_table)
+                else:
+                    log(log_red(f"symbol clash: {self.name} => {existing_type_objects}"))       
+            return ""
             
         #@log_indent
         def make_constructor(type_object: zc.Type, symbol_table: SymbolTable):
@@ -612,21 +655,65 @@ class module_Types(LanguageModule):
         
         @grammar.method(zc.TypeDef)    
         def get_scope(self):
-            return self._resolved_type or None
+            return self._resolved_types[0] or None
+        
+        @grammar.method(zc.TypeDef)
+        def resolve(self, symbol_table, scope):
+            log(f"typeDef.resolve:\n{print_code_formatted(self)}")
+            log(f"resolved types: {self._resolved_types}")
+            if isinstance(self.rhs, zc.TypeAlias):
+                type_ref = str(self.rhs.type)
+                ref = ""
+                if type_ref.endswith("$"):
+                    ref = "$"
+                    type_ref = type_ref[:-1]
+                types = symbol_table.find(type_ref, of_type=zc.Type)
+                log(f"found {types}")
+                if len(types) == 1:
+                    self.rhs.type = types[0].element
+                    self._resolved_types[0]._alias_type = types[0].element
+                    self._resolved_types[0]._alias_modifier = ref
+                    log(log_green(f"resolved alias {type_ref} to {self._resolved_types[0]._alias_type}"))
+                elif len(types) == 0:
+                    log(log_red(f"can't find {type_ref}"))
+                else:
+                    log(log_red(f"symbol clash: {type_ref} => {types}"))
+            elif isinstance(self.rhs, zc.StructDef):
+                log("struct")
+            elif isinstance(self.rhs, zc.TypeParentDef):
+                pass
+            elif isinstance(self.rhs, zc.TypeChildrenDef):
+                resolved_children = []
+                for child in self.rhs.children:
+                    found_types = symbol_table.find(child, of_type=zc.Type)
+                    if len(found_types) == 0: log(log_red(f"can't find {child}"))
+                    elif len(found_types) > 1: log(log_red(f"symbol clash: {child} => {found_types}"))
+                    else:
+                        resolved_children.append(found_types[0].element)
+                self._resolved_types[0].children = resolved_children
+            elif isinstance(self.rhs, zc.TypeEnumDef):
+                if self._resolved_type.options == None:
+                    self._resolved_type.options = self.rhs.options
+                else:
+                    self._resolved_type.options += self.rhs.options
+            return ""
     
     def test(self):
         test("type_0", parse_code("type vec | vector", "TypeDef"), """
-        TypeDef
-            name: str = vec
-            alias: str = vector
-            rhs: TypeRhs
-                !!! premature end (expected rhs:TypeRhs, got 'None' at <eof>) 
+            TypeDef
+                names: List[NameDef]
+                    NameDef
+                        name: str = vec
+                        alias: str = vector
+                rhs: TypeRhs = None
             """)
     
         test("type_1", parse_code("type vec | vector = { x, y, z: number =0 }", "TypeDef"), """
             TypeDef
-                name: str = vec
-                alias: str = vector
+                names: List[NameDef]
+                    NameDef
+                        name: str = vec
+                        alias: str = vector
                 rhs: TypeRhs
                     StructDef
                         properties: List[VariableDef]
@@ -649,8 +736,10 @@ class module_Types(LanguageModule):
         
         test("type_2", parse_code("type int > i8, i16", "TypeDef"), """
             TypeDef
-                name: str = int
-                alias: str = None
+                names: List[NameDef]
+                    NameDef
+                        name: str = int
+                        alias: str = None
                 rhs: TypeRhs
                     TypeChildrenDef
                         children: List[Type]
@@ -660,8 +749,10 @@ class module_Types(LanguageModule):
         
         test("type_3", parse_code("type offset < vector", "TypeDef"), """
             TypeDef
-                name: str = offset
-                alias: str = None
+                names: List[NameDef]
+                    NameDef
+                        name: str = offset
+                        alias: str = None
                 rhs: TypeRhs
                     TypeParentDef
                         parents: List[Type]
@@ -670,20 +761,41 @@ class module_Types(LanguageModule):
         
         test("type_4", parse_code("type evil = no | yes | maybe", "TypeDef"), """
             TypeDef
-                name: str = evil
-                alias: str = None
+                names: List[NameDef]
+                    NameDef
+                        name: str = evil
+                        alias: str = None
                 rhs: TypeRhs
                     TypeEnumDef
-                        options: List[str]
-                            no
-                            yes
-                            maybe
+                        options: List[EnumOption]
+                            EnumOptionId
+                                val: str = no
+                            EnumOptionId
+                                val: str = yes
+                            EnumOptionId
+                                val: str = maybe
+            """)
+        test("type_4a", parse_code("type bit = 0 | 1", "TypeDef"), """
+            TypeDef
+                names: List[NameDef]
+                    NameDef
+                        name: str = bit
+                        alias: str = None
+                rhs: TypeRhs
+                    TypeEnumDef
+                        options: List[EnumOption]
+                            EnumOptionNumber
+                                val: str = 0
+                            EnumOptionNumber
+                                val: str = 1
             """)
         
         test("type_5", parse_code("type str | string = char$", "TypeDef"), """
             TypeDef
-                name: str = str
-                alias: str = string
+                names: List[NameDef]
+                    NameDef
+                        name: str = str
+                        alias: str = string
                 rhs: TypeRhs
                     TypeAlias
                         type: Type => char$

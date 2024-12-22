@@ -121,19 +121,19 @@ class VariableDef(Component):
         self.value: Expression = value
 
 class Type(Entity):
-    def __init__(self, name: 'str' =None, alias: 'str' =None, properties: 'List[Variable]' =None, parents: 'List[Type]' =None, children: 'List[Type]' =None):
+    def __init__(self, name: 'str' =None, alias: 'str' =None, properties: 'List[Variable]' =None, parents: 'List[Type]' =None, children: 'List[Type]' =None, options: 'List[str]' =None):
         super().__init__()
         self.name: str = name
         self.alias: str = alias
         self.properties: List[Variable] = properties        # ref
         self.parents: List[Type] = parents        # ref
         self.children: List[Type] = children        # ref
+        self.options: List[str] = options
 
 class TypeDef(Component):
-    def __init__(self, name: 'str' =None, alias: 'str' =None, rhs: 'TypeRhs' =None):
+    def __init__(self, names: 'List[NameDef]' =None, rhs: 'TypeRhs' =None):
         super().__init__()
-        self.name: str = name
-        self.alias: str = alias
+        self.names: List[NameDef] = names
         self.rhs: TypeRhs = rhs
 
 class TypeRhs(Entity):
@@ -161,9 +161,23 @@ class TypeChildrenDef(TypeRhs):
         self.children: List[Type] = children        # ref
 
 class TypeEnumDef(TypeRhs):
-    def __init__(self, options: 'List[str]' =None):
+    def __init__(self, options: 'List[EnumOption]' =None):
         super().__init__()
-        self.options: List[str] = options
+        self.options: List[EnumOption] = options
+
+class EnumOption(Entity):
+    def __init__(self, ):
+        super().__init__()
+
+class EnumOptionId(EnumOption):
+    def __init__(self, val: 'str' =None):
+        super().__init__()
+        self.val: str = val
+
+class EnumOptionNumber(EnumOption):
+    def __init__(self, val: 'str' =None):
+        super().__init__()
+        self.val: str = val
 
 class Function(Entity):
     def __init__(self, handle: 'str' =None, results: 'FunctionResults' =None, signature: 'FunctionSignature' =None, body: 'FunctionBody' =None):

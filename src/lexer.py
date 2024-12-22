@@ -166,10 +166,10 @@ def lexer(source: Source) -> List[Lex]:
 def naive_lexer(source: Source) -> List[Lex]:
     ls = []
     specs = [ ('number', r'\d+(\.\d*)?'),                           # integer or decimal number
-                ('identifier', r'[A-Za-z_][A-Za-z0-9_$\[\]]*'),     # identifiers
+                ('identifier', r'[A-Za-z_][A-Za-z0-9_$]*'),     # identifiers
                 ('string', r'"(?:\\.|[^"\\])*"'),                   # string literals with support for escaped quotes
-                ('operator', r'[-+=%^<>*/?!|&#\\]{1,2}'),          # operators, and double-operators
-                ('punctuation', r'[(){}\[\].,;:]'),                  # punctuation
+                ('operator', r'[-+=%^<>*/?!|&#\\]{1,2}'),           # operators, and double-operators
+                ('punctuation', r'[(){}\[\].,;:]'),                 # punctuation
                 ('newline', r'(^[ ]+)|(\n[ ]*)'),                   # line-start plus 0 or more spaces
                 ('whitespace', r'[ ]+')]                            # spaces
     patterns = '|'.join('(?P<%s>%s)' % pair for pair in specs)

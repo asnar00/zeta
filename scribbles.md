@@ -3,6 +3,7 @@
 "slow is smooth, smooth is fast"
 
 constructors now work, apparently.
+need to do resolution on type parent/child => 
 next is to be able to add brackets into a complex functioncall, to make everything work.
 i.e. proper functioncall.resolve.
 but then we're good to go, I think.

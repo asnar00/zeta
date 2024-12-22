@@ -132,13 +132,13 @@ class SymbolTable:
             elif isinstance(attr_value, Entity):
                 self.resolve_symbols(attr_value, scope)
             elif isinstance(attr_value, Lex) and attr_type != "str":
-                log(log_green(f'{attr} = "{attr_value}" ({attr_type})'))
+                log(f'{attr} = "{attr_value}" ({attr_type})')
                 str_value = attr_value.val
                 found = self.find(str_value)
                 if len(found) == 0:
                     log(log_red(f"can't find {attr_value}"))
                 else:
-                    log(log_green(f"found {found}"))
+                    log(f"found {found}")
             
         
     
