@@ -84,8 +84,8 @@ feature ConcreteMath extends Math
         u(n-1) val
     type ieee(e, m) =
         bit sign
-        u(e-1) exponent
-        u(m-1) mantissa
+        u(e) exponent
+        u(m) mantissa
     type f16 = ieee(5, 10)
     type f32 = ieee(8, 23)
     type f64 = ieee(11, 52)
@@ -641,18 +641,12 @@ class module_Types(LanguageModule):
                 if type_ref.endswith("$"):
                     ref = "$"
                     type_ref = type_ref[:-1]
-                types = symbol_table.find(type_ref, zc.Type, None)
-                #log(f"found {types}")
-                if len(types) == 1:
-                    self.rhs.type = types[0].element
-                    self._resolved_types[0]._alias_type = types[0].element
+                type = symbol_table.find_single(type_ref, zc.Type, None, errors)
+                if type:
+                    self.rhs.type = type
+                    self._resolved_types[0]._alias_type = type
                     self._resolved_types[0]._alias_modifier = ref
                     #log(log_green(f"resolved alias {type_ref} to {self._resolved_types[0]._alias_type}"))
-                elif len(types) == 0:
-                    pass#log(log_red(f"can't find {type_ref}"))
-                else:
-                    pass
-                    #log(log_red(f"symbol clash: {type_ref} => {types}"))
             elif isinstance(self.rhs, zc.StructDef):
                 pass #log("struct")
             elif isinstance(self.rhs, zc.TypeParentDef):
@@ -660,11 +654,9 @@ class module_Types(LanguageModule):
             elif isinstance(self.rhs, zc.TypeChildrenDef):
                 resolved_children = []
                 for child in self.rhs.children:
-                    found_types = symbol_table.find(child, zc.Type, None)
-                    if len(found_types) == 0: log(log_red(f"can't find {child}"))
-                    elif len(found_types) > 1: log(log_red(f"symbol clash: {child} => {found_types}"))
-                    else:
-                        resolved_children.append(found_types[0].element)
+                    found_type = symbol_table.find_single(child, zc.Type, None, errors)
+                    if found_type:
+                        resolved_children.append(found_type)
                 self._resolved_types[0].children = resolved_children
             elif isinstance(self.rhs, zc.TypeEnumDef):
                 if self._resolved_types[0].options == None:
