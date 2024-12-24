@@ -109,8 +109,9 @@ class Grammar:
         self.rules : List[Rule] = []
         self.rule_named = {}                    # rule name => rule
         self.new_rules = []                     # list of rules added since last add()
-        self.class_defs = {}                  # class name => class definition (init method only)
-        self.class_types = {}                 # class.attribute => type
+        self.class_defs = {}                    # class name => text class definition (init method only)
+        self.class_types = {}                   # class.attribute => type
+        self.classes = {}                       # class name => class
         entity_rule = Rule("Entity", "", "")
         entity_rule.entity_cls = Entity
         self.add_rule(entity_rule)
@@ -221,7 +222,13 @@ class Grammar:
         for rule in self.rules:
             class_name = rule.name.replace("_", "")
             rule.entity_cls = getattr(module, class_name)
+            self.classes[class_name] = rule.entity_cls
 
+    def get_class(self, class_name: str) -> Type:
+        class_name = class_name.replace("&", "")
+        if class_name not in self.classes:
+            raise Exception(f"can't find class {class_name}")
+        return self.classes[class_name]
 
     def build_class(self, rule: Rule):
         name = rule.name

@@ -33,15 +33,13 @@ feature Math
     type float > f32, f64
     type number > int, float
     on (number r) = (number a) + (number b)
-        r = _add(a, b)
+        r = add(a, b)
     on (number r) = (number a) - (number b)
-        r = _sub(a, b)
+        r = sub(a, b)
     on (number r) = (number a) * (number b)
-        r = _mul(a, b)
+        r = mul(a, b)
     on (number r) = (number a) / (number b)
-        r = _div(a, b)
-    on (number r) = sqrt(number a)
-        r = _sqrt(a)
+        r = div(a, b)
 
 feature VectorMath extends Math
     type vector | vec = 
@@ -52,9 +50,9 @@ feature VectorMath extends Math
         r = vec(v.x / n, v.y / n, v.z / n)
     on (number d) = (vec a) dot (vec b)
         d = a.x * b.x + a.y * b.y + a.z * b.z
-    on (number l) = length (vec a)
-        l = sqrt(a dot a)
-    on (vec n) = normalise (vec v)
+    on (number l) = length(vec v)
+        l = sqrt(v dot v)
+    on (vec n) = normalise(vec v)
         n = v / length(v)
 
 feature Backend
@@ -62,16 +60,16 @@ feature Backend
     type u8, u16, u32, u64
     type i8, i16, i32, i64
     type f16, f32, f64
-    on (number r) = _add(number a, b)
-        pass
-    on (number r) = _sub(number a, b)
-        pass
-    on (number r) = _mul(number a, b)
-        pass
-    on (number r) = _div(number a, b)
-        pass
-    on (number r) = _sqrt(number a)
-        pass
+    on (number r) = add(number a, b)
+        nop()
+    on (number r) = sub(number a, b)
+        nop()
+    on (number r) = mul(number a, b)
+        nop()
+    on (number r) = div(number a, b)
+        nop()
+    on (number r) = sqrt(number n)
+        nop()
 
 context MyContext = Program, Hello, Goodbye, Math, VectorMath, Backend
 """
@@ -266,51 +264,44 @@ class module_Expressions(LanguageModule):
             if len(self.variables) < 2: return "function-call variable must have two or more names"
             return ""
         
+        @grammar.method(zc.VariableRef)
+        def resolve(self, symbol_table, scope, errors):
+            return resolve_variable_list(self.variables, symbol_table, scope, errors)
+        
         @grammar.method(zc.FunctionCallVariable)
-        def resolve(self, symbol_table, scope):
-            log(f"fnc.resolve: {print_code_formatted(self)}")
-            for name in self.variables:
-                vars = symbol_table.find(name, scope)
-                if len(vars) == 0: log(log_red(f"can't find {name}"))
-                elif len(vars) > 1: log(log_red(f"symbol clash: {name} => {vars}"))
-                else:
-                    var = vars[0].element
-                    if not isinstance(var, zc.Variable): log(log_red(f"{name} is not a variable"))
-                    else: 
-                        log(log_green(f"found {var} in {scope}"))
-                        var_type = var.type
-                        if isinstance(var_type, Lex): 
-                            var_type = symbol_table.find(var_type, of_type=zc.Type)[0].element
-                        if var_type: scope = var_type
+        def resolve(self, symbol_table, scope, errors):
+            #log(f"fnc.resolve: {print_code_formatted(self)}")
+            return resolve_variable_list(self.variables, symbol_table, scope, errors)
+        
+        def resolve_variable_list(variables, symbol_table, scope, errors):
+            for name in variables:
+                var = symbol_table.find_single(name, zc.Variable, scope, errors)
+                if var:
+                    #log(log_green(f"found {var} in {scope}"))
+                    var_type = symbol_table.find_single(var.type, zc.Type, scope, errors)
+                    if var_type: scope = var_type
             return ""
     
         @grammar.method(zc.FunctionCall)
-        def resolve(self, symbol_table, scope) -> str:
-            log(f"fn.resolve: {print_code_formatted(self)}")
+        def resolve(self, symbol_table, scope, errors) -> str:
+            #log(f"fn.resolve: {print_code_formatted(self)}")
             # first replace any variable names with variables
             for i, item in enumerate(self.items):
                 if isinstance(item, zc.FunctionCallWord):
-                    vars = symbol_table.find(item.word, scope)
-                    if len(vars) == 1 and isinstance(vars[0].element, zc.Variable):
-                        log(log_green(f"replacing {item.word} with {vars[0]}"))
-                        self.items[i] = zc.VariableRef(variables=[vars[0]])
+                    var = symbol_table.find_single(item.word, zc.Variable, scope, [])
+                    if var:
+                        #log(log_green(f"replacing {item.word} with {var}"))
+                        self.items[i] = zc.VariableRef(variables=[var])
             # now find a single function for all word/operators
             found_function = None
             i_word = -1
             i_item_last = -1
             for i, item in enumerate(self.items):
                 if isinstance(item, zc.FunctionCallWord):
-                    found = symbol_table.find(item.word, scope, of_type=zc.Function)
-                    if len(found) == 0: 
-                        log(log_red(f"can't find {item.word}"))
-                    elif len(found) > 1:
-                        log("current scope", scope)
-                        for f in found:
-                            log(f.element, "defined in", f.scope, "matches" if f.scope==scope else "doesn't match")
-                        return f"symbol clash: {item.word} => {found}"
-                    else:
-                        func = found[0].element
-                        tag_i_word = found[0].tag["i_word"]
+                    found = symbol_table.find_single_item(item.word, zc.Function, scope, errors)
+                    if found:
+                        func = found.element
+                        tag_i_word = found.tag["i_word"]
                         if found_function is None:
                             found_function = func
                             i_word = tag_i_word
@@ -320,7 +311,7 @@ class module_Expressions(LanguageModule):
                                 return "mismatched word"
                             i_word = tag_i_word
                             i_item_last = i
-            if found_function:log(log_green(f"resolved function {found_function.handle}"))
+            #if found_function:log(log_green(f"resolved function {found_function.handle}"))
             return ""
 
     def test(self):
@@ -490,23 +481,6 @@ class module_Variables(LanguageModule):
                 symbol_table.add(name.name, var, scope)
                 if name.alias: symbol_table.add(name.alias, var, scope)
 
-        @grammar.method(zc.VariableDef)
-        def resolve(self, symbol_table, scope):
-            log(f"variableDef.resolve: {print_code_formatted(self)}")
-            for name in self.names:
-                var = symbol_table.find(name.name, scope)
-                if len(var) == 1: 
-                    var = var[0].element
-                    if not isinstance(var.type, Lex): continue
-                    types = symbol_table.find(var.type, of_type=zc.Type)
-                    if len(types) == 0: return f"can't find type {var.type}"
-                    elif len(types) > 1: return f"symbol clash: {var.type} => {types}"
-                    else: 
-                        var.type = types[0].element
-                        log(log_green(f"resolved type of {name.name} to {var.type}"))
-                elif len(var) == 0: return f"can't find {name.name}"
-                else: return f"symbol clash: {name.name} => {var}"
-            return ""
 
     def test(self):
         test("variable_0", parse_code("int a", "VariableDef"), """
@@ -614,7 +588,7 @@ class module_Types(LanguageModule):
         def add_symbols(self, scope, symbol_table):
             self._resolved_types = []
             for name in self.names:
-                existing_type_objects = symbol_table.find(name.name, scope)
+                existing_type_objects = symbol_table.find(name.name, zc.Type, scope)
                 if len(existing_type_objects) == 0:
                     type_object = zc.Type(name=name.name, alias=name.alias)
                     symbol_table.add(name.name, type_object, None, alias=name.alias)
@@ -628,8 +602,7 @@ class module_Types(LanguageModule):
                         type_object.properties += self.rhs.properties
                         make_constructor(type_object, symbol_table)
                 else:
-                    log(log_red(f"symbol clash: {self.name} => {existing_type_objects}"))       
-            return ""
+                    raise Exception(f"symbol clash in TypeDef: {self.name} => {existing_type_objects}")     
             
         #@log_indent
         def make_constructor(type_object: zc.Type, symbol_table: SymbolTable):
@@ -659,34 +632,35 @@ class module_Types(LanguageModule):
             return self._resolved_types[0] or None
         
         @grammar.method(zc.TypeDef)
-        def resolve(self, symbol_table, scope):
-            log(f"typeDef.resolve:\n{print_code_formatted(self)}")
-            log(f"resolved types: {self._resolved_types}")
+        def resolve(self, symbol_table, scope, errors):
+            #log(f"typeDef.resolve:\n{print_code_formatted(self)}")
+            #log(f"resolved types: {self._resolved_types}")
             if isinstance(self.rhs, zc.TypeAlias):
                 type_ref = str(self.rhs.type)
                 ref = ""
                 if type_ref.endswith("$"):
                     ref = "$"
                     type_ref = type_ref[:-1]
-                types = symbol_table.find(type_ref, of_type=zc.Type)
-                log(f"found {types}")
+                types = symbol_table.find(type_ref, zc.Type, None)
+                #log(f"found {types}")
                 if len(types) == 1:
                     self.rhs.type = types[0].element
                     self._resolved_types[0]._alias_type = types[0].element
                     self._resolved_types[0]._alias_modifier = ref
-                    log(log_green(f"resolved alias {type_ref} to {self._resolved_types[0]._alias_type}"))
+                    #log(log_green(f"resolved alias {type_ref} to {self._resolved_types[0]._alias_type}"))
                 elif len(types) == 0:
-                    log(log_red(f"can't find {type_ref}"))
+                    pass#log(log_red(f"can't find {type_ref}"))
                 else:
-                    log(log_red(f"symbol clash: {type_ref} => {types}"))
+                    pass
+                    #log(log_red(f"symbol clash: {type_ref} => {types}"))
             elif isinstance(self.rhs, zc.StructDef):
-                log("struct")
+                pass #log("struct")
             elif isinstance(self.rhs, zc.TypeParentDef):
                 pass
             elif isinstance(self.rhs, zc.TypeChildrenDef):
                 resolved_children = []
                 for child in self.rhs.children:
-                    found_types = symbol_table.find(child, of_type=zc.Type)
+                    found_types = symbol_table.find(child, zc.Type, None)
                     if len(found_types) == 0: log(log_red(f"can't find {child}"))
                     elif len(found_types) > 1: log(log_red(f"symbol clash: {child} => {found_types}"))
                     else:
@@ -859,7 +833,7 @@ class module_Functions(LanguageModule):
                 if isinstance(item, zc.FunctionSignatureWord):
                     name += str(item.word)
                 elif isinstance(item, zc.FunctionSignatureParams):
-                    name += "_"
+                    name += "◦"
             return name       
         
         @grammar.method(zc.FunctionDef)
@@ -868,8 +842,9 @@ class module_Functions(LanguageModule):
 
         @grammar.method(zc.FunctionDef)
         def add_symbols(self, scope, symbol_table):
+            #log(f"add_symbols: {self.signature.handle()}")
             handle = self.signature.handle()
-            functions = symbol_table.find(handle, None)
+            functions = symbol_table.find(handle, zc.Function,None)
             if len(functions) == 0:
                 function = zc.Function(handle=handle, results=self.results, signature=self.signature, body=self.body)
                 symbol_table.add(handle, function, None)
@@ -880,7 +855,7 @@ class module_Functions(LanguageModule):
                     i_word += 1
             else:
                 function = functions[0]
-                log(f"function {handle} exists already; extending")
+                log(f"TODO: function {handle} exists already; extending")
 
         @grammar.method(zc.FunctionDef)
         def get_scope(self): return self

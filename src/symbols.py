@@ -25,7 +25,9 @@ class SymbolTable:
     def __init__(self):
         self.symbols = {}   # name.scope_type.scope_id => { element, tag }
     
+    
     def add(self, name: str, element: Any, scope: Any, alias=None, tag: Dict=None):
+        #log(f"  add {name} [{type(element).__name__}] to {scope} called by {caller()}")
         if name is None: return
         if isinstance(name, Lex): name = name.val
         item = SymbolItem(scope, element, tag)
@@ -46,6 +48,7 @@ class SymbolTable:
     def add_item(self, name: str, item: SymbolItem):
         if not name in self.symbols: self.symbols[name] = []
         if item not in self.symbols[name]:
+            #log(f"added '{name}' => {item}")
             self.symbols[name] = [item] + self.symbols[name] # add to start; most recent takes precedence
 
     def replace_item(self, name: str, item: SymbolItem):
@@ -58,7 +61,24 @@ class SymbolTable:
                 break
         list.insert(0, item)
 
-    def find(self, name: str|Lex, scope: Any|None=None, of_type: Any|None=None) -> List[SymbolItem]:
+    def find_single_item(self, name: Lex, of_type: Any, scope: Any, errors: List[str]) -> SymbolItem:
+        if isinstance(name, of_type): return name # already matched
+        location = f" at {name.location()}" if isinstance(name, Lex) else ""
+        found = self.find(name, of_type, scope)
+        report = ""
+        if len(found) == 0:
+            errors.append(f"can't find '{name}' [{of_type.__name__}] in {scope}{location}{report}")
+        elif len(found) > 1:
+            errors.append(f"multiple matches for '{name}' [{of_type.__name__}]in {scope}{location}{report}")
+        else:
+            return found[0]
+
+    def find_single(self, name: Lex, of_type: Any, scope: Any, errors: List[str]) -> SymbolItem:
+        if isinstance(name, of_type): return name # already matched
+        found= self.find_single_item(name, of_type, scope, errors)
+        return found.element if found else None
+
+    def find(self, name: str|Lex, of_type: Any|None, scope: Any|None) -> List[SymbolItem]:
         if isinstance(name, Lex): name = name.val
         if not name in self.symbols: return []
         result= [item for item in self.symbols[name] if self.scope_can_see(scope, item.scope)]
@@ -114,9 +134,9 @@ class SymbolTable:
             out += "\n"
         return out
     
-    def resolve_symbols(self, e: Entity, scope: Any=None):
+    def resolve_symbols(self, e: Entity, scope: Any, errors:List[str]):
         if hasattr(e, "resolve"):
-            err = e.resolve(self, scope)
+            err = e.resolve(self, scope, errors)
             if err != "": log(log_red(f"{e.__class__.__name__}.resolve: {err}"))
         if hasattr(e, "get_scope"):
             scope = e.get_scope()
@@ -128,17 +148,21 @@ class SymbolTable:
             if isinstance(attr_value, List):
                 for item in attr_value:
                     if isinstance(item, Entity):
-                        self.resolve_symbols(item, scope)
+                        self.resolve_symbols(item, scope, errors)
             elif isinstance(attr_value, Entity):
-                self.resolve_symbols(attr_value, scope)
+                self.resolve_symbols(attr_value, scope, errors)
             elif isinstance(attr_value, Lex) and attr_type != "str":
-                log(f'{attr} = "{attr_value}" ({attr_type})')
                 str_value = attr_value.val
-                found = self.find(str_value)
+                attr_class = Grammar.current.get_class(attr_type)
+                found = self.find(str_value, attr_class, scope)
                 if len(found) == 0:
-                    log(log_red(f"can't find {attr_value}"))
+                    errors.append(f"can't find {attr_value} in {scope}")
+                elif len(found) > 1:
+                    found_class = Grammar.current.get_class(attr_type)
+                    errors.append(f"multiple matches for {attr_value}[{attr_type}] in {scope}")
                 else:
-                    log(f"found {found}")
+                    #log(log_green(f"found {found}"))
+                    setattr(e, attr, found[0].element)
             
         
     

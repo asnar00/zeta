@@ -59,5 +59,11 @@ class Language:
         log_clear()
         cp.st.add_symbols(cp.ast, None)
         #log(cp.st.dbg())
-        cp.st.resolve_symbols(cp.ast)
+        errors = []
+        cp.st.resolve_symbols(cp.ast, None, errors)
+        #log_clear()
+        if len(errors) > 0:
+            log(log_red(f"{len(errors)} errors"))
+            for error in errors:
+                log(f"{error}")
         return cp
