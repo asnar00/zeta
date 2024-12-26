@@ -80,9 +80,9 @@ class FunctionCallConstant(FunctionCallItem):
         self.constant: Constant = constant
 
 class FunctionCallOperator(FunctionCallItem):
-    def __init__(self, operator: 'str' =None):
+    def __init__(self, word: 'str' =None):
         super().__init__()
-        self.operator: str = operator
+        self.word: str = word
 
 class FunctionCallWord(FunctionCallItem):
     def __init__(self, word: 'str' =None):

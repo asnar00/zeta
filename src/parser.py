@@ -335,6 +335,7 @@ def print_code(e: Entity) -> str|List[str]:
     if e is None: return ""
     if isinstance(e, Lex) or isinstance(e, str): return str(e)
     if isinstance(e, List): return [print_code(item) for item in e]
+    if hasattr(e, "print_code"): return e.print_code()
     rule = Grammar.current.rule_named[e.__class__.__name__]
     return print_code_rule(rule, e)
 

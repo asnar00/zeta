@@ -2,6 +2,65 @@
 # scribblez
 "slow is smooth, smooth is fast"
 
+operator bracketing :done!
+next: find function candidates.
+for the moment, let's just identify the type of each expression;
+that shouldn't be too hard, right? Just a function called type_of(x)
+
+----------------------------------
+
+interlude: Christmas morning thoughts / 2024
+
+2. thinking bigger thoughts about the compiler / IDE / LLM intersection.
+
+zeta is a zero-to-anything compiler. It can therefore generate translation examples very quickly in one direction. The question is: can we use this power to 
+
+- automate the creation of new backends; eg. this is zero-to-py, write me zero-to-ts.
+- automate the translation of code from the backend, into zero; i.e. the reverse translation.
+
+this means that we should get as quickly as possible to a point where we can edit code nicely in a zero.md "IDE". That's the springboard to start experimenting with this stuff- once you have a codebase in FNF.
+
+web backends: useful because it means we can write interfaces-over-the-web which is a useful bit of kit to have. Again the idea of movable code is interesting here.
+
+But fundamentally a backend is just called over RPC, and zero gets out of the way and makes those rpc calls invisible. The same code will work regardless of which bits of the computation are done where.
+
+Thinking of a Context = (some features, some state); we can think about how you might split that computation across a set of Devices. A Device is any physical piece of hardware, plus some Backend. This split fundamentally describes "what runs where" given a set of Devices; but we can write code to figure out what the split is. So we can write code that takes into account stuff like
+    
+"this bit of data has to live here, and it can't move, so computation related to that data has to happen here also"
+
+"this computation runs fastest on specific hardware so it has to run here"
+
+"these two bits of hardware are on the same device, but this other one is on wifi"
+
+In other words we have to take account of capabilities of nodes (memory, cores, speed) and edges (bandwidth, reliability) to determine where to put data X and computation Y. 
+
+Giving code the ability to control where it runs (using a simple API) creates something that could legitimately be called an Agent; it manages a set of Contexts, and uses the runtime API to configure where it runs on a cluster.
+
+
+1.
+
+The drone project is a real thing, and I will need some people to work on it.
+Clearly, the litewing team is the right place to start, so I should reach out to them and go and meet them. Chennai is calling.
+
+A thought occurred that the two drone function/price points:
+
+https://www.kickstarter.com/projects/2130557124/litewing-a-fun-diy-wifi-mini-drone-based-on-esp32/description
+
+and
+
+https://www.youtube.com/watch?v=RSEZ7TnXP-w
+
+The crazyflie approach (ARM-cortex main system, daughterboard running neural networks on RiscV cores) gives you autonomous navigation and mapping.
+
+The lightning flash this evening was that actually, you need both. You need a small number of high-cost, high-intelligence drones to "map out" the location of the litter and the obstacles (fences, forests, etc) so the low-cost drones can swarm safely.
+
+The novel part of making this with zero would be to be able to write code "for the swarm" that does both mapping and AI stuff *and* the collection stuff, but with a single code base and workflow, and a "location agnostic" approach to computation.
+
+It also really brings home the reality that for code to be portable, it has to fit nicely into existing systems. We really are writing polyglot systems, and we have to do that if we want to get anywhere in a reasonable time. It's about designing the correct backend APIs for each device, and then doing the high-level coding in zero.
+
+
+-----
+
 Ok so the next big job is function-call / operation parsing.
 I *think* it's actually pretty easy: just write a function called "embracket" which replaces sequences with Bracketed() items, using operator precedence, and using type signatures.
 => need to add return types to the long_handle we compute

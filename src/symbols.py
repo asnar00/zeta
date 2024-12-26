@@ -67,9 +67,9 @@ class SymbolTable:
         found = self.find(name, of_type, scope)
         report = ""
         if len(found) == 0:
-            errors.append(f"can't find '{name}' [{of_type.__name__}] in {scope}{location}{report}")
+            errors.append(f"no {of_type.__name__} '{name}' in scope {scope}{location}{report} {caller(1)}")
         elif len(found) > 1:
-            errors.append(f"multiple matches for '{name}' [{of_type.__name__}]in {scope}{location}{report}")
+            errors.append(f"multiple matches for {of_type.__name__} '{name}' in scope {scope}{location}{report}")
         else:
             return found[0]
 
@@ -136,8 +136,8 @@ class SymbolTable:
     
     def resolve_symbols(self, e: Entity, scope: Any, errors:List[str]):
         if hasattr(e, "resolve"):
-            err = e.resolve(self, scope, errors)
-            if err != "": log(log_red(f"{e.__class__.__name__}.resolve: {err}"))
+            cont = e.resolve(self, scope, errors)
+            if cont == False: return
         if hasattr(e, "get_scope"):
             scope = e.get_scope()
         for attr in vars(e):

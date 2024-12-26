@@ -282,9 +282,9 @@ def test_verbose(on: bool):
 s_cwd = os.getcwd() + "/src/"
 
 # returns 'file:line:' of the function that called our caller
-def caller() -> str:
+def caller(level: int=0) -> str:
     frame = inspect.currentframe()
-    frame = inspect.getouterframes(frame)[2]    # [1] would be the call to caller(), so...
+    frame = inspect.getouterframes(frame)[2+level]    # [1] would be the call to caller(), so...
     file = frame.filename.replace(s_cwd, '')    # dunno if we totally need this but 
     return f"{file}:{frame.lineno}:"
 
