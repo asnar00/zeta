@@ -67,7 +67,7 @@ class SymbolTable:
         found = self.find(name, of_type, scope)
         report = ""
         if len(found) == 0:
-            errors.append(f"no {of_type.__name__} '{name}' in scope {scope}{location}{report} {caller(1)}")
+            errors.append(f"no {of_type.__name__} '{name}' in scope {scope}{location}{report}")
         elif len(found) > 1:
             errors.append(f"multiple matches for {of_type.__name__} '{name}' in scope {scope}{location}{report}")
         else:

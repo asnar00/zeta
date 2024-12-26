@@ -63,15 +63,15 @@ feature Backend
     type i8, i16, i32, i64
     type f16, f32, f64
     on (number r) = add(number a, b)
-        nop()
+        pass
     on (number r) = sub(number a, b)
-        nop()
+        pass
     on (number r) = mul(number a, b)
-        nop()
+        pass
     on (number r) = div(number a, b)
-        nop()
+        pass
     on (number r) = sqrt(number n)
-        nop()
+        pass
 
 context MyContext = Program, Hello, Goodbye, Math, VectorMath, Backend
 """
@@ -86,8 +86,8 @@ feature ConcreteMath extends Math
         u(n-1) val
     type ieee(e, m) =
         bit sign
-        u(e) exponent
-        u(m) mantissa
+        u(e) exponent | exp
+        u(m) mantissa | man
     type f16 = ieee(5, 10)
     type f32 = ieee(8, 23)
     type f64 = ieee(11, 52)
@@ -293,7 +293,7 @@ class module_Expressions(LanguageModule):
             cf = print_code_formatted(self)
             log(f"fnc.resolve: {cf}")
             replace_variables(self.items, symbol_table, scope, errors)
-            self.embracket()
+            embracket(self)
             for item in self.items:
                 if hasattr(item, "resolve"): item.resolve(symbol_table, scope, errors)
             self._resolved_function = None
@@ -310,18 +310,17 @@ class module_Expressions(LanguageModule):
         def resolve(self, symbol_table, scope, errors):
             if self.expression: self.expression.resolve(symbol_table, scope, errors)
             return False
-
-        @grammar.method(zc.FunctionCall)
-        def embracket(self):
-            i_operator = find_lowest_ranked_operator(self.items)
-            if i_operator == -1: return self
+        
+        def embracket(fc: zc.FunctionCall):
+            i_operator = find_lowest_ranked_operator(fc.items)
+            if i_operator == -1: return fc
             #log(log_green(print_code_formatted(self)))
-            before = self.items[0:i_operator]
-            if len(before) > 1: before = [zc.FunctionCall(items=before).embracket()]
-            after = self.items[i_operator+1:]
-            if len(after) > 1: after = [zc.FunctionCall(items=after).embracket()]
-            self.items = before + [self.items[i_operator]] + after
-            return self
+            before = fc.items[0:i_operator]
+            if len(before) > 1: before = [embracket(zc.FunctionCall(items=before))]
+            after = fc.items[i_operator+1:]
+            if len(after) > 1: after = [embracket(zc.FunctionCall(items=after))]
+            fc.items = before + [fc.items[i_operator]] + after
+            return fc
         
         def find_lowest_ranked_operator(items):
             i_found = -1

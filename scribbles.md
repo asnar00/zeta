@@ -3,9 +3,18 @@
 "slow is smooth, smooth is fast"
 
 operator bracketing :done!
-next: find function candidates.
-for the moment, let's just identify the type of each expression;
-that shouldn't be too hard, right? Just a function called type_of(x)
+function resolution: done!
+
+it's very messy and non-smooth at this point. but we can make it smoother.
+also, proper type parent-checking isn't in effect, either to narrow or widen matching.
+but it'll work for now.
+
+what are the next steps?
+we need some kind of "pass" / "future plugs in here" keyword for function bodies.
+
+
+Function composition;
+and then code rewriting using substitution, right?
 
 ----------------------------------
 
