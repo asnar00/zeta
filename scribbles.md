@@ -5,9 +5,10 @@
 operator bracketing :done!
 function resolution: done!
 
-it's very messy and non-smooth at this point. but we can make it smoother.
-also, proper type parent-checking isn't in effect, either to narrow or widen matching.
-but it'll work for now.
+add_symbols needs to be top-down, and do embracketing non-recursively.
+resolve needs to be bottom-up (i.e. do ast children first, then parent)
+
+this way function resolve doesn't need to short-circuit the top-down resolve process.
 
 what are the next steps?
 we need some kind of "pass" / "future plugs in here" keyword for function bodies.

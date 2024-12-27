@@ -128,8 +128,6 @@ def test_print_code(ast):
         context MyContext = Program, Hello
          """)
 
-
-
 #--------------------------------------------------------------------------------------------------
 # features and contexts 
 
@@ -266,14 +264,31 @@ class module_Expressions(LanguageModule):
             if len(self.variables) < 2: return "function-call variable must have two or more names"
             return ""
         
+        @grammar.method(zc.FunctionCall)
+        def add_symbols(self, scope, symbol_table):
+            embracket(self)
+        
+        def embracket(fc: zc.FunctionCall):
+            i_operator = find_lowest_ranked_operator(fc.items)
+            if i_operator == -1: return fc
+            #log(log_green(print_code_formatted(self)))
+            before = fc.items[0:i_operator]
+            if len(before) > 1: before = [zc.FunctionCall(items=before)]
+            after = fc.items[i_operator+1:]
+            if len(after) > 1: after = [zc.FunctionCall(items=after)]
+            fc.items = before + [fc.items[i_operator]] + after
+            return fc
+        
         @grammar.method(zc.VariableRef)
         def resolve(self, symbol_table, scope, errors):
             log("vr.resolve", print_code_formatted(self))
+            type_0 = type(self.variables[0]).__name__
+            if type_0 == "NameDef": return
             self.variables = resolve_variable_list(self.variables, symbol_table, scope, errors)
         
         @grammar.method(zc.FunctionCallVariable)
         def resolve(self, symbol_table, scope, errors):
-            self.variables =resolve_variable_list(self.variables, symbol_table, scope, errors)
+            self.variables = resolve_variable_list(self.variables, symbol_table, scope, errors)
         
         def resolve_variable_list(variables, symbol_table, scope, errors):
             if isinstance(variables[0], zc.Variable): return variables
@@ -281,11 +296,12 @@ class module_Expressions(LanguageModule):
             for name in variables:
                 var = symbol_table.find_single(name, zc.Variable, scope, errors)
                 if var:
+                    log(log_green(f" found {var} in {scope}"))
                     resolved.append(var)
                     var_type = symbol_table.find_single(var.type, zc.Type, scope, errors)
                     if var_type: scope = var_type
                 else:
-                    log(log_red(f"no variable found for {name} in {scope}"))
+                    log(log_red(f" no variable found for {name} in {scope}"))
             return resolved
     
         @grammar.method(zc.FunctionCall)
@@ -293,34 +309,8 @@ class module_Expressions(LanguageModule):
             cf = print_code_formatted(self)
             log(f"fnc.resolve: {cf}")
             replace_variables(self.items, symbol_table, scope, errors)
-            embracket(self)
-            for item in self.items:
-                if hasattr(item, "resolve"): item.resolve(symbol_table, scope, errors)
             self._resolved_function = None
             self._resolved_function = find_function(self, symbol_table, scope, errors)
-            return False
-        
-        @grammar.method(zc.FunctionCallArguments)
-        def resolve(self, symbol_table, scope, errors):
-            for argument in self.arguments:
-                if argument.value and hasattr(argument.value, "resolve"): argument.value.resolve(symbol_table, scope, errors)
-            return False
-        
-        @grammar.method(zc.Bracketed)
-        def resolve(self, symbol_table, scope, errors):
-            if self.expression: self.expression.resolve(symbol_table, scope, errors)
-            return False
-        
-        def embracket(fc: zc.FunctionCall):
-            i_operator = find_lowest_ranked_operator(fc.items)
-            if i_operator == -1: return fc
-            #log(log_green(print_code_formatted(self)))
-            before = fc.items[0:i_operator]
-            if len(before) > 1: before = [embracket(zc.FunctionCall(items=before))]
-            after = fc.items[i_operator+1:]
-            if len(after) > 1: after = [embracket(zc.FunctionCall(items=after))]
-            fc.items = before + [fc.items[i_operator]] + after
-            return fc
         
         def find_lowest_ranked_operator(items):
             i_found = -1
@@ -672,6 +662,10 @@ class module_Types(LanguageModule):
         """)
 
     def methods(self, grammar: Grammar):
+        @grammar.method(zc.Type)
+        def print_code(self) -> str:
+            return self.short_name()
+        
         @grammar.method(zc.TypeEnumDef)
         def validate(self) -> str: 
             return "" if len(self.options) > 1 else "enum must have at least two options"
@@ -731,16 +725,22 @@ class module_Types(LanguageModule):
             return self._resolved_types[0] or None
         
         @grammar.method(zc.TypeDef)
+        def disallow_resolve_children(self): return True
+        
+        @grammar.method(zc.TypeDef)
         def resolve(self, symbol_table, scope, errors):
             log(f"typeDef.resolve:\n{print_code_formatted(self)}")
             #log(f"resolved types: {self._resolved_types}")
             if isinstance(self.rhs, zc.TypeAlias):
+                log(" is alias")
                 type_ref = str(self.rhs.type)
                 ref = ""
                 if type_ref.endswith("$"):
                     ref = "$"
                     type_ref = type_ref[:-1]
+                log(f" type_ref: {type_ref}")
                 type = symbol_table.find_single(type_ref, zc.Type, None, errors)
+                log(f" type: {type}")
                 if type:
                     self.rhs.type = type
                     self._resolved_types[0]._alias_type = type

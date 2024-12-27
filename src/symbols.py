@@ -135,34 +135,35 @@ class SymbolTable:
         return out
     
     def resolve_symbols(self, e: Entity, scope: Any, errors:List[str]):
-        if hasattr(e, "resolve"):
-            cont = e.resolve(self, scope, errors)
-            if cont == False: return
+        original_scope = scope
         if hasattr(e, "get_scope"):
             scope = e.get_scope()
-        for attr in vars(e):
-            if attr == "_error": continue
-            attr_type = Grammar.current.get_attribute_type(e.__class__, attr)
-            attr_value = getattr(e, attr)
-            attr_actual_type = type(attr_value)
-            if isinstance(attr_value, List):
-                for item in attr_value:
-                    if isinstance(item, Entity):
-                        self.resolve_symbols(item, scope, errors)
-            elif isinstance(attr_value, Entity):
-                self.resolve_symbols(attr_value, scope, errors)
-            elif isinstance(attr_value, Lex) and attr_type != "str":
-                str_value = attr_value.val
-                attr_class = Grammar.current.get_class(attr_type)
-                found = self.find(str_value, attr_class, scope)
-                if len(found) == 0:
-                    errors.append(f"can't find {attr_value} in {scope}")
-                elif len(found) > 1:
-                    found_class = Grammar.current.get_class(attr_type)
-                    errors.append(f"multiple matches for {attr_value}[{attr_type}] in {scope}")
-                else:
-                    #log(log_green(f"found {found}"))
-                    setattr(e, attr, found[0].element)
+        if not hasattr(e, "disallow_resolve_children"):
+            for attr in vars(e):
+                if attr == "_error": continue
+                attr_type = Grammar.current.get_attribute_type(e.__class__, attr)
+                attr_value = getattr(e, attr)
+                attr_actual_type = type(attr_value)
+                if isinstance(attr_value, List):
+                    for item in attr_value:
+                        if isinstance(item, Entity):
+                            self.resolve_symbols(item, scope, errors)
+                elif isinstance(attr_value, Entity):
+                    self.resolve_symbols(attr_value, scope, errors)
+                elif isinstance(attr_value, Lex) and attr_type != "str":
+                    str_value = attr_value.val
+                    attr_class = Grammar.current.get_class(attr_type)
+                    found = self.find(str_value, attr_class, scope)
+                    if len(found) == 0:
+                        errors.append(f"can't find {attr_value} in {scope}")
+                    elif len(found) > 1:
+                        found_class = Grammar.current.get_class(attr_type)
+                        errors.append(f"multiple matches for {attr_value}[{attr_type}] in {scope}")
+                    else:
+                        #log(log_green(f"found {found}"))
+                        setattr(e, attr, found[0].element)
+        if hasattr(e, "resolve"):
+            cont = e.resolve(self, original_scope, errors)
             
         
     
