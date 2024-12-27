@@ -232,9 +232,17 @@ class FunctionSignatureParams(FunctionSignatureElement):
         self.params: List[VariableDef] = params
 
 class FunctionBody(Entity):
+    def __init__(self, ):
+        super().__init__()
+
+class FunctionStatements(FunctionBody):
     def __init__(self, statements: 'List[Statement]' =None):
         super().__init__()
         self.statements: List[Statement] = statements
+
+class EmptyFunctionBody(FunctionBody):
+    def __init__(self, ):
+        super().__init__()
 
 class Statement(Entity):
     def __init__(self, lhs: 'StatementLhs' =None, rhs: 'Expression' =None):

@@ -62,16 +62,11 @@ feature Backend
     type u8, u16, u32, u64
     type i8, i16, i32, i64
     type f16, f32, f64
-    on (number r) = add(number a, b)
-        pass
-    on (number r) = sub(number a, b)
-        pass
-    on (number r) = mul(number a, b)
-        pass
-    on (number r) = div(number a, b)
-        pass
-    on (number r) = sqrt(number n)
-        pass
+    on (number r) = add(number a, b) pass
+    on (number r) = sub(number a, b) pass
+    on (number r) = mul(number a, b) pass
+    on (number r) = div(number a, b) pass
+    on (number r) = sqrt(number n) pass
 
 context MyContext = Program, Hello, Goodbye, Math, VectorMath, Backend
 """
@@ -708,7 +703,7 @@ class module_Types(LanguageModule):
                     lhs = zc.StatementLhs(variables=[out_var], assign_op="=")
                     rhs = zc.VariableRef(variables=[name])
                     statements.append(zc.Statement(lhs=lhs, rhs=rhs))
-            body = zc.FunctionBody(statements=statements)
+            body = zc.FunctionStatements(statements=statements)
             func = zc.Function(handle=str(type_object.name)+"_", results=results, signature=signature, body=body)
             #log(dbg_entity(func))
             symbol_table.replace(name=str(type_object.name), element=func, scope=None, alias=str(type_object.alias), tag={"i_word": 0})
@@ -726,7 +721,7 @@ class module_Types(LanguageModule):
         
         @grammar.method(zc.TypeDef)
         def disallow_resolve_children(self): return True
-        
+
         @grammar.method(zc.TypeDef)
         def resolve(self, symbol_table, scope, errors):
             log(f"typeDef.resolve:\n{print_code_formatted(self)}")
@@ -883,7 +878,9 @@ class module_Functions(LanguageModule):
             FunctionSignatureElement :=
             FunctionSignatureWord < FunctionSignatureElement := word:(<identifier> | <operator>)
             FunctionSignatureParams < FunctionSignatureElement := "(" params:VariableDef+, ")"
-            FunctionBody := "{" statements:Statement*; "}"
+            FunctionBody := 
+            FunctionStatements < FunctionBody :="{" statements:Statement*; "}"
+            EmptyFunctionBody < FunctionBody := "pass"
             Statement := (lhs:StatementLhs)? rhs:Expression
             StatementLhs := variables:ResultVariable+, assign_op:("=" | "<<") 
             ResultVariable :=
@@ -1081,72 +1078,72 @@ class module_Functions(LanguageModule):
                     """)
         
         test("function_0", parse_code("on (int r) = min (int a, b) { r = if (a < b) then a else b }", "FunctionDef"), """
-            FunctionDef
-                modifier: str = on
-                results: FunctionResults
-                    FunctionResults
-                        results: List[FunctionResultVariableDef]
-                            FunctionResultVariableDef
-                                type: Type => int
-                                names: List[NameDef]
-                                    NameDef
-                                        name: str = r
-                                        alias: str = None
-                        assign_op: str = =
-                signature: FunctionSignature
-                    FunctionSignature
-                        elements: List[FunctionSignatureElement]
-                            FunctionSignatureWord
-                                word: str = min
-                            FunctionSignatureParams
-                                params: List[VariableDef]
-                                    VariableDef
-                                        type: Type => int
-                                        names: List[NameDef]
-                                            NameDef
-                                                name: str = a
-                                                alias: str = None
-                                            NameDef
-                                                name: str = b
-                                                alias: str = None
-                                        value: Expression = None
-                body: FunctionBody
-                    FunctionBody
-                        statements: List[Statement]
-                            Statement
-                                lhs: StatementLhs
-                                    StatementLhs
-                                        variables: List[ResultVariable]
-                                            ResultVariableRef
-                                                variables: List[Variable]
-                                                    => r
-                                        assign_op: str = =
-                                rhs: Expression
-                                    FunctionCall
-                                        items: List[FunctionCallItem]
-                                            FunctionCallWord
-                                                word: str = if
-                                            FunctionCallArguments
-                                                arguments: List[FunctionCallArgument]
-                                                    FunctionCallArgument
-                                                        argument: Variable = None
-                                                        value: Expression
-                                                            FunctionCall
-                                                                items: List[FunctionCallItem]
-                                                                    FunctionCallWord
-                                                                        word: str = a
-                                                                    FunctionCallOperator
-                                                                        word: str = <
-                                                                    FunctionCallWord
-                                                                        word: str = b
-                                            FunctionCallWord
-                                                word: str = then
-                                            FunctionCallWord
-                                                word: str = a
-                                            FunctionCallWord
-                                                word: str = else
-                                            FunctionCallWord
-                                                word: str = b
+FunctionDef
+    modifier: str = on
+    results: FunctionResults
+        FunctionResults
+            results: List[FunctionResultVariableDef]
+                FunctionResultVariableDef
+                    type: Type => int
+                    names: List[NameDef]
+                        NameDef
+                            name: str = r
+                            alias: str = None
+            assign_op: str = =
+    signature: FunctionSignature
+        FunctionSignature
+            elements: List[FunctionSignatureElement]
+                FunctionSignatureWord
+                    word: str = min
+                FunctionSignatureParams
+                    params: List[VariableDef]
+                        VariableDef
+                            type: Type => int
+                            names: List[NameDef]
+                                NameDef
+                                    name: str = a
+                                    alias: str = None
+                                NameDef
+                                    name: str = b
+                                    alias: str = None
+                            value: Expression = None
+    body: FunctionBody
+        FunctionStatements
+            statements: List[Statement]
+                Statement
+                    lhs: StatementLhs
+                        StatementLhs
+                            variables: List[ResultVariable]
+                                ResultVariableRef
+                                    variables: List[Variable]
+                                        => r
+                            assign_op: str = =
+                    rhs: Expression
+                        FunctionCall
+                            items: List[FunctionCallItem]
+                                FunctionCallWord
+                                    word: str = if
+                                FunctionCallArguments
+                                    arguments: List[FunctionCallArgument]
+                                        FunctionCallArgument
+                                            argument: Variable = None
+                                            value: Expression
+                                                FunctionCall
+                                                    items: List[FunctionCallItem]
+                                                        FunctionCallWord
+                                                            word: str = a
+                                                        FunctionCallOperator
+                                                            word: str = <
+                                                        FunctionCallWord
+                                                            word: str = b
+                                FunctionCallWord
+                                    word: str = then
+                                FunctionCallWord
+                                    word: str = a
+                                FunctionCallWord
+                                    word: str = else
+                                FunctionCallWord
+                                    word: str = b
             """)
     
 #--------------------------------------------------------------------------------------------------
