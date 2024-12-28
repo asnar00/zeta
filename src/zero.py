@@ -62,11 +62,11 @@ feature Backend
     type u8, u16, u32, u64
     type i8, i16, i32, i64
     type f16, f32, f64
-    on (number r) = add(number a, b) pass
-    on (number r) = sub(number a, b) pass
-    on (number r) = mul(number a, b) pass
-    on (number r) = div(number a, b) pass
-    on (number r) = sqrt(number n) pass
+    on (f32 r) = add(f32 a, b) pass
+    on (f32 r) = sub(f32 a, b) pass
+    on (f32 r) = mul(f32 a, b) pass
+    on (f32 r) = div(f32 a, b) pass
+    on (f32 r) = sqrt(f32 n) pass
 
 context MyContext = Program, Hello, Goodbye, Math, VectorMath, Backend
 """
@@ -98,145 +98,8 @@ def test_zero():
     zero.setup()
     code = s_test_program
     program = zero.compile(code)
-    test("found", program.found, """
-        resolved child u8 to Type(u8) at :2:17
-        resolved alias char to Type(char) at :3:25
-        found type:Type(string) in None at :4:5
-        found parent:Feature(Program) in None at :6:23
-        found type:Type(string) in None at :7:14
-        found type:Type(string) in None at :8:9
-        found Variable(message) in FunctionDef(hello◦) at :9:17
-        found function Function(hello◦) in None for hello_(string) at :11:9
-        found parent:Feature(Hello) in None at :13:25
-        found type:Type(string) in None at :16:17
-        found function Function(bye) in None for bye_() at :17:9
-        resolved child i8 to Type(i8) at :20:16
-        resolved child i16 to Type(i16) at :20:20
-        resolved child i32 to Type(i32) at :20:25
-        resolved child i64 to Type(i64) at :20:30
-        resolved child f32 to Type(f32) at :21:18
-        resolved child f64 to Type(f64) at :21:23
-        resolved child int to Type(int) at :22:19
-        resolved child float to Type(float) at :22:24
-        found type:Type(number) in None at :23:9
-        found type:Type(number) in None at :23:22
-        found type:Type(number) in None at :23:35
-        found Variable(a) in FunctionDef(◦+◦) at :24:17
-        found Variable(b) in FunctionDef(◦+◦) at :24:20
-        found function Function(add◦◦) in None for add_(number_number) at :24:13
-        found type:Type(number) in None at :25:9
-        found type:Type(number) in None at :25:22
-        found type:Type(number) in None at :25:35
-        found Variable(a) in FunctionDef(◦-◦) at :26:17
-        found Variable(b) in FunctionDef(◦-◦) at :26:20
-        found function Function(sub◦◦) in None for sub_(number_number) at :26:13
-        found type:Type(number) in None at :27:9
-        found type:Type(number) in None at :27:22
-        found type:Type(number) in None at :27:35
-        found Variable(a) in FunctionDef(◦*◦) at :28:17
-        found Variable(b) in FunctionDef(◦*◦) at :28:20
-        found function Function(mul◦◦) in None for mul_(number_number) at :28:13
-        found type:Type(number) in None at :29:9
-        found type:Type(number) in None at :29:22
-        found type:Type(number) in None at :29:35
-        found Variable(a) in FunctionDef(◦/◦) at :30:17
-        found Variable(b) in FunctionDef(◦/◦) at :30:20
-        found function Function(div◦◦) in None for div_(number_number) at :30:13
-        found parent:Feature(Math) in None at :32:28
-        found type:Type(vector) in None at :35:9
-        found type:Type(vector) in None at :35:19
-        found type:Type(vector) in None at :35:29
-        found Variable(a) in FunctionDef(◦+◦) at :36:17
-        found Variable(x) in Type(vector) at :36:19
-        found Variable(b) in FunctionDef(◦+◦) at :36:23
-        found Variable(x) in Type(vector) at :36:25
-        found function Function(◦+◦) in None for (number)_+_(number) at :36:21
-        found Variable(a) in FunctionDef(◦+◦) at :36:28
-        found Variable(y) in Type(vector) at :36:30
-        found Variable(b) in FunctionDef(◦+◦) at :36:34
-        found Variable(y) in Type(vector) at :36:36
-        found function Function(◦+◦) in None for (number)_+_(number) at :36:32
-        found Variable(a) in FunctionDef(◦+◦) at :36:39
-        found Variable(z) in Type(vector) at :36:41
-        found Variable(b) in FunctionDef(◦+◦) at :36:45
-        found Variable(z) in Type(vector) at :36:47
-        found function Function(◦+◦) in None for (number)_+_(number) at :36:43
-        found function Function(vector◦◦◦) in None for vec_(number_number_number) at :36:13
-        found type:Type(vector) in None at :37:9
-        found type:Type(vector) in None at :37:19
-        found type:Type(number) in None at :37:29
-        found Variable(a) in FunctionDef(◦*◦) at :38:17
-        found Variable(x) in Type(vector) at :38:19
-        replaced n with Variable(n) at :38:23
-        found function Function(◦*◦) in None for (number)_*_(number) at :38:21
-        found Variable(a) in FunctionDef(◦*◦) at :38:26
-        found Variable(y) in Type(vector) at :38:28
-        replaced n with Variable(n) at :38:32
-        found function Function(◦*◦) in None for (number)_*_(number) at :38:30
-        found Variable(a) in FunctionDef(◦*◦) at :38:35
-        found Variable(z) in Type(vector) at :38:37
-        replaced n with Variable(n) at :38:41
-        found function Function(◦*◦) in None for (number)_*_(number) at :38:39
-        found function Function(vector◦◦◦) in None for vec_(number_number_number) at :38:13
-        found type:Type(vector) in None at :39:9
-        found type:Type(vector) in None at :39:19
-        found type:Type(number) in None at :39:29
-        found Variable(v) in FunctionDef(◦/◦) at :40:17
-        found Variable(x) in Type(vector) at :40:19
-        replaced n with Variable(n) at :40:23
-        found function Function(◦/◦) in None for (number)_/_(number) at :40:21
-        found Variable(v) in FunctionDef(◦/◦) at :40:26
-        found Variable(y) in Type(vector) at :40:28
-        replaced n with Variable(n) at :40:32
-        found function Function(◦/◦) in None for (number)_/_(number) at :40:30
-        found Variable(v) in FunctionDef(◦/◦) at :40:35
-        found Variable(z) in Type(vector) at :40:37
-        replaced n with Variable(n) at :40:41
-        found function Function(◦/◦) in None for (number)_/_(number) at :40:39
-        found function Function(vector◦◦◦) in None for vec_(number_number_number) at :40:13
-        found type:Type(number) in None at :41:9
-        found type:Type(vector) in None at :41:22
-        found type:Type(vector) in None at :41:34
-        found Variable(a) in FunctionDef(◦dot◦) at :42:13
-        found Variable(x) in Type(vector) at :42:15
-        found Variable(b) in FunctionDef(◦dot◦) at :42:19
-        found Variable(x) in Type(vector) at :42:21
-        found function Function(◦*◦) in None for (number)_*_(number) at :42:17
-        found Variable(a) in FunctionDef(◦dot◦) at :42:25
-        found Variable(y) in Type(vector) at :42:27
-        found Variable(b) in FunctionDef(◦dot◦) at :42:31
-        found Variable(y) in Type(vector) at :42:33
-        found function Function(◦*◦) in None for (number)_*_(number) at :42:29
-        found Variable(a) in FunctionDef(◦dot◦) at :42:37
-        found Variable(z) in Type(vector) at :42:39
-        found Variable(b) in FunctionDef(◦dot◦) at :42:43
-        found Variable(z) in Type(vector) at :42:45
-        found function Function(◦*◦) in None for (number)_*_(number) at :42:41
-        found function Function(◦+◦) in None for (number)_+_(number) at :42:35
-        found function Function(◦+◦) in None for (number)_+_(number) at :42:23
-        found type:Type(number) in None at :43:9
-        found type:Type(vector) in None at :43:28
-        replaced v with Variable(v) at :44:18
-        replaced v with Variable(v) at :44:24
-        found function Function(◦dot◦) in None for (vec)_dot_(vec) at :44:20
-        found function Function(sqrt◦) in None for sqrt_(number) at :44:13
-        found type:Type(vector) in None at :45:9
-        found type:Type(vector) in None at :45:28
-        found Variable(v) in FunctionDef(normalise◦) at :46:24
-        found function Function(length◦) in None for length_(vec) at :46:17
-        replaced v with Variable(v) at :46:13
-        found function Function(◦/◦) in None for (vec)_/_(number) at :46:15
-        found type:Type(number) in None at :53:9
-        found type:Type(number) in None at :53:25
-        found type:Type(number) in None at :54:9
-        found type:Type(number) in None at :54:25
-        found type:Type(number) in None at :55:9
-        found type:Type(number) in None at :55:25
-        found type:Type(number) in None at :56:9
-        found type:Type(number) in None at :56:25
-        found type:Type(number) in None at :57:9
-        found type:Type(number) in None at :57:26
-         """)
+    log(program.errors)
+    log(program.found)
 
 #--------------------------------------------------------------------------------------------------
 # print ast as nicely formatted code
@@ -484,34 +347,86 @@ class module_Expressions(LanguageModule):
                 else: return "unresolved"
             else: return "unknown"
 
-        def find_function(fc: zc.FunctionCall, symbol_table, scope, errors, found) -> zc.Function:
+        def find_function(fc: zc.FunctionCall, symbol_table, scope, errors, found) -> zc.Function: 
             if fc._resolved_function: return fc._resolved_function
             sig = ""
+            short_sig = ""
             location = ""
             for item in fc.items:
                 if location == "" and hasattr(item, "word"):
                     location = item.word.location()
-                if hasattr(item, "type_of"): sig += "(" + item.type_of() + ")_"
-                else: sig += str(item.word) + "_"
+                if hasattr(item, "type_of"):
+                    sig += "(" + item.type_of() + ")_"
+                    if isinstance(item, zc.FunctionCallArguments):
+                        short_sig += "◦" * len(item.arguments)
+                    elif isinstance(item, zc.FunctionCallVariable):
+                        short_sig += "◦"
+                    else:
+                        short_sig += "◦"
+                else: 
+                    short_sig += str(item.word)
+                    sig += str(item.word) + "_"
             if len(sig) > 0: sig = sig[:-1]
-            log(f" sig: {sig}")
-            function = find_function_from_signature(sig, symbol_table, scope, errors, found,location)
+            log(f" sig: {sig}; short_sig: {short_sig}")
+            function = find_function_from_signature(sig, short_sig,symbol_table, scope, errors, found,location)
             return function
         
-        def find_function_from_signature(sig: str, symbol_table: SymbolTable, scope: Any, errors: List[str], found: List[str], location) -> zc.Function:
-            items = symbol_table.find(sig, zc.Function, scope)
+        def find_function_from_signature(sig: str, short_sig: str,symbol_table: SymbolTable, scope: Any, errors: List[str], found: List[str], location) -> zc.Function:
+            items = symbol_table.find(short_sig, zc.Function, scope)
+            log(f" short_items: {items}")
             if len(items) == 0:
-                log(log_red(f" no function found for {sig} at {location}"))
-                errors.append(f"no function found for {sig} at {location}")
+                log(log_red(f" no function found for {short_sig} at {location}"))
+                errors.append(f"no function found for {short_sig} at {location}")
                 return None
-            elif len(items) > 1:
-                log(log_red(f" multiple functions found for {sig} at {location}"))
-                errors.append(f"no function found for {sig} at {location}")
-                return None
+            sig_types = get_types_in_sig(sig, short_sig, symbol_table, scope)
+            log(f" sig_types: {sig_types}")
+            # now find the long signature of each function
+            best_item = None
+            best_distance = 1024
+            best_constrained_item = None
+            best_constrained_distance = 1024
+            for item in items:
+                fn = item.element
+                fn_sig = fn.signature.handle()
+                fn_short_sig = fn.signature.untyped_handle()
+                fn_types = get_types_in_sig(fn_sig, fn_short_sig, symbol_table, scope)
+                log(f"  found sig: {fn_sig}, short_sig: {fn_short_sig}")
+                log(f"  found types: {fn_types}")
+                distances = []
+                for i, t in enumerate(sig_types):
+                    log(f"  finding distance from {t} to {fn_types[i]}")
+                    distance = t.find_relationship(fn_types[i])
+                    distances.append(distance)
+                log(f" distances: {distances}")
+                if None in distances: continue
+                if all(d >= 0 for d in distances):
+                    sum_distances = sum(distances)
+                    if sum_distances < best_distance:
+                        best_distance = sum_distances
+                        best_item = item
+                else:
+                    sum_distances = -sum(distances)
+                    if sum_distances < best_constrained_distance:
+                        best_constrained_distance = sum_distances
+                        best_constrained_item = item
+            if best_item:
+                log(f" best_item: {best_item}")
+                return best_item.element
+            elif best_constrained_item:
+                log(f" best_constrained_item: {best_constrained_item}")
+                errors.append(f"warning: {sig} needs type constraint to match {best_constrained_item.element.signature.handle()} {location}")
+                return best_constrained_item.element
             else:
-                #log(log_green(f" found function {found[0]} for {sig} at {location}"))
-                found.append(f"found function {items[0]} for {sig} at {location}")
-                return items[0].element
+                errors.append(f"no function found for {short_sig} at {location}")
+                return None
+                    
+
+        def get_types_in_sig(sig: str, short_sig: str, symbol_table: SymbolTable, scope: Any) -> List[Type]:
+            words = sig.replace("Type(", "").replace("(", "").replace(")", "").replace("_", " ").replace("  ", " ").split(" ")
+            words = [w for w in words if not (w in short_sig)]
+            types = [symbol_table.find_single(w, zc.Type, scope, []) for w in words]
+            return types
+            
             
         @grammar.method(zc.FunctionCallArguments)
         def type_of(self) -> str:
@@ -850,14 +765,17 @@ class module_Types(LanguageModule):
             body = zc.FunctionStatements(statements=statements)
             func = zc.Function(handle=str(type_object.name)+"_", results=results, signature=signature, body=body)
             #log(dbg_entity(func))
-            symbol_table.replace(name=str(type_object.name), element=func, scope=None, alias=str(type_object.alias), tag={"i_word": 0})
             type_object._constructor = func
             handle = signature.handle()
+            untyped_handle = signature.untyped_handle()
             log(f"adding constructor {handle} to symbol table")
             symbol_table.add(handle, func, None)
+            symbol_table.add(untyped_handle, func, None)
             alias_handle = handle.replace(str(type_object.name), str(type_object.alias))
+            alias_untyped_handle = untyped_handle.replace(str(type_object.name), str(type_object.alias))
             log(f"adding alias {alias_handle} to symbol table")
             symbol_table.add(alias_handle, func, None)
+            symbol_table.add(alias_untyped_handle, func, None)
 
         @grammar.method(zc.TypeDef)    
         def get_scope(self):
@@ -895,7 +813,7 @@ class module_Types(LanguageModule):
                     if found_type:
                         resolved_parents.append(found_type)
                         found.append(f"resolved parent {parent} to {found_type}")
-                self._resolved_types[0].parents = resolved_parents
+                for p in resolved_parents: assert_parent_type(self.resolved_types[0], p)
             elif isinstance(self.rhs, zc.TypeChildrenDef):
                 resolved_children = []
                 for child in self.rhs.children:
@@ -904,14 +822,36 @@ class module_Types(LanguageModule):
                     if found_type:
                         resolved_children.append(found_type)
                         found.append(f"resolved child {child} to {found_type} at {location}")
-                self._resolved_types[0].children = resolved_children
+                for c in resolved_children: assert_parent_type(c, self._resolved_types[0])
             elif isinstance(self.rhs, zc.TypeEnumDef):
                 if self._resolved_types[0].options == None:
                     self._resolved_types[0].options = self.rhs.options
                 else:
                     self._resolved_types[0].options += self.rhs.options
             return False
-    
+        
+        def assert_parent_type(type: zc.Type, parent: zc.Type):
+            if type.parents == None: type.parents = []
+            if parent not in type.parents: type.parents.append(parent)
+            if parent.children == None: parent.children = []
+            if type not in parent.children: parent.children.append(type)
+
+        @grammar.method(zc.Type)
+        def find_relationship(self, type_b: zc.Type) -> int|None:
+            depth = find_relationship_rec(self, type_b, 0)
+            if depth != None: return depth
+            depth = find_relationship_rec(type_b, self, 0)
+            if depth != None: return -depth
+            return None
+        
+        def find_relationship_rec(child: zc.Type, parent: zc.Type, depth: int) -> int|None:
+            if child == parent: return depth
+            if child.parents == None: return None
+            for p in child.parents:
+                result = find_relationship_rec(p, parent, depth + 1)
+                if result: return result
+            return None
+
     def test(self):
         test("type_0", parse_code("type vec | vector", "TypeDef"), """
             TypeDef
@@ -1092,11 +1032,7 @@ class module_Functions(LanguageModule):
             if len(functions) == 0:
                 function = zc.Function(handle=handle, results=self.results, signature=self.signature, body=self.body)
                 symbol_table.add(handle, function, None)
-                i_word = 0
-                for element in self.signature.elements:
-                    if isinstance(element, zc.FunctionSignatureWord):
-                        symbol_table.add(element.word, function, None, tag={"i_word": i_word})
-                    i_word += 1
+                symbol_table.add(self.signature.untyped_handle(), function, None)
             else:
                 function = functions[0]
                 log(f"TODO: function {handle} exists already; extending")

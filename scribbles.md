@@ -2,6 +2,17 @@
 # scribblez
 "slow is smooth, smooth is fast"
 
+ok so what's next?
+well, RN we're creating the functions, but we're not filling them in.
+so that composition step should be next, right?
+since we just have lists of statements, that should be fairly easy.
+we need to look at sequence, and parallelism.
+so we need some syntax for this.
+how about just using the Feature.func() definition, and we're good?
+we can let our code-generation inline mechanisms do the lifting.
+
+----------
+
 operator bracketing :done!
 function resolution: done!
 
@@ -12,6 +23,7 @@ this way function resolve doesn't need to short-circuit the top-down resolve pro
 
 what are the next steps?
 we need some kind of "pass" / "future plugs in here" keyword for function bodies.
+pass: done.
 
 
 Function composition;
