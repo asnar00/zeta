@@ -26,6 +26,8 @@ class CompiledProgram:
     def __init__(self):
         self.ast = None
         self.st = None
+        self.errors = []
+        self.found = []
 
 # Language collects all modules into one unit
 class Language:
@@ -60,10 +62,9 @@ class Language:
         cp.st.add_symbols(cp.ast, None)
         #log(cp.st.dbg())
         errors = []
-        cp.st.resolve_symbols(cp.ast, None, errors)
-        #log_clear()
-        if len(errors) > 0:
-            log(log_red(f"{len(errors)} errors"))
-            for error in errors:
-                log(f"{error}")
+        found = []
+        cp.st.resolve_symbols(cp.ast, None, errors, found)
+        log_clear()
+        cp.found = "\n".join(found).strip()
+        cp.errors = "\n".join(errors).strip()
         return cp

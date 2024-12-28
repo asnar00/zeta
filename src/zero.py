@@ -98,6 +98,145 @@ def test_zero():
     zero.setup()
     code = s_test_program
     program = zero.compile(code)
+    test("found", program.found, """
+        resolved child u8 to Type(u8) at :2:17
+        resolved alias char to Type(char) at :3:25
+        found type:Type(string) in None at :4:5
+        found parent:Feature(Program) in None at :6:23
+        found type:Type(string) in None at :7:14
+        found type:Type(string) in None at :8:9
+        found Variable(message) in FunctionDef(hello◦) at :9:17
+        found function Function(hello◦) in None for hello_(string) at :11:9
+        found parent:Feature(Hello) in None at :13:25
+        found type:Type(string) in None at :16:17
+        found function Function(bye) in None for bye_() at :17:9
+        resolved child i8 to Type(i8) at :20:16
+        resolved child i16 to Type(i16) at :20:20
+        resolved child i32 to Type(i32) at :20:25
+        resolved child i64 to Type(i64) at :20:30
+        resolved child f32 to Type(f32) at :21:18
+        resolved child f64 to Type(f64) at :21:23
+        resolved child int to Type(int) at :22:19
+        resolved child float to Type(float) at :22:24
+        found type:Type(number) in None at :23:9
+        found type:Type(number) in None at :23:22
+        found type:Type(number) in None at :23:35
+        found Variable(a) in FunctionDef(◦+◦) at :24:17
+        found Variable(b) in FunctionDef(◦+◦) at :24:20
+        found function Function(add◦◦) in None for add_(number_number) at :24:13
+        found type:Type(number) in None at :25:9
+        found type:Type(number) in None at :25:22
+        found type:Type(number) in None at :25:35
+        found Variable(a) in FunctionDef(◦-◦) at :26:17
+        found Variable(b) in FunctionDef(◦-◦) at :26:20
+        found function Function(sub◦◦) in None for sub_(number_number) at :26:13
+        found type:Type(number) in None at :27:9
+        found type:Type(number) in None at :27:22
+        found type:Type(number) in None at :27:35
+        found Variable(a) in FunctionDef(◦*◦) at :28:17
+        found Variable(b) in FunctionDef(◦*◦) at :28:20
+        found function Function(mul◦◦) in None for mul_(number_number) at :28:13
+        found type:Type(number) in None at :29:9
+        found type:Type(number) in None at :29:22
+        found type:Type(number) in None at :29:35
+        found Variable(a) in FunctionDef(◦/◦) at :30:17
+        found Variable(b) in FunctionDef(◦/◦) at :30:20
+        found function Function(div◦◦) in None for div_(number_number) at :30:13
+        found parent:Feature(Math) in None at :32:28
+        found type:Type(vector) in None at :35:9
+        found type:Type(vector) in None at :35:19
+        found type:Type(vector) in None at :35:29
+        found Variable(a) in FunctionDef(◦+◦) at :36:17
+        found Variable(x) in Type(vector) at :36:19
+        found Variable(b) in FunctionDef(◦+◦) at :36:23
+        found Variable(x) in Type(vector) at :36:25
+        found function Function(◦+◦) in None for (number)_+_(number) at :36:21
+        found Variable(a) in FunctionDef(◦+◦) at :36:28
+        found Variable(y) in Type(vector) at :36:30
+        found Variable(b) in FunctionDef(◦+◦) at :36:34
+        found Variable(y) in Type(vector) at :36:36
+        found function Function(◦+◦) in None for (number)_+_(number) at :36:32
+        found Variable(a) in FunctionDef(◦+◦) at :36:39
+        found Variable(z) in Type(vector) at :36:41
+        found Variable(b) in FunctionDef(◦+◦) at :36:45
+        found Variable(z) in Type(vector) at :36:47
+        found function Function(◦+◦) in None for (number)_+_(number) at :36:43
+        found function Function(vector◦◦◦) in None for vec_(number_number_number) at :36:13
+        found type:Type(vector) in None at :37:9
+        found type:Type(vector) in None at :37:19
+        found type:Type(number) in None at :37:29
+        found Variable(a) in FunctionDef(◦*◦) at :38:17
+        found Variable(x) in Type(vector) at :38:19
+        replaced n with Variable(n) at :38:23
+        found function Function(◦*◦) in None for (number)_*_(number) at :38:21
+        found Variable(a) in FunctionDef(◦*◦) at :38:26
+        found Variable(y) in Type(vector) at :38:28
+        replaced n with Variable(n) at :38:32
+        found function Function(◦*◦) in None for (number)_*_(number) at :38:30
+        found Variable(a) in FunctionDef(◦*◦) at :38:35
+        found Variable(z) in Type(vector) at :38:37
+        replaced n with Variable(n) at :38:41
+        found function Function(◦*◦) in None for (number)_*_(number) at :38:39
+        found function Function(vector◦◦◦) in None for vec_(number_number_number) at :38:13
+        found type:Type(vector) in None at :39:9
+        found type:Type(vector) in None at :39:19
+        found type:Type(number) in None at :39:29
+        found Variable(v) in FunctionDef(◦/◦) at :40:17
+        found Variable(x) in Type(vector) at :40:19
+        replaced n with Variable(n) at :40:23
+        found function Function(◦/◦) in None for (number)_/_(number) at :40:21
+        found Variable(v) in FunctionDef(◦/◦) at :40:26
+        found Variable(y) in Type(vector) at :40:28
+        replaced n with Variable(n) at :40:32
+        found function Function(◦/◦) in None for (number)_/_(number) at :40:30
+        found Variable(v) in FunctionDef(◦/◦) at :40:35
+        found Variable(z) in Type(vector) at :40:37
+        replaced n with Variable(n) at :40:41
+        found function Function(◦/◦) in None for (number)_/_(number) at :40:39
+        found function Function(vector◦◦◦) in None for vec_(number_number_number) at :40:13
+        found type:Type(number) in None at :41:9
+        found type:Type(vector) in None at :41:22
+        found type:Type(vector) in None at :41:34
+        found Variable(a) in FunctionDef(◦dot◦) at :42:13
+        found Variable(x) in Type(vector) at :42:15
+        found Variable(b) in FunctionDef(◦dot◦) at :42:19
+        found Variable(x) in Type(vector) at :42:21
+        found function Function(◦*◦) in None for (number)_*_(number) at :42:17
+        found Variable(a) in FunctionDef(◦dot◦) at :42:25
+        found Variable(y) in Type(vector) at :42:27
+        found Variable(b) in FunctionDef(◦dot◦) at :42:31
+        found Variable(y) in Type(vector) at :42:33
+        found function Function(◦*◦) in None for (number)_*_(number) at :42:29
+        found Variable(a) in FunctionDef(◦dot◦) at :42:37
+        found Variable(z) in Type(vector) at :42:39
+        found Variable(b) in FunctionDef(◦dot◦) at :42:43
+        found Variable(z) in Type(vector) at :42:45
+        found function Function(◦*◦) in None for (number)_*_(number) at :42:41
+        found function Function(◦+◦) in None for (number)_+_(number) at :42:35
+        found function Function(◦+◦) in None for (number)_+_(number) at :42:23
+        found type:Type(number) in None at :43:9
+        found type:Type(vector) in None at :43:28
+        replaced v with Variable(v) at :44:18
+        replaced v with Variable(v) at :44:24
+        found function Function(◦dot◦) in None for (vec)_dot_(vec) at :44:20
+        found function Function(sqrt◦) in None for sqrt_(number) at :44:13
+        found type:Type(vector) in None at :45:9
+        found type:Type(vector) in None at :45:28
+        found Variable(v) in FunctionDef(normalise◦) at :46:24
+        found function Function(length◦) in None for length_(vec) at :46:17
+        replaced v with Variable(v) at :46:13
+        found function Function(◦/◦) in None for (vec)_/_(number) at :46:15
+        found type:Type(number) in None at :53:9
+        found type:Type(number) in None at :53:25
+        found type:Type(number) in None at :54:9
+        found type:Type(number) in None at :54:25
+        found type:Type(number) in None at :55:9
+        found type:Type(number) in None at :55:25
+        found type:Type(number) in None at :56:9
+        found type:Type(number) in None at :56:25
+        found type:Type(number) in None at :57:9
+        found type:Type(number) in None at :57:26
+         """)
 
 #--------------------------------------------------------------------------------------------------
 # print ast as nicely formatted code
@@ -275,37 +414,38 @@ class module_Expressions(LanguageModule):
             return fc
         
         @grammar.method(zc.VariableRef)
-        def resolve(self, symbol_table, scope, errors):
+        def resolve(self, symbol_table, scope, errors, found):
             log("vr.resolve", print_code_formatted(self))
             type_0 = type(self.variables[0]).__name__
             if type_0 == "NameDef": return
-            self.variables = resolve_variable_list(self.variables, symbol_table, scope, errors)
+            self.variables = resolve_variable_list(self.variables, symbol_table, scope, errors, found)
         
         @grammar.method(zc.FunctionCallVariable)
-        def resolve(self, symbol_table, scope, errors):
-            self.variables = resolve_variable_list(self.variables, symbol_table, scope, errors)
+        def resolve(self, symbol_table, scope, errors, found):
+            self.variables = resolve_variable_list(self.variables, symbol_table, scope, errors, found)
         
-        def resolve_variable_list(variables, symbol_table, scope, errors):
+        def resolve_variable_list(variables, symbol_table, scope, errors, found):
             if isinstance(variables[0], zc.Variable): return variables
             resolved = []
             for name in variables:
+                location = name.location()
                 var = symbol_table.find_single(name, zc.Variable, scope, errors)
                 if var:
-                    log(log_green(f" found {var} in {scope}"))
                     resolved.append(var)
+                    found.append(f"found {var} in {scope} at {location}")
                     var_type = symbol_table.find_single(var.type, zc.Type, scope, errors)
                     if var_type: scope = var_type
                 else:
-                    log(log_red(f" no variable found for {name} in {scope}"))
+                    errors.append(f"no variable found for {name} in {scope}")
             return resolved
     
         @grammar.method(zc.FunctionCall)
-        def resolve(self, symbol_table, scope, errors):
+        def resolve(self, symbol_table, scope, errors, found):
             cf = print_code_formatted(self)
             log(f"fnc.resolve: {cf}")
-            replace_variables(self.items, symbol_table, scope, errors)
+            replace_variables(self.items, symbol_table, scope, errors, found)
             self._resolved_function = None
-            self._resolved_function = find_function(self, symbol_table, scope, errors)
+            self._resolved_function = find_function(self, symbol_table, scope, errors, found)
         
         def find_lowest_ranked_operator(items):
             i_found = -1
@@ -318,13 +458,15 @@ class module_Expressions(LanguageModule):
                         i_found = i
             return i_found
 
-        def replace_variables(items, symbol_table, scope, errors):
+        def replace_variables(items, symbol_table, scope, errors, found):
             # first replace any variable names with variables
             for i, item in enumerate(items):
                 if isinstance(item, zc.FunctionCallWord):
+                    location = item.word.location()
                     var = symbol_table.find_single(item.word, zc.Variable, scope, [])
                     if var:
                         items[i] = zc.FunctionCallVariable([var])
+                        found.append(f"replaced {item.word} with {var} at {location}")
 
         @grammar.method(zc.Expression)
         def type_of(self) -> str:
@@ -342,7 +484,7 @@ class module_Expressions(LanguageModule):
                 else: return "unresolved"
             else: return "unknown"
 
-        def find_function(fc: zc.FunctionCall, symbol_table, scope, errors) -> zc.Function:
+        def find_function(fc: zc.FunctionCall, symbol_table, scope, errors, found) -> zc.Function:
             if fc._resolved_function: return fc._resolved_function
             sig = ""
             location = ""
@@ -353,21 +495,23 @@ class module_Expressions(LanguageModule):
                 else: sig += str(item.word) + "_"
             if len(sig) > 0: sig = sig[:-1]
             log(f" sig: {sig}")
-            function = find_function_from_signature(sig, symbol_table, scope, errors, location)
+            function = find_function_from_signature(sig, symbol_table, scope, errors, found,location)
             return function
         
-        def find_function_from_signature(sig: str, symbol_table: SymbolTable, scope: Any, errors: List[str], location) -> zc.Function:
-            found = symbol_table.find(sig, zc.Function, scope)
-            if len(found) == 0:
+        def find_function_from_signature(sig: str, symbol_table: SymbolTable, scope: Any, errors: List[str], found: List[str], location) -> zc.Function:
+            items = symbol_table.find(sig, zc.Function, scope)
+            if len(items) == 0:
                 log(log_red(f" no function found for {sig} at {location}"))
                 errors.append(f"no function found for {sig} at {location}")
                 return None
-            elif len(found) > 1:
+            elif len(items) > 1:
                 log(log_red(f" multiple functions found for {sig} at {location}"))
+                errors.append(f"no function found for {sig} at {location}")
                 return None
             else:
-                log(log_green(f" found function {found[0]} for {sig} at {location}"))
-                return found[0].element
+                #log(log_green(f" found function {found[0]} for {sig} at {location}"))
+                found.append(f"found function {items[0]} for {sig} at {location}")
+                return items[0].element
             
         @grammar.method(zc.FunctionCallArguments)
         def type_of(self) -> str:
@@ -723,12 +867,12 @@ class module_Types(LanguageModule):
         def disallow_resolve_children(self): return True
 
         @grammar.method(zc.TypeDef)
-        def resolve(self, symbol_table, scope, errors):
+        def resolve(self, symbol_table, scope, errors, found):
             log(f"typeDef.resolve:\n{print_code_formatted(self)}")
-            #log(f"resolved types: {self._resolved_types}")
             if isinstance(self.rhs, zc.TypeAlias):
                 log(" is alias")
                 type_ref = str(self.rhs.type)
+                location = self.rhs.type.location()
                 ref = ""
                 if type_ref.endswith("$"):
                     ref = "$"
@@ -740,18 +884,26 @@ class module_Types(LanguageModule):
                     self.rhs.type = type
                     self._resolved_types[0]._alias_type = type
                     self._resolved_types[0]._alias_modifier = ref
-                    #log(log_green(f"resolved alias {type_ref} to {self._resolved_types[0]._alias_type}"))
+                    found.append(f"resolved alias {type_ref} to {self._resolved_types[0]._alias_type} at {location}")       
             elif isinstance(self.rhs, zc.StructDef):
                 constructor = self._resolved_types[0]._constructor
-                pass #log("struct")
+                # something something
             elif isinstance(self.rhs, zc.TypeParentDef):
-                pass
+                resolved_parents = []
+                for parent in self.rhs.parents:
+                    found_type = symbol_table.find_single(parent, zc.Type, None, errors)
+                    if found_type:
+                        resolved_parents.append(found_type)
+                        found.append(f"resolved parent {parent} to {found_type}")
+                self._resolved_types[0].parents = resolved_parents
             elif isinstance(self.rhs, zc.TypeChildrenDef):
                 resolved_children = []
                 for child in self.rhs.children:
+                    location = child.location()
                     found_type = symbol_table.find_single(child, zc.Type, None, errors)
                     if found_type:
                         resolved_children.append(found_type)
+                        found.append(f"resolved child {child} to {found_type} at {location}")
                 self._resolved_types[0].children = resolved_children
             elif isinstance(self.rhs, zc.TypeEnumDef):
                 if self._resolved_types[0].options == None:
@@ -923,7 +1075,9 @@ class module_Functions(LanguageModule):
                 if isinstance(item, zc.FunctionSignatureWord):
                     name += str(item.word)
                 elif isinstance(item, zc.FunctionSignatureParams):
-                    name += "◦"
+                    for param in item.params:
+                        for param_name in param.names:
+                            name += "◦"
             return name       
         
         @grammar.method(zc.FunctionDef)
@@ -1078,72 +1232,72 @@ class module_Functions(LanguageModule):
                     """)
         
         test("function_0", parse_code("on (int r) = min (int a, b) { r = if (a < b) then a else b }", "FunctionDef"), """
-FunctionDef
-    modifier: str = on
-    results: FunctionResults
-        FunctionResults
-            results: List[FunctionResultVariableDef]
-                FunctionResultVariableDef
-                    type: Type => int
-                    names: List[NameDef]
-                        NameDef
-                            name: str = r
-                            alias: str = None
-            assign_op: str = =
-    signature: FunctionSignature
-        FunctionSignature
-            elements: List[FunctionSignatureElement]
-                FunctionSignatureWord
-                    word: str = min
-                FunctionSignatureParams
-                    params: List[VariableDef]
-                        VariableDef
-                            type: Type => int
-                            names: List[NameDef]
-                                NameDef
-                                    name: str = a
-                                    alias: str = None
-                                NameDef
-                                    name: str = b
-                                    alias: str = None
-                            value: Expression = None
-    body: FunctionBody
-        FunctionStatements
-            statements: List[Statement]
-                Statement
-                    lhs: StatementLhs
-                        StatementLhs
-                            variables: List[ResultVariable]
-                                ResultVariableRef
-                                    variables: List[Variable]
-                                        => r
-                            assign_op: str = =
-                    rhs: Expression
-                        FunctionCall
-                            items: List[FunctionCallItem]
-                                FunctionCallWord
-                                    word: str = if
-                                FunctionCallArguments
-                                    arguments: List[FunctionCallArgument]
-                                        FunctionCallArgument
-                                            argument: Variable = None
-                                            value: Expression
-                                                FunctionCall
-                                                    items: List[FunctionCallItem]
-                                                        FunctionCallWord
-                                                            word: str = a
-                                                        FunctionCallOperator
-                                                            word: str = <
-                                                        FunctionCallWord
-                                                            word: str = b
-                                FunctionCallWord
-                                    word: str = then
-                                FunctionCallWord
-                                    word: str = a
-                                FunctionCallWord
-                                    word: str = else
-                                FunctionCallWord
-                                    word: str = b
+            FunctionDef
+                modifier: str = on
+                results: FunctionResults
+                    FunctionResults
+                        results: List[FunctionResultVariableDef]
+                            FunctionResultVariableDef
+                                type: Type => int
+                                names: List[NameDef]
+                                    NameDef
+                                        name: str = r
+                                        alias: str = None
+                        assign_op: str = =
+                signature: FunctionSignature
+                    FunctionSignature
+                        elements: List[FunctionSignatureElement]
+                            FunctionSignatureWord
+                                word: str = min
+                            FunctionSignatureParams
+                                params: List[VariableDef]
+                                    VariableDef
+                                        type: Type => int
+                                        names: List[NameDef]
+                                            NameDef
+                                                name: str = a
+                                                alias: str = None
+                                            NameDef
+                                                name: str = b
+                                                alias: str = None
+                                        value: Expression = None
+                body: FunctionBody
+                    FunctionStatements
+                        statements: List[Statement]
+                            Statement
+                                lhs: StatementLhs
+                                    StatementLhs
+                                        variables: List[ResultVariable]
+                                            ResultVariableRef
+                                                variables: List[Variable]
+                                                    => r
+                                        assign_op: str = =
+                                rhs: Expression
+                                    FunctionCall
+                                        items: List[FunctionCallItem]
+                                            FunctionCallWord
+                                                word: str = if
+                                            FunctionCallArguments
+                                                arguments: List[FunctionCallArgument]
+                                                    FunctionCallArgument
+                                                        argument: Variable = None
+                                                        value: Expression
+                                                            FunctionCall
+                                                                items: List[FunctionCallItem]
+                                                                    FunctionCallWord
+                                                                        word: str = a
+                                                                    FunctionCallOperator
+                                                                        word: str = <
+                                                                    FunctionCallWord
+                                                                        word: str = b
+                                            FunctionCallWord
+                                                word: str = then
+                                            FunctionCallWord
+                                                word: str = a
+                                            FunctionCallWord
+                                                word: str = else
+                                            FunctionCallWord
+                                                word: str = b
             """)
     
 #--------------------------------------------------------------------------------------------------

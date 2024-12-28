@@ -134,7 +134,7 @@ class SymbolTable:
             out += "\n"
         return out
     
-    def resolve_symbols(self, e: Entity, scope: Any, errors:List[str]):
+    def resolve_symbols(self, e: Entity, scope: Any, errors:List[str], found:List[str]):
         original_scope = scope
         if hasattr(e, "get_scope"):
             scope = e.get_scope()
@@ -147,23 +147,24 @@ class SymbolTable:
                 if isinstance(attr_value, List):
                     for item in attr_value:
                         if isinstance(item, Entity):
-                            self.resolve_symbols(item, scope, errors)
+                            self.resolve_symbols(item, scope, errors, found)
                 elif isinstance(attr_value, Entity):
-                    self.resolve_symbols(attr_value, scope, errors)
+                    self.resolve_symbols(attr_value, scope, errors, found)
                 elif isinstance(attr_value, Lex) and attr_type != "str":
+                    location = attr_value.location()
                     str_value = attr_value.val
                     attr_class = Grammar.current.get_class(attr_type)
-                    found = self.find(str_value, attr_class, scope)
-                    if len(found) == 0:
+                    items = self.find(str_value, attr_class, scope)
+                    if len(items) == 0:
                         errors.append(f"can't find {attr_value} in {scope}")
-                    elif len(found) > 1:
+                    elif len(items) > 1:
                         found_class = Grammar.current.get_class(attr_type)
                         errors.append(f"multiple matches for {attr_value}[{attr_type}] in {scope}")
                     else:
-                        #log(log_green(f"found {found}"))
-                        setattr(e, attr, found[0].element)
+                        found.append(f"found {attr}:{items[0]} at {location}")
+                        setattr(e, attr, items[0].element)
         if hasattr(e, "resolve"):
-            cont = e.resolve(self, original_scope, errors)
+            cont = e.resolve(self, original_scope, errors, found)
             
         
     
