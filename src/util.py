@@ -19,6 +19,7 @@ from functools import wraps
 s_log_enabled: bool = True
 s_n_log_calls = 0
 s_log_max_depth = 1000
+s_log_suppress = 0
 
 # indent level
 s_log_indent = 0
@@ -28,7 +29,7 @@ s_log = ""
 
 # returns True if logging is enabled
 def log_enabled() -> bool:
-    return s_log_enabled
+    return s_log_enabled and s_log_suppress == 0
 
 # set log max-depth
 def log_max_depth(n: int):
@@ -39,7 +40,7 @@ def log_max_depth(n: int):
 def log(*args):
     global s_n_log_calls
     s_n_log_calls += 1
-    if s_log_enabled:
+    if log_enabled():
         # print args to a string instead of the output
         n_tabs = s_log_indent // 2
         n_rem = s_log_indent % 2
@@ -49,7 +50,7 @@ def log(*args):
         # add it to the global s_log string
         global s_log
         s_log += s + "\n"
-    if s_n_log_calls > 10000:
+    if s_n_log_calls > 100000:
         print("------------------- stopping: too many log calls ---------------------")
         log_exit()
 
@@ -63,6 +64,17 @@ def log_flush():
     global s_log
     print(s_log)
     s_log = ""
+
+# log_suppress turns off logging for anything below this function
+def log_suppress(fn):
+    function_name = fn.__name__
+    def wrapper(*args, **kwargs):
+        global s_log_suppress
+        s_log_suppress += 1
+        result = fn(*args, **kwargs)
+        s_log_suppress -= 1
+        return result
+    return wrapper
 
 # log_indent is a decorator that increases indent level within a function
 def log_indent(fn):
@@ -158,6 +170,9 @@ def log_grey_background(str) -> str:
 
 def log_green_background(str) -> str:
     return f"\033[42m\033[30m{str}\033[0m"
+
+def log_orange(str) -> str:
+    return f"\033[33;1m{str}\033[0m"
 
 # strips all colour-related codes and dynamic things out of a string (so we can compare test results)
 def log_strip(str) -> str:
@@ -401,7 +416,20 @@ def exception_handler(exc_type, exc_value, exc_traceback):
     log_flush()
     msg = log_red(f"exception: {str(exc_value)!r}") + "\n"
     frames = []
+
+    n_frames = 0
     tb = exc_traceback
+    while tb is not None:
+        n_frames += 1
+        tb = tb.tb_next
+    truncate = 0
+    if n_frames > 100:
+        log(log_red(f"exception traceback too long: {n_frames} frames"))
+        log("printing first 10, last 10 frames")
+        truncate = 10
+
+    tb = exc_traceback
+    i_frame = 0
     while tb is not None:
         frame = tb.tb_frame
         filename = frame.f_code.co_filename.replace(s_cwd, '')
@@ -451,16 +479,22 @@ def exception_handler(exc_type, exc_value, exc_traceback):
         else:
             signature = ""
         
-        frames.append((filename, lineno, function_name, signature))
+        if truncate == 0 or (i_frame < truncate) or (i_frame >= n_frames - truncate):
+            frames.append((filename, lineno, function_name, signature))
+        i_frame += 1
         tb = tb.tb_next
     
     # Print frame information in reverse order
+    i_frame = 0
     for filename, lineno, function_name, signature in reversed(frames):
         if function_name.startswith("wrapper"): continue
         if function_name.startswith("<lambda>"): continue
         if function_name.startswith("<module>"): continue
         loc = log_grey(f"{filename}:{lineno}: ")
         msg += (f"{loc}{function_name} ({signature})") + "\n"
+        if truncate > 0 and i_frame == truncate:
+            msg += log_red(f"       .\n       .\ntruncated {n_frames - i_frame} frames\n       .\n       .\n")
+        i_frame += 1
     print(msg)
 
 # installs our exception handler

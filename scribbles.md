@@ -2,6 +2,128 @@
 # scribblez
 "slow is smooth, smooth is fast"
 
+this is definitely not smooth, so we need to think about this more clearly.
+
+we should definitely split this process up into:
+
+    add_symbols
+    resolve_symbols
+    connect_functions
+
+The last one can only be done when we've been through all the others.
+----
+
+OK so here's an interesting idea... 
+
+record the conversation between me and claude/gpt. I.e. all the code getting pasted in and out, goal specification, etc, as we go through the process of writing the first backend, porting to mlir, all that stuff.
+
+If the entire conversation is recorded *along with the fnf code* then maybe it's super easy to automate the process, just by recasting the conversation as a "roleplay" (eg. "user asks for X, dev replies Y") and using at as the system prompt. As long as the goals of the user is spelled out nicely at the top, then we should be able to automate the process a bit.
+
+So something like:
+
+    user: "dev, I want to write a generator for MLIR code"
+    dev: "OK, do xyz..."
+    console: xyz... => output
+    file: xyz...
+
+=> so in other words, the complete history of the interaction.
+
+And then you add:
+
+    "user: thanks! OK, so now I want to blahblah.
+
+I wonder if having examples of all those conversations is really the easiest way of speeding up. One could even automate the generation of the instructions.
+
+
+---------
+
+OK so the new plan is this:
+
+0. Implement Type Substitution Policies (TSPs) based on function-matching-induced type constraints.
+
+1. Make a python backend so we understand how to make it work. It's super simple and we're in the groove with it, we can get it working quickly and gain good understanding.
+
+2. Once that's going, the following needs to happen:
+    2.1 write the md->lang extractor in python so we understand how it looks
+    2.2 rewrite the md->lang extractor in canonical zero (fnf), modifying zero as we go!
+    2.3 start using the zero version from then on
+
+3. Now we can start writing the compiler (including py-backend) in fnf zero.
+
+4. Once this is working and bootstrapped, we can write the MLIR backend in fnf zero (with the help of LLMs). Automating this process is the key outcome from this phase.
+
+5. This we then get running on a bare-bones RISC-v system (no OS) but with literally every piece of chain defined in feature-modular, literate, zero. Which is what we want to achieve.
+
+----
+
+
+next step: spreading type constraints upwards; implementing a type constraint policy.
+or shall we call it the type substitution policy (TSP).
+we just define syntax for it: 
+
+    float.f32 x, y, z = 0
+
+So a TypeRef isn't just a single name, it can also be a chain of names a.b.
+So we just need to add some of "constraints" tag to the FunctionCall object, 
+that notes down that this is a constraint that has to spread upwards.
+
+When we come to build the substitution policy, we'll propagate the substitution upwards.
+
+Type Substitution Policy (TSP) is generated from the program according to some kind of logic, and we can examine the results. That's super nice, because then we can just output the resulting program via the backend grammar (using print_code_formatted).
+
+Once you have a parser/printer, you can use it *errywhere*. I think we do have to start passing in the grammar to the printer and parser functions (or make them ... methods?) So you'd just make everything a method of Language and access self.grammar => hmmm dunno.
+
+I feel like we should maybe think about doing a python backend first just because it's so fricking easy. We totally should.
+
+-----
+
+Oooh, so interesting reading about how to output MLIR from python code.
+MLIR is an intermediate instruction set we can compile to WebASM, LLVM, SPIR-V.
+So it's exactly what we're looking for.
+
+MLIR code (that we'd generate from the zero code) looks like this:
+
+    func.func @add(%arg0: i32, %arg1: i32) -> i32 {
+        %0 = arith.addi %arg0, %arg1 : i32
+        return %0 : i32
+    }
+    
+Bright idea is to define MLIR grammar equivalents for types, functions, variables, etc.
+Do we can define two grammars with overlapping rule-sets, and we just cast from (eg)
+
+    zc.Function 
+     
+to (eg) 
+
+    mlir.Function
+
+and then run the parser backwards ("print_code_formatted") to output in the target language. That's rather nice, isn't it?
+
+=> and we've just done import mlir_classes as mlir
+and the backend is just mlir_backend.py
+
+That's super nice because it's... super nice.
+
+
+
+
+
+
+-----------------
+So now let's think about concrete types.
+
+I do quite like the idea that _xxx is "native". So _u16, _i32, _f32, _ieee(e,m)
+How about the following notion to capture the idea "what type is {var}" - it's a pair of types, the abstract and the concrete substitute.
+
+float.f32       number.i8
+
+One way of thinking about this is that we're doing a text-replace of eg. number with i8 for those variables, and building the program. In fact that's a super way of thinking about it.
+In other words, we have to assign concrete types to every symbol we added during add_symbols.
+
+A "policy" is just concrete-typed everything in the source code; i.e. all type names are replaced with something concrete. Computing this replacement across the code is basically policy stuff.
+
+---------
+
 ok so what's next?
 well, RN we're creating the functions, but we're not filling them in.
 so that composition step should be next, right?

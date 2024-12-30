@@ -12,22 +12,12 @@ class NameDef(Entity):
         self.name: str = name
         self.alias: str = alias
 
-class Feature(Entity):
-    def __init__(self, name: 'str' =None, alias: 'str' =None, parent: 'Feature' =None, types: 'List[Type]' =None, variables: 'List[Variable]' =None, functions: 'List[Function]' =None):
-        super().__init__()
-        self.name: str = name
-        self.alias: str = alias
-        self.parent: Feature = parent        # ref
-        self.types: List[Type] = types        # ref
-        self.variables: List[Variable] = variables        # ref
-        self.functions: List[Function] = functions        # ref
-
 class FeatureDef(Entity):
-    def __init__(self, name: 'str' =None, alias: 'str' =None, parent: 'Feature' =None, components: 'List[Component]' =None):
+    def __init__(self, name: 'str' =None, alias: 'str' =None, parent: 'FeatureDef' =None, components: 'List[Component]' =None):
         super().__init__()
         self.name: str = name
         self.alias: str = alias
-        self.parent: Feature = parent        # ref
+        self.parent: FeatureDef = parent        # ref
         self.components: List[Component] = components
 
 class Component(Entity):
@@ -35,11 +25,11 @@ class Component(Entity):
         super().__init__()
 
 class ContextDef(Entity):
-    def __init__(self, name: 'str' =None, alias: 'str' =None, feature: 'List[Feature]' =None):
+    def __init__(self, name: 'str' =None, alias: 'str' =None, feature: 'List[FeatureDef]' =None):
         super().__init__()
         self.name: str = name
         self.alias: str = alias
-        self.feature: List[Feature] = feature        # ref
+        self.feature: List[FeatureDef] = feature        # ref
 
 class Program(Entity):
     def __init__(self, components: 'List[FeatureDef|ContextDef]' =None):
@@ -121,10 +111,11 @@ class VariableDef(Component):
         self.value: Expression = value
 
 class Type(Entity):
-    def __init__(self, name: 'str' =None, alias: 'str' =None, properties: 'List[Variable]' =None, parents: 'List[Type]' =None, children: 'List[Type]' =None, options: 'List[str]' =None):
+    def __init__(self, name: 'str' =None, alias: 'str' =None, types: 'List[Type]' =None, properties: 'List[Variable]' =None, parents: 'List[Type]' =None, children: 'List[Type]' =None, options: 'List[str]' =None):
         super().__init__()
         self.name: str = name
         self.alias: str = alias
+        self.types: List[Type] = types        # ref
         self.properties: List[Variable] = properties        # ref
         self.parents: List[Type] = parents        # ref
         self.children: List[Type] = children        # ref
@@ -179,10 +170,19 @@ class EnumOptionNumber(EnumOption):
         super().__init__()
         self.val: str = val
 
-class Function(Entity):
-    def __init__(self, handle: 'str' =None, results: 'FunctionResults' =None, signature: 'FunctionSignature' =None, body: 'FunctionBody' =None):
+class MaybeTypes(Type):
+    def __init__(self, types: 'List[Type]' =None):
         super().__init__()
-        self.handle: str = handle
+        self.types: List[Type] = types        # ref
+
+class MultipleTypes(Type):
+    def __init__(self, types: 'List[Type]' =None):
+        super().__init__()
+        self.types: List[Type] = types        # ref
+
+class Function(Entity):
+    def __init__(self, results: 'FunctionResults' =None, signature: 'FunctionSignature' =None, body: 'FunctionBody' =None):
+        super().__init__()
         self.results: FunctionResults = results
         self.signature: FunctionSignature = signature
         self.body: FunctionBody = body

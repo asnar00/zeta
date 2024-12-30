@@ -63,10 +63,15 @@ feature Backend
     type i8, i16, i32, i64
     type f16, f32, f64
     on (f32 r) = add(f32 a, b) pass
+    on (i32 r) = add(i32 a, b) pass
     on (f32 r) = sub(f32 a, b) pass
+    on (i32 r) = sub(i32 a, b) pass
     on (f32 r) = mul(f32 a, b) pass
+    on (i32 r) = mul(i32 a, b) pass
     on (f32 r) = div(f32 a, b) pass
+    on (i32 r) = div(i32 a, b) pass
     on (f32 r) = sqrt(f32 n) pass
+    on (i32 r) = sqrt(i32 n) pass
 
 context MyContext = Program, Hello, Goodbye, Math, VectorMath, Backend
 """
@@ -74,18 +79,18 @@ context MyContext = Program, Hello, Goodbye, Math, VectorMath, Backend
 # this is just scribble: but it's a nice way to define dependent types eg. i32, i64, etc
 s_test_concrete = """
 feature ConcreteMath extends Math
-    type bit = 0 | 1
-    type u(n) = bit[n]
-    type i(n) =
+    concrete type bit = 0 | 1
+    concrete type u(n) = bit[n]
+    concrete type i(n) =
         bit sign
         u(n-1) val
-    type ieee(e, m) =
+    concrete type ieee(e, m) =
         bit sign
         u(e) exponent | exp
         u(m) mantissa | man
-    type f16 = ieee(5, 10)
-    type f32 = ieee(8, 23)
-    type f64 = ieee(11, 52)
+    concrete type f16 = ieee(5, 10)
+    concrete type f32 = ieee(8, 23)
+    concrete type f64 = ieee(11, 52)
 """
 
 @this_is_the_test
@@ -98,8 +103,6 @@ def test_zero():
     zero.setup()
     code = s_test_program
     program = zero.compile(code)
-    log(program.errors)
-    log(program.found)
 
 #--------------------------------------------------------------------------------------------------
 # print ast as nicely formatted code
@@ -132,10 +135,9 @@ class module_Features(LanguageModule):
     def syntax(self, grammar: Grammar):
         grammar.add("""
             NameDef := name:<identifier> ("|" alias:<identifier>)?
-            Feature := NameDef parent:Feature& types:Type&* variables:Variable&* functions:Function&*
-            FeatureDef := "feature" NameDef ("extends" parent:Feature&)? "{" components:Component*; "}"
-            Component
-            ContextDef := "context" NameDef "=" feature:Feature&*,
+            FeatureDef := "feature" NameDef ("extends" parent:FeatureDef&)? "{" components:Component*; "}"
+            Component :=
+            ContextDef := "context" NameDef "=" feature:FeatureDef&*,
             Program := components:(FeatureDef | ContextDef)+;
             """)
         
@@ -146,8 +148,21 @@ class module_Features(LanguageModule):
         # def add(self, name: str, element: Any, scope: Any, tag: Dict=None) -> str; return True if we should be scope
         @grammar.method(zc.FeatureDef)
         def add_symbols(self, scope, symbol_table):
-            feature = zc.Feature(name=self.name, alias=self.alias, parent=self.parent)
-            symbol_table.add(self.name, feature, scope, alias=self.alias)
+            symbol_table.add(self.name, self, scope, alias=self.alias)
+
+        @grammar.method(zc.FeatureDef)
+        def can_see_scope(self, scope, symbol_table):
+            log(f"can {self} see {scope}")
+            featureDef = self
+            while True:
+                parent = featureDef.parent
+                if isinstance(parent, Lex):
+                    parent = symbol_table.find_single(parent, zc.FeatureDef, None, [])
+                    if parent == None: return False # we'll get a resolve error later
+                if parent == scope: return True
+                featureDef = parent
+                
+
         @grammar.method(zc.FeatureDef)
         def get_scope(self): return self
 
@@ -157,7 +172,7 @@ class module_Features(LanguageModule):
                 !!! premature end (expected 'feature', got 'None' at <eof>)
                 name: str = None
                 alias: str = None
-                parent: Feature = None
+                parent: FeatureDef = None
                 components: List[Component] = None
             """)
         
@@ -166,7 +181,7 @@ class module_Features(LanguageModule):
                 !!! premature end (expected NameDef, got 'None' at <eof>)
                 name: str = None
                 alias: str = None
-                parent: Feature = None
+                parent: FeatureDef = None
                 components: List[Component] = None
             """)
 
@@ -175,7 +190,7 @@ class module_Features(LanguageModule):
                 !!! premature end (expected '{', got 'None' at <eof>)
                 name: str = MyFeature
                 alias: str = None
-                parent: Feature = None
+                parent: FeatureDef = None
                 components: List[Component] = None
             """)
 
@@ -184,8 +199,8 @@ class module_Features(LanguageModule):
                 !!! mismatch (expected '{', got 'extends' at :...:19)
                 name: str = MyFeature
                 alias: str = None
-                parent: Feature
-                    !!! premature end (expected parent:Feature&, got 'None' at <eof>)
+                parent: FeatureDef
+                    !!! premature end (expected parent:FeatureDef&, got 'None' at <eof>)
                 components: List[Component] = None
             """)
         
@@ -194,7 +209,7 @@ class module_Features(LanguageModule):
                 !!! premature end (expected '{', got 'None' at <eof>)
                 name: str = MyFeature
                 alias: str = None
-                parent: Feature => Another
+                parent: FeatureDef => Another
                 components: List[Component] = None        
             """)
         
@@ -202,7 +217,7 @@ class module_Features(LanguageModule):
             FeatureDef
                 name: str = MyFeature
                 alias: str = None
-                parent: Feature = None
+                parent: FeatureDef = None
                 components: List[Component] = []
             """)
         
@@ -210,14 +225,14 @@ class module_Features(LanguageModule):
             FeatureDef
                 name: str = MyFeature
                 alias: str = None
-                parent: Feature => Another
+                parent: FeatureDef => Another
                 components: List[Component] = []
             """)
         test("context_0", parse_code("context MyContext = Hello, Goodbye, Countdown", "ContextDef"), """
             ContextDef
                 name: str = MyContext
                 alias: str = None
-                feature: List[Feature]
+                feature: List[FeatureDef]
                     => Hello
                     => Goodbye
                     => Countdown
@@ -245,9 +260,8 @@ class module_Expressions(LanguageModule):
                     """)
         
     def methods(self, grammar: Grammar):
-        # function call must have at least one bracketed term or operator
         @grammar.method(zc.FunctionCall)
-        def validate(self) -> str:
+        def validate(self) -> str: # function call must have at least one bracketed term or operator
             n_bracketed = 0; n_operators = 0; n_words = 0
             for item in self.items:
                 if isinstance(item, zc.FunctionCallArguments): n_bracketed += 1
@@ -260,6 +274,14 @@ class module_Expressions(LanguageModule):
         def validate(self) -> str:
             if len(self.variables) < 2: return "function-call variable must have two or more names"
             return ""
+        
+        @grammar.method(zc.VariableRef)
+        def disallow_resolve_children(self) -> bool:
+            return True
+        
+        @grammar.method(zc.FunctionCallVariable) 
+        def disallow_resolve_children(self) -> bool:
+            return True
         
         @grammar.method(zc.FunctionCall)
         def add_symbols(self, scope, symbol_table):
@@ -276,15 +298,25 @@ class module_Expressions(LanguageModule):
             fc.items = before + [fc.items[i_operator]] + after
             return fc
         
+        def get_param_types(fc: zc.FunctionCall, symbol_table: SymbolTable) -> List[zc.Type]:
+            out = []
+            for item in fc.items:
+                if isinstance(item, zc.FunctionCallVariable):
+                    out.append(item.variables[-1].type)
+                elif isinstance(item, zc.FunctionCallArguments):
+                    for arg in item.arguments:
+                        if arg.value:
+                            out.append(arg.value.type_of(symbol_table))
+            return out
+        
         @grammar.method(zc.VariableRef)
         def resolve(self, symbol_table, scope, errors, found):
-            log("vr.resolve", print_code_formatted(self))
-            type_0 = type(self.variables[0]).__name__
-            if type_0 == "NameDef": return
+            log("vr.resolve", print_code_formatted(self), "in scope", scope)
             self.variables = resolve_variable_list(self.variables, symbol_table, scope, errors, found)
         
         @grammar.method(zc.FunctionCallVariable)
         def resolve(self, symbol_table, scope, errors, found):
+            log(f"fcv.resolve: {print_code_formatted(self)}, scope is {scope}")
             self.variables = resolve_variable_list(self.variables, symbol_table, scope, errors, found)
         
         def resolve_variable_list(variables, symbol_table, scope, errors, found):
@@ -296,9 +328,11 @@ class module_Expressions(LanguageModule):
                 if var:
                     resolved.append(var)
                     found.append(f"found {var} in {scope} at {location}")
+                    #log(log_green(f"found {var} in {scope} at {location}"))
                     var_type = symbol_table.find_single(var.type, zc.Type, scope, errors)
                     if var_type: scope = var_type
                 else:
+                    log(log_red(f"no variable found for {name} in {scope}"))
                     errors.append(f"no variable found for {name} in {scope}")
             return resolved
     
@@ -307,8 +341,8 @@ class module_Expressions(LanguageModule):
             cf = print_code_formatted(self)
             log(f"fnc.resolve: {cf}")
             replace_variables(self.items, symbol_table, scope, errors, found)
-            self._resolved_function = None
-            self._resolved_function = find_function(self, symbol_table, scope, errors, found)
+            #self._resolved_functions = []
+            #self._resolved_functions = find_functions(self, symbol_table, scope, errors, found)
         
         def find_lowest_ranked_operator(items):
             i_found = -1
@@ -329,122 +363,105 @@ class module_Expressions(LanguageModule):
                     var = symbol_table.find_single(item.word, zc.Variable, scope, [])
                     if var:
                         items[i] = zc.FunctionCallVariable([var])
+                        #log(log_green(f"found {var} in {scope} at {location}"))
                         found.append(f"replaced {item.word} with {var} at {location}")
 
-        @grammar.method(zc.Expression)
-        def type_of(self) -> str:
-            if isinstance(self, zc.Constant):
-                return "number" if self.value.type=="number" else "string"
-            elif isinstance(self, zc.VariableRef) or isinstance(self, zc.FunctionCallVariable):
-                var = self.variables[-1]
-                log(f" var: {var}, type: {var.type}")
-                return str(var.type)
-            elif isinstance(self, zc.Bracketed):
-                return self.expression.type_of()
-            elif isinstance(self, zc.FunctionCall):
-                function = self._resolved_function
-                if function: return function.type_of()
-                else: return "unresolved"
-            else: return "unknown"
-
-        def find_function(fc: zc.FunctionCall, symbol_table, scope, errors, found) -> zc.Function: 
-            if fc._resolved_function: return fc._resolved_function
-            sig = ""
-            short_sig = ""
-            location = ""
-            for item in fc.items:
-                if location == "" and hasattr(item, "word"):
-                    location = item.word.location()
-                if hasattr(item, "type_of"):
-                    sig += "(" + item.type_of() + ")_"
-                    if isinstance(item, zc.FunctionCallArguments):
-                        short_sig += "◦" * len(item.arguments)
-                    elif isinstance(item, zc.FunctionCallVariable):
-                        short_sig += "◦"
-                    else:
-                        short_sig += "◦"
-                else: 
-                    short_sig += str(item.word)
-                    sig += str(item.word) + "_"
-            if len(sig) > 0: sig = sig[:-1]
-            log(f" sig: {sig}; short_sig: {short_sig}")
-            function = find_function_from_signature(sig, short_sig,symbol_table, scope, errors, found,location)
-            return function
+        @grammar.method(zc.Constant)
+        def type_of(self, symbol_table: SymbolTable) -> zc.Type:
+            type_name = "number" if self.value.type=="number" else "string"
+            return symbol_table.find_single(type_name, zc.Type, None, [])
         
-        def find_function_from_signature(sig: str, short_sig: str,symbol_table: SymbolTable, scope: Any, errors: List[str], found: List[str], location) -> zc.Function:
-            items = symbol_table.find(short_sig, zc.Function, scope)
-            log(f" short_items: {items}")
-            if len(items) == 0:
-                log(log_red(f" no function found for {short_sig} at {location}"))
-                errors.append(f"no function found for {short_sig} at {location}")
-                return None
-            sig_types = get_types_in_sig(sig, short_sig, symbol_table, scope)
-            log(f" sig_types: {sig_types}")
-            # now find the long signature of each function
-            best_item = None
-            best_distance = 1024
-            best_constrained_item = None
-            best_constrained_distance = 1024
-            for item in items:
-                fn = item.element
-                fn_sig = fn.signature.handle()
-                fn_short_sig = fn.signature.untyped_handle()
-                fn_types = get_types_in_sig(fn_sig, fn_short_sig, symbol_table, scope)
-                log(f"  found sig: {fn_sig}, short_sig: {fn_short_sig}")
-                log(f"  found types: {fn_types}")
-                distances = []
-                for i, t in enumerate(sig_types):
-                    log(f"  finding distance from {t} to {fn_types[i]}")
-                    distance = t.find_relationship(fn_types[i])
-                    distances.append(distance)
-                log(f" distances: {distances}")
-                if None in distances: continue
-                if all(d >= 0 for d in distances):
-                    sum_distances = sum(distances)
-                    if sum_distances < best_distance:
-                        best_distance = sum_distances
-                        best_item = item
-                else:
-                    sum_distances = -sum(distances)
-                    if sum_distances < best_constrained_distance:
-                        best_constrained_distance = sum_distances
-                        best_constrained_item = item
-            if best_item:
-                log(f" best_item: {best_item}")
-                return best_item.element
-            elif best_constrained_item:
-                log(f" best_constrained_item: {best_constrained_item}")
-                errors.append(f"warning: {sig} needs type constraint to match {best_constrained_item.element.signature.handle()} {location}")
-                return best_constrained_item.element
-            else:
-                errors.append(f"no function found for {short_sig} at {location}")
-                return None
-                    
-
-        def get_types_in_sig(sig: str, short_sig: str, symbol_table: SymbolTable, scope: Any) -> List[Type]:
-            words = sig.replace("Type(", "").replace("(", "").replace(")", "").replace("_", " ").replace("  ", " ").split(" ")
-            words = [w for w in words if not (w in short_sig)]
-            types = [symbol_table.find_single(w, zc.Type, scope, []) for w in words]
-            return types
-            
-            
-        @grammar.method(zc.FunctionCallArguments)
-        def type_of(self) -> str:
-            out = ""
-            for argument in self.arguments:
-                if argument.value and hasattr(argument.value, "type_of"):
-                    out += argument.value.type_of() + "_"
-            if len(out) > 0: out = out[:-1]
-            return out
+        @grammar.method(zc.VariableRef)
+        def type_of(self, symbol_table: SymbolTable) -> zc.Type:
+            var = self.variables[-1]
+            log(f" var: {var}, type: {var.type}")
+            return symbol_table.find_single(var.type, zc.Type, None, [])
         
         @grammar.method(zc.FunctionCallVariable)
-        def type_of(self) -> str:
-            return str(self.variables[-1].type)
+        def type_of(self, symbol_table: SymbolTable) -> zc.Type:
+            var = self.variables[-1]
+            log(f" var: {var}, type: {var.type}")
+            return symbol_table.find_single(var.type, zc.Type, None, [])
+
+        def find_functions(fc: zc.FunctionCall, symbol_table, scope, errors, found) -> List[zc.Function]: 
+            if fc._resolved_functions: return fc._resolved_functions
+            short_sig = find_short_sig(fc)
+            location = find_location(fc)
+            fc_types = get_param_types(fc, symbol_table)
+            log(f" fc_types: {fc_types}")
+            for param_type in fc_types:
+                if isinstance(param_type, Lex):
+                    log(log_red("Flagging: fc_types contains a Lex type."))
+                    break
+            log(f" short_sig: {short_sig}")
+            functions = [f.element for f in symbol_table.find(short_sig, zc.Function, scope)]
+            log(f" functions: {functions}")
+            fn_types = [f.signature.get_param_types(symbol_table) for f in functions]
+            log(f" fn_types: {fn_types}")
+            distances = [get_distances(fc_types,fn_types[i]) for i in range(len(fn_types))]
+            log(f" distances: {distances}")
+            i_best = find_best_positive_distance(distances)
+            log(f" i_best: {i_best}")
+            if i_best is not None: return [functions[i_best]]
+            # filter out functions with None in their distances
+            filtered_functions = []
+            for i, dist_list in enumerate(distances):
+                if None not in dist_list: filtered_functions.append(functions[i])
+            log(f" filtered_functions: {filtered_functions}")
+            if len(filtered_functions) == 0:
+                log(log_red(f"no function found for {print_code_formatted(fc)} in {scope}"))
+                errors.append(f"no function found for {print_code_formatted(fc)} in {scope}")
+                return []
+            fc._constraints = fn_types # dunno what this is really for, but we'll find out later
+            log(f" fc._constraints: {fc._constraints}")
+            return filtered_functions
+        
+        def find_short_sig(fc: zc.FunctionCall) -> str:
+            out = ""
+            for item in fc.items:
+                if isinstance(item, zc.FunctionCallArguments):
+                    out += "◦" * len(item.arguments)
+                elif isinstance(item, zc.FunctionCallVariable):
+                    out += "◦"
+                elif hasattr(item, "word"):
+                    out += str(item.word)
+            return out
+        
+        def find_location(fc: zc.FunctionCall) -> str:
+            for item in fc.items:
+                if hasattr(item, "word"):
+                    return item.word.location()
+            return ""
+        
+        def get_distances(sig_types, fc_types):
+            distances = []
+            for i, t in enumerate(sig_types):
+                distance = t.find_relationship(fc_types[i])
+                distances.append(distance)
+            return distances
+
+        def find_best_positive_distance(distances: List[List[int]]) -> int|None:
+            i_best = None
+            best_sum = 102400
+            for i, dist_list in enumerate(distances):
+                if None in dist_list: continue
+                if all(d >= 0 for d in dist_list):
+                    sum_distances = sum(dist_list)
+                    if sum_distances < best_sum:
+                        best_sum = sum_distances
+                        i_best = i
+            return i_best
+        
+        @grammar.method(zc.FunctionCallVariable)
+        def type_of(self, symbol_table) -> zc.Type:
+            return self.variables[-1].type  
         
         @grammar.method(zc.FunctionCall)
-        def type_of(self) -> str:
-            if self._resolved_function: return self._resolved_function.type_of()
-            return "unresolved"
+        def type_of(self, symbol_table) -> zc.Type:
+            if len(self._resolved_functions) == 1: return self._resolved_functions[0].type_of(symbol_table)
+            log(log_red("warning: multiple or no functions found for fn-call"))
+            return zc.MaybeTypes(types = [f.type_of(symbol_table) for f in self._resolved_functions])
+            
 
     def test(self):
         test("expression_0", parse_code("1", "Expression"), """
@@ -613,10 +630,6 @@ class module_Variables(LanguageModule):
                 symbol_table.add(name.name, var, scope)
                 if name.alias: symbol_table.add(name.alias, var, scope)
 
-        @grammar.method(zc.Variable)
-        def print_code(self):
-            return str(self.name)
-
 
     def test(self):
         test("variable_0", parse_code("int a", "VariableDef"), """
@@ -713,13 +726,11 @@ class module_Types(LanguageModule):
             EnumOption := 
             EnumOptionId < EnumOption := val:<identifier>
             EnumOptionNumber < EnumOption := val:<number>
+            MaybeTypes < Type := types:Type&*
+            MultipleTypes < Type := types:Type&*
         """)
 
     def methods(self, grammar: Grammar):
-        @grammar.method(zc.Type)
-        def print_code(self) -> str:
-            return self.short_name()
-        
         @grammar.method(zc.TypeEnumDef)
         def validate(self) -> str: 
             return "" if len(self.options) > 1 else "enum must have at least two options"
@@ -744,93 +755,74 @@ class module_Types(LanguageModule):
                 else:
                     raise Exception(f"symbol clash in TypeDef: {self.name} => {existing_type_objects}")     
             
-        #@log_indent
+        @log_suppress
         def make_constructor(type_object: zc.Type, symbol_table: SymbolTable):
-            results = zc.FunctionResults(
-                results = [zc.FunctionResultVariableDef(type=type_object.name, names=[zc.NameDef(name="r")])], 
-                assign_op = "="
-            )
-            signature = zc.FunctionSignature(elements=[
-                zc.FunctionSignatureWord(word=type_object.name),
-                zc.FunctionSignatureParams(params=type_object.properties)
-            ])
-            statements = []
+            log(f" make_constructor: {type_object.name} | {type_object.alias}")
+            name = type_object.name
+            result_var = "_" + str(name)[0].lower()
             for prop in type_object.properties:
-                for name in prop.names:
-                    #log(f"name: {name.name}")
-                    out_var = zc.ResultVariableRef(variables=["r", name.name])
-                    lhs = zc.StatementLhs(variables=[out_var], assign_op="=")
-                    rhs = zc.VariableRef(variables=[name])
-                    statements.append(zc.Statement(lhs=lhs, rhs=rhs))
-            body = zc.FunctionStatements(statements=statements)
-            func = zc.Function(handle=str(type_object.name)+"_", results=results, signature=signature, body=body)
-            #log(dbg_entity(func))
-            type_object._constructor = func
-            handle = signature.handle()
-            untyped_handle = signature.untyped_handle()
-            log(f"adding constructor {handle} to symbol table")
-            symbol_table.add(handle, func, None)
-            symbol_table.add(untyped_handle, func, None)
-            alias_handle = handle.replace(str(type_object.name), str(type_object.alias))
-            alias_untyped_handle = untyped_handle.replace(str(type_object.name), str(type_object.alias))
-            log(f"adding alias {alias_handle} to symbol table")
-            symbol_table.add(alias_handle, func, None)
-            symbol_table.add(alias_untyped_handle, func, None)
+                for var in prop.names:
+                    log(f"  var: {var.name}, type: {prop.type}, default: {print_code_formatted(prop.value)}")
+            code = f"on ({name} {result_var}) = {name}("
+            for prop in type_object.properties:
+                code += f"{prop.type} "
+                for var in prop.names: code += f"{var.name}, "
+                if code.endswith(", "): code = code[:-2]
+                if prop.value: code += f" = {print_code_formatted(prop.value)}"
+            code += ") {"
+            for prop in type_object.properties:
+                for var in prop.names:
+                    code += f"{result_var}.{var.name} = {var.name}; "
+            code += "}"
+            log(code)
+            constructor = parse_simple(code, "FunctionDef")
+            symbol_table.add_symbols(constructor, None)
+            alias_handle = constructor.signature.handle().replace(str(name), str(type_object.alias))
+            symbol_table.add(alias_handle, constructor, None)
+            type_object.constructor_fn = constructor
 
         @grammar.method(zc.TypeDef)    
         def get_scope(self):
             return self._resolved_types[0] or None
         
+        @grammar.method(zc.Type)
+        def get_scope(self):
+            return self
+        
         @grammar.method(zc.TypeDef)
-        def disallow_resolve_children(self): return True
+        def disallow_resolve_children(self): 
+            return isinstance(self.rhs, zc.TypeAlias)
 
         @grammar.method(zc.TypeDef)
         def resolve(self, symbol_table, scope, errors, found):
-            log(f"typeDef.resolve:\n{print_code_formatted(self)}")
+            #log(f"typeDef.resolve:\n{print_code_formatted(self)}")
             if isinstance(self.rhs, zc.TypeAlias):
-                log(" is alias")
+                #log(" is alias")
                 type_ref = str(self.rhs.type)
                 location = self.rhs.type.location()
                 ref = ""
                 if type_ref.endswith("$"):
                     ref = "$"
                     type_ref = type_ref[:-1]
-                log(f" type_ref: {type_ref}")
+                #log(f" type_ref: {type_ref}")
                 type = symbol_table.find_single(type_ref, zc.Type, None, errors)
-                log(f" type: {type}")
+                #log(f" type: {type}")
                 if type:
                     self.rhs.type = type
                     self._resolved_types[0]._alias_type = type
                     self._resolved_types[0]._alias_modifier = ref
                     found.append(f"resolved alias {type_ref} to {self._resolved_types[0]._alias_type} at {location}")       
-            elif isinstance(self.rhs, zc.StructDef):
-                constructor = self._resolved_types[0]._constructor
-                # something something
             elif isinstance(self.rhs, zc.TypeParentDef):
-                resolved_parents = []
+                #log(" is parent")
                 for parent in self.rhs.parents:
-                    found_type = symbol_table.find_single(parent, zc.Type, None, errors)
-                    if found_type:
-                        resolved_parents.append(found_type)
-                        found.append(f"resolved parent {parent} to {found_type}")
-                for p in resolved_parents: assert_parent_type(self.resolved_types[0], p)
+                    assert_parent_type(self._resolved_types[0], parent)
             elif isinstance(self.rhs, zc.TypeChildrenDef):
-                resolved_children = []
+                #log(" is children")
                 for child in self.rhs.children:
-                    location = child.location()
-                    found_type = symbol_table.find_single(child, zc.Type, None, errors)
-                    if found_type:
-                        resolved_children.append(found_type)
-                        found.append(f"resolved child {child} to {found_type} at {location}")
-                for c in resolved_children: assert_parent_type(c, self._resolved_types[0])
-            elif isinstance(self.rhs, zc.TypeEnumDef):
-                if self._resolved_types[0].options == None:
-                    self._resolved_types[0].options = self.rhs.options
-                else:
-                    self._resolved_types[0].options += self.rhs.options
-            return False
-        
+                    assert_parent_type(child, self._resolved_types[0])
+            
         def assert_parent_type(type: zc.Type, parent: zc.Type):
+            log(log_green(f"asserting that {type.name} is a child of {parent.name}"))
             if type.parents == None: type.parents = []
             if parent not in type.parents: type.parents.append(parent)
             if parent.children == None: parent.children = []
@@ -961,7 +953,7 @@ class module_Types(LanguageModule):
 class module_Functions(LanguageModule):
     def syntax(self, grammar: Grammar):
         grammar.add("""
-            Function := handle:<identifier> results:FunctionResults signature:FunctionSignature body:FunctionBody
+            Function := "_function" results:FunctionResults signature:FunctionSignature body:FunctionBody
             FunctionDef < Component := FunctionModifier results:FunctionResults? signature:FunctionSignature body:FunctionBody
             FunctionModifier := modifier:("on" | "before" | "after" | "replace")
             FunctionResults := "(" results:FunctionResultVariableDef+, ")" assign_op:("=" | "<<")
@@ -971,7 +963,7 @@ class module_Functions(LanguageModule):
             FunctionSignatureWord < FunctionSignatureElement := word:(<identifier> | <operator>)
             FunctionSignatureParams < FunctionSignatureElement := "(" params:VariableDef+, ")"
             FunctionBody := 
-            FunctionStatements < FunctionBody :="{" statements:Statement*; "}"
+            FunctionStatements < FunctionBody := "{" statements:Statement*; "}"
             EmptyFunctionBody < FunctionBody := "pass"
             Statement := (lhs:StatementLhs)? rhs:Expression
             StatementLhs := variables:ResultVariable+, assign_op:("=" | "<<") 
@@ -991,25 +983,9 @@ class module_Functions(LanguageModule):
         def add_symbols(self, scope, symbol_table):
             var = zc.Variable(type=self.type, name=self.name, alias=self.alias)
             symbol_table.add(var.name, var, scope, alias=var.alias)
-
-        @grammar.method(zc.FunctionSignature)
-        def handle(self) -> str:
-            name = ""
-            for item in self.elements:
-                if isinstance(item, zc.FunctionSignatureWord):
-                    name += str(item.word) + "_"
-                elif isinstance(item, zc.FunctionSignatureParams):
-                    brace = "("
-                    for param in item.params:
-                        for param_name in param.names:
-                            brace += str(param.type) + "_"
-                    if brace[-1] == "_": brace = brace[:-1]
-                    brace += ")_"
-                    name += brace
-            return name[:-1]
         
         @grammar.method(zc.FunctionSignature)
-        def untyped_handle(self) -> str:
+        def handle(self) -> str:
             name = ""
             for item in self.elements:
                 if isinstance(item, zc.FunctionSignatureWord):
@@ -1018,38 +994,124 @@ class module_Functions(LanguageModule):
                     for param in item.params:
                         for param_name in param.names:
                             name += "◦"
-            return name       
+            return name      
         
+        @grammar.method(zc.FunctionSignature)
+        def typed_handle(self) -> str:
+            name = ""
+            for item in self.elements:
+                if isinstance(item, zc.FunctionSignatureWord):
+                    name += str(item.word) + " "
+                elif isinstance(item, zc.FunctionSignatureParams):
+                    if name.endswith(" "): name = name[:-1]
+                    brace = "("
+                    for param in item.params:
+                        for param_name in param.names:
+                            brace += str(param.type).replace("Type(", "").replace(")", "")+ ", "
+                    if brace.endswith(", "): brace = brace[:-2]
+                    brace += ")"
+                    name += brace
+            return name
+
         @grammar.method(zc.FunctionDef)
         def short_name(self) -> str:
-            return self.signature.untyped_handle() if self.signature else ""
+            return self.signature.typed_handle() if self.signature else ""
+        
+        @grammar.method(zc.FunctionDef)
+        def can_see_scope(self, scope, symbol_table):
+            if self == scope: return True
+            if not isinstance(scope, zc.FeatureDef): return False
+            if self._owner == scope: return True
+            if self._owner == scope: return True
+            if self._owner.can_see_scope(scope, symbol_table): return True
+            return False
 
         @grammar.method(zc.FunctionDef)
         def add_symbols(self, scope, symbol_table):
-            #log(f"add_symbols: {self.signature.handle()}")
+            #log(log_green(f"functionDef.add_symbols: {self.signature.typed_handle()} in {scope}"))
+            long_handle = self.signature.typed_handle()
+            short_handle = self.signature.handle()
+            symbol_table.add(long_handle, self, scope)
+            symbol_table.add(short_handle, self, scope)
+            self._owner = scope
+
+        @grammar.method(zc.FunctionDef)
+        def make_function_from_definitions(self, symbol_table):
+            typed_handle = self.signature.typed_handle()
+            existing = symbol_table.find_single(typed_handle, zc.Function, None, [])
+            if existing:
+                #log(log_green(f"in {scope}, extension of {typed_handle} using modifier {self.modifier}:"))
+                self._resolved_function = existing
+                mod = str(self.modifier)
+                if mod == "replace":
+                    log(f"replacing function {typed_handle}")
+                    existing.body = self.body
+                elif mod == "after":
+                    log(f"adding statements after {typed_handle}")
+                    existing.body.statements += self.body.statements
+                elif mod == "before":
+                    existing.body.statements.insert(0, self.body.statements)
+                elif mod == "on":
+                    log_exit(f"TODO: on function {typed_handle}")
+                log(print_code_formatted(existing))
+                return
+            function = self.make_function(symbol_table)
+            symbol_table.add(typed_handle, function, None)
+            short_handle = self.signature.handle()
+            symbol_table.add(short_handle, function, None)
+            self._resolved_function = function
+            #log(f"first definition of {typed_handle}:")
+            #log(print_code_formatted(function))
+            
+        @grammar.method(zc.FunctionDef)
+        def make_function(self, symbol_table: SymbolTable):
             handle = self.signature.handle()
-            functions = symbol_table.find(handle, zc.Function,None)
-            if len(functions) == 0:
-                function = zc.Function(handle=handle, results=self.results, signature=self.signature, body=self.body)
-                symbol_table.add(handle, function, None)
-                symbol_table.add(self.signature.untyped_handle(), function, None)
+            existing = symbol_table.find_single(handle, zc.Function, None, []) # no error if not found
+            if existing:
+                log(f"function {handle} already exists")
+                return existing
             else:
-                function = functions[0]
-                log(f"TODO: function {handle} exists already; extending")
+                function = zc.Function( results=self.results, signature=self.signature, body=None)
+                symbol_table.add(handle, function, None)
+                return function
+
+        @grammar.method(zc.FunctionSignature)
+        def get_param_types(self, symbol_table) -> List[zc.Type]:
+            out = []
+            for item in self.elements:
+                if isinstance(item, zc.FunctionSignatureParams):
+                    for param in item.params:
+                        param_type = param.type
+                        if isinstance(param_type, Lex):
+                            param_type = symbol_table.find_single(param_type, zc.Type, None, None)
+                        for param_name in param.names:
+                            out.append(param_type)
+            return out
 
         @grammar.method(zc.FunctionDef)
         def get_scope(self): return self
 
         @grammar.method(zc.Function)
+        def get_scope(self): return self
+
+        @grammar.method(zc.Function)
         def short_name(self) -> str:
-            return self.signature.untyped_handle() if self.signature else ""
+            return self.signature.typed_handle() if self.signature else ""
         
         @grammar.method(zc.Function)
-        def type_of(self) -> str:
+        def type_of(self, symbol_table) -> Type:
+            log(f"type_of {print_code_formatted(self)}")
             fr = self.results.results
-            out = ""
-            for r in fr: out += str(r.type.name) + "_"
-            return out[:-1]
+            types = []
+            for r in fr:
+                type = r.type
+                # this is janky but I'm not sure how to avoid it
+                if isinstance(type, Lex): type = symbol_table.find_single(type, zc.Type, None, None)
+                for name in r.names:
+                    types.append(type)
+            log(f"types: {types}")
+            if len(types) == 0: return types[0]
+            return zc.MultipleTypes(types=types)
     
     def test(self):
         test("result_vars_1", parse_code("(a, b: int, k, l: float) =", "FunctionResults"), """

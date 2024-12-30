@@ -35,7 +35,9 @@ class Language:
         self.import_module = import_module
         self.modules = []
         self.grammar = Grammar()
+
     def add_modules(self, modules: List[LanguageModule]): self.modules.extend(modules)
+
     def setup(self):
         for module in self.modules: module.syntax(self.grammar)
         self.grammar.build_classes()
@@ -45,26 +47,40 @@ class Language:
         for module in self.modules: 
             module.methods(self.grammar)
             module.test()
+
     def compile(self, code: str) -> CompiledProgram:
         cp = CompiledProgram()
-        ls = lexer(Source(code = code))
-        reader = Reader(ls)
-        rule = Grammar.current.rule_named["Program"]
-        cp.ast = parse_rule(rule, reader)
-        if has_errors(cp.ast):
-            log_clear()
-            log(log_red("errors in ast"))
-            log(dbg_entity(cp.ast))
-            return cp
-        cp.st = SymbolTable()
-        log(dbg_entity(cp.ast))
+        cp.ast = self.parse(code)
+        if has_errors(cp.ast): return self.show_errors(cp.ast)
+        cp.st = self.build_symbol_table(cp.ast)
+        self.resolve_symbols(cp)
+        
+        return cp
+    
+    def parse(self, code: str) -> Entity:
+        return parse_simple(code, "Program")
+    
+    def show_errors(self, ast: Entity):
         log_clear()
-        cp.st.add_symbols(cp.ast, None)
-        #log(cp.st.dbg())
+        log(log_red("errors in ast"))
+        log(dbg_entity(ast))
+        return ast
+    
+    @log_suppress
+    def build_symbol_table(self, ast: Entity) -> SymbolTable:
+        st = SymbolTable()
+        log("adding symbols for ast")
+        st.add_symbols(ast, None)
+        log(st.dbg())
+        return st
+       
+    def resolve_symbols(self, cp: CompiledProgram):
         errors = []
         found = []
-        cp.st.resolve_symbols(cp.ast, None, errors, found)
-        log_clear()
-        cp.found = "\n".join(found).strip()
-        cp.errors = "\n".join(errors).strip()
-        return cp
+        visited = []
+        for key, items in cp.st.symbols.items():
+            for item in items:
+                cp.st.resolve_symbols(item.element, item.scope, errors, found, visited)
+        cp.st.resolve_symbols(cp.ast, None, errors, found, visited)
+        log(print_code_formatted(cp.ast))
+        log_exit("resolve_symbols")

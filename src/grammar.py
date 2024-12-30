@@ -194,7 +194,7 @@ class Grammar:
     def connect_parent(self, rule: Rule):
         if not rule.parent_name: return
         parent = self.rule_named[rule.parent_name]
-        if not parent.is_abstract(): raise Exception(f"parent {parent.name} of {rule.name} is not abstract")
+        #if not parent.is_abstract(): raise Exception(f"parent {parent.name} of {rule.name} is not abstract")
         if len(parent.terms) == 0:
             parent.terms.append(Term(var=None, vals=[], dec="", sep="", ref=""))
         if not (rule.name in parent.terms[0].vals):

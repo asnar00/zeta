@@ -298,6 +298,15 @@ def parse_code(code: str, rule_name: str) -> str:
     rule = Grammar.current.rule_named[rule_name]
     ast= parse_rule(rule, reader)
     return dbg_entity(ast)
+
+@log_suppress
+def parse_simple(code: str, rule_name: str) -> Entity:
+    ls = lexer(Source(code=code))
+    reader = Reader(ls)
+    rule = Grammar.current.rule_named[rule_name]
+    ast= parse_rule(rule, reader)
+    return ast
+
     
 #--------------------------------------------------------------------------------------------------
 # print routines : the inverse of parse
@@ -331,10 +340,13 @@ def print_code_formatted(e: Entity) -> str:
 
     return fmt.replace("    \n", "").replace("\n\n", "\n")
 
-def print_code(e: Entity) -> str|List[str]:
+def print_code(e: Entity, is_reference: bool = False) -> str|List[str]:
     if e is None: return ""
-    if isinstance(e, Lex) or isinstance(e, str): return str(e)
-    if isinstance(e, List): return [print_code(item) for item in e]
+    if isinstance(e, Lex) or isinstance(e, str): 
+        if is_reference: return log_orange(str(e))
+        else: return str(e)
+    if isinstance(e, List): return [print_code(item, is_reference) for item in e]
+    if isinstance(e, Entity) and is_reference: return log_green(str(e.name))
     if hasattr(e, "print_code"): return e.print_code()
     rule = Grammar.current.rule_named[e.__class__.__name__]
     return print_code_rule(rule, e)
@@ -342,9 +354,10 @@ def print_code(e: Entity) -> str|List[str]:
 def print_code_rule(rule: Rule, e: Entity) -> str:
     out = ""
     for term in rule.terms:
+        is_reference = (term.ref != "")
         if term.var:
             if hasattr(e, term.var):
-                code = print_code(getattr(e, term.var))
+                code = print_code(getattr(e, term.var), is_reference)
                 if isinstance(code, str):
                     out += code
                 elif isinstance(code, List):
@@ -369,4 +382,3 @@ def can_print_rule(rule: Rule, e: Entity) -> bool:
         if (not hasattr(e, term.var)) or (getattr(e, term.var) == None):
             return False
     return True
-        

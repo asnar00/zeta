@@ -4,7 +4,8 @@
 # zero to anything
 
 from typing import Type, Dict, Any, List
-from grammar import Entity, Grammar
+from grammar import Entity, Grammar, dbg_entity
+from parser import print_code_formatted
 from util import *
 from lexer import Lex
 
@@ -88,8 +89,8 @@ class SymbolTable:
     
     def scope_can_see(self, scope1: Any, scope2: Any) -> bool:
         if scope1 is None or scope2 is None: return True
-        if hasattr(scope1, "inherits_from"):
-            return scope1.inherits_from(scope2)
+        if hasattr(scope1, "can_see_scope"):
+            return scope1.can_see_scope(scope2, self)
         return scope1 == scope2
 
     # run recursively through all properties of an Entity, collecting a symbol table
@@ -134,34 +135,53 @@ class SymbolTable:
             out += "\n"
         return out
     
-    def resolve_symbols(self, e: Entity, scope: Any, errors:List[str], found:List[str]):
+    @log_suppress
+    def resolve_symbols(self, e: Entity, scope: Any, errors:List[str], found:List[str], visited: List[Entity]=[]):
+        if e in visited: return
+        visited.append(e)
         original_scope = scope
         if hasattr(e, "get_scope"):
             scope = e.get_scope()
-        if not hasattr(e, "disallow_resolve_children"):
+        disallow = hasattr(e, "disallow_resolve_children") and e.disallow_resolve_children()
+        if not disallow:
             for attr in vars(e):
                 if attr == "_error": continue
                 attr_type = Grammar.current.get_attribute_type(e.__class__, attr)
                 attr_value = getattr(e, attr)
                 attr_actual_type = type(attr_value)
                 if isinstance(attr_value, List):
+                    resolved_list = []
                     for item in attr_value:
                         if isinstance(item, Entity):
-                            self.resolve_symbols(item, scope, errors, found)
+                            self.resolve_symbols(item, scope, errors, found, visited)
+                        elif isinstance(item, Lex):
+                            actual_type = attr_type.replace("List[", "").replace("&]", "")
+                            attr_class = Grammar.current.get_class(actual_type)
+                            resolved_item = self.find_single(item, attr_class, scope, errors)
+                            if resolved_item==None:
+                                items_found = self.find(item.val, attr_class, None)
+                                resolved_list.append(log_red(str(item)))
+                            resolved_list.append(resolved_item)
+                    if len(resolved_list) > 0:
+                        setattr(e, attr, resolved_list)
                 elif isinstance(attr_value, Entity):
-                    self.resolve_symbols(attr_value, scope, errors, found)
+                    self.resolve_symbols(attr_value, scope, errors, found, visited)
                 elif isinstance(attr_value, Lex) and attr_type != "str":
                     location = attr_value.location()
                     str_value = attr_value.val
+                    vb = str_value == "out$"
+                    if vb: log(log_red(f"resolve {attr_value} in {scope}"))
                     attr_class = Grammar.current.get_class(attr_type)
                     items = self.find(str_value, attr_class, scope)
                     if len(items) == 0:
+                        log(log_red(f"can't find {attr_value} in {scope}"))
                         errors.append(f"can't find {attr_value} in {scope}")
                     elif len(items) > 1:
-                        found_class = Grammar.current.get_class(attr_type)
+                        log(log_red(f"multiple matches for {attr_value}[{attr_type}] in {scope}"))
                         errors.append(f"multiple matches for {attr_value}[{attr_type}] in {scope}")
                     else:
                         found.append(f"found {attr}:{items[0]} at {location}")
+                        #log(f"setting {attr} of {e} in scope {scope} to {items[0].element}")
                         setattr(e, attr, items[0].element)
         if hasattr(e, "resolve"):
             cont = e.resolve(self, original_scope, errors, found)
