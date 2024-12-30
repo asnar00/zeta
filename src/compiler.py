@@ -54,7 +54,6 @@ class Language:
         if has_errors(cp.ast): return self.show_errors(cp.ast)
         cp.st = self.build_symbol_table(cp.ast)
         self.resolve_symbols(cp)
-        
         return cp
     
     def parse(self, code: str) -> Entity:
@@ -83,4 +82,5 @@ class Language:
                 cp.st.resolve_symbols(item.element, item.scope, errors, found, visited)
         cp.st.resolve_symbols(cp.ast, None, errors, found, visited)
         log(print_code_formatted(cp.ast))
+        log("errors:", "\n".join(errors))
         log_exit("resolve_symbols")

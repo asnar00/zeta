@@ -159,9 +159,9 @@ class SymbolTable:
                             attr_class = Grammar.current.get_class(actual_type)
                             resolved_item = self.find_single(item, attr_class, scope, errors)
                             if resolved_item==None:
-                                items_found = self.find(item.val, attr_class, None)
                                 resolved_list.append(log_red(str(item)))
-                            resolved_list.append(resolved_item)
+                            else:
+                                resolved_list.append(resolved_item)
                     if len(resolved_list) > 0:
                         setattr(e, attr, resolved_list)
                 elif isinstance(attr_value, Entity):

@@ -333,7 +333,8 @@ class module_Expressions(LanguageModule):
                     if var_type: scope = var_type
                 else:
                     log(log_red(f"no variable found for {name} in {scope}"))
-                    errors.append(f"no variable found for {name} in {scope}")
+                    resolved.append(name)
+                    #errors.append(f"no variable found for {name} in {scope}")
             return resolved
     
         @grammar.method(zc.FunctionCall)
@@ -822,6 +823,7 @@ class module_Types(LanguageModule):
                     assert_parent_type(child, self._resolved_types[0])
             
         def assert_parent_type(type: zc.Type, parent: zc.Type):
+            if isinstance(type, str) or isinstance(parent, str): return
             log(log_green(f"asserting that {type.name} is a child of {parent.name}"))
             if type.parents == None: type.parents = []
             if parent not in type.parents: type.parents.append(parent)
