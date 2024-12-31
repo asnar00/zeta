@@ -337,8 +337,7 @@ def print_code_formatted(e: Entity, use_aliases: bool = False) -> str:
         else:
             fmt += start + cleanup(out[ic:])
             break
-
-    return fmt.replace("    \n", "").replace("\n\n", "\n").replace("( ", "(").replace(" )", ")").replace(". ", ".").replace(" ,", ",")
+    return fmt.replace("    \n", "").replace("\n\n", "\n").replace("( ", "(").replace(" )", ")").replace(" . ", ".").replace(" ,", ",")
 
 def print_code(e: Entity, is_reference: bool, use_aliases: bool) -> str|List[str]:
     if e is None: return ""
@@ -350,7 +349,7 @@ def print_code(e: Entity, is_reference: bool, use_aliases: bool) -> str|List[str
         if use_aliases and e.alias != None: 
             return log_green(str(e.alias))
         else:
-            return log_green(str(e.name))
+            return log_green(str(e.name)) if hasattr(e, "name") else str(e)
     if hasattr(e, "print_code"): return e.print_code()
     rule = Grammar.current.rule_named[e.__class__.__name__]
     return print_code_rule(rule, e, use_aliases)

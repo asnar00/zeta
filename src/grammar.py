@@ -676,11 +676,14 @@ def dbg_entity(e: Entity|List[Entity], indent: int=0) ->str:
                 if e._error != None:
                     out += f"{start}    {log_red(e._error)}\n"
                 continue
-            val = getattr(e, attr)
+            if attr.startswith("_"): continue
             type_name = Grammar.current.get_attribute_type(e.__class__, attr)
-            if val == None or (isinstance(val, Lex) or isinstance(val, str))or (isinstance(val, List) and len(val)==0):
+            val = getattr(e, attr)
+            if val == None or (isinstance(val, Lex) or isinstance(val, str)) or (isinstance(val, List) and len(val)==0):
                 ref = ">" if (isinstance(val, Lex) or isinstance(val, str)) and type_name != "str" else ""
                 out += f"{start}    {attr}: {type_name.replace("&", "")} ={ref} {val}\n"
+            elif "&" in type_name:
+                out += f"{start}    {attr} => {val}\n"
             else:
                 if isinstance(val, list) and "List[" not in type_name:
                     type_name = f"List[{type_name}]"

@@ -199,8 +199,7 @@ class module_Features(LanguageModule):
                 !!! mismatch (expected '{', got 'extends' at :...:19)
                 name: str = MyFeature
                 alias: str = None
-                parent: FeatureDef
-                    !!! premature end (expected parent:FeatureDef&, got 'None' at <eof>)
+                parent => !!! premature end (expected parent:FeatureDef&, got 'None' at <eof>)
                 components: List[Component] = None
             """)
         
@@ -232,11 +231,8 @@ class module_Features(LanguageModule):
             ContextDef
                 name: str = MyContext
                 alias: str = None
-                feature: List[FeatureDef]
-                    => Hello
-                    => Goodbye
-                    => Countdown
-             """)
+                feature => [Hello, Goodbye, Countdown]
+            """)
 
 
 #--------------------------------------------------------------------------------------------------
@@ -288,6 +284,10 @@ class module_Expressions(LanguageModule):
         @grammar.method(zc.FunctionCallVariable)
         def get_scope(self):
             var = self.variable
+            if isinstance(var, List):
+                log(log_red("var is a list"))
+                log(var)
+                log_exit()
             if isinstance(var.type, Lex): return None
             return var.type
     
@@ -326,26 +326,27 @@ class module_Expressions(LanguageModule):
                     location = item.word.location()
                     var = symbol_table.find_single(item.word, zc.Variable, scope, [])
                     if var:
-                        items[i] = zc.FunctionCallVariable([var])
+                        items[i] = zc.FunctionCallVariable(variable=var, property=None)
                         #log(log_green(f"found {var} in {scope} at {location}"))
                         found.append(f"replaced {item.word} with {var} at {location}")
 
         @grammar.method(zc.Constant)
-        def type_of(self, symbol_table: SymbolTable) -> zc.Type:
+        def check_type(self, symbol_table, scope, errors) -> zc.Type:
             type_name = "number" if self.value.type=="number" else "string"
-            return symbol_table.find_single(type_name, zc.Type, None, [])
+            self._type = symbol_table.find_single(type_name, zc.Type, scope, errors)
+            if self._type:log(log_green(f"Constant: {self.value} is {self._type}"))
+            else: log(log_red(f"Constant: {self.value} is not a valid type"))
         
         @grammar.method(zc.VariableRef)
-        def type_of(self, symbol_table: SymbolTable) -> zc.Type:
-            var = self.variables[-1]
-            log(f" var: {var}, type: {var.type}")
-            return symbol_table.find_single(var.type, zc.Type, None, [])
+        def check_type(self, symbol_table, scope, errors) -> zc.Type:
+            self._type = self.variable.type
+            if self._type: log(log_green(f"VariableRef: {self.variable} is {self._type}"))
         
         @grammar.method(zc.FunctionCallVariable)
-        def type_of(self, symbol_table: SymbolTable) -> zc.Type:
-            var = self.variables[-1]
-            log(f" var: {var}, type: {var.type}")
-            return symbol_table.find_single(var.type, zc.Type, None, [])
+        def check_type(self, symbol_table, scope, errors) -> zc.Type:
+            self._type = self.variable.type
+            if self._type: log(log_green(f"FunctionCallVariable: {self.variable} is {self._type}"))
+
 
         def find_functions(fc: zc.FunctionCall, symbol_table, scope, errors, found) -> List[zc.Function]: 
             if fc._resolved_functions: return fc._resolved_functions
@@ -427,15 +428,9 @@ class module_Expressions(LanguageModule):
                         i_best = i
             return i_best
         
-        @grammar.method(zc.FunctionCallVariable)
-        def type_of(self, symbol_table) -> zc.Type:
-            return self.variables[-1].type  
-        
         @grammar.method(zc.FunctionCall)
-        def type_of(self, symbol_table) -> zc.Type:
-            if len(self._resolved_functions) == 1: return self._resolved_functions[0].type_of(symbol_table)
-            log(log_red("warning: multiple or no functions found for fn-call"))
-            return zc.MaybeTypes(types = [f.type_of(symbol_table) for f in self._resolved_functions])
+        def check_type(self, symbol_table, scope, errors):
+            log(f"check_type: {print_code_formatted(self)}")
             
 
     def test(self):
@@ -872,9 +867,7 @@ class module_Types(LanguageModule):
                         alias: str = None
                 rhs: TypeRhs
                     TypeChildrenDef
-                        children: List[Type]
-                            => i8
-                            => i16
+                        children => [i8, i16]
             """)
         
         test("type_3", parse_code("type offset < vector", "TypeDef"), """
@@ -885,8 +878,7 @@ class module_Types(LanguageModule):
                         alias: str = None
                 rhs: TypeRhs
                     TypeParentDef
-                        parents: List[Type]
-                            => vector
+                        parents => [vector]
             """)
         
         test("type_4", parse_code("type evil = no | yes | maybe", "TypeDef"), """
@@ -949,11 +941,16 @@ class module_Functions(LanguageModule):
             FunctionBody := 
             FunctionStatements < FunctionBody := "{" statements:Statement*; "}"
             EmptyFunctionBody < FunctionBody := "pass"
-            Statement := (lhs:StatementLhs)? rhs:Expression
-            StatementLhs := variables:ResultVariable+, assign_op:("=" | "<<") 
+            Statement := 
+            Assignment < Statement :=(lhs:AssignmentLhs)? rhs:Expression
+            AssignmentLhs := variables:ResultVariable+, assign_op:("=" | "<<") 
             ResultVariable :=
             ResultVariableRef < ResultVariable := VariableRef
             ResultVariableDef < ResultVariable := ((type:Type& NameDef) | (NameDef ":" type:Type&))
+            CompositeFunction < Statement:=
+            SingleFunctionDef < CompositeFunction := funcDef:FunctionDef&
+            SequenceFunctionDef < CompositeFunction := "seq" "(" comps:CompositeFunction+, ")"
+            ParallelFunctionDef < CompositeFunction := "par" "(" comps:CompositeFunction+, ")"
         """)
 
     def methods(self, grammar: Grammar):
@@ -1008,7 +1005,10 @@ class module_Functions(LanguageModule):
 
         @grammar.method(zc.FunctionDef)
         def short_name(self) -> str:
-            return self.signature.typed_handle() if self.signature else ""
+            out = ""
+            if hasattr(self, "_owner") and self._owner: out += str(self._owner.name) + "."
+            out += self.signature.typed_handle() if self.signature else ""
+            return out
         
         @grammar.method(zc.FunctionDef)
         def can_see_scope(self, scope, symbol_table):
@@ -1027,46 +1027,50 @@ class module_Functions(LanguageModule):
             symbol_table.add(long_handle, self, scope)
             symbol_table.add(short_handle, self, scope)
             self._owner = scope
+            function = symbol_table.find_single(long_handle, zc.Function, None, [])
+            if function == None:
+                function = self.make_function(symbol_table)
+                symbol_table.add(long_handle, function, None)
+                symbol_table.add(short_handle, function, None)
+            else:
+                self.modify_function(function, symbol_table)
 
         @grammar.method(zc.FunctionDef)
-        def make_function_from_definitions(self, symbol_table):
-            typed_handle = self.signature.typed_handle()
-            existing = symbol_table.find_single(typed_handle, zc.Function, None, [])
-            if existing:
-                #log(log_green(f"in {scope}, extension of {typed_handle} using modifier {self.modifier}:"))
-                self._resolved_function = existing
-                mod = str(self.modifier)
-                if mod == "replace":
-                    log(f"replacing function {typed_handle}")
-                    existing.body = self.body
-                elif mod == "after":
-                    log(f"adding statements after {typed_handle}")
-                    existing.body.statements += self.body.statements
-                elif mod == "before":
-                    existing.body.statements.insert(0, self.body.statements)
-                elif mod == "on":
-                    log_exit(f"TODO: on function {typed_handle}")
-                log(print_code_formatted(existing))
-                return
-            function = self.make_function(symbol_table)
-            symbol_table.add(typed_handle, function, None)
-            short_handle = self.signature.handle()
-            symbol_table.add(short_handle, function, None)
-            self._resolved_function = function
-            #log(f"first definition of {typed_handle}:")
-            #log(print_code_formatted(function))
+        def modify_function(self, existing, symbol_table):
+            long_handle = self.signature.typed_handle()
+            mod = str(self.modifier)
+            this_def = zc.SingleFunctionDef(funcDef=self)
+            if mod == "replace":
+                existing.body.statements = [this_def]
+            elif mod == "after":
+                sm = existing.body.statements[0]
+                if isinstance(sm, zc.SequenceFunctionDef):
+                    sm.comps.append(this_def)
+                else:
+                    sm = zc.SequenceFunctionDef(comps = [sm, this_def])
+                    existing.body.statements = [sm]
+            elif mod == "before":
+                sm = existing.body.statements[0]
+                if isinstance(sm, zc.SequenceFunctionDef):
+                    sm.comps.append(this_def)
+                else:
+                    sm = zc.SequenceFunctionDef(comps = [this_def, sm])
+                    existing.body.statements = [sm]
+            elif mod == "on":
+                sm = existing.body.statements[0]
+                if isinstance(sm, zc.ParallelFunctionDef):
+                    sm.comps.append(this_def)
+                else:
+                    sm = zc.ParallelFunctionDef(comps = [sm, this_def])
+                    existing.body.statements = [sm]
             
         @grammar.method(zc.FunctionDef)
         def make_function(self, symbol_table: SymbolTable):
-            handle = self.signature.handle()
-            existing = symbol_table.find_single(handle, zc.Function, None, []) # no error if not found
-            if existing:
-                log(f"function {handle} already exists")
-                return existing
-            else:
-                function = zc.Function( results=self.results, signature=self.signature, body=None)
-                symbol_table.add(handle, function, None)
-                return function
+            funcDef = zc.SingleFunctionDef(funcDef=self)
+            statements = zc.FunctionStatements(statements=[funcDef])
+            function = zc.Function( results=self.results, signature=self.signature, body=statements)
+            symbol_table.add(handle, function, None)
+            return function
 
         @grammar.method(zc.FunctionSignature)
         def get_param_types(self, symbol_table) -> List[zc.Type]:
@@ -1090,21 +1094,6 @@ class module_Functions(LanguageModule):
         @grammar.method(zc.Function)
         def short_name(self) -> str:
             return self.signature.typed_handle() if self.signature else ""
-        
-        @grammar.method(zc.Function)
-        def type_of(self, symbol_table) -> Type:
-            log(f"type_of {print_code_formatted(self)}")
-            fr = self.results.results
-            types = []
-            for r in fr:
-                type = r.type
-                # this is janky but I'm not sure how to avoid it
-                if isinstance(type, Lex): type = symbol_table.find_single(type, zc.Type, None, None)
-                for name in r.names:
-                    types.append(type)
-            log(f"types: {types}")
-            if len(types) == 0: return types[0]
-            return zc.MultipleTypes(types=types)
     
     def test(self):
         test("result_vars_1", parse_code("(a, b: int, k, l: float) =", "FunctionResults"), """
@@ -1255,9 +1244,9 @@ class module_Functions(LanguageModule):
                 body: FunctionBody
                     FunctionStatements
                         statements: List[Statement]
-                            Statement
-                                lhs: StatementLhs
-                                    StatementLhs
+                            Assignment
+                                lhs: AssignmentLhs
+                                    AssignmentLhs
                                         variables: List[ResultVariable]
                                             ResultVariableRef
                                                 variable: Variable => r

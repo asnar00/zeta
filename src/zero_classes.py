@@ -255,12 +255,16 @@ class EmptyFunctionBody(FunctionBody):
         super().__init__()
 
 class Statement(Entity):
-    def __init__(self, lhs: 'StatementLhs' =None, rhs: 'Expression' =None):
+    def __init__(self, ):
         super().__init__()
-        self.lhs: StatementLhs = lhs
+
+class Assignment(Statement):
+    def __init__(self, lhs: 'AssignmentLhs' =None, rhs: 'Expression' =None):
+        super().__init__()
+        self.lhs: AssignmentLhs = lhs
         self.rhs: Expression = rhs
 
-class StatementLhs(Entity):
+class AssignmentLhs(Entity):
     def __init__(self, variables: 'List[ResultVariable]' =None, assign_op: 'str' =None):
         super().__init__()
         self.variables: List[ResultVariable] = variables
@@ -282,6 +286,25 @@ class ResultVariableDef(ResultVariable):
         self.type: Type = type        # ref
         self.name: str = name
         self.alias: str = alias
+
+class CompositeFunction(Statement):
+    def __init__(self, ):
+        super().__init__()
+
+class SingleFunctionDef(CompositeFunction):
+    def __init__(self, funcDef: 'FunctionDef' =None):
+        super().__init__()
+        self.funcDef: FunctionDef = funcDef        # ref
+
+class SequenceFunctionDef(CompositeFunction):
+    def __init__(self, comps: 'List[CompositeFunction]' =None):
+        super().__init__()
+        self.comps: List[CompositeFunction] = comps
+
+class ParallelFunctionDef(CompositeFunction):
+    def __init__(self, comps: 'List[CompositeFunction]' =None):
+        super().__init__()
+        self.comps: List[CompositeFunction] = comps
 
 class TestDef(Component):
     def __init__(self, lhs: 'Expression' =None, rhs: 'Expression' =None):

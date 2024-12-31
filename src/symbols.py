@@ -68,7 +68,7 @@ class SymbolTable:
         found = self.find(name, of_type, scope)
         report = ""
         if len(found) == 0:
-            log(log_red(f"no {of_type.__name__} '{name}' in scope {scope}{location}{report}"))
+            #log(log_red(f"no {of_type.__name__} '{name}' in scope {scope}{location}{report}"))
             errors.append(f"no {of_type.__name__} '{name}' in scope {scope}{location}{report}")
             if str(name).startswith("VariableDef"): log_exit("weird")        
         elif len(found) > 1:
@@ -137,7 +137,7 @@ class SymbolTable:
             out += "\n"
         return out
     
-    @log_suppress
+    #@log_suppress
     def resolve_symbols(self, e: Entity, scope: Any, errors: List[str], found: List[str], visited: Set, indent: int = 0):
         start = "  " * indent
         if e in visited: return
@@ -191,6 +191,7 @@ class SymbolTable:
     def resolve_attr_rec(self, e: Entity, attr: str, scope: Any, errors: List[str], found: List[str], visited: Set, indent: int = 0):
         attr_type = Grammar.current.get_attribute_type(e.__class__, attr)
         attr_val = getattr(e, attr)
+        attr_actual_type = type(attr_val).__name__
         if attr_val is None: return
         if attr_type is "str": return
         is_reference = "&" in attr_type
@@ -200,3 +201,4 @@ class SymbolTable:
         for val in vals:
             if isinstance(val, Entity):
                 self.resolve_symbols(val, scope, errors, found, visited, indent+1)
+        
