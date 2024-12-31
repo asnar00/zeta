@@ -247,14 +247,14 @@ class module_Expressions(LanguageModule):
         grammar.add("""
             Expression :=
             Constant < Expression := value:(<number> | <string>)
-            VariableRef < Expression := variables:Variable&+.
+            VariableRef < Expression := variable:Variable& ("." property:VariableRef)?
             Bracketed < Expression := "(" expression:Expression ")"
             FunctionCall < Expression := items:FunctionCallItem+
             FunctionCallItem :=
             FunctionCallConstant < FunctionCallItem := constant:Constant
             FunctionCallOperator < FunctionCallItem := word:<operator>
             FunctionCallWord < FunctionCallItem := word:<identifier>
-            FunctionCallVariable < FunctionCallItem := variables:Variable&+.
+            FunctionCallVariable < FunctionCallItem := VariableRef
             FunctionCallArguments < FunctionCallItem := "(" arguments:FunctionCallArgument+, ")"
             FunctionCallArgument := (argument:Variable& "=")? value:Expression
                     """)
@@ -272,21 +272,31 @@ class module_Expressions(LanguageModule):
     
         @grammar.method(zc.FunctionCallVariable)
         def validate(self) -> str:
-            if len(self.variables) < 2: return "function-call variable must have two or more names"
+            if self.property == None: return "FunctionCallVariable must have a property"
             return ""
-        
-        @grammar.method(zc.VariableRef)
-        def disallow_resolve_children(self) -> bool:
-            return True
-        
-        @grammar.method(zc.FunctionCallVariable) 
-        def disallow_resolve_children(self) -> bool:
-            return True
         
         @grammar.method(zc.FunctionCall)
         def add_symbols(self, scope, symbol_table):
             embracket(self)
         
+        @grammar.method(zc.VariableRef)
+        def get_scope(self):
+            var = self.variable
+            if isinstance(var.type, Lex): return None
+            return var.type
+
+        @grammar.method(zc.FunctionCallVariable)
+        def get_scope(self):
+            var = self.variable
+            if isinstance(var.type, Lex): return None
+            return var.type
+    
+        @grammar.method(zc.FunctionCall)
+        def resolve(self, symbol_table, scope, errors, found):
+            cf = print_code_formatted(self)
+            log(f"fnc.resolve: {cf}")
+            replace_variables(self.items, symbol_table, scope, errors, found)
+
         def embracket(fc: zc.FunctionCall):
             i_operator = find_lowest_ranked_operator(fc.items)
             if i_operator == -1: return fc
@@ -297,53 +307,6 @@ class module_Expressions(LanguageModule):
             if len(after) > 1: after = [zc.FunctionCall(items=after)]
             fc.items = before + [fc.items[i_operator]] + after
             return fc
-        
-        def get_param_types(fc: zc.FunctionCall, symbol_table: SymbolTable) -> List[zc.Type]:
-            out = []
-            for item in fc.items:
-                if isinstance(item, zc.FunctionCallVariable):
-                    out.append(item.variables[-1].type)
-                elif isinstance(item, zc.FunctionCallArguments):
-                    for arg in item.arguments:
-                        if arg.value:
-                            out.append(arg.value.type_of(symbol_table))
-            return out
-        
-        @grammar.method(zc.VariableRef)
-        def resolve(self, symbol_table, scope, errors, found):
-            log("vr.resolve", print_code_formatted(self), "in scope", scope)
-            self.variables = resolve_variable_list(self.variables, symbol_table, scope, errors, found)
-        
-        @grammar.method(zc.FunctionCallVariable)
-        def resolve(self, symbol_table, scope, errors, found):
-            log(f"fcv.resolve: {print_code_formatted(self)}, scope is {scope}")
-            self.variables = resolve_variable_list(self.variables, symbol_table, scope, errors, found)
-        
-        def resolve_variable_list(variables, symbol_table, scope, errors, found):
-            if isinstance(variables[0], zc.Variable): return variables
-            resolved = []
-            for name in variables:
-                location = name.location()
-                var = symbol_table.find_single(name, zc.Variable, scope, errors)
-                if var:
-                    resolved.append(var)
-                    found.append(f"found {var} in {scope} at {location}")
-                    #log(log_green(f"found {var} in {scope} at {location}"))
-                    var_type = symbol_table.find_single(var.type, zc.Type, scope, errors)
-                    if var_type: scope = var_type
-                else:
-                    log(log_red(f"no variable found for {name} in {scope}"))
-                    resolved.append(name)
-                    #errors.append(f"no variable found for {name} in {scope}")
-            return resolved
-    
-        @grammar.method(zc.FunctionCall)
-        def resolve(self, symbol_table, scope, errors, found):
-            cf = print_code_formatted(self)
-            log(f"fnc.resolve: {cf}")
-            replace_variables(self.items, symbol_table, scope, errors, found)
-            #self._resolved_functions = []
-            #self._resolved_functions = find_functions(self, symbol_table, scope, errors, found)
         
         def find_lowest_ranked_operator(items):
             i_found = -1
@@ -417,6 +380,17 @@ class module_Expressions(LanguageModule):
             log(f" fc._constraints: {fc._constraints}")
             return filtered_functions
         
+        def get_param_types(fc: zc.FunctionCall, symbol_table: SymbolTable) -> List[zc.Type]:
+            out = []
+            for item in fc.items:
+                if isinstance(item, zc.FunctionCallVariable):
+                    out.append(item.variables[-1].type)
+                elif isinstance(item, zc.FunctionCallArguments):
+                    for arg in item.arguments:
+                        if arg.value:
+                            out.append(arg.value.type_of(symbol_table))
+            return out
+        
         def find_short_sig(fc: zc.FunctionCall) -> str:
             out = ""
             for item in fc.items:
@@ -472,15 +446,17 @@ class module_Expressions(LanguageModule):
 
         test("expression_1", parse_code("a", "Expression"), """
             VariableRef
-                variables: List[Variable]
-                    => a
+                variable: Variable => a
+                property: VariableRef = None
             """)
         
         test("expression_1a", parse_code("a.b", "Expression"), """
             VariableRef
-                variables: List[Variable]
-                    => a
-                    => b
+                variable: Variable => a
+                property: VariableRef
+                    VariableRef
+                        variable: Variable => b
+                        property: VariableRef = None
             """)
 
         test("expression_2", parse_code("a + b", "Expression"), """
@@ -498,15 +474,19 @@ class module_Expressions(LanguageModule):
             FunctionCall
                 items: List[FunctionCallItem]
                     FunctionCallVariable
-                        variables: List[Variable]
-                            => v
-                            => x
+                        variable: Variable => v
+                        property: VariableRef
+                            VariableRef
+                                variable: Variable => x
+                                property: VariableRef = None
                     FunctionCallOperator
                         word: str = +
                     FunctionCallVariable
-                        variables: List[Variable]
-                            => v
-                            => y
+                        variable: Variable => v
+                        property: VariableRef
+                            VariableRef
+                                variable: Variable => y
+                                property: VariableRef = None
             """)
         
         test("parameter_0", parse_code("a = 1", "FunctionCallArgument"), """
@@ -626,10 +606,12 @@ class module_Variables(LanguageModule):
     def methods(self, grammar: Grammar):
         @grammar.method(zc.VariableDef)
         def add_symbols(self, scope, symbol_table):
+            self._defined_vars = []
             for name in self.names:
                 var = zc.Variable(type=self.type, name=name.name, alias=name.alias, value=self.value)
                 symbol_table.add(name.name, var, scope)
                 if name.alias: symbol_table.add(name.alias, var, scope)
+                self._defined_vars.append(var)
 
 
     def test(self):
@@ -716,7 +698,7 @@ class module_Variables(LanguageModule):
 class module_Types(LanguageModule):
     def syntax(self, grammar: Grammar):
         grammar.add("""
-            Type := NameDef properties:Variable&* parents:Type&* children:Type&* options:<identifier>+
+            Type := NameDef properties:Variable* parents:Type&* children:Type&* options:<identifier>+
             TypeDef < Component := "type" names:NameDef+, rhs:TypeRhs?
             TypeRhs :=
             TypeAlias < TypeRhs := "=" type:Type&
@@ -729,13 +711,14 @@ class module_Types(LanguageModule):
             EnumOptionNumber < EnumOption := val:<number>
             MaybeTypes < Type := types:Type&*
             MultipleTypes < Type := types:Type&*
+            TypeRef < Type := type:Type& decorator:("$" | "[]")?
         """)
 
     def methods(self, grammar: Grammar):
         @grammar.method(zc.TypeEnumDef)
         def validate(self) -> str: 
             return "" if len(self.options) > 1 else "enum must have at least two options"
-
+        
         @grammar.method(zc.TypeDef)
         def add_symbols(self, scope, symbol_table):
             self._resolved_types = []
@@ -747,17 +730,17 @@ class module_Types(LanguageModule):
                     self._resolved_types.append(type_object)
                     if isinstance(self.rhs, zc.StructDef):
                         type_object.properties = self.rhs.properties
-                        make_constructor(type_object, symbol_table)
+                        self._constructor = make_constructor(type_object, symbol_table)
                 elif len(existing_type_objects) == 1:
                     self._resolved_types.append(existing_type_objects[0].element)
                     if isinstance(self.rhs, zc.StructDef):
                         type_object.properties += self.rhs.properties
-                        make_constructor(type_object, symbol_table)
+                        self._constructor = make_constructor(type_object, symbol_table)
                 else:
                     raise Exception(f"symbol clash in TypeDef: {self.name} => {existing_type_objects}")     
             
         @log_suppress
-        def make_constructor(type_object: zc.Type, symbol_table: SymbolTable):
+        def make_constructor(type_object: zc.Type, symbol_table: SymbolTable) -> zc.FunctionDef:
             log(f" make_constructor: {type_object.name} | {type_object.alias}")
             name = type_object.name
             result_var = "_" + str(name)[0].lower()
@@ -780,7 +763,7 @@ class module_Types(LanguageModule):
             symbol_table.add_symbols(constructor, None)
             alias_handle = constructor.signature.handle().replace(str(name), str(type_object.alias))
             symbol_table.add(alias_handle, constructor, None)
-            type_object.constructor_fn = constructor
+            return constructor
 
         @grammar.method(zc.TypeDef)    
         def get_scope(self):
@@ -796,18 +779,17 @@ class module_Types(LanguageModule):
 
         @grammar.method(zc.TypeDef)
         def resolve(self, symbol_table, scope, errors, found):
-            #log(f"typeDef.resolve:\n{print_code_formatted(self)}")
+            log(f"typeDef.resolve:\n{print_code_formatted(self)}")
             if isinstance(self.rhs, zc.TypeAlias):
-                #log(" is alias")
+                log(" is alias")
                 type_ref = str(self.rhs.type)
                 location = self.rhs.type.location()
                 ref = ""
                 if type_ref.endswith("$"):
                     ref = "$"
                     type_ref = type_ref[:-1]
-                #log(f" type_ref: {type_ref}")
+                log(f" type_ref: {type_ref}")
                 type = symbol_table.find_single(type_ref, zc.Type, None, errors)
-                #log(f" type: {type}")
                 if type:
                     self.rhs.type = type
                     self._resolved_types[0]._alias_type = type
@@ -977,14 +959,23 @@ class module_Functions(LanguageModule):
     def methods(self, grammar: Grammar):
         @grammar.method(zc.FunctionResultVariableDef)
         def add_symbols(self, scope, symbol_table):
+            self._defined_vars = []
             for name in self.names:
                 var = zc.Variable(type=self.type, name=name.name, alias=name.alias)
                 symbol_table.add(name.name, var, scope, alias=name.alias)
+                self._defined_vars.append(var)
 
         @grammar.method(zc.ResultVariableDef)
         def add_symbols(self, scope, symbol_table):
             var = zc.Variable(type=self.type, name=self.name, alias=self.alias)
             symbol_table.add(var.name, var, scope, alias=var.alias)
+            self._defined_var = var
+
+        @grammar.method(zc.ResultVariableRef)
+        def get_scope(self):
+            var = self.variable
+            if isinstance(var.type, Lex): return None
+            return var.type
         
         @grammar.method(zc.FunctionSignature)
         def handle(self) -> str:
@@ -1269,8 +1260,8 @@ class module_Functions(LanguageModule):
                                     StatementLhs
                                         variables: List[ResultVariable]
                                             ResultVariableRef
-                                                variables: List[Variable]
-                                                    => r
+                                                variable: Variable => r
+                                                property: VariableRef = None
                                         assign_op: str = =
                                 rhs: Expression
                                     FunctionCall
@@ -1314,8 +1305,8 @@ class module_Tests(LanguageModule):
             TestDef
                 lhs: Expression
                     VariableRef
-                        variables: List[Variable]
-                            => a
+                        variable: Variable => a
+                        property: VariableRef = None
                 rhs: Expression = None
         """)
 
@@ -1323,8 +1314,8 @@ class module_Tests(LanguageModule):
             TestDef
                 lhs: Expression
                     VariableRef
-                        variables: List[Variable]
-                            => a
+                        variable: Variable => a
+                        property: VariableRef = None
                 rhs: Expression
                     !!! premature end (expected rhs:Expression, got 'None' at <eof>)
         """)
@@ -1333,11 +1324,11 @@ class module_Tests(LanguageModule):
             TestDef
                 lhs: Expression
                     VariableRef
-                        variables: List[Variable]
-                            => a
+                        variable: Variable => a
+                        property: VariableRef = None
                 rhs: Expression
                     VariableRef
-                        variables: List[Variable]
-                            => b
+                        variable: Variable => b
+                        property: VariableRef = None
         """)
 

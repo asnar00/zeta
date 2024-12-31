@@ -2,15 +2,10 @@
 # scribblez
 "slow is smooth, smooth is fast"
 
-this is definitely not smooth, so we need to think about this more clearly.
+much smoother resolve process; but we still have to call blah.resolve(),
+which we'd rather not do. add_symbols should do all the work.
 
-we should definitely split this process up into:
 
-    add_symbols
-    resolve_symbols
-    connect_functions
-
-The last one can only be done when we've been through all the others.
 ----
 
 OK so here's an interesting idea... 

@@ -46,9 +46,10 @@ class Constant(Expression):
         self.value: str = value
 
 class VariableRef(Expression):
-    def __init__(self, variables: 'List[Variable]' =None):
+    def __init__(self, variable: 'Variable' =None, property: 'VariableRef' =None):
         super().__init__()
-        self.variables: List[Variable] = variables        # ref
+        self.variable: Variable = variable        # ref
+        self.property: VariableRef = property
 
 class Bracketed(Expression):
     def __init__(self, expression: 'Expression' =None):
@@ -80,9 +81,10 @@ class FunctionCallWord(FunctionCallItem):
         self.word: str = word
 
 class FunctionCallVariable(FunctionCallItem):
-    def __init__(self, variables: 'List[Variable]' =None):
+    def __init__(self, variable: 'Variable' =None, property: 'VariableRef' =None):
         super().__init__()
-        self.variables: List[Variable] = variables        # ref
+        self.variable: Variable = variable        # ref
+        self.property: VariableRef = property
 
 class FunctionCallArguments(FunctionCallItem):
     def __init__(self, arguments: 'List[FunctionCallArgument]' =None):
@@ -111,12 +113,14 @@ class VariableDef(Component):
         self.value: Expression = value
 
 class Type(Entity):
-    def __init__(self, name: 'str' =None, alias: 'str' =None, types: 'List[Type]' =None, properties: 'List[Variable]' =None, parents: 'List[Type]' =None, children: 'List[Type]' =None, options: 'List[str]' =None):
+    def __init__(self, name: 'str' =None, alias: 'str' =None, types: 'List[Type]' =None, type: 'Type' =None, decorator: 'str' =None, properties: 'List[Variable]' =None, parents: 'List[Type]' =None, children: 'List[Type]' =None, options: 'List[str]' =None):
         super().__init__()
         self.name: str = name
         self.alias: str = alias
         self.types: List[Type] = types        # ref
-        self.properties: List[Variable] = properties        # ref
+        self.type: Type = type        # ref
+        self.decorator: str = decorator
+        self.properties: List[Variable] = properties
         self.parents: List[Type] = parents        # ref
         self.children: List[Type] = children        # ref
         self.options: List[str] = options
@@ -179,6 +183,12 @@ class MultipleTypes(Type):
     def __init__(self, types: 'List[Type]' =None):
         super().__init__()
         self.types: List[Type] = types        # ref
+
+class TypeRef(Type):
+    def __init__(self, type: 'Type' =None, decorator: 'str' =None):
+        super().__init__()
+        self.type: Type = type        # ref
+        self.decorator: str = decorator
 
 class Function(Entity):
     def __init__(self, results: 'FunctionResults' =None, signature: 'FunctionSignature' =None, body: 'FunctionBody' =None):
@@ -261,9 +271,10 @@ class ResultVariable(Entity):
         super().__init__()
 
 class ResultVariableRef(ResultVariable):
-    def __init__(self, variables: 'List[Variable]' =None):
+    def __init__(self, variable: 'Variable' =None, property: 'VariableRef' =None):
         super().__init__()
-        self.variables: List[Variable] = variables        # ref
+        self.variable: Variable = variable        # ref
+        self.property: VariableRef = property
 
 class ResultVariableDef(ResultVariable):
     def __init__(self, type: 'Type' =None, name: 'str' =None, alias: 'str' =None):

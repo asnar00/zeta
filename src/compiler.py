@@ -76,7 +76,7 @@ class Language:
     def resolve_symbols(self, cp: CompiledProgram):
         errors = []
         found = []
-        visited = []
+        visited = set()
         for key, items in cp.st.symbols.items():
             for item in items:
                 cp.st.resolve_symbols(item.element, item.scope, errors, found, visited)

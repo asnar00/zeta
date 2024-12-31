@@ -568,7 +568,7 @@ def contains_nested_separator(term: Term) -> List[Entity]:
     if not term.is_rule(): return []
     # returns True if the rule, or any reachable sub-rule, contains the separator outside of braces ("{}()")
     def check_nested_separator(rule: Rule, visited: Dict[Rule, bool], sep: str) -> List[Term]:
-        if rule.name in visited: return visited[rule.name]
+        if rule.name in visited: return []
         visited[rule.name] = False
         in_braces = False
         found_terms = []
