@@ -311,10 +311,10 @@ def parse_simple(code: str, rule_name: str) -> Entity:
 #--------------------------------------------------------------------------------------------------
 # print routines : the inverse of parse
 
-def print_code_formatted(e: Entity) -> str:
+def print_code_formatted(e: Entity, use_aliases: bool = False) -> str:
     def cleanup(out: str) -> str:
         return out.replace("•", " ").strip()
-    out = print_code(e)
+    out = print_code(e, False, use_aliases)
     fmt = ""
     ic = 0
     indent_level = 0
@@ -338,26 +338,30 @@ def print_code_formatted(e: Entity) -> str:
             fmt += start + cleanup(out[ic:])
             break
 
-    return fmt.replace("    \n", "").replace("\n\n", "\n")
+    return fmt.replace("    \n", "").replace("\n\n", "\n").replace("( ", "(").replace(" )", ")").replace(". ", ".").replace(" ,", ",")
 
-def print_code(e: Entity, is_reference: bool = False) -> str|List[str]:
+def print_code(e: Entity, is_reference: bool, use_aliases: bool) -> str|List[str]:
     if e is None: return ""
     if isinstance(e, Lex) or isinstance(e, str): 
-        if is_reference: return log_orange(str(e))
+        if is_reference: return log_orange(str(e)) # indicate not found
         else: return str(e)
-    if isinstance(e, List): return [print_code(item, is_reference) for item in e]
-    if isinstance(e, Entity) and is_reference: return log_green(str(e.name))
+    if isinstance(e, List): return [print_code(item, is_reference, use_aliases) for item in e]
+    if isinstance(e, Entity) and is_reference: 
+        if use_aliases and e.alias != None: 
+            return log_green(str(e.alias))
+        else:
+            return log_green(str(e.name))
     if hasattr(e, "print_code"): return e.print_code()
     rule = Grammar.current.rule_named[e.__class__.__name__]
-    return print_code_rule(rule, e)
+    return print_code_rule(rule, e, use_aliases)
 
-def print_code_rule(rule: Rule, e: Entity) -> str:
+def print_code_rule(rule: Rule, e: Entity, use_aliases: bool = False) -> str:
     out = ""
     for term in rule.terms:
         is_reference = (term.ref != "")
         if term.var:
             if hasattr(e, term.var):
-                code = print_code(getattr(e, term.var), is_reference)
+                code = print_code(getattr(e, term.var), is_reference, use_aliases)
                 if isinstance(code, str):
                     out += code
                 elif isinstance(code, List):
@@ -371,7 +375,7 @@ def print_code_rule(rule: Rule, e: Entity) -> str:
                 sub_rules = term.rules()
                 for sub_rule in sub_rules:
                     if can_print_rule(sub_rule, e):
-                        out += print_code_rule(sub_rule, e)
+                        out += print_code_rule(sub_rule, e, use_aliases)
                         break
         if (len(out) > 0 and out[-1] != "•"): out += "•"
     return out.replace("••", "•")

@@ -81,6 +81,6 @@ class Language:
             for item in items:
                 cp.st.resolve_symbols(item.element, item.scope, errors, found, visited)
         cp.st.resolve_symbols(cp.ast, None, errors, found, visited)
-        log(print_code_formatted(cp.ast))
+        log(print_code_formatted(cp.ast, use_aliases=False))
         log("errors:", "\n".join(errors))
         log_exit("resolve_symbols")
