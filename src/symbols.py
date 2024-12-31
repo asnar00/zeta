@@ -156,8 +156,7 @@ class SymbolTable:
                             self.resolve_symbols(item, scope, errors, found, visited)
                         elif isinstance(item, Lex):
                             actual_type = attr_type.replace("List[", "").replace("&]", "")
-                            attr_class = Grammar.current.get_class(actual_type)
-                            resolved_item = self.find_single(item, attr_class, scope, errors)
+                            resolved_item = self.resolve_item(attr, item, actual_type, scope, errors, found)
                             if resolved_item==None:
                                 resolved_list.append(log_red(str(item)))
                             else:
@@ -167,27 +166,24 @@ class SymbolTable:
                 elif isinstance(attr_value, Entity):
                     self.resolve_symbols(attr_value, scope, errors, found, visited)
                 elif isinstance(attr_value, Lex) and attr_type != "str":
-                    location = attr_value.location()
-                    str_value = attr_value.val
-                    vb = str_value == "out$"
-                    if vb: log(log_red(f"resolve {attr_value} in {scope}"))
-                    attr_class = Grammar.current.get_class(attr_type)
-                    items = self.find(str_value, attr_class, scope)
-                    if len(items) == 0:
-                        log(log_red(f"can't find {attr_value} in {scope}"))
-                        errors.append(f"can't find {attr_value} in {scope}")
-                    elif len(items) > 1:
-                        log(log_red(f"multiple matches for {attr_value}[{attr_type}] in {scope}"))
-                        errors.append(f"multiple matches for {attr_value}[{attr_type}] in {scope}")
-                    else:
-                        found.append(f"found {attr}:{items[0]} at {location}")
-                        #log(f"setting {attr} of {e} in scope {scope} to {items[0].element}")
-                        setattr(e, attr, items[0].element)
+                    item = self.resolve_item(attr, attr_value, attr_type, scope, errors, found)
+                    if item: setattr(e, attr, item)
         if hasattr(e, "resolve"):
             cont = e.resolve(self, original_scope, errors, found)
             
-        
-    
-
-
-
+    def resolve_item(self, attr: str, attr_value: Lex, attr_type: str, scope: Any, errors: List[str], found: List[str]) -> Any:
+        location = attr_value.location()
+        str_value = attr_value.val
+        attr_class = Grammar.current.get_class(attr_type)
+        items = self.find(str_value, attr_class, scope)
+        if len(items) == 0:
+            log(log_red(f"can't find {attr_value} in {scope}"))
+            errors.append(f"can't find {attr_value} in {scope}")
+            return None
+        elif len(items) > 1:
+            log(log_red(f"multiple matches for {attr_value}[{attr_type}] in {scope}"))
+            errors.append(f"multiple matches for {attr_value}[{attr_type}] in {scope}")
+            return None
+        else:
+            found.append(f"found {attr}:{items[0]} at {location}")
+            return items[0].element
