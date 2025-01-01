@@ -71,7 +71,7 @@ class Language:
         st = SymbolTable()
         log("adding symbols for ast")
         st.add_symbols(ast, None)
-        log(st.dbg())
+        #log(st.dbg())
         return st
        
     def resolve_symbols(self, cp: CompiledProgram):

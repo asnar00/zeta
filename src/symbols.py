@@ -141,9 +141,8 @@ class SymbolTable:
     def resolve_symbols(self, e: Entity, scope: Any, errors: List[str], found: List[str], visited: Set, indent: int = 0):
         start = "  " * indent
         if e in visited: return
-        log(f"{start}resolving {e} in {scope}")
         visited.add(e)
-        #log(f"{start}{e} in {scope}")
+        log(f"{start}{e} in {scope}")
         if not isinstance(e, Entity): 
             raise Exception(f"resolve_symbols: not an entity ({e})")
         disallow = hasattr(e, "disallow_resolve_children") and e.disallow_resolve_children()
@@ -179,14 +178,17 @@ class SymbolTable:
         attr_type = attr_type.replace("List[", "").replace("]", "")
         attr_class = Grammar.current.get_class(attr_type)
         vals = attr_val if is_list else [attr_val]
-        vals = [(self.find_single(val, attr_class, scope, errors) or val) for val in vals]
-        for v in vals:
-            if isinstance(v, Entity):
-                log(log_green(f"{start}resolved '{attr_val}' => {v} in {scope}"))
+        resolved_vals = []
+        for val in vals:
+            resolved = self.find_single(val, attr_class, scope, errors)
+            if isinstance(resolved, Entity):
+                log(log_green(f"{start}resolved '{attr_val}' => {resolved} in {scope}"))
+                resolved_vals.append(resolved)
             else:
-                log(log_red(f"{start}failed to resolve '{attr_val}'"))
-        if is_list: setattr(e, attr, vals)
-        else: setattr(e, attr, vals[0])
+                log(log_red(f"{start}failed to resolve '{attr_val}' in {scope}"))
+                resolved_vals.append(val)
+        if is_list: setattr(e, attr, resolved_vals)
+        else: setattr(e, attr, resolved_vals[0])
 
     def resolve_attr_rec(self, e: Entity, attr: str, scope: Any, errors: List[str], found: List[str], visited: Set, indent: int = 0):
         attr_type = Grammar.current.get_attribute_type(e.__class__, attr)

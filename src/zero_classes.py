@@ -81,10 +81,9 @@ class FunctionCallWord(FunctionCallItem):
         self.word: str = word
 
 class FunctionCallVariable(FunctionCallItem):
-    def __init__(self, variable: 'Variable' =None, property: 'VariableRef' =None):
+    def __init__(self, variable: 'VariableRef' =None):
         super().__init__()
-        self.variable: Variable = variable        # ref
-        self.property: VariableRef = property
+        self.variable: VariableRef = variable
 
 class FunctionCallArguments(FunctionCallItem):
     def __init__(self, arguments: 'List[FunctionCallArgument]' =None):

@@ -2,8 +2,9 @@
 # scribblez
 "slow is smooth, smooth is fast"
 
-much smoother resolve process; but we still have to call blah.resolve(),
-which we'd rather not do. add_symbols should do all the work.
+get type-check working.
+then recast add-, resolve- and check- as visitor pattern stuff
+
 
 
 ----
