@@ -2,10 +2,32 @@
 # scribblez
 "slow is smooth, smooth is fast"
 
-get type-check working.
-then recast add-, resolve- and check- as visitor pattern stuff
+okay, it's time for a total rearchitect of this whole process... it's rotten and it needs fixing.
+
+we have three "passes" so far: add, resolve, type-check.
+
+How would we like the code to look?
+
+    "for each entity in the tree, find its scope and pass it down to its children"
+
+Seems like scope computation is just the classic thing we need to figure out. So let's do that.
+
+We'd like to be able to do stuff like:
+
+    "show me every lex that's not bound to something"
+
+so I'm "attr_name in parent"
 
 
+
+----------------------------------------------------------
+
+got function-resolver/type-check working.
+next have to check type of rhs against type of lhs.
+
+then look at add/resolve/func processes and see if there's a nicer way to handle them.
+but we are now pretty damn close to trying the py_backend.
+let's do it!
 
 ----
 

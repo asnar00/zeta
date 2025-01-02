@@ -71,14 +71,14 @@ class FunctionCallConstant(FunctionCallItem):
         self.constant: Constant = constant
 
 class FunctionCallOperator(FunctionCallItem):
-    def __init__(self, word: 'str' =None):
+    def __init__(self, name: 'str' =None):
         super().__init__()
-        self.word: str = word
+        self.name: str = name
 
 class FunctionCallWord(FunctionCallItem):
-    def __init__(self, word: 'str' =None):
+    def __init__(self, name: 'str' =None):
         super().__init__()
-        self.word: str = word
+        self.name: str = name
 
 class FunctionCallVariable(FunctionCallItem):
     def __init__(self, variable: 'VariableRef' =None):
@@ -210,16 +210,10 @@ class FunctionModifier(Entity):
         self.modifier: str = modifier
 
 class FunctionResults(Entity):
-    def __init__(self, results: 'List[FunctionResultVariableDef]' =None, assign_op: 'str' =None):
+    def __init__(self, results: 'List[ResultVariableDef]' =None, assign_op: 'str' =None):
         super().__init__()
-        self.results: List[FunctionResultVariableDef] = results
+        self.results: List[ResultVariableDef] = results
         self.assign_op: str = assign_op
-
-class FunctionResultVariableDef(Entity):
-    def __init__(self, type: 'Type' =None, names: 'List[NameDef]' =None):
-        super().__init__()
-        self.type: Type = type        # ref
-        self.names: List[NameDef] = names
 
 class FunctionSignature(Entity):
     def __init__(self, elements: 'List[FunctionSignatureElement]' =None):
@@ -231,9 +225,9 @@ class FunctionSignatureElement(Entity):
         super().__init__()
 
 class FunctionSignatureWord(FunctionSignatureElement):
-    def __init__(self, word: 'str' =None):
+    def __init__(self, name: 'str' =None):
         super().__init__()
-        self.word: str = word
+        self.name: str = name
 
 class FunctionSignatureParams(FunctionSignatureElement):
     def __init__(self, params: 'List[VariableDef]' =None):
@@ -264,27 +258,25 @@ class Assignment(Statement):
         self.rhs: Expression = rhs
 
 class AssignmentLhs(Entity):
-    def __init__(self, variables: 'List[ResultVariable]' =None, assign_op: 'str' =None):
+    def __init__(self, results: 'List[ResultVariable]' =None, assign_op: 'str' =None):
         super().__init__()
-        self.variables: List[ResultVariable] = variables
+        self.results: List[ResultVariable] = results
         self.assign_op: str = assign_op
 
 class ResultVariable(Entity):
     def __init__(self, ):
         super().__init__()
 
-class ResultVariableRef(ResultVariable):
-    def __init__(self, variable: 'Variable' =None, property: 'VariableRef' =None):
-        super().__init__()
-        self.variable: Variable = variable        # ref
-        self.property: VariableRef = property
-
 class ResultVariableDef(ResultVariable):
-    def __init__(self, type: 'Type' =None, name: 'str' =None, alias: 'str' =None):
+    def __init__(self, type: 'Type' =None, names: 'List[NameDef]' =None):
         super().__init__()
         self.type: Type = type        # ref
-        self.name: str = name
-        self.alias: str = alias
+        self.names: List[NameDef] = names
+
+class ResultVariableRef(ResultVariable):
+    def __init__(self, variable: 'VariableRef' =None):
+        super().__init__()
+        self.variable: VariableRef = variable
 
 class CompositeFunction(Statement):
     def __init__(self, ):

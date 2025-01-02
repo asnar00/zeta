@@ -29,13 +29,21 @@ class Error:
 class Entity:
     def __init__(self): self._error : Error = None
     def __str__(self):
-        name = f"({self.short_name()})"
+        name = f"({self.get_name()})"
         return f"{self.__class__.__name__}{name}"
     def __repr__(self): return self.__str__()
-    def short_name(self)-> str:
-        name = ".."
-        if hasattr(self, "name"): name = f"{self.name}"
-        return name
+    def get_name(self) -> str:
+        if hasattr(self, "name"): return self.name
+        for attr in vars(self):
+            if attr == "_error": continue
+            val = getattr(self, attr)
+            if val is None: continue
+            if isinstance(val, Entity): return val.get_name()
+            elif isinstance(val, List) and len(val) > 0 and isinstance(val[0], Entity):
+                for item in val:
+                    name = item.get_name()
+                    if name: return name
+        return ".."
 
 #--------------------------------------------------------------------------------------------------
 # Term: a single term of a rule
@@ -294,24 +302,7 @@ class Grammar:
             for name, class_def in self.class_defs.items():
                 f.write(class_def)
     
-    def method(self, cls: Type[T]) -> Callable:
-        def decorator(func: Callable) -> Callable:
-            class_name = cls.__name__
-            
-            # Convert standalone function to method
-            @wraps(func)
-            def method(self, *args, **kwargs):
-                return func(self, *args, **kwargs)
-                
-            # Add the method to the class
-            setattr(cls, func.__name__, method)
-            
-            # Important: return the original function or method
-            return method
-        
-        return decorator
-    
-
+   
 
         
 #--------------------------------------------------------------------------------------------------

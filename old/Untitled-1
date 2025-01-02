@@ -1,0 +1,28 @@
+
+        @grammar.method(zc.VariableRef)
+        def resolve(self, symbol_table, scope, errors, found):
+            log("vr.resolve", print_code_formatted(self), "in scope", scope)
+            self.variables = resolve_variable_list(self.variables, symbol_table, scope, errors, found)
+        
+        @grammar.method(zc.FunctionCallVariable)
+        def resolve(self, symbol_table, scope, errors, found):
+            log(f"fcv.resolve: {print_code_formatted(self)}, scope is {scope}")
+            self.variables = resolve_variable_list(self.variables, symbol_table, scope, errors, found)
+        
+        def resolve_variable_list(variables, symbol_table, scope, errors, found):
+            if isinstance(variables[0], zc.Variable): return variables
+            resolved = []
+            for name in variables:
+                location = name.location()
+                var = symbol_table.find_single(name, zc.Variable, scope, errors)
+                if var:
+                    resolved.append(var)
+                    found.append(f"found {var} in {scope} at {location}")
+                    #log(log_green(f"found {var} in {scope} at {location}"))
+                    var_type = symbol_table.find_single(var.type, zc.Type, scope, errors)
+                    if var_type: scope = var_type
+                else:
+                    log(log_red(f"no variable found for {name} in {scope}"))
+                    resolved.append(name)
+                    #errors.append(f"no variable found for {name} in {scope}")
+            return resolved
