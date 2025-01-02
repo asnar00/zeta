@@ -26,7 +26,6 @@ class SymbolTable:
     def __init__(self):
         self.symbols = {}   # name.scope_type.scope_id => { element, tag }
     
-    
     def add(self, name: str, element: Any, scope: Any, alias=None, tag: Dict=None):
         #log(f"  add {name} [{type(element).__name__}] to {scope} called by {caller()}")
         if name is None: return
@@ -94,5 +93,15 @@ class SymbolTable:
         if hasattr(scope1, "can_see_scope"):
             return scope1.can_see_scope(scope2, self)
         return scope1 == scope2
+    
+    def dbg(self) -> str:
+        out = ""
+        for name, items in self.symbols.items():
+            out += f'"{name}" => '
+            for item in items:
+                out += str(item) + "; "
+            out = out[:-2]
+            out += "\n"
+        return out
 
     

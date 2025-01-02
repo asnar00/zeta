@@ -144,6 +144,12 @@ class module_Features(LanguageModule):
     def scope(self):
         @self.method(zc.FeatureDef)
         def get_scope(self): return self
+    
+
+    def symbols(self):
+        @self.method(zc.FeatureDef)
+        def add_symbols(self, scope, st: SymbolTable):
+            st.add(self.name, self, scope, alias=self.alias)
 
     def test(self):
         test("feature_0", parse_code("", "FeatureDef"), """
@@ -264,6 +270,31 @@ class module_Expressions(LanguageModule):
     def scope(self):
         @self.method(zc.VariableRef)
         def get_scope(self): return self
+
+    def symbols(self):
+        @self.method(zc.FunctionCall)
+        def add_symbols(self, scope, st: SymbolTable):
+            def embracket(fc: zc.FunctionCall):
+                def find_lowest_ranked_operator(items):
+                    i_found = -1
+                    lowest_rank = 10240
+                    for i, item in enumerate(items):
+                        if isinstance(item, zc.FunctionCallOperator) and item.name != ".":
+                            rank = item.name.rank
+                            if rank < lowest_rank:
+                                lowest_rank = rank
+                                i_found = i
+                    return i_found
+                i_operator = find_lowest_ranked_operator(fc.items)
+                if i_operator == -1: return fc
+                #log(log_green(print_code_formatted(self)))
+                before = fc.items[0:i_operator]
+                if len(before) > 1: before = [zc.FunctionCall(items=before)]
+                after = fc.items[i_operator+1:]
+                if len(after) > 1: after = [zc.FunctionCall(items=after)]
+                fc.items = before + [fc.items[i_operator]] + after
+                return fc
+            embracket(self)
             
 
     def test_parser(self):
@@ -436,6 +467,15 @@ class module_Variables(LanguageModule):
         """)
 
 
+    def symbols(self):
+        @self.method(zc.VariableDef) # VariableDef.add_symbols
+        def add_symbols(self, scope, st):
+            self._defined_vars = []
+            for name in self.names:
+                var = zc.Variable(type=self.type, name=name.name, alias=name.alias, value=self.value)
+                st.add(name.name, var, scope, alias=name.alias)
+                self._defined_vars.append(var)
+
     def test(self):
         test("variable_0", parse_code("int a", "VariableDef"), """
             VariableDef
@@ -545,7 +585,50 @@ class module_Types(LanguageModule):
         @self.method(zc.TypeDef) #TypeDef.get_scope
         def get_scope(self) -> str: return self
 
-        
+    def generate(self):
+        @self.method(zc.TypeDef)
+        def generate(self):
+            if not isinstance(self.rhs, zc.StructDef): return
+            log(log_orange(f"TypeDef.generate: {self.names[0].name}"))
+            def make_constructor(typeDef: zc.TypeDef):
+                name = typeDef.names[0].name
+                result_var = "_" + str(name)[0].lower()
+                code = f"on ({name} {result_var}) = {name}("
+                for prop in typeDef.rhs.properties:
+                    code += f"{prop.type} "
+                    for var in prop.names: code += f"{var.name}, "
+                    if code.endswith(", "): code = code[:-2]
+                    if prop.value: code += f" = {print_code_formatted(prop.value)}"
+                code += ") {"
+                for prop in typeDef.rhs.properties:
+                    for var in prop.names:
+                        code += f"{result_var}.{var.name} = {var.name}; "
+                code += "}"
+                constructor = parse_simple(code, "FunctionDef")
+                typeDef._constructor = constructor
+            make_constructor(self)
+
+    def symbols(self):
+        @self.method(zc.TypeDef)
+        def add_symbols(self, scope, st):
+            log(log_orange(f"TypeDef.add symbols: {self.names[0].name}"))
+            name = self.names[0]
+            for name in self.names:
+                existing_type_objects = st.find(name.name, zc.Type, scope)
+                if len(existing_type_objects) == 0:
+                    self._resolved_types = []
+                    type_object = zc.Type(name=name.name, alias=name.alias)
+                    st.add(name.name, type_object, None, alias=name.alias)
+                    self._resolved_types.append(type_object)
+                    if isinstance(self.rhs, zc.StructDef):
+                        type_object.properties = self.rhs.properties
+                elif len(existing_type_objects) == 1:
+                    self._resolved_types.append(existing_type_objects[0].element)
+                    if isinstance(self.rhs, zc.StructDef):
+                        type_object.properties += self.rhs.properties
+                else:
+                    raise Exception(f"symbol clash in TypeDef: {self.name} => {existing_type_objects}") 
+
     def test_parser(self):
         test("type_0", parse_code("type vec | vector", "TypeDef"), """
             TypeDef
@@ -697,7 +780,103 @@ class module_Functions(LanguageModule):
     def scope(self):
         @self.method(zc.FunctionDef)
         def get_scope(self): return self
-    
+
+        @self.method(zc.FunctionDef)
+        def can_see_scope(self, scope, st: SymbolTable):
+            if self == scope: return True
+            if not isinstance(scope, zc.FeatureDef): return False
+            if self._owner == scope: return True
+            if self._owner == scope: return True
+            if self._owner.can_see_scope(scope, st): return True
+            return False
+        
+    def symbols(self):
+        @self.method(zc.ResultVariableDef) # ResultVariableDef.add_symbols
+        def add_symbols(self, scope, st):
+            self._defined_vars = []
+            for name in self.names:
+                var = zc.Variable(type=self.type, name=name.name, alias=name.alias)
+                st.add(name.name, var, scope, alias=name.alias)
+                self._defined_vars.append(var)
+
+        @self.method(zc.FunctionDef) # FunctionDef.add_symbols
+        def add_symbols(self, scope, st):
+            #log(log_green(f"functionDef.add_symbols: {self.signature.typed_handle()} in {scope}"))
+            long_handle = typed_handle(self)
+            short_handle = untyped_handle(self)
+            st.add(long_handle, self, scope)
+            st.add(short_handle, self, scope)
+            self._owner = scope
+            function = st.find_single(long_handle, zc.Function, None, [])
+            if function == None:
+                function = make_function(self, st)
+                self._function = function
+                st.add(long_handle, function, None)
+                st.add(short_handle, function, None)
+            else:
+                modify_function(self, function, st)
+
+        def typed_handle(funcDef) -> str:
+            name = ""
+            for item in funcDef.signature.elements:
+                if isinstance(item, zc.FunctionSignatureWord):
+                    name += str(item.name) + " "
+                elif isinstance(item, zc.FunctionSignatureParams):
+                    if name.endswith(" "): name = name[:-1]
+                    brace = "("
+                    for param in item.params:
+                        for param_name in param.names:
+                            brace += str(param.type).replace("Type(", "").replace(")", "")+ ", "
+                    if brace.endswith(", "): brace = brace[:-2]
+                    brace += ")"
+                    name += brace
+            return name
+        
+        def untyped_handle(funcDef) -> str:
+            name = ""
+            for item in funcDef.signature.elements:
+                if isinstance(item, zc.FunctionSignatureWord):
+                    name += str(item.name)
+                elif isinstance(item, zc.FunctionSignatureParams):
+                    for param in item.params:
+                        for param_name in param.names:
+                            name += "◦"
+            return name    
+
+        def make_function(funcDef, st):
+            refToFunc = zc.SingleFunctionDef(funcDef=funcDef)
+            statements = zc.FunctionStatements(statements=[refToFunc])
+            function = zc.Function( results=funcDef.results, signature=funcDef.signature, body=statements)
+            return function
+        
+        def modify_function(funcDef, existing, st):
+            long_handle = funcDef.signature.typed_handle()
+            mod = str(funcDef.modifier)
+            this_def = zc.SingleFunctionDef(funcDef=funcDef)
+            if mod == "replace":
+                existing.body.statements = [this_def]
+            elif mod == "after":
+                sm = existing.body.statements[0]
+                if isinstance(sm, zc.SequenceFunctionDef):
+                    sm.comps.append(this_def)
+                else:
+                    sm = zc.SequenceFunctionDef(comps = [sm, this_def])
+                    existing.body.statements = [sm]
+            elif mod == "before":
+                sm = existing.body.statements[0]
+                if isinstance(sm, zc.SequenceFunctionDef):
+                    sm.comps.append(this_def)
+                else:
+                    sm = zc.SequenceFunctionDef(comps = [this_def, sm])
+                    existing.body.statements = [sm]
+            elif mod == "on":
+                sm = existing.body.statements[0]
+                if isinstance(sm, zc.ParallelFunctionDef):
+                    sm.comps.append(this_def)
+                else:
+                    sm = zc.ParallelFunctionDef(comps = [sm, this_def])
+                    existing.body.statements = [sm]
+
     def test_parser(self):
         test("result_vars_1", parse_code("(a, b: int, k, l: float) =", "FunctionResults"), """
             FunctionResults

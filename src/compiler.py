@@ -21,7 +21,9 @@ class LanguageModule:
     def syntax(self, grammar: Grammar): pass      # add grammar rules and validation functions
     def validate(self): pass                      # add validate methods to rule classes
     def naming(self): pass                        # add naming methods to rule classes
+    def generate(self): pass                      # add generate methods to rule classes    
     def scope(self): pass                         # add get_scope methods to rule classes
+    def symbols(self): pass                       # add add_symbols methods to rule classes
     def test_parser(self): pass                   # test parser with some examples
 
     # add method to class (general)
@@ -78,13 +80,16 @@ class Language:
             module.validate()
             module.naming()
             module.scope()
+            module.generate()
+            module.symbols()
             module.test_parser()
 
     def compile(self, code: str) -> CompiledProgram:
         cp = CompiledProgram()
         cp.ast = self.parse(code)
         if has_errors(cp.ast): return self.show_errors(cp.ast)
-        cp.st = self.build_symbol_table(cp.ast)
+        self.generate_code(cp)
+        cp.st = self.build_symbol_table(cp)
         self.resolve_symbols(cp)
         self.check_types(cp)
         return cp
@@ -98,10 +103,24 @@ class Language:
         log(dbg_entity(ast))
         return ast
     
-    def build_symbol_table(self, ast: Entity) -> SymbolTable:
+    def generate_code(self, cp: CompiledProgram) -> str:
         log_clear()
-        log("build_symbol_table")
-        self.collect_entities(ast, zc.Entity, False, True)
+        log("generate code -----------------------------------------")
+        found = collect_entities(cp.ast, zc.Entity, "generate", references=False, children_first=False)
+        for f in found:
+            log(f"{f.e} in {f.scope}, {f.parent}.{f.name} {f.ref}")
+            f.e.generate()
+
+    def build_symbol_table(self, cp: CompiledProgram) -> SymbolTable:
+        #log_clear()
+        log("build_symbol_table -----------------------------------------")
+        cp.st = SymbolTable()
+        found = collect_entities(cp.ast, zc.Entity, "add_symbols", references=False, children_first=False)
+        for f in found:
+            log(f"{f.e} in {f.scope}, {f.parent}.{f.name} [{f.ref}]")
+            f.e.add_symbols(f.scope, cp.st)
+        log("--------------------------------")
+        log(cp.st.dbg())
 
     def resolve_symbols(self, cp: CompiledProgram):
         pass
@@ -109,49 +128,49 @@ class Language:
     def check_types(self, cp: CompiledProgram):
         pass
 
-    def collect_entities(self, e: Entity, select_type: Any, should_be_reference: bool, children_first: bool):
-        visited = set()
-        scope = None
-        results = []
-        self.collect_entities_rec(e, scope, select_type, should_be_reference, children_first, "", None, visited, results)
-        for f in results:
-            log(f"{f.e} in {f.scope}, {f.parent}.{f.name} [{f.ref}]")
+def collect_entities(e: Entity, select_type: Any, method_name: str,references: bool, children_first: bool) -> List[FoundItem]:
+    visited = set()
+    scope = None
+    results = []
+    collect_entities_rec(e, scope, select_type, method_name,references, children_first, "", None, visited, results)
+    return results
+    
+def collect_entities_rec(e: Entity, scope: Any, select_type: Any, method_name: str,references: bool, children_first: bool, name: str, parent: Entity, visited: Set, results: List[FoundItem]):
+    if isinstance(e, Entity):
+        if e in visited: return
+        visited.add(e)
         
-    def collect_entities_rec(self, e: Entity, scope: Any, select_type: Any, should_be_reference: bool, children_first: bool, name: str, parent: Entity, visited: Set, results: List[FoundItem]):
-        if isinstance(e, Entity):
-            if e in visited: return
-            visited.add(e)
-        type_match = False if select_type is None else isinstance(e, select_type)
-        cf = f"{e}"
-        if isinstance(e, Lex): cf = '"' + cf + '"'
-        attr_type_in_parent = Grammar.current.get_attribute_type(parent.__class__, name) if parent else ""
-        ref = attr_type_in_parent if "&" in attr_type_in_parent else ""
-        is_ref = ref != ""
-        if should_be_reference==True and type_match==False:
-            if select_type.__name__ in ref: type_match = True
-        if name: cf = f"{name}:{ref} {cf}"
-        should_add_to_results = False
-        if type_match and (should_be_reference is None or should_be_reference == is_ref): 
+    type_match = False if select_type is None else isinstance(e, select_type)
+    
+    attr_type_in_parent = Grammar.current.get_attribute_type(parent.__class__, name) if parent else ""
+    ref = attr_type_in_parent if "&" in attr_type_in_parent else ""
+    is_ref = ref != ""
+    if references==True and type_match==False:
+        if select_type.__name__ in ref: type_match = True
+
+    should_add_to_results = False
+    if type_match and (references is None or references == is_ref): 
+        if method_name == None or hasattr(e, method_name):
             should_add_to_results = True
 
-        if children_first == False and should_add_to_results == True:
-            results.append(FoundItem(e, scope, parent, name, ref))
+    if children_first == False and should_add_to_results == True:
+        results.append(FoundItem(e, scope, parent, name, ref))
 
-        if hasattr(e, "get_scope"):
-            scope = e.get_scope()
-            cf += log_orange(" **")
-        if not isinstance(e, Lex) and not ref=="&":
-            for attr in vars(e):
-                if attr == "_error": continue
-                attr_val = getattr(e, attr)
-                if attr_val is None: continue
-                is_list = isinstance(attr_val, List)
-                if is_list:
-                    #log(f"{start}  {attr}")
-                    for val in attr_val:
-                        self.collect_entities_rec(val, scope, select_type, should_be_reference, children_first, "", e, visited, results)
-                else:
-                    self.collect_entities_rec(attr_val, scope, select_type, should_be_reference, children_first, attr, e, visited, results)
-    
-        if children_first == True and should_add_to_results == True:
-            results.append(FoundItem(e, scope, parent, name, ref))
+    if hasattr(e, "get_scope"):
+        scope = e.get_scope()
+
+    if not isinstance(e, Lex) and not ref=="&":
+        for attr in vars(e):
+            if attr == "_error": continue
+            attr_val = getattr(e, attr)
+            if attr_val is None: continue
+            is_list = isinstance(attr_val, List)
+            if is_list:
+                #log(f"{start}  {attr}")
+                for i, val in enumerate(attr_val):
+                    collect_entities_rec(val, scope, select_type, method_name, references, children_first, f"{attr}[{i}]", e, visited, results)
+            else:
+                collect_entities_rec(attr_val, scope, select_type, method_name, references, children_first, attr, e, visited, results)
+
+    if children_first == True and should_add_to_results == True:
+        results.append(FoundItem(e, scope, parent, name, ref))
