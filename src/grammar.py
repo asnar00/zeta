@@ -41,7 +41,8 @@ class Entity:
             if isinstance(val, Entity): return val.get_name()
             elif isinstance(val, List) and len(val) > 0 and isinstance(val[0], Entity):
                 for item in val:
-                    name = item.get_name()
+                    if isinstance(item, Entity):
+                        name = item.get_name()
                     if name: return name
         return ".."
 
@@ -240,6 +241,10 @@ class Grammar:
 
     def build_class(self, rule: Rule):
         name = rule.name
+        vb = (name == "TypeChildrenDef")
+        if vb: 
+            log_clear()
+            log(log_orange(f"building class {name}"))
         parent = rule.parent_name
         attributes = self.build_class_attributes(rule, {})   # name -> type
         log("attributes:", attributes)
@@ -260,8 +265,10 @@ class Grammar:
                 py_attribute_type = attribute_type.replace("&", "")
             class_def += f"        self.{attribute_name}: {py_attribute_type} = {attribute_name}{ref}\n"
             self.class_types[f"{name}.{attribute_name}"] = attribute_type
+            if vb: log(log_orange(f"{name}.{attribute_name} => {attribute_type}"))
         log(class_def)
         self.class_defs[name] = class_def
+        #if vb: log_exit()
 
     def build_class_attributes(self, rule: Rule, attributes: Dict[str, str]) -> Dict[str, str]:
         if rule.is_abstract(): return {}
@@ -283,6 +290,7 @@ class Grammar:
     
     # given class name and attribute name, return type
     def get_attribute_type(self, cls: Type, name: str) -> str:
+        if name.endswith("]"): name = name[:name.rfind("[")] # strip trailing array []
         key = f"{cls.__name__}.{name}"
         if key not in self.class_types: return "None"
         return self.class_types[key]

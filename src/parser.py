@@ -104,6 +104,8 @@ def parse_list_term(term: Term, reader: Reader) -> Dict:
         items, cont = parse_separator(term, reader, items, before_sep_pos)
         if not cont: break
         before_sep_pos = pos
+    if term.dec == "+" and len(items) == 0:
+        return parse_error("needed one or more items", term, reader)
     return items
 
 #--------------------------------------------------------------------------------------------------

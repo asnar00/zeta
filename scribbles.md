@@ -2,6 +2,64 @@
 # scribblez
 "slow is smooth, smooth is fast"
 
+let's think about this a bit more carefully.
+
+    TypeDef.add_symbols: 
+        create Type; add properties; set _resolved_type => new Type
+
+    "x" => Variable("x", type "number")
+    Now what should happen is that we traverse _resolved_types: and Type returns a scope;
+    and therefore "x" gets bound to that scope.
+
+    so what we want to see at the first retry is: does resolve get called on Type(vector)?
+
+    that's what we want to find out.
+    
+-------------------------------------------------
+
+resolution is a little gnarly because the correct order is:
+for VariableRef "v.x": 
+
+1- v => variable of type "vec"
+2- Type(vec) => ensure that all properties have been resolved (i.e. traverse)
+3- call scope => returns Type(vec)
+4- then go down children with scope Type(vec) => .x => resolved correctly.
+
+clear understanding is essential - we have to understand WHY this is not smooth.
+and the answer is, because anything that's a Lex/ref has to be resolved with the right scope, but you can't ensure you have the right scope until you've resolved correctly upstream.
+
+The *only* correct scope is the Type, which means it has to be resolved properly.
+Could we do this in two passes? => yes, we probably could.
+That might be the simplest solution.
+
+First pass: "v" doesn't return a scope that's an entity, so: DON'T TRAVERSE because you've got a bad scope.
+
+*BUT* for private stuff, you don't need the thing as the scope, so Type is still in surface scope.
+
+OK, this makes sense.
+
+--------------------------------------
+where we left it: finding that resolve a.b.c breaks our nice pattern.
+which is kind of dumb and annoying but we can do a special case for it.
+what really needs to happen is:
+
+    v.x:
+
+    first we resolve "v" => variable(type=vector)
+    then we call getscope on "v", which returns v->variable->type;
+    so the scope "type" gets passed down to
+    "x", which will then match correctly.
+
+    I think what we can do however is mess with that in the resolve logic,
+    by checking the parent/name (which we have for VariableRef), and recomputing the scope there.
+    it's sort of weird but hm well I guess we have to.
+    => the other way is to push the call inside the collect function and make it a proper pass.
+    
+    => but I like that less than I like this.
+    => think about it while sleeping !
+------
+
+
 okay, it's time for a total rearchitect of this whole process... it's rotten and it needs fixing.
 
 we have three "passes" so far: add, resolve, type-check.

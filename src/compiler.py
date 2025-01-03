@@ -23,7 +23,7 @@ class LanguageModule:
     def naming(self): pass                        # add naming methods to rule classes
     def generate(self): pass                      # add generate methods to rule classes    
     def scope(self): pass                         # add get_scope methods to rule classes
-    def symbols(self): pass                       # add add_symbols methods to rule classes
+    def symbols(self): pass                       # add add_symbols/resolve methods to rule classes
     def test_parser(self): pass                   # test parser with some examples
 
     # add method to class (general)
@@ -51,15 +51,6 @@ class CompiledProgram:
         self.st = None
         self.errors = []
         self.found = []
-
-# FoundItem is a helper class
-class FoundItem:
-    def __init__(self, e: Entity, scope: Any, parent: Entity, name: str, ref: str):
-        self.e = e
-        self.scope = scope
-        self.parent = parent
-        self.name = name
-        self.ref = ref
 
 # Language collects all modules into one unit
 class Language:
@@ -89,13 +80,15 @@ class Language:
         cp.ast = self.parse(code)
         if has_errors(cp.ast): return self.show_errors(cp.ast)
         self.generate_code(cp)
-        cp.st = self.build_symbol_table(cp)
+        self.build_symbol_table(cp)
         self.resolve_symbols(cp)
         self.check_types(cp)
         return cp
     
     def parse(self, code: str) -> Entity:
-        return parse_simple(code, "Program")
+        ast = parse_simple(code, "Program")
+        log(dbg_entity(ast))
+        return ast
     
     def show_errors(self, ast: Entity):
         log_clear()
@@ -106,71 +99,174 @@ class Language:
     def generate_code(self, cp: CompiledProgram) -> str:
         log_clear()
         log("generate code -----------------------------------------")
-        found = collect_entities(cp.ast, zc.Entity, "generate", references=False, children_first=False)
-        for f in found:
-            log(f"{f.e} in {f.scope}, {f.parent}.{f.name} {f.ref}")
-            f.e.generate()
+        visitor = Visitor(zc.Entity, has_method="generate", is_ref=False, children_first=False)
+        visitor.apply(cp.ast, lambda e, scope, type: e.generate())
 
     def build_symbol_table(self, cp: CompiledProgram) -> SymbolTable:
-        #log_clear()
+        log_clear()
         log("build_symbol_table -----------------------------------------")
         cp.st = SymbolTable()
-        found = collect_entities(cp.ast, zc.Entity, "add_symbols", references=False, children_first=False)
-        for f in found:
-            log(f"{f.e} in {f.scope}, {f.parent}.{f.name} [{f.ref}]")
-            f.e.add_symbols(f.scope, cp.st)
-        log("--------------------------------")
+        visitor = Visitor(zc.Entity, has_method="add_symbols", is_ref=False, children_first=False)
+        visitor.verbose(True)
+        visitor.apply(cp.ast, lambda e, scope, type: e.add_symbols(scope, cp.st))
         log(cp.st.dbg())
 
     def resolve_symbols(self, cp: CompiledProgram):
-        pass
+        log_clear()
+        ast = cp.ast.components[4]
+        log("resolve_symbols first pass -----------------------------------------")
+        errors = []
+        report = []
+        def resolve(e, scope, type):
+            if isinstance(e, Lex):
+                cls = self.grammar.get_class(type)
+                found= cp.st.find_single(e, cls, scope, errors)
+                if found: log(log_green(f"found: {found} in {scope}"))
+                else: log(log_red(f"not found: {e}"))
+                return found
+            else:
+                log(f"ignoring {e}")
+            
+        visitor = Visitor(Lex, "resolve", is_ref=True, children_first=False, ignore_classes=[zc.VariableRef])
+        visitor.apply(ast, resolve)
+        log("resolve_symbols second pass -----------------------------------------")
+        visitor = Visitor(zc.VariableRef, "resolve", is_ref=False, children_first=False)
+        visitor.apply(ast, lambda e, scope, type: e.resolve(scope, cp.st, errors))
 
     def check_types(self, cp: CompiledProgram):
         pass
 
-def collect_entities(e: Entity, select_type: Any, method_name: str,references: bool, children_first: bool) -> List[FoundItem]:
-    visited = set()
-    scope = None
-    results = []
-    collect_entities_rec(e, scope, select_type, method_name,references, children_first, "", None, visited, results)
-    return results
-    
-def collect_entities_rec(e: Entity, scope: Any, select_type: Any, method_name: str,references: bool, children_first: bool, name: str, parent: Entity, visited: Set, results: List[FoundItem]):
-    if isinstance(e, Entity):
-        if e in visited: return
-        visited.add(e)
+#--------------------------------------------------------------------------------------------------
+# visitor runs across the tree in specified order, calling method on each matching entity
+
+class Visitor:
+    def __init__(self, cls: Type[T], has_method: str, is_ref: bool, children_first: bool, ignore_classes: List[Type[T]]=None):
+        self.cls = cls                          # class to match, or None to match all
+        self.has_method = has_method            # method name to match, or None if all
+        self.is_ref = is_ref                    # match only references, or None if don't care
+        self.children_first = children_first    # visit children before calling fn, or not
+        self.ignore_classes = ignore_classes or []   # ignore these classes (don't visit/traverse)
+        self.fn = None                          # function to call on each match
+        self.vb = False
+
+    def verbose(self, vb: bool): self.vb = vb
+
+    def apply(self, e: Entity, fn: Callable):   # call this from outside
+        self.fn = fn
+        self.visit_rec(e, None, set(), None, None, None, 0)
+
+    # the main visitor recursive function... 
+    def visit_rec(self, e: Entity, scope: Entity, visited: Set, parent: Entity, parent_attr: str, parent_index: int, indent:int):
+        if self.should_ignore(e): return
         
-    type_match = False if select_type is None else isinstance(e, select_type)
+        if isinstance(e, Entity):
+            if e in visited: return                 # don't visit the same one twice
+            visited.add(e)
+        
+        entity_type_name, is_ref = self.get_type(parent, parent_attr) # find the attribute type
+        
+        match = self.is_match(e, is_ref) # check if this node matches the spec
+        
+        self.log(e, scope, match, indent, parent, parent_attr, parent_index, entity_type_name)
+        
+        # if we match, call the function (if children_first is False)
+        if match and self.children_first == False:
+            self.call_fn(e, scope, entity_type_name, parent, parent_attr, parent_index, indent)
+        
+        # visit children
+        if not isinstance(e, Lex) and not is_ref:
+            self.visit_children(e, scope, visited, parent, indent)
+        
+        # if we matched, call function (if children_first is True)
+        if match and self.children_first == True:
+            self.call_fn(e, scope, entity_type_name, parent, parent_attr, parent_index, indent)
+
+    #----------------------------------------------------------------------------------------------
+    # below the line 
+
+    def should_ignore(self, e: Entity):
+        if len(self.ignore_classes) == 0: return False
+        for cls in self.ignore_classes:
+            if isinstance(e, cls): return True
+        return False
+
+    def get_type(self, parent: Entity, parent_attr: str):
+        attr_type_name = Grammar.current.get_attribute_type(parent.__class__, parent_attr) if parent else ""
+        is_ref = "&" in attr_type_name
+        entity_type_name = attr_type_name.replace("List[", "").replace("]", "").replace("&", "")
+        return entity_type_name, is_ref
     
-    attr_type_in_parent = Grammar.current.get_attribute_type(parent.__class__, name) if parent else ""
-    ref = attr_type_in_parent if "&" in attr_type_in_parent else ""
-    is_ref = ref != ""
-    if references==True and type_match==False:
-        if select_type.__name__ in ref: type_match = True
+    def is_match(self, e: Entity, is_ref: bool):
+        if self.cls != None and not isinstance(e, self.cls): return False
+        if isinstance(e, Entity):
+            if is_ref: return False # never traverse references!
+            if self.has_method and not hasattr(e, self.has_method):
+                return False
+        elif isinstance(e, Lex): # safe to traverse references, but only if requested
+            if self.is_ref != None:
+                if self.is_ref != is_ref:
+                    return False
+        
+        return True
 
-    should_add_to_results = False
-    if type_match and (references is None or references == is_ref): 
-        if method_name == None or hasattr(e, method_name):
-            should_add_to_results = True
-
-    if children_first == False and should_add_to_results == True:
-        results.append(FoundItem(e, scope, parent, name, ref))
-
-    if hasattr(e, "get_scope"):
-        scope = e.get_scope()
-
-    if not isinstance(e, Lex) and not ref=="&":
+    def call_fn(self, e: Entity, scope: Entity, entity_type_name: str, parent: Entity, parent_attr: str, parent_index: int, indent: int):
+        start = " " * indent
+        new_node = self.fn(e, scope, entity_type_name)
+        if new_node: 
+            if self.vb: log(log_green(f"{start}set {parent}.{parent_attr} ==> {new_node}"))
+            self.set_node(new_node, parent, parent_attr, parent_index, indent)
+           
+    def visit_children(self, e: Entity, scope: Entity, visited: Set, parent: Entity, indent:int):
+        start = " " * indent
+        # this is fucking dumb. Just visit all attributes with the new scope.
+        if hasattr(e, "get_scope"):
+            scope = e.get_scope() or scope
+            if not isinstance(scope, Entity):
+                log(log_red(f"{e}.get_scope returned {scope} ({type(scope).__name__})"))
+                return
+            
         for attr in vars(e):
+            val = getattr(e, attr)
+            if val is None: continue
+            is_list = isinstance(val, List)
+            if is_list:
+                if len(val) == 0: continue
+                for i, val in enumerate(val):
+                    self.visit_rec(val, scope, visited, e, attr, i, indent+1)
+            else:
+                self.visit_rec(val, scope, visited, e, attr, None, indent+1)
+
+
+    def visit_attrs(self, attrs: List[Tuple[str, Entity]], e: Entity, scope: Entity, visited: Set, parent: Entity, indent:int):
+        for attr, attr_val in attrs:
             if attr == "_error": continue
-            attr_val = getattr(e, attr)
-            if attr_val is None: continue
             is_list = isinstance(attr_val, List)
             if is_list:
-                #log(f"{start}  {attr}")
                 for i, val in enumerate(attr_val):
-                    collect_entities_rec(val, scope, select_type, method_name, references, children_first, f"{attr}[{i}]", e, visited, results)
+                    self.visit_rec(val, scope, visited, e, attr, i, indent+1)
             else:
-                collect_entities_rec(attr_val, scope, select_type, method_name, references, children_first, attr, e, visited, results)
+                self.visit_rec(attr_val, scope, visited, e, attr, None, indent+1)
 
-    if children_first == True and should_add_to_results == True:
-        results.append(FoundItem(e, scope, parent, name, ref))
+    def set_node(self, new_node: Entity, parent: Entity, attr: str, index: int, indent:int):
+        start = " " * indent
+        ind = f"[{index}]" if index else ""
+        if not parent: return
+        if index == None: setattr(parent, attr, new_node)
+        else: getattr(parent, attr)[index] = new_node
+
+    def log(self, e: Entity, scope: Entity,match: bool, indent: int, parent: Entity, parent_attr: str, parent_index: int, entity_type_name: str):
+        if not self.vb: return
+        start = " " * indent
+        se = f"{e}" if isinstance(e, Entity) else f'"{e}"'
+        log(f"{start}{se} in {scope}")
+
+    def vblog(self, *args):
+        if not self.vb: return
+        log(*args)
+
+#--------------------------------------------------------------------------------------------------
+# test-test
+
+def test_symbol_table(st):
+    d = st.dbg()
+    
