@@ -2,6 +2,20 @@
 # scribblez
 "slow is smooth, smooth is fast"
 
+
+----------------------------------------------
+OK, everything is super clean now.
+=> not entirely happy with how we're handling constructor alias symbol : vec(x,y,z)
+=> but it's the best I can do for the moment. 
+=> We need to find a better syntax unifying name and signature aliases.
+=> but in the interest of making progress, that's what's happening.
+It's easy to fix it whenever we decide.
+
+Next, we need to typecheck ResultVariable;
+and check the types of lhs vs rhs. Super easy!
+
+
+------------------------------------------------
 let's think about this a bit more carefully.
 
     TypeDef.add_symbols: 

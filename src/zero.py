@@ -97,13 +97,13 @@ feature ConcreteMath extends Math
 @this_is_the_test
 def test_zero():
     log("test_zero")
-    zero = Language(zc)
-    zero.add_modules([module_Features(), module_Expressions(), module_Variables(), module_Types(), module_Functions(), module_Tests()])
+    compiler = Compiler(zc)
+    compiler.add_modules([module_Features(), module_Expressions(), module_Variables(), module_Types(), module_Functions(), module_Tests()])
     test_verbose(False)
     log_max_depth(12)
-    zero.setup()
+    compiler.setup()
     code = s_test_program
-    program = zero.compile(code)
+    program = compiler.compile(code)
 
 #--------------------------------------------------------------------------------------------------
 # print ast as nicely formatted code
@@ -826,6 +826,7 @@ class module_Types(LanguageModule):
                 code += "}"
                 log("make_constructor\n" + code)
                 constructor = parse_simple(code, "FunctionDef")
+                constructor._is_constructor_for_typedef = typeDef
                 typeDef._constructor = constructor
             make_constructor(self)
 
@@ -1065,6 +1066,8 @@ class module_Functions(LanguageModule):
                 self._function = function
                 st.add(long_handle, function, None)
                 st.add(short_handle, function, None)
+                if hasattr(self, "_is_constructor_for_typedef"):    # add alias handle
+                    add_alias_symbol(self, function, st, long_handle, short_handle)
             else:
                 modify_function(self, function, st)
 
@@ -1101,6 +1104,16 @@ class module_Functions(LanguageModule):
             function = zc.Function( results=funcDef.results, signature=funcDef.signature, body=statements)
             return function
         
+        def add_alias_symbol(funcDef, function, st, long_handle, short_handle):
+            typedef = funcDef._is_constructor_for_typedef
+            name = typedef.names[0].name
+            alias = typedef.names[0].alias
+            if alias:
+                alias_long_handle = long_handle.replace(str(name), str(alias))
+                alias_short_handle = short_handle.replace(str(name), str(alias))
+                st.add(alias_long_handle, function, None)
+                st.add(alias_short_handle, function, None)
+        
         def modify_function(funcDef, existing, st):
             long_handle = funcDef.signature.typed_handle()
             mod = str(funcDef.modifier)
@@ -1128,6 +1141,20 @@ class module_Functions(LanguageModule):
                 else:
                     sm = zc.ParallelFunctionDef(comps = [sm, this_def])
                     existing.body.statements = [sm]
+
+    def check_types(self):
+        @self.method(zc.ResultVariableRef) # ResultVariableRef.check_types
+        def check_types(self, st, scope, errors): self._type = self.variable._type
+        
+        @self.method(zc.ResultVariableDef) # ResultVariableDef.check_types
+        def check_types(self, st, scope, errors): self._type = self.type
+
+        @self.method(zc.AssignmentLhs) # AssignmentLhs.check_types
+        def check_types(self, st, scope, errors):
+            if len(self.results) == 0: self._type = None
+            elif len(self.results) == 1: self._type = self.results[0]._type
+            else: self._type = zc.MultipleTypes([r._type for r in self.results])
+
 
     def test_parser(self):
         test("result_vars_1", parse_code("(a, b: int, k, l: float) =", "FunctionResults"), """

@@ -53,8 +53,8 @@ class CompiledProgram:
         self.errors = []
         self.found = []
 
-# Language collects all modules into one unit
-class Language:
+# Compiler collects all modules into one unit
+class Compiler:
     def __init__(self, import_module):
         self.import_module = import_module
         self.modules = []
@@ -127,7 +127,7 @@ class Language:
         log("check_types -----------------------------------------")
         visitor = Visitor("check_type", is_ref=False, children_first=True)
         errors = []
-        visitor.apply(cp.ast, lambda e, scope, type_name: e.check_type(cp.st, scope,errors))
+        visitor.apply(cp.ast, lambda e, scope, type_name: e.check_type(cp.st, scope, errors))
         pass
 
 #--------------------------------------------------------------------------------------------------
@@ -149,6 +149,8 @@ class Visitor:
 
     # the main visitor recursive function... 
     def visit_rec(self, e: Entity, scope: Entity, visited: Set, parent: Entity, parent_attr: str, parent_index: int, indent:int):        
+        if not (isinstance(e, Entity) or isinstance(e, Lex)): return # allow addition of randomly-typed properties to ast entities
+
         if isinstance(e, Entity):        # don't visit the same one twice, unless we're a Lex
             if e in visited: return
             visited.add(e)
