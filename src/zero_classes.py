@@ -111,12 +111,11 @@ class VariableDef(Component):
         self.value: Expression = value
 
 class Type(Entity):
-    def __init__(self, name: 'str' =None, alias: 'str' =None, types: 'List[Type]' =None, type: 'Type' =None, properties: 'List[Variable]' =None, parents: 'List[Type]' =None, children: 'List[Type]' =None, options: 'List[str]' =None):
+    def __init__(self, name: 'str' =None, alias: 'str' =None, types: 'List[Type]' =None, properties: 'List[Variable]' =None, parents: 'List[Type]' =None, children: 'List[Type]' =None, options: 'List[str]' =None):
         super().__init__()
         self.name: str = name
         self.alias: str = alias
         self.types: List[Type] = types        # ref
-        self.type: Type = type        # ref
         self.properties: List[Variable] = properties
         self.parents: List[Type] = parents        # ref
         self.children: List[Type] = children        # ref
@@ -180,11 +179,6 @@ class MultipleTypes(Type):
     def __init__(self, types: 'List[Type]' =None):
         super().__init__()
         self.types: List[Type] = types        # ref
-
-class TypeRef(Type):
-    def __init__(self, type: 'Type' =None):
-        super().__init__()
-        self.type: Type = type        # ref
 
 class Function(Entity):
     def __init__(self, results: 'FunctionResults' =None, signature: 'FunctionSignature' =None, body: 'FunctionBody' =None):

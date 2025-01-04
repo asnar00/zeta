@@ -14,7 +14,7 @@ let's think about this a bit more carefully.
     so what we want to see at the first retry is: does resolve get called on Type(vector)?
 
     that's what we want to find out.
-    
+
 -------------------------------------------------
 
 resolution is a little gnarly because the correct order is:

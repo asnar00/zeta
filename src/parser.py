@@ -339,7 +339,7 @@ def print_code_formatted(e: Entity, use_aliases: bool = False) -> str:
         else:
             fmt += start + cleanup(out[ic:])
             break
-    return fmt.replace("    \n", "").replace("\n\n", "\n").replace("( ", "(").replace(" )", ")").replace(" . ", ".").replace(" ,", ",")
+    return fmt.replace("    \n", "").replace("\n\n", "\n").replace("( ", "(").replace(" )", ")").replace(". ", ".").replace(" .", ".").replace(" ,", ",")
 
 def print_code(e: Entity, is_reference: bool, use_aliases: bool) -> str|List[str]:
     if e is None: return ""
