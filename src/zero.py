@@ -133,8 +133,8 @@ def test_print_code(ast):
 # features and contexts 
 
 class module_Features(LanguageModule):
-    def syntax(self, grammar: Grammar):
-        grammar.add("""
+    def setup_syntax(self, compiler: Compiler):
+        compiler.grammar.add("""
             NameDef := name:<identifier> ("|" alias:<identifier>)?
             FeatureDef := "feature" NameDef ("extends" parent:FeatureDef&)? "{" components:Component*; "}"
             Component :=
@@ -142,9 +142,9 @@ class module_Features(LanguageModule):
             Program := components:(FeatureDef | ContextDef)+;
             """)
         
-    def scope(self):
+    def setup_scope(self, compiler: Compiler):
         @self.method(zc.FeatureDef) # FeatureDef.get_scope
-        def get_scope(self): return self
+        def get_scope(self): compiler.report(f"FeatureDef.get_scope: {self}"); return self
 
         @self.method(zc.FeatureDef) # FeatureDef.can_see_scope
         def can_see_scope(self, scope, symbol_table):
@@ -162,7 +162,7 @@ class module_Features(LanguageModule):
             if safe_count <=0: raise Exception("safe-count exceeded")
             return False
 
-    def symbols(self):
+    def setup_symbols(self, compiler: Compiler):
         @self.method(zc.FeatureDef) # FeatureDef.add_symbols
         def add_symbols(self, scope, st: SymbolTable):
             st.add(self.name, self, scope, alias=self.alias)
@@ -177,7 +177,7 @@ class module_Features(LanguageModule):
             else: log(log_red(f"not found lex: {self}"))
             return found
 
-    def test(self):
+    def test_parser(self):
         test("feature_0", parse_code("", "FeatureDef"), """
             FeatureDef
                 !!! premature end (expected 'feature', got 'None' at <eof>)
@@ -250,8 +250,8 @@ class module_Features(LanguageModule):
 # Expressions
 
 class module_Expressions(LanguageModule):
-    def syntax(self, grammar: Grammar):
-        grammar.add("""
+    def setup_syntax(self, compiler: Compiler):
+        compiler.grammar.add("""
             Expression :=
             Constant < Expression := value:(<number> | <string>)
             VariableRef < Expression := variables:Variable&+.
@@ -266,7 +266,7 @@ class module_Expressions(LanguageModule):
             FunctionCallArgument := (argument:Variable& "=")? value:Expression
                     """)
         
-    def validate(self):
+    def setup_validate(self, compiler: Compiler):
         @self.method(zc.FunctionCall) # FunctionCall.validate
         def validate(self) -> str: # function call must have at least one bracketed term or operator
             n_bracketed = 0; n_operators = 0; n_words = 0
@@ -283,7 +283,7 @@ class module_Expressions(LanguageModule):
             if len(self.variable.variables) < 2: return "FunctionCallVariable must have at least two variables"
             return ""
         
-    def naming(self):
+    def setup_naming(self, compiler: Compiler):
         @self.method(zc.VariableRef) # VariableRef.get_name
         def get_name(self) -> str:
             if self.variables:
@@ -293,7 +293,7 @@ class module_Expressions(LanguageModule):
         def get_name(self) -> str:
             return log_strip(print_code_formatted(self))
             
-    def symbols(self):
+    def setup_symbols(self, compiler: Compiler):
         @self.method(zc.FunctionCall) # FunctionCall.add_symbols
         def add_symbols(self, scope, st: SymbolTable):
             embracket(self)
@@ -344,7 +344,7 @@ class module_Expressions(LanguageModule):
             fc.items = before + [fc.items[i_operator]] + after
             return fc
             
-    def check_types(self):
+    def setup_check_types(self, compiler: Compiler):
         @self.method(zc.Constant)
         def check_type(self, symbol_table, scope, errors) -> zc.Type:
             type_name = "number" if self.value.type=="number" else "string"
@@ -658,18 +658,18 @@ class module_Expressions(LanguageModule):
 # variables
 
 class module_Variables(LanguageModule):
-    def syntax(self, grammar: Grammar):
-        grammar.add("""
+    def setup_syntax(self, compiler: Compiler):
+        compiler.grammar.add("""
             Variable := type:Type& NameDef "=" value:Expression
             VariableDef < Component := ((type:Type& names:NameDef+,) | (names:NameDef+, ":" type:Type&)) ("=" value:Expression)?
         """)
 
-    def scope(self):
+    def setup_scope(self, compiler: Compiler):
         @self.method(zc.Variable) # Variable.get_scope
         def get_scope(self) -> str: 
             return self.type if isinstance(self.type, zc.Type) else None
 
-    def symbols(self):
+    def setup_symbols(self, compiler: Compiler):
         @self.method(zc.VariableDef) # VariableDef.add_symbols
         def add_symbols(self, scope, st):
             self._defined_vars = []
@@ -678,7 +678,7 @@ class module_Variables(LanguageModule):
                 st.add(name.name, var, scope, alias=name.alias)
                 self._defined_vars.append(var)
 
-    def test(self):
+    def test_parser(self):
         test("variable_0", parse_code("int a", "VariableDef"), """
             VariableDef
                 type: Type => int
@@ -760,8 +760,8 @@ class module_Variables(LanguageModule):
 # types
 
 class module_Types(LanguageModule):
-    def syntax(self, grammar: Grammar):
-        grammar.add("""
+    def setup_syntax(self, compiler: Compiler):
+        compiler.grammar.add("""
             Type := NameDef properties:Variable* parents:Type&* children:Type&* options:<identifier>+
             TypeDef < Component := "type" names:NameDef+, rhs:TypeRhs?
             TypeRhs :=
@@ -777,7 +777,7 @@ class module_Types(LanguageModule):
             MultipleTypes < Type := types:Type&*
         """)
 
-    def validate(self):
+    def setup_validate(self, compiler: Compiler):
         @self.method(zc.TypeEnumDef)             # TypeEnumDef.validate
         def validate(self) -> str: 
             return "" if len(self.options) > 1 else "enum must have at least two options"
@@ -790,7 +790,7 @@ class module_Types(LanguageModule):
             self.rank = Lex(l.source, l.pos + len(l.val) - rank, l.val[-rank:], l.type)
             return ""
         
-    def naming(self):
+    def setup_naming(self, compiler: Compiler):
         @self.method(zc.MaybeTypes)
         def get_name(self) -> str:
             return "|".join(str(t.get_name()) for t in self.types)
@@ -798,7 +798,7 @@ class module_Types(LanguageModule):
         def get_name(self) -> str:
             return ",".join(str(t.get_name()) for t in self.types)
         
-    def scope(self):
+    def setup_scope(self, compiler: Compiler):
         @self.method(zc.TypeDef) #TypeDef.get_scope
         def get_scope(self) -> str:
             return self._resolved_types[0] if hasattr(self, "_resolved_types") else None
@@ -806,7 +806,7 @@ class module_Types(LanguageModule):
         @self.method(zc.Type) #Type.get_scope
         def get_scope(self) -> str: return self
 
-    def generate(self):
+    def setup_generate(self, compiler: Compiler):
         @self.method(zc.TypeDef)
         def generate(self):
             if not isinstance(self.rhs, zc.StructDef): return
@@ -830,7 +830,7 @@ class module_Types(LanguageModule):
                 typeDef._constructor = constructor
             make_constructor(self)
 
-    def symbols(self):
+    def setup_symbols(self, compiler: Compiler):
         @self.method(zc.TypeDef) # TypeDef.add_symbols
         def add_symbols(self, scope, st):
             name = self.names[0]
@@ -976,8 +976,8 @@ class module_Types(LanguageModule):
 # functions
 
 class module_Functions(LanguageModule):
-    def syntax(self, grammar: Grammar):
-        grammar.add("""
+    def setup_syntax(self, compiler: Compiler):
+        compiler.grammar.add("""
             Function := "_function" results:FunctionResults signature:FunctionSignature body:FunctionBody
             FunctionDef < Component := FunctionModifier results:FunctionResults? signature:FunctionSignature body:FunctionBody
             FunctionModifier := modifier:("on" | "before" | "after" | "replace")
@@ -1001,7 +1001,7 @@ class module_Functions(LanguageModule):
             ParallelFunctionDef < CompositeFunction := "par" "(" comps:CompositeFunction+, ")"
         """)
 
-    def naming(self):
+    def setup_naming(self, compiler: Compiler):
         @self.method(zc.FunctionDef)
         def get_name(self) -> str:
             name= self.signature.typed_handle() if self.signature else ".."
@@ -1029,7 +1029,7 @@ class module_Functions(LanguageModule):
                 log(f"error in FunctionSignature.typed_handle: {e}")
             return out
         
-    def scope(self):
+    def setup_scope(self, compiler: Compiler):
         @self.method(zc.FunctionDef) # FunctionDef.get_scope
         def get_scope(self): return self
         @self.method(zc.Function) # Function.get_scope
@@ -1044,7 +1044,7 @@ class module_Functions(LanguageModule):
             if self._owner.can_see_scope(scope, st): return True
             return False
         
-    def symbols(self):
+    def setup_symbols(self, compiler: Compiler):
         @self.method(zc.ResultVariableDef) # ResultVariableDef.add_symbols
         def add_symbols(self, scope, st):
             self._defined_vars = []
@@ -1142,7 +1142,7 @@ class module_Functions(LanguageModule):
                     sm = zc.ParallelFunctionDef(comps = [sm, this_def])
                     existing.body.statements = [sm]
 
-    def check_types(self):
+    def setup_check_types(self, compiler: Compiler):
         @self.method(zc.ResultVariableRef) # ResultVariableRef.check_types
         def check_types(self, st, scope, errors): self._type = self.variable._type
         
@@ -1154,7 +1154,6 @@ class module_Functions(LanguageModule):
             if len(self.results) == 0: self._type = None
             elif len(self.results) == 1: self._type = self.results[0]._type
             else: self._type = zc.MultipleTypes([r._type for r in self.results])
-
 
     def test_parser(self):
         test("result_vars_1", parse_code("(a, b: int, k, l: float) =", "FunctionResults"), """
@@ -1367,8 +1366,8 @@ class module_Functions(LanguageModule):
 # tests
 
 class module_Tests(LanguageModule):
-    def syntax(self, grammar: Grammar):
-        grammar.add("""
+    def setup_syntax(self, compiler: Compiler):
+        compiler.grammar.add("""
         TestDef < Component := ">" lhs:Expression ("=>" rhs:Expression)?
         """)
 

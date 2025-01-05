@@ -18,14 +18,14 @@ import zero_classes as zc
 # LanguageModule collects all compilation stages (grammar, parser, resolver, etc) for some part of the language
 class LanguageModule:
     def __init__(self): pass
-    def syntax(self, grammar: Grammar): pass      # add grammar rules and validation functions
-    def validate(self): pass                      # add validate methods to rule classes
-    def naming(self): pass                        # add naming methods to rule classes
-    def generate(self): pass                      # add generate methods to rule classes    
-    def scope(self): pass                         # add get_scope methods to rule classes
-    def symbols(self): pass                       # add add_symbols/resolve methods to rule classes
-    def check_types(self): pass                   # add check_type methods to rule classes
-    def test_parser(self): pass                   # test parser with some examples
+    def setup_syntax(self, compiler: 'Compiler'): pass            # add grammar rules and validation functions
+    def setup_validate(self, compiler: 'Compiler'): pass          # add validate methods to rule classes
+    def setup_naming(self, compiler: 'Compiler'): pass            # add naming methods to rule classes
+    def setup_generate(self, compiler: 'Compiler'): pass          # add generate methods to rule classes    
+    def setup_scope(self, compiler: 'Compiler'): pass             # add get_scope methods to rule classes
+    def setup_symbols(self, compiler: 'Compiler'): pass           # add add_symbols/resolve methods to rule classes
+    def setup_check_types(self, compiler: 'Compiler'): pass       # add check_type methods to rule classes
+    def test_parser(self): pass                             # test parser with some examples
 
     # add method to class (general)
     def method(self, cls: Type[T], method_name: str="") -> Callable:
@@ -48,44 +48,49 @@ class LanguageModule:
 # CompiledProgram holds ast, st, all the other artefacts
 class CompiledProgram:
     def __init__(self):
-        self.ast = None
-        self.st = None
-        self.errors = []
-        self.found = []
+        self.ast : Entity = None                            # abstract syntax tree: a tree of Entity objects
+        self.st : SymbolTable = None                        # symbol table; maps name => {object, scope, tag}
+        self.report : List[str] = []                        # log of all things done (for testing/debug)
+        self.errors : List[str] = []                        # all errors
 
 # Compiler collects all modules into one unit
 class Compiler:
     def __init__(self, import_module):
         self.import_module = import_module
-        self.modules = []
-        self.grammar = Grammar()
+        self.modules : List[LanguageModule] = []
+        self.grammar : Grammar= Grammar()
+        self.cp = CompiledProgram()
 
     def add_modules(self, modules: List[LanguageModule]): self.modules.extend(modules)
+    def report(self, msg: str): self.cp.report.append(msg)
+    def error(self, msg: str): self.cp.errors.append(msg)
 
     def setup(self):
-        for module in self.modules: module.syntax(self.grammar)
+        for module in self.modules: 
+            module.setup_syntax(self)
+            
         self.grammar.build_classes()
         self.grammar.write_classes(self.import_module.__file__)
         importlib.reload(self.import_module)
         self.grammar.set_rule_classes(self.import_module)
-        for module in self.modules: 
-            module.validate()
-            module.naming()
-            module.scope()
-            module.generate()
-            module.symbols()
-            module.check_types()
+        
+        for module in self.modules:
+            module.setup_validate(self)
+            module.setup_naming(self)
+            module.setup_scope(self)
+            module.setup_generate(self)
+            module.setup_symbols(self)
+            module.setup_check_types(self)
             module.test_parser()
 
     def compile(self, code: str) -> CompiledProgram:
-        cp = CompiledProgram()
-        cp.ast = self.parse(code)
-        if has_errors(cp.ast): return self.show_errors(cp.ast)
-        self.generate_code(cp)
-        self.build_symbol_table(cp)
-        self.resolve_symbols(cp)
-        self.check_types(cp)
-        return cp
+        self.cp.ast = self.parse(code)
+        if has_errors(self.cp.ast): return self.show_errors(self.cp.ast)
+        self.generate_code(self.cp)
+        self.build_symbol_table(self.cp)
+        self.resolve_symbols(self.cp)
+        self.check_types(self.cp)
+        return self.cp
     
     def parse(self, code: str) -> Entity:
         ast = parse_simple(code, "Program")

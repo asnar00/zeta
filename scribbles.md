@@ -3,6 +3,15 @@
 "slow is smooth, smooth is fast"
 
 
+to get "hello world" example working
+
+- errors, reports and tests from stage outputs
+- result-var type-check
+- use-before-declare check (statement index tag)
+- stream handling
+- string literals with vars "hello \(name)"
+- python code generation
+
 ----------------------------------------------
 OK, everything is super clean now.
 => not entirely happy with how we're handling constructor alias symbol : vec(x,y,z)
