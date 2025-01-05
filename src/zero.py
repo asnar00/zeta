@@ -366,7 +366,6 @@ class module_Expressions(LanguageModule):
         @self.method(zc.FunctionCallVariable) # FunctionCallVariable.check_type
         def check_type(self, st, scope, errors):
             self._type = self.variable._type
-            if self._type: compiler.report(self.variable.variables[-1], f"{self._type}")
 
         @self.method(zc.FunctionCall) # FunctionCall.check_type
         def check_type(self, st, scope, errors):
