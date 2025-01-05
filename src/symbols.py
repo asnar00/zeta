@@ -62,25 +62,6 @@ class SymbolTable:
                 break
         list.insert(0, item)
 
-    def find_single_item(self, name: Lex, of_type: Any, scope: Any, errors: List[str]) -> SymbolItem:
-        if isinstance(name, of_type): return name # already matched
-        location = f" at {name.location()}" if isinstance(name, Lex) else f" type {type(name).__name__}({caller(1)})"
-        found = self.find(name, of_type, scope)
-        report = ""
-        if len(found) == 0:
-            #log(log_red(f"no {of_type.__name__} '{name}' in scope {scope}{location}{report}"))
-            errors.append(f"no {of_type.__name__} '{name}' in scope {scope}{location}{report}")
-            if str(name).startswith("VariableDef"): log_exit("weird")        
-        elif len(found) > 1:
-            errors.append(f"multiple matches for {of_type.__name__} '{name}' in scope {scope}{location}{report}")
-        else:
-            return found[0]
-
-    def find_single(self, name: Lex, of_type: Any, scope: Any, errors: List[str]) -> SymbolItem:
-        if isinstance(name, of_type): return name # already matched
-        found= self.find_single_item(name, of_type, scope, errors)
-        return found.element if found else None
-
     def find(self, name: str|Lex, of_type: Any|None, scope: Any|None) -> List[SymbolItem]:
         if isinstance(name, Lex): name = name.val
         if not name in self.symbols: return []
@@ -92,7 +73,7 @@ class SymbolTable:
     def scope_can_see(self, scope1: Any, scope2: Any) -> bool:
         if scope1 is None or scope2 is None: return True
         if hasattr(scope1, "can_see_scope"):
-            return scope1.can_see_scope(scope2, self)
+            return scope1.can_see_scope(scope2)
         return scope1 == scope2
     
     def dbg(self) -> str:

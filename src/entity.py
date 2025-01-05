@@ -147,6 +147,7 @@ def dbg_entity(e: Entity|List[Entity], indent: int=0) ->str:
 # misc functions to help with entity stuff: these should probably go somewhere else, maybe in a new ast.py?
 
 def get_first_lex(e: Entity|Lex) -> Lex:
+    if isinstance(e, str): return Lex(source=None, pos=0, val=e, type=None)
     if isinstance(e, Lex): return e
     for attr in vars(e):
         if attr.startswith("_"): continue

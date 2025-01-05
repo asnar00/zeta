@@ -148,6 +148,7 @@ class Lex:
     def dbg(self):
         return f"Lex <{self.type}> '{self.val}' @ {self.location()}"
     def location(self):
+        if self.source == None: return "..."
         return self.source.location(self.pos)
     
 # lexer: reads source and produces lexemes

@@ -6,6 +6,7 @@
 from compiler import *
 from copy import deepcopy
 import zero_classes as zc
+import re
 
 #--------------------------------------------------------------------------------------------------
 # main
@@ -149,14 +150,14 @@ class module_Features(LanguageModule):
         def get_scope(self): return self
 
         @self.method(zc.FeatureDef) # FeatureDef.can_see_scope
-        def can_see_scope(self, scope, st):
+        def can_see_scope(self, scope):
             featureDef = self
             safe_count = 100
             while True and safe_count > 0:
                 parent = featureDef.parent
                 if parent == None: return False
                 if isinstance(parent, Lex):
-                    parent = st.find_single(parent, zc.FeatureDef, None, [])
+                    parent = compiler.find_symbol(parent, zc.FeatureDef, None, raise_errors=False)
                     if parent == None: return False # we'll get a resolve error later
                 if parent == scope: return True
                 featureDef = parent
@@ -166,19 +167,13 @@ class module_Features(LanguageModule):
 
     def setup_symbols(self, compiler: Compiler):
         @self.method(zc.FeatureDef) # FeatureDef.add_symbols
-        def add_symbols(self, scope, st: SymbolTable):
+        def add_symbols(self, scope):
             compiler.add_symbol(self.name, self, scope, alias=self.alias)
 
         @self.method(Lex) # Lex.resolve
-        def resolve(self, scope, st, type_name, errors):
+        def resolve(self, scope, type_name):
             cls = Entity.get_class(type_name)
-            found= st.find_single(self, cls, scope, errors)
-            if found:
-                if type(found).__name__ == "Lex":
-                    compiler.error(self, f"lex: {found} in {scope}")
-                else:
-                    compiler.report(self, f"{found} in {scope}")
-            return found
+            return compiler.find_symbol(self, cls, scope)
 
     def test_parser(self):
         test("feature_0", parse_code("", "FeatureDef"), """
@@ -298,14 +293,14 @@ class module_Expressions(LanguageModule):
             
     def setup_symbols(self, compiler: Compiler):
         @self.method(zc.FunctionCall) # FunctionCall.add_symbols
-        def add_symbols(self, scope, st: SymbolTable):
+        def add_symbols(self, scope):
             embracket(self)
 
         @self.method(zc.VariableRef) # VariableRef.resolve
-        def resolve(self, scope, st, type_name, errors):
+        def resolve(self, scope, type_name):
             resolved_vars = []
             for var in self.variables: # all Lex at this point
-                resolved_var = st.find_single(var, zc.Variable, scope, errors)
+                resolved_var = compiler.find_symbol(var, zc.Variable, scope, raise_errors=False)
                 if resolved_var == None:
                     compiler.error(f"variable not found: {var}")
                     resolved_vars.append(var)
@@ -319,14 +314,13 @@ class module_Expressions(LanguageModule):
             return self
 
         @self.method(zc.FunctionCall) #FunctionCall.resolve
-        def resolve(self, scope, st, type_name, errors):
+        def resolve(self, scope, type_name):
             for i, item in enumerate(self.items):
                 if isinstance(item, zc.FunctionCallWord):
-                    var = st.find_single(item.name, zc.Variable, scope, [])
+                    var = compiler.find_symbol(item.name, zc.Variable, scope, raise_errors=False)
                     if var:
                         var_ref = zc.VariableRef(variables=[var])
                         self.items[i] = zc.FunctionCallVariable(variable=var_ref)
-                        compiler.report(item.name, f"fcv {var}")
             return self
 
         def embracket(fc: zc.FunctionCall):
@@ -352,31 +346,28 @@ class module_Expressions(LanguageModule):
             
     def setup_check_types(self, compiler: Compiler):
         @self.method(zc.Constant) # Constant.check_type
-        def check_type(self, st, scope, errors):
+        def check_type(self, scope):
             type_name = "number" if self.value.type=="number" else "string"
-            self._type = st.find_single(type_name, zc.Type, scope, errors)
-            if self._type: compiler.report(self, f"{self._type}")
-            else: log(log_red(f"Constant: {self.value} is not a valid type"))
+            self._type = compiler.find_symbol(type_name, zc.Type, scope)
         
         @self.method(zc.VariableRef) # VariableRef.check_type
-        def check_type(self, st, scope, errors):
+        def check_type(self, scope):
             self._type = self.variables[-1].type
             if self._type: compiler.report(self.variables[-1], f"{self._type}")
         
         @self.method(zc.FunctionCallVariable) # FunctionCallVariable.check_type
-        def check_type(self, st, scope, errors):
+        def check_type(self, scope):
             self._type = self.variable._type
 
         @self.method(zc.FunctionCall) # FunctionCall.check_type
-        def check_type(self, st, scope, errors):
+        def check_type(self, scope):
             cf= log_strip(print_code_formatted(self))
             self._resolved_functions = []
-            functions = find_functions(self, st, scope, errors)
+            functions = find_functions(self, scope)
             for f in functions:
-                if not hasattr(f, "_type"): f.check_type(st, scope, errors)
+                if not hasattr(f, "_type"): f.check_type(scope)
             if len(functions) == 0:
-                log(log_red(f"FunctionCall: {log_strip(print_code_formatted(self))} => Not Found"))
-                errors.append(f"no functions found for {print_code_formatted(self)} in {scope}")
+                compiler.error(self, f"no functions found for {cf} in {scope}")
                 self._type = None
             elif len(functions) > 1:
                 self._type = zc.MaybeTypes([f._type for f in functions])
@@ -385,7 +376,7 @@ class module_Expressions(LanguageModule):
             compiler.report(self, f"{self._type}")
 
         @self.method(zc.Function) # Function.check_type
-        def check_type(self, st, scope, errors):
+        def check_type(self, scope):
             result_types = []
             if self.results != None:
                 for frv in self.results.results:
@@ -395,19 +386,19 @@ class module_Expressions(LanguageModule):
             else: self._type = zc.MultipleTypes(result_types)
 
         @log_suppress
-        def find_functions(fc: zc.FunctionCall, st, scope, errors) -> List[zc.Function]: 
+        def find_functions(fc: zc.FunctionCall, scope) -> List[zc.Function]: 
             if fc._resolved_functions: return fc._resolved_functions
             short_sig = find_short_sig(fc)
             location = find_location(fc)
-            fc_types = get_param_types(fc, st)
+            fc_types = get_param_types(fc)
             for param_type in fc_types:
                 if isinstance(param_type, Lex):
                     log(log_red("Flagging: fc_types contains a Lex type."))
                     break
             log(f" short_sig: {short_sig}")
-            functions = [f.element for f in st.find(short_sig, zc.Function, scope)]
+            functions = [f.element for f in compiler.cp.st.find(short_sig, zc.Function, scope)]
             log(f" functions: {functions}")
-            fn_types = [get_sig_param_types(f.signature, st) for f in functions]
+            fn_types = [get_sig_param_types(f.signature) for f in functions]
             log(f" fc_types: {fc_types}")
             log(f" fn_types: {fn_types}")
             distances = [get_distances(fc_types,fn_types[i]) for i in range(len(fn_types))]
@@ -428,7 +419,7 @@ class module_Expressions(LanguageModule):
             log(f" fc._constraints: {fc._constraints}")
             return filtered_functions
         
-        def get_param_types(fc: zc.FunctionCall, st: SymbolTable) -> List[zc.Type]:
+        def get_param_types(fc: zc.FunctionCall) -> List[zc.Type]:
             out = []
             for item in fc.items:
                 if hasattr(item, "_type"):
@@ -439,14 +430,14 @@ class module_Expressions(LanguageModule):
                             out.append(arg.value._type)
             return out
         
-        def get_sig_param_types(signature: zc.FunctionSignature, st) -> List[zc.Type]:
+        def get_sig_param_types(signature: zc.FunctionSignature) -> List[zc.Type]:
             out = []
             for item in signature.elements:
                 if isinstance(item, zc.FunctionSignatureParams):
                     for param in item.params:
                         param_type = param.type
                         if isinstance(param_type, Lex):
-                            param_type = st.find_single(param_type, zc.Type, None, None)
+                            param_type = compiler.find_symbol(param_type, zc.Type, None, raise_errors=False)
                         for param_name in param.names:
                             out.append(param_type)
             return out
@@ -675,7 +666,7 @@ class module_Variables(LanguageModule):
 
     def setup_symbols(self, compiler: Compiler):
         @self.method(zc.VariableDef) # VariableDef.add_symbols
-        def add_symbols(self, scope, st):
+        def add_symbols(self, scope):
             self._defined_vars = []
             for name in self.names:
                 var = zc.Variable(type=self.type, name=name.name, alias=name.alias, value=self.value)
@@ -836,10 +827,10 @@ class module_Types(LanguageModule):
 
     def setup_symbols(self, compiler: Compiler):
         @self.method(zc.TypeDef) # TypeDef.add_symbols
-        def add_symbols(self, scope, st):
+        def add_symbols(self, scope):
             name = self.names[0]
             for name in self.names:
-                existing_type_objects = st.find(name.name, zc.Type, scope)
+                existing_type_objects = compiler.cp.st.find(name.name, zc.Type, scope)
                 if len(existing_type_objects) == 0:
                     self._resolved_types = []
                     type_object = zc.Type(name=name.name, alias=name.alias)
@@ -856,7 +847,7 @@ class module_Types(LanguageModule):
                     raise Exception(f"symbol clash in TypeDef: {self.name} => {existing_type_objects}")
                 
         @self.method(zc.TypeDef)
-        def resolve(self, scope, st, type_name, errors):
+        def resolve(self, scope, type_name):
             log(f"typeDef.resolve:\n{print_code_formatted(self)}")
             if isinstance(self.rhs, zc.TypeParentDef):
                 #log(" is parent")
@@ -1006,11 +997,12 @@ class module_Functions(LanguageModule):
         """)
 
     def setup_naming(self, compiler: Compiler):
-        @self.method(zc.FunctionDef)
+        @self.method(zc.FunctionDef)  # FunctionDef.get_name
         def get_name(self) -> str:
             name= self.signature.typed_handle() if self.signature else ".."
             if hasattr(self, "_owner") and self._owner: name = str(self._owner.get_name()) + "." + name
-            return name
+
+            return re.sub(r'Type\((.*?)\)', r'\1', name)
         
         @self.method(zc.Function)
         def get_name(self) -> str:
@@ -1040,17 +1032,17 @@ class module_Functions(LanguageModule):
         def get_scope(self): return self
 
         @self.method(zc.FunctionDef)
-        def can_see_scope(self, scope, st: SymbolTable):
+        def can_see_scope(self, scope):
             if self == scope: return True
             if not isinstance(scope, zc.FeatureDef): return False
             if self._owner == scope: return True
             if self._owner == scope: return True
-            if self._owner.can_see_scope(scope, st): return True
+            if self._owner.can_see_scope(scope): return True
             return False
         
     def setup_symbols(self, compiler: Compiler):
         @self.method(zc.ResultVariableDef) # ResultVariableDef.add_symbols
-        def add_symbols(self, scope, st):
+        def add_symbols(self, scope):
             self._defined_vars = []
             for name in self.names:
                 var = zc.Variable(type=self.type, name=name.name, alias=name.alias)
@@ -1058,26 +1050,26 @@ class module_Functions(LanguageModule):
                 self._defined_vars.append(var)
 
         @self.method(zc.FunctionDef) # FunctionDef.add_symbols
-        def add_symbols(self, scope, st):
+        def add_symbols(self, scope):
             long_handle = typed_handle(self)
             short_handle = untyped_handle(self)
-            st.add(long_handle, self, scope)
-            st.add(short_handle, self, scope)
+            compiler.cp.st.add(long_handle, self, scope)
+            compiler.cp.st.add(short_handle, self, scope)
             compiler.report(self, f"\"{long_handle}\" => {self} in {scope}")
             compiler.report(self, f"\"{short_handle}\" => {self} in {scope}")
             self._owner = scope
-            function = st.find_single(long_handle, zc.Function, None, [])
+            function = compiler.find_symbol(long_handle, zc.Function, None, raise_errors=False)
             if function == None:
-                function = make_function(self, st)
+                function = make_function(self, compiler.cp.st)
                 self._function = function
-                st.add(long_handle, function, None)
-                st.add(short_handle, function, None)
+                compiler.cp.st.add(long_handle, function, None)
+                compiler.cp.st.add(short_handle, function, None)
                 compiler.report(self, f"\"{long_handle}\" => {function} in {scope}")
                 compiler.report(self, f"\"{short_handle}\" => {function} in {scope}")
                 if hasattr(self, "_is_constructor_for_typedef"):    # add alias handle
-                    add_alias_symbol(self, function, st, long_handle, short_handle)
+                    add_alias_symbol(self, function, compiler.cp.st, long_handle, short_handle)
             else:
-                modify_function(self, function, st)
+                modify_function(self, function, compiler.cp.st)
 
         def typed_handle(funcDef) -> str:
             name = ""
@@ -1089,7 +1081,7 @@ class module_Functions(LanguageModule):
                     brace = "("
                     for param in item.params:
                         for param_name in param.names:
-                            brace += str(param.type).replace("Type(", "").replace(")", "")+ ", "
+                            brace += str(param.type)+ ", "
                     if brace.endswith(", "): brace = brace[:-2]
                     brace += ")"
                     name += brace

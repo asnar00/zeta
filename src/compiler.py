@@ -130,32 +130,45 @@ class Compiler:
     def generate_code(self, cp: CompiledProgram) -> str:
         self.stage("generate code")
         visitor = Visitor(has_method="generate", is_ref=False, children_first=False)
-        visitor.apply(cp.ast, lambda e, scope, type: e.generate())
+        visitor.apply(cp.ast, lambda e, scope, type_name: e.generate())
 
     def add_symbols(self, cp: CompiledProgram) -> SymbolTable:
         self.stage("add symbols")
         cp.st = SymbolTable()
         visitor = Visitor(has_method="add_symbols", is_ref=False, children_first=False)
-        visitor.apply(cp.ast, lambda e, scope, type: e.add_symbols(scope, cp.st))
+        visitor.apply(cp.ast, lambda e, scope, type_name: e.add_symbols(scope))
 
     def resolve_symbols(self, cp: CompiledProgram):
         self.stage("resolve symbols")
         errors = []
         visitor = Visitor("resolve", is_ref=True, children_first=True)
-        visitor.apply(cp.ast, lambda e, scope, type_name: e.resolve(scope, cp.st, type_name, errors)) 
+        visitor.apply(cp.ast, lambda e, scope, type_name: e.resolve(scope, type_name)) 
 
     def check_types(self, cp: CompiledProgram):
         self.stage("check types")
         visitor = Visitor("check_type", is_ref=False, children_first=True)
         errors = []
-        visitor.apply(cp.ast, lambda e, scope, type_name: e.check_type(cp.st, scope, errors))
+        visitor.apply(cp.ast, lambda e, scope, type_name: e.check_type(scope))
         pass
 
     #--------------------------------------------------------------------
     # below the line
-
-    # add symbol and report name and alias (if any)
+    
+    # add symbol and report name and alias (if any); called by add_symbols
     def add_symbol(self, name: Lex, e: Entity, scope: Entity, alias: Lex=None):
         self.cp.st.add(name, e, scope, alias=alias)
         self.report(name, f"{e} in {scope}")
         if alias: self.report(alias, f"{e} in {scope}")
+
+    # resolve a symbol name; called by resolve
+    def find_symbol(self, name: Lex, of_type: Any, scope: Any, raise_errors: bool=True) -> Any:
+        if isinstance(name, of_type): return name # already matched
+        found = self.cp.st.find(name, of_type, scope)
+        if len(found) == 1:
+            self.report(name, f"{found[0].element} in {scope}")
+            return found[0].element
+        elif len(found) > 1:
+            if raise_errors: self.error(name, f"multiple matches in {scope}")
+        else:
+            if raise_errors: self.error(name, f"no {of_type.__name__} in {scope}, {caller()}")
+        return None
