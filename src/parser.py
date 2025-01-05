@@ -7,6 +7,7 @@ from typing import Type
 from util import *
 from lexer import *
 from grammar import *
+from entity import *
 
 #--------------------------------------------------------------------------------------------------
 # Parser

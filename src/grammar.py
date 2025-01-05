@@ -8,43 +8,7 @@ T = TypeVar('T')
 from util import *
 from typing import get_type_hints
 from lexer import Lex
-
-#--------------------------------------------------------------------------------------------------
-# Error represents something that went wrong
-class Error:
-    def __init__(self, message: str, expected: str, got: str, at: str):
-        self.message = message
-        self.expected = expected
-        self.got = got
-        self.at = at
-    def __str__(self):
-        expected = f"(expected {self.expected}, got '{self.got}'" if self.expected else ""
-        return f"!!! {self.message} {expected} at {self.at})"
-    def __repr__(self): return self.__str__()
-
-#--------------------------------------------------------------------------------------------------
-# Entity is the base class for all AST Nodes
-
-# Entity is the base class; all entities have a name and an alias
-class Entity:
-    def __init__(self): self._error : Error = None
-    def __str__(self):
-        name = f"({self.get_name()})"
-        return f"{self.__class__.__name__}{name}"
-    def __repr__(self): return self.__str__()
-    def get_name(self) -> str:
-        if hasattr(self, "name"): return self.name
-        for attr in vars(self):
-            if attr == "_error": continue
-            val = getattr(self, attr)
-            if val is None: continue
-            if isinstance(val, Entity): return val.get_name()
-            elif isinstance(val, List) and len(val) > 0 and isinstance(val[0], Entity):
-                for item in val:
-                    if isinstance(item, Entity):
-                        name = item.get_name()
-                    if name: return name
-        return ".."
+from entity import Entity
 
 #--------------------------------------------------------------------------------------------------
 # Term: a single term of a rule
@@ -118,9 +82,6 @@ class Grammar:
         self.rules : List[Rule] = []
         self.rule_named = {}                    # rule name => rule
         self.new_rules = []                     # list of rules added since last add()
-        self.class_defs = {}                    # class name => text class definition (init method only)
-        self.class_types = {}                   # class.attribute => type
-        self.classes = {}                       # class name => class
         entity_rule = Rule("Entity", "", "")
         entity_rule.entity_cls = Entity
         self.add_rule(entity_rule)
@@ -231,44 +192,13 @@ class Grammar:
         for rule in self.rules:
             class_name = rule.name.replace("_", "")
             rule.entity_cls = getattr(module, class_name)
-            self.classes[class_name] = rule.entity_cls
-
-    def get_class(self, class_name: str) -> Type:
-        class_name = class_name.replace("&", "")
-        if class_name not in self.classes:
-            raise Exception(f"can't find class {class_name}")
-        return self.classes[class_name]
+            Entity.classes[class_name] = rule.entity_cls
 
     def build_class(self, rule: Rule):
         name = rule.name
-        vb = (name == "TypeChildrenDef")
-        if vb: 
-            log_clear()
-            log(log_orange(f"building class {name}"))
         parent = rule.parent_name
         attributes = self.build_class_attributes(rule, {})   # name -> type
-        log("attributes:", attributes)
-        if not parent: parent = "Entity"
-        names = attributes.keys()
-        types = attributes.values()
-        init_param_list = ", ".join([f"{name}: '{type.replace("&", "")}' =None" for name, type in zip(names, types)])
-        class_def = log_deindent(f"""
-            class {name}({parent}):
-                def __init__(self, {init_param_list}):
-                    super().__init__()
-            """)
-        for attribute_name, attribute_type in attributes.items():
-            ref = ""
-            py_attribute_type = attribute_type
-            if "&" in attribute_type:
-                ref = "        # ref"
-                py_attribute_type = attribute_type.replace("&", "")
-            class_def += f"        self.{attribute_name}: {py_attribute_type} = {attribute_name}{ref}\n"
-            self.class_types[f"{name}.{attribute_name}"] = attribute_type
-            if vb: log(log_orange(f"{name}.{attribute_name} => {attribute_type}"))
-        log(class_def)
-        self.class_defs[name] = class_def
-        #if vb: log_exit()
+        Entity.build_class(name, parent, attributes)
 
     def build_class_attributes(self, rule: Rule, attributes: Dict[str, str]) -> Dict[str, str]:
         if rule.is_abstract(): return {}
@@ -287,32 +217,7 @@ class Grammar:
             elif not term.is_keyword():
                 raise Exception(f"unnamed non-rule type")
         return attributes
-    
-    # given class name and attribute name, return type
-    def get_attribute_type(self, cls: Type, name: str) -> str:
-        if name.endswith("]"): name = name[:name.rfind("[")] # strip trailing array []
-        key = f"{cls.__name__}.{name}"
-        if key not in self.class_types: return "None"
-        return self.class_types[key]
-    
-    def write_classes(self, path: str):
-        preamble = log_deindent(f"""
-            # ᕦ(ツ)ᕤ
-            # {path.replace("src/", "")}
-            # auto-generated by zeta.py
-            # zero to anything
 
-            from grammar import Entity
-            from typing import List, Dict, Type
-            """).lstrip()
-        with open(path, "w") as f:
-            f.write(preamble)
-            for name, class_def in self.class_defs.items():
-                f.write(class_def)
-    
-   
-
-        
 #--------------------------------------------------------------------------------------------------
 # helpers
 
@@ -659,45 +564,3 @@ def get_attribute_type(term: Term) -> str:
         type_name = f"List[{type_name}]"
     return type_name
 
-#-----------------------------------------------------------------------------------------------------------------------
-# print out an Entity tree
-
-# detailed printout of every property of an entity
-def dbg_entity(e: Entity|List[Entity], indent: int=0) ->str:
-    out = ""
-    start = "    " * indent
-    if isinstance(e, Error): 
-        return f"{start}{log_red(e)}\n"
-    elif isinstance(e, Entity):
-        out += f"{start}{e.__class__.__name__}\n"
-        for attr in vars(e):
-            if attr == "_error":
-                if e._error != None:
-                    out += f"{start}    {log_red(e._error)}\n"
-                continue
-            if attr.startswith("_"): continue
-            type_name = Grammar.current.get_attribute_type(e.__class__, attr)
-            val = getattr(e, attr)
-            if val == None or (isinstance(val, Lex) or isinstance(val, str)) or (isinstance(val, List) and len(val)==0):
-                ref = ">" if (isinstance(val, Lex) or isinstance(val, str)) and type_name != "str" else ""
-                out += f"{start}    {attr}: {type_name.replace("&", "")} ={ref} {val}\n"
-            elif "&" in type_name:
-                out += f"{start}    {attr} => {val}\n"
-            else:
-                if isinstance(val, list) and "List[" not in type_name:
-                    type_name = f"List[{type_name}]"
-                out += f"{start}    {attr}: {type_name.replace("&", "")}"
-                if isinstance(val, list) and len(val) > 0:
-                    out += "\n"
-                    if isinstance(val[0], Entity):
-                        for item in val:
-                            out += dbg_entity(item, indent+2)
-                    else:
-                        type_in_brackets = type_name[5:-1]
-                        ref = "=> " if type_in_brackets != "str" else ""
-                        for item in val:
-                            out += f"{start}        {ref}{item}\n"
-                else: 
-                    out += "\n"
-                    out += dbg_entity(val, indent+2)
-    return out

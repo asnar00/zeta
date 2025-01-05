@@ -4,7 +4,8 @@
 # zero to anything
 
 from typing import Type, Dict, Any, List, Set
-from grammar import Entity, Grammar, dbg_entity
+from grammar import Entity, Grammar
+from entity import dbg_entity
 from parser import print_code_formatted
 from util import *
 from lexer import Lex
@@ -103,5 +104,14 @@ class SymbolTable:
             out = out[:-2]
             out += "\n"
         return out
+    
+    def report(self, report_fn):
+        for name, items in self.symbols.items():
+            out = f'"{name}" => '
+            for item in items:
+                out += str(item) + "; "
+            if out.endswith("; "): out = out[:-2]
+            report_fn(out)
+
 
     

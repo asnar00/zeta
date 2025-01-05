@@ -104,6 +104,8 @@ def test_zero():
     compiler.setup()
     code = s_test_program
     program = compiler.compile(code)
+    log_clear()
+    log(program.show_report())
 
 #--------------------------------------------------------------------------------------------------
 # print ast as nicely formatted code
@@ -144,17 +146,17 @@ class module_Features(LanguageModule):
         
     def setup_scope(self, compiler: Compiler):
         @self.method(zc.FeatureDef) # FeatureDef.get_scope
-        def get_scope(self): compiler.report(f"FeatureDef.get_scope: {self}"); return self
+        def get_scope(self): return self
 
         @self.method(zc.FeatureDef) # FeatureDef.can_see_scope
-        def can_see_scope(self, scope, symbol_table):
+        def can_see_scope(self, scope, st):
             featureDef = self
             safe_count = 100
             while True and safe_count > 0:
                 parent = featureDef.parent
                 if parent == None: return False
                 if isinstance(parent, Lex):
-                    parent = symbol_table.find_single(parent, zc.FeatureDef, None, [])
+                    parent = st.find_single(parent, zc.FeatureDef, None, [])
                     if parent == None: return False # we'll get a resolve error later
                 if parent == scope: return True
                 featureDef = parent
@@ -165,16 +167,17 @@ class module_Features(LanguageModule):
     def setup_symbols(self, compiler: Compiler):
         @self.method(zc.FeatureDef) # FeatureDef.add_symbols
         def add_symbols(self, scope, st: SymbolTable):
-            st.add(self.name, self, scope, alias=self.alias)
+            compiler.add_symbol(self.name, self, scope, alias=self.alias)
 
         @self.method(Lex) # Lex.resolve
         def resolve(self, scope, st, type_name, errors):
-            cls = Grammar.current.get_class(type_name)
+            cls = Entity.get_class(type_name)
             found= st.find_single(self, cls, scope, errors)
             if found:
                 if type(found).__name__ == "Lex":
-                    log(log_red(f"    sad, found lex: {found} in {scope}"))
-            else: log(log_red(f"not found lex: {self}"))
+                    compiler.error(self, f"lex: {found} in {scope}")
+                else:
+                    compiler.report(self, f"{found} in {scope}")
             return found
 
     def test_parser(self):
@@ -304,14 +307,14 @@ class module_Expressions(LanguageModule):
             for var in self.variables: # all Lex at this point
                 resolved_var = st.find_single(var, zc.Variable, scope, errors)
                 if resolved_var == None:
-                    log(log_red(f"    variable not found: {var}"))
+                    compiler.error(f"variable not found: {var}")
                     resolved_vars.append(var)
                     return self
                 else:
                     resolved_vars.append(resolved_var)
                     scope = resolved_var.type
-                    if isinstance(scope, Lex):
-                        log(log_red(f"    scope is Lex: {scope}"))
+                    if isinstance(scope, Lex): compiler.error(f"scope is Lex: {scope}")
+            compiler.report(self.variables[0], f"var {resolved_vars}")
             self.variables = resolved_vars
             return self
 
@@ -321,7 +324,9 @@ class module_Expressions(LanguageModule):
                 if isinstance(item, zc.FunctionCallWord):
                     var = st.find_single(item.name, zc.Variable, scope, [])
                     if var:
-                        self.items[i] = zc.FunctionCallVariable(variable=zc.VariableRef(variables=[var]))
+                        var_ref = zc.VariableRef(variables=[var])
+                        self.items[i] = zc.FunctionCallVariable(variable=var_ref)
+                        compiler.report(item.name, f"fcv {var}")
             return self
 
         def embracket(fc: zc.FunctionCall):
@@ -341,35 +346,35 @@ class module_Expressions(LanguageModule):
             if len(before) > 1: before = [zc.FunctionCall(items=before)]
             after = fc.items[i_operator+1:]
             if len(after) > 1: after = [zc.FunctionCall(items=after)]
+            compiler.report(fc.items[i_operator], f"split: left = \"{log_strip(print_code_formatted(before[0]))}\", right = \"{log_strip(print_code_formatted(after[0]))}\"")
             fc.items = before + [fc.items[i_operator]] + after
             return fc
             
     def setup_check_types(self, compiler: Compiler):
-        @self.method(zc.Constant)
-        def check_type(self, symbol_table, scope, errors) -> zc.Type:
+        @self.method(zc.Constant) # Constant.check_type
+        def check_type(self, st, scope, errors):
             type_name = "number" if self.value.type=="number" else "string"
-            self._type = symbol_table.find_single(type_name, zc.Type, scope, errors)
-            if self._type:log(log_green(f"Constant: {self.value} => {self._type}"))
+            self._type = st.find_single(type_name, zc.Type, scope, errors)
+            if self._type: compiler.report(self, f"{self._type}")
             else: log(log_red(f"Constant: {self.value} is not a valid type"))
         
-        @self.method(zc.VariableRef)
-        def check_type(self, symbol_table, scope, errors) -> zc.Type:
+        @self.method(zc.VariableRef) # VariableRef.check_type
+        def check_type(self, st, scope, errors):
             self._type = self.variables[-1].type
+            if self._type: compiler.report(self.variables[-1], f"{self._type}")
         
-        @self.method(zc.FunctionCallVariable)
-        def check_type(self, symbol_table, scope, errors) -> zc.Type:
+        @self.method(zc.FunctionCallVariable) # FunctionCallVariable.check_type
+        def check_type(self, st, scope, errors):
             self._type = self.variable._type
+            if self._type: compiler.report(self.variable.variables[-1], f"{self._type}")
 
-        @self.method(zc.FunctionCall)
-        def check_type(self, symbol_table, scope, errors):
+        @self.method(zc.FunctionCall) # FunctionCall.check_type
+        def check_type(self, st, scope, errors):
             cf= log_strip(print_code_formatted(self))
-            #log(f"fc.check_type: {cf}")
-            #for item in self.items:
-            #    log(f"  {item} : {print_code_formatted(item)} : {item._type if hasattr(item, "_type") else "None"}")
             self._resolved_functions = []
-            functions = find_functions(self, symbol_table, scope, errors)
+            functions = find_functions(self, st, scope, errors)
             for f in functions:
-                if not hasattr(f, "_type"): f.check_type(symbol_table, scope, errors)
+                if not hasattr(f, "_type"): f.check_type(st, scope, errors)
             if len(functions) == 0:
                 log(log_red(f"FunctionCall: {log_strip(print_code_formatted(self))} => Not Found"))
                 errors.append(f"no functions found for {print_code_formatted(self)} in {scope}")
@@ -378,10 +383,10 @@ class module_Expressions(LanguageModule):
                 self._type = zc.MaybeTypes([f._type for f in functions])
             else:
                 self._type = functions[0]._type
-            log(log_green(f"FunctionCall: {log_strip(print_code_formatted(self))} => {self._type}"))
+            compiler.report(self, f"{self._type}")
 
-        @self.method(zc.Function)
-        def check_type(self, symbol_table, scope, errors):
+        @self.method(zc.Function) # Function.check_type
+        def check_type(self, st, scope, errors):
             result_types = []
             if self.results != None:
                 for frv in self.results.results:
@@ -391,19 +396,19 @@ class module_Expressions(LanguageModule):
             else: self._type = zc.MultipleTypes(result_types)
 
         @log_suppress
-        def find_functions(fc: zc.FunctionCall, symbol_table, scope, errors) -> List[zc.Function]: 
+        def find_functions(fc: zc.FunctionCall, st, scope, errors) -> List[zc.Function]: 
             if fc._resolved_functions: return fc._resolved_functions
             short_sig = find_short_sig(fc)
             location = find_location(fc)
-            fc_types = get_param_types(fc, symbol_table)
+            fc_types = get_param_types(fc, st)
             for param_type in fc_types:
                 if isinstance(param_type, Lex):
                     log(log_red("Flagging: fc_types contains a Lex type."))
                     break
             log(f" short_sig: {short_sig}")
-            functions = [f.element for f in symbol_table.find(short_sig, zc.Function, scope)]
+            functions = [f.element for f in st.find(short_sig, zc.Function, scope)]
             log(f" functions: {functions}")
-            fn_types = [get_sig_param_types(f.signature, symbol_table) for f in functions]
+            fn_types = [get_sig_param_types(f.signature, st) for f in functions]
             log(f" fc_types: {fc_types}")
             log(f" fn_types: {fn_types}")
             distances = [get_distances(fc_types,fn_types[i]) for i in range(len(fn_types))]
@@ -424,7 +429,7 @@ class module_Expressions(LanguageModule):
             log(f" fc._constraints: {fc._constraints}")
             return filtered_functions
         
-        def get_param_types(fc: zc.FunctionCall, symbol_table: SymbolTable) -> List[zc.Type]:
+        def get_param_types(fc: zc.FunctionCall, st: SymbolTable) -> List[zc.Type]:
             out = []
             for item in fc.items:
                 if hasattr(item, "_type"):
@@ -435,14 +440,14 @@ class module_Expressions(LanguageModule):
                             out.append(arg.value._type)
             return out
         
-        def get_sig_param_types(signature: zc.FunctionSignature, symbol_table) -> List[zc.Type]:
+        def get_sig_param_types(signature: zc.FunctionSignature, st) -> List[zc.Type]:
             out = []
             for item in signature.elements:
                 if isinstance(item, zc.FunctionSignatureParams):
                     for param in item.params:
                         param_type = param.type
                         if isinstance(param_type, Lex):
-                            param_type = symbol_table.find_single(param_type, zc.Type, None, None)
+                            param_type = st.find_single(param_type, zc.Type, None, None)
                         for param_name in param.names:
                             out.append(param_type)
             return out
@@ -675,7 +680,7 @@ class module_Variables(LanguageModule):
             self._defined_vars = []
             for name in self.names:
                 var = zc.Variable(type=self.type, name=name.name, alias=name.alias, value=self.value)
-                st.add(name.name, var, scope, alias=name.alias)
+                compiler.add_symbol(name.name, var, scope, alias=name.alias)
                 self._defined_vars.append(var)
 
     def test_parser(self):
@@ -824,7 +829,7 @@ class module_Types(LanguageModule):
                     for var in prop.names:
                         code += f"{result_var}.{var.name} = {var.name}; "
                 code += "}"
-                log("make_constructor\n" + code)
+                compiler.report(self, f"make_constructor:{code}")
                 constructor = parse_simple(code, "FunctionDef")
                 constructor._is_constructor_for_typedef = typeDef
                 typeDef._constructor = constructor
@@ -839,11 +844,11 @@ class module_Types(LanguageModule):
                 if len(existing_type_objects) == 0:
                     self._resolved_types = []
                     type_object = zc.Type(name=name.name, alias=name.alias)
-                    st.add(name.name, type_object, None, alias=name.alias)
+                    compiler.add_symbol(name.name, type_object, None, alias=name.alias)
                     self._resolved_types.append(type_object)
                     if isinstance(self.rhs, zc.StructDef):
                         type_object.properties = self.rhs.properties
-                        st.add(name.name, self._constructor, None, alias=name.alias)
+                        compiler.add_symbol(name.name, self._constructor, None, alias=name.alias)
                 elif len(existing_type_objects) == 1:
                     self._resolved_types.append(existing_type_objects[0].element)
                     if isinstance(self.rhs, zc.StructDef):
@@ -852,7 +857,7 @@ class module_Types(LanguageModule):
                     raise Exception(f"symbol clash in TypeDef: {self.name} => {existing_type_objects}")
                 
         @self.method(zc.TypeDef)
-        def resolve(self, scope, symbol_table, type_name, errors):
+        def resolve(self, scope, st, type_name, errors):
             log(f"typeDef.resolve:\n{print_code_formatted(self)}")
             if isinstance(self.rhs, zc.TypeParentDef):
                 #log(" is parent")
@@ -1050,7 +1055,7 @@ class module_Functions(LanguageModule):
             self._defined_vars = []
             for name in self.names:
                 var = zc.Variable(type=self.type, name=name.name, alias=name.alias)
-                st.add(name.name, var, scope, alias=name.alias)
+                compiler.add_symbol(name.name, var, scope, alias=name.alias)
                 self._defined_vars.append(var)
 
         @self.method(zc.FunctionDef) # FunctionDef.add_symbols
@@ -1059,6 +1064,8 @@ class module_Functions(LanguageModule):
             short_handle = untyped_handle(self)
             st.add(long_handle, self, scope)
             st.add(short_handle, self, scope)
+            compiler.report(self, f"\"{long_handle}\" => {self} in {scope}")
+            compiler.report(self, f"\"{short_handle}\" => {self} in {scope}")
             self._owner = scope
             function = st.find_single(long_handle, zc.Function, None, [])
             if function == None:
@@ -1066,6 +1073,8 @@ class module_Functions(LanguageModule):
                 self._function = function
                 st.add(long_handle, function, None)
                 st.add(short_handle, function, None)
+                compiler.report(self, f"\"{long_handle}\" => {function} in {scope}")
+                compiler.report(self, f"\"{short_handle}\" => {function} in {scope}")
                 if hasattr(self, "_is_constructor_for_typedef"):    # add alias handle
                     add_alias_symbol(self, function, st, long_handle, short_handle)
             else:
@@ -1113,6 +1122,8 @@ class module_Functions(LanguageModule):
                 alias_short_handle = short_handle.replace(str(name), str(alias))
                 st.add(alias_long_handle, function, None)
                 st.add(alias_short_handle, function, None)
+                compiler.report(self, f"\"{alias_long_handle}\" => {function}")
+                compiler.report(self, f"\"{alias_short_handle}\" => {function}")
         
         def modify_function(funcDef, existing, st):
             long_handle = funcDef.signature.typed_handle()
@@ -1144,16 +1155,21 @@ class module_Functions(LanguageModule):
 
     def setup_check_types(self, compiler: Compiler):
         @self.method(zc.ResultVariableRef) # ResultVariableRef.check_types
-        def check_types(self, st, scope, errors): self._type = self.variable._type
-        
+        def check_types(self, st, scope, errors): 
+            self._type = self.variable._type
+            compiler.report(self, f"{self._type}")
+
         @self.method(zc.ResultVariableDef) # ResultVariableDef.check_types
-        def check_types(self, st, scope, errors): self._type = self.type
+        def check_types(self, st, scope, errors): 
+            self._type = self.type
+            compiler.report(self, f"{self._type}")
 
         @self.method(zc.AssignmentLhs) # AssignmentLhs.check_types
         def check_types(self, st, scope, errors):
             if len(self.results) == 0: self._type = None
             elif len(self.results) == 1: self._type = self.results[0]._type
             else: self._type = zc.MultipleTypes([r._type for r in self.results])
+            compiler.report(self, f"{self._type}")
 
     def test_parser(self):
         test("result_vars_1", parse_code("(a, b: int, k, l: float) =", "FunctionResults"), """
