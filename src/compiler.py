@@ -27,6 +27,15 @@ class LanguageModule:
     def setup_check_types(self, compiler: 'Compiler'): pass       # add check_type methods to rule classes
     def test_parser(self): pass                             # test parser with some examples
 
+    def setup(self, compiler: 'Compiler'):
+        self.setup_validate(compiler)
+        self.setup_naming(compiler)
+        self.setup_scope(compiler)
+        self.setup_generate(compiler)
+        self.setup_symbols(compiler)
+        self.setup_check_types(compiler)
+        self.test_parser()
+
     # add method to class (general)
     def method(self, cls: Type[T], method_name: str="") -> Callable:
         def decorator(func: Callable) -> Callable:
@@ -87,19 +96,9 @@ class Compiler:
     def add_modules(self, modules: List[LanguageModule]): self.modules.extend(modules)
     
     def setup(self):
-        for module in self.modules: 
-            module.setup_syntax(self)
-            
+        for module in self.modules: module.setup_syntax(self)
         self.grammar.build_classes()
-        
-        for module in self.modules:
-            module.setup_validate(self)
-            module.setup_naming(self)
-            module.setup_scope(self)
-            module.setup_generate(self)
-            module.setup_symbols(self)
-            module.setup_check_types(self)
-            module.test_parser()
+        for module in self.modules: module.setup(self)
 
     def compile(self, code: str) -> CompiledProgram:
         self.cp.ast = self.parse(code)
