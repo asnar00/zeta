@@ -146,10 +146,10 @@ class module_Features(LanguageModule):
             """)
         
     def setup_scope(self, compiler: Compiler):
-        @self.method(zc.FeatureDef) # FeatureDef.get_scope
+        @Entity.method(zc.FeatureDef) # FeatureDef.get_scope
         def get_scope(self): return self
 
-        @self.method(zc.FeatureDef) # FeatureDef.can_see_scope
+        @Entity.method(zc.FeatureDef) # FeatureDef.can_see_scope
         def can_see_scope(self, scope):
             featureDef = self
             safe_count = 100
@@ -166,11 +166,11 @@ class module_Features(LanguageModule):
             return False
 
     def setup_symbols(self, compiler: Compiler):
-        @self.method(zc.FeatureDef) # FeatureDef.add_symbols
+        @Entity.method(zc.FeatureDef) # FeatureDef.add_symbols
         def add_symbols(self, scope):
             compiler.add_symbol(self.name, self, scope, alias=self.alias)
 
-        @self.method(Lex) # Lex.resolve
+        @Entity.method(Lex) # Lex.resolve
         def resolve(self, scope, type_name):
             cls = Entity.get_class(type_name)
             return compiler.find_symbol(self, cls, scope)
@@ -265,7 +265,7 @@ class module_Expressions(LanguageModule):
                     """)
         
     def setup_validate(self, compiler: Compiler):
-        @self.method(zc.FunctionCall) # FunctionCall.validate
+        @Entity.method(zc.FunctionCall) # FunctionCall.validate
         def validate(self) -> str: # function call must have at least one bracketed term or operator
             n_bracketed = 0; n_operators = 0; n_words = 0
             for item in self.items:
@@ -276,27 +276,27 @@ class module_Expressions(LanguageModule):
                 return "function call must have at least one argument or operation, or be two or more words"
             return ""
     
-        @self.method(zc.FunctionCallVariable) # FunctionCallVariable.validate
+        @Entity.method(zc.FunctionCallVariable) # FunctionCallVariable.validate
         def validate(self) -> str:
             if len(self.variable.variables) < 2: return "FunctionCallVariable must have at least two variables"
             return ""
         
     def setup_naming(self, compiler: Compiler):
-        @self.method(zc.VariableRef) # VariableRef.get_name
+        @Entity.method(zc.VariableRef) # VariableRef.get_name
         def get_name(self) -> str:
             if self.variables:
                 return ".".join(str(v) for v in self.variables)
             return ""
-        @self.method(zc.FunctionCall) # FunctionCall.get_name
+        @Entity.method(zc.FunctionCall) # FunctionCall.get_name
         def get_name(self) -> str:
             return log_strip(print_code_formatted(self))
             
     def setup_symbols(self, compiler: Compiler):
-        @self.method(zc.FunctionCall) # FunctionCall.add_symbols
+        @Entity.method(zc.FunctionCall) # FunctionCall.add_symbols
         def add_symbols(self, scope):
             embracket(self)
 
-        @self.method(zc.VariableRef) # VariableRef.resolve
+        @Entity.method(zc.VariableRef) # VariableRef.resolve
         def resolve(self, scope, type_name):
             resolved_vars = []
             for var in self.variables: # all Lex at this point
@@ -313,7 +313,7 @@ class module_Expressions(LanguageModule):
             self.variables = resolved_vars
             return self
 
-        @self.method(zc.FunctionCall) #FunctionCall.resolve
+        @Entity.method(zc.FunctionCall) #FunctionCall.resolve
         def resolve(self, scope, type_name):
             for i, item in enumerate(self.items):
                 if isinstance(item, zc.FunctionCallWord):
@@ -345,21 +345,21 @@ class module_Expressions(LanguageModule):
             return fc
             
     def setup_check_types(self, compiler: Compiler):
-        @self.method(zc.Constant) # Constant.check_type
+        @Entity.method(zc.Constant) # Constant.check_type
         def check_type(self, scope):
             type_name = "number" if self.value.type=="number" else "string"
             self._type = compiler.find_symbol(type_name, zc.Type, scope)
         
-        @self.method(zc.VariableRef) # VariableRef.check_type
+        @Entity.method(zc.VariableRef) # VariableRef.check_type
         def check_type(self, scope):
             self._type = self.variables[-1].type
             if self._type: compiler.report(self.variables[-1], f"{self._type}")
         
-        @self.method(zc.FunctionCallVariable) # FunctionCallVariable.check_type
+        @Entity.method(zc.FunctionCallVariable) # FunctionCallVariable.check_type
         def check_type(self, scope):
             self._type = self.variable._type
 
-        @self.method(zc.FunctionCall) # FunctionCall.check_type
+        @Entity.method(zc.FunctionCall) # FunctionCall.check_type
         def check_type(self, scope):
             cf= log_strip(print_code_formatted(self))
             self._resolved_functions = []
@@ -375,7 +375,7 @@ class module_Expressions(LanguageModule):
                 self._type = functions[0]._type
             compiler.report(self, f"{self._type}")
 
-        @self.method(zc.Function) # Function.check_type
+        @Entity.method(zc.Function) # Function.check_type
         def check_type(self, scope):
             result_types = []
             if self.results != None:
@@ -659,12 +659,12 @@ class module_Variables(LanguageModule):
         """)
 
     def setup_scope(self, compiler: Compiler):
-        @self.method(zc.Variable) # Variable.get_scope
+        @Entity.method(zc.Variable) # Variable.get_scope
         def get_scope(self) -> str: 
             return self.type if isinstance(self.type, zc.Type) else None
 
     def setup_symbols(self, compiler: Compiler):
-        @self.method(zc.VariableDef) # VariableDef.add_symbols
+        @Entity.method(zc.VariableDef) # VariableDef.add_symbols
         def add_symbols(self, scope):
             self._defined_vars = []
             for name in self.names:
@@ -772,10 +772,10 @@ class module_Types(LanguageModule):
         """)
 
     def setup_validate(self, compiler: Compiler):
-        @self.method(zc.TypeEnumDef)             # TypeEnumDef.validate
+        @Entity.method(zc.TypeEnumDef)             # TypeEnumDef.validate
         def validate(self) -> str: 
             return "" if len(self.options) > 1 else "enum must have at least two options"
-        @self.method(zc.TypeAlias) # TypeAlias.validate
+        @Entity.method(zc.TypeAlias) # TypeAlias.validate
         def validate(self) -> str:
             if not str(self.type).endswith("$"): return ""
             rank = str(self.type).count('$')
@@ -785,23 +785,23 @@ class module_Types(LanguageModule):
             return ""
         
     def setup_naming(self, compiler: Compiler):
-        @self.method(zc.MaybeTypes)
+        @Entity.method(zc.MaybeTypes)
         def get_name(self) -> str:
             return "|".join(str(t.get_name()) for t in self.types)
-        @self.method(zc.MultipleTypes)
+        @Entity.method(zc.MultipleTypes)
         def get_name(self) -> str:
             return ",".join(str(t.get_name()) for t in self.types)
         
     def setup_scope(self, compiler: Compiler):
-        @self.method(zc.TypeDef) #TypeDef.get_scope
+        @Entity.method(zc.TypeDef) #TypeDef.get_scope
         def get_scope(self) -> str:
             return self._resolved_types[0] if hasattr(self, "_resolved_types") else None
 
-        @self.method(zc.Type) #Type.get_scope
+        @Entity.method(zc.Type) #Type.get_scope
         def get_scope(self) -> str: return self
 
     def setup_generate(self, compiler: Compiler):
-        @self.method(zc.TypeDef)
+        @Entity.method(zc.TypeDef)
         def generate(self):
             if not isinstance(self.rhs, zc.StructDef): return
             def make_constructor(typeDef: zc.TypeDef):
@@ -825,7 +825,7 @@ class module_Types(LanguageModule):
             make_constructor(self)
 
     def setup_symbols(self, compiler: Compiler):
-        @self.method(zc.TypeDef) # TypeDef.add_symbols
+        @Entity.method(zc.TypeDef) # TypeDef.add_symbols
         def add_symbols(self, scope):
             name = self.names[0]
             for name in self.names:
@@ -845,7 +845,7 @@ class module_Types(LanguageModule):
                 else:
                     raise Exception(f"symbol clash in TypeDef: {self.name} => {existing_type_objects}")
                 
-        @self.method(zc.TypeDef)
+        @Entity.method(zc.TypeDef)
         def resolve(self, scope, type_name):
             log(f"typeDef.resolve:\n{print_code_formatted(self)}")
             if isinstance(self.rhs, zc.TypeParentDef):
@@ -996,18 +996,18 @@ class module_Functions(LanguageModule):
         """)
 
     def setup_naming(self, compiler: Compiler):
-        @self.method(zc.FunctionDef)  # FunctionDef.get_name
+        @Entity.method(zc.FunctionDef)  # FunctionDef.get_name
         def get_name(self) -> str:
             name= self.signature.typed_handle() if self.signature else ".."
             if hasattr(self, "_owner") and self._owner: name = str(self._owner.get_name()) + "." + name
 
             return re.sub(r'Type\((.*?)\)', r'\1', name)
         
-        @self.method(zc.Function)
+        @Entity.method(zc.Function)
         def get_name(self) -> str:
             return self.signature.typed_handle() if self.signature else ".."
         
-        @self.method(zc.FunctionSignature)
+        @Entity.method(zc.FunctionSignature)
         def typed_handle(self) -> str:
             out = ""
             try:
@@ -1025,12 +1025,12 @@ class module_Functions(LanguageModule):
             return out
         
     def setup_scope(self, compiler: Compiler):
-        @self.method(zc.FunctionDef) # FunctionDef.get_scope
+        @Entity.method(zc.FunctionDef) # FunctionDef.get_scope
         def get_scope(self): return self
-        @self.method(zc.Function) # Function.get_scope
+        @Entity.method(zc.Function) # Function.get_scope
         def get_scope(self): return self
 
-        @self.method(zc.FunctionDef)
+        @Entity.method(zc.FunctionDef)
         def can_see_scope(self, scope):
             if self == scope: return True
             if not isinstance(scope, zc.FeatureDef): return False
@@ -1040,7 +1040,7 @@ class module_Functions(LanguageModule):
             return False
         
     def setup_symbols(self, compiler: Compiler):
-        @self.method(zc.ResultVariableDef) # ResultVariableDef.add_symbols
+        @Entity.method(zc.ResultVariableDef) # ResultVariableDef.add_symbols
         def add_symbols(self, scope):
             self._defined_vars = []
             for name in self.names:
@@ -1048,7 +1048,7 @@ class module_Functions(LanguageModule):
                 compiler.add_symbol(name.name, var, scope, alias=name.alias)
                 self._defined_vars.append(var)
 
-        @self.method(zc.FunctionDef) # FunctionDef.add_symbols
+        @Entity.method(zc.FunctionDef) # FunctionDef.add_symbols
         def add_symbols(self, scope):
             long_handle = typed_handle(self)
             short_handle = untyped_handle(self)
@@ -1144,17 +1144,17 @@ class module_Functions(LanguageModule):
                     existing.body.statements = [sm]
 
     def setup_check_types(self, compiler: Compiler):
-        @self.method(zc.ResultVariableRef) # ResultVariableRef.check_types
+        @Entity.method(zc.ResultVariableRef) # ResultVariableRef.check_types
         def check_types(self, st, scope, errors): 
             self._type = self.variable._type
             compiler.report(self, f"{self._type}")
 
-        @self.method(zc.ResultVariableDef) # ResultVariableDef.check_types
+        @Entity.method(zc.ResultVariableDef) # ResultVariableDef.check_types
         def check_types(self, st, scope, errors): 
             self._type = self.type
             compiler.report(self, f"{self._type}")
 
-        @self.method(zc.AssignmentLhs) # AssignmentLhs.check_types
+        @Entity.method(zc.AssignmentLhs) # AssignmentLhs.check_types
         def check_types(self, st, scope, errors):
             if len(self.results) == 0: self._type = None
             elif len(self.results) == 1: self._type = self.results[0]._type

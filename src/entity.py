@@ -86,6 +86,21 @@ class Entity:
         if class_name not in Entity.classes:
             raise Exception(f"can't find class {class_name}")
         return Entity.classes[class_name]
+    
+    # add method to class (general)
+    @staticmethod
+    def method(cls: Type[T], method_name: str="") -> Callable:
+        def decorator(func: Callable) -> Callable:
+            class_name = cls.__name__
+            # Convert standalone function to method
+            @wraps(func)
+            def method(self, *args, **kwargs):
+                return func(self, *args, **kwargs)
+            # Add the method to the class
+            setattr(cls, func.__name__, method)
+            # Important: return the original function or method
+            return method
+        return decorator
 
 #--------------------------------------------------------------------------------------------------
 # Error represents something that went wrong
@@ -156,8 +171,24 @@ def get_first_lex(e: Entity|Lex) -> Lex:
         attr_type = Entity.get_attribute_type(e.__class__, attr)
         if "&" in attr_type: continue
         vals = val if isinstance(val, list) else [val]
-        return get_first_lex(vals[0])
+        if len(vals) > 0:
+            return get_first_lex(vals[0])
+    return None
     
+def get_last_lex(e: Entity|Lex) -> Lex:
+    if isinstance(e, str): return Lex(source=None, pos=0, val=e, type=None)
+    if isinstance(e, Lex): return e
+    if not hasattr(e, "__dict__"): return None
+    for attr in reversed(vars(e)):
+        if attr.startswith("_"): continue
+        val = getattr(e, attr)
+        if isinstance(val, Lex): return val
+        attr_type = Entity.get_attribute_type(e.__class__, attr)
+        if "&" in attr_type: continue
+        vals = val if isinstance(val, list) else [val]
+        if len(vals) > 0:
+            return get_last_lex(vals[-1])
+    return None
 
 #--------------------------------------------------------------------------------------------------
 # visitor runs across the tree in specified order, calling method on each matching entity

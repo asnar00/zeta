@@ -36,51 +36,19 @@ class LanguageModule:
         self.setup_check_types(compiler)
         self.test_parser()
 
-    # add method to class (general)
-    def method(self, cls: Type[T], method_name: str="") -> Callable:
-        def decorator(func: Callable) -> Callable:
-            class_name = cls.__name__
-            # Convert standalone function to method
-            @wraps(func)
-            def method(self, *args, **kwargs):
-                return func(self, *args, **kwargs)
-            # Add the method to the class
-            setattr(cls, func.__name__, method)
-            # Important: return the original function or method
-            return method
-        return decorator
-
-#--------------------------------------------------------------------------------------------------
-# Report holds log of everything that happened in a compilation stage
-class Report:
-    def __init__(self, name: str):
-        self.name = name                                    # stage name
-        self.report : List[Tuple[Entity|Lex,str]] = []      # log of all things done (for testing/debug): location, msg
-        self.errors : List[Tuple[Entity|Lex,str]] = []      # all errors : location, msg
-    def show(self) -> str:
-        width = 80
-        out = f"{self.name} {"-"*(width-len(self.name))}\n"
-        for r in self.report:
-            lex = get_first_lex(r[0])
-            if lex: out += f"{log_grey(lex.location() if lex else "")}: \"{lex}\" => {r[1]}\n"
-        if len(self.errors) > 0:
-            out += "\n" + log_red(f"{len(self.errors)} errors\n")
-            for e in self.errors:
-                lex = get_first_lex(e[0])
-                if lex: out += f"{log_grey(lex.location() if lex else "")}: \"{lex}\" => {e[1]}\n"
-        return out
-
 #--------------------------------------------------------------------------------------------------
 # CompiledProgram holds ast, st, all the other artefacts
+
 class CompiledProgram:
-    def __init__(self):
+    def __init__(self, code: str):
+        self.code = code
         self.ast : Entity = None                            # abstract syntax tree: a tree of Entity objects
         self.st : SymbolTable = None                        # symbol table; maps name => {object, scope, tag}
         self.reports : List[Report] = []                     # all reports from all stages
-    def show_report(self)->str:
+    def show_report(self) -> str:
         out = ""
         for report in self.reports:
-            out += report.show()
+            out += report.show_code(self.code)
         return out
 
 #--------------------------------------------------------------------------------------------------
@@ -91,7 +59,7 @@ class Compiler:
         self.import_module = import_module
         self.modules : List[LanguageModule] = []
         self.grammar : Grammar= Grammar(import_module)
-        self.cp = CompiledProgram()
+        self.cp = None
 
     def add_modules(self, modules: List[LanguageModule]): self.modules.extend(modules)
     
@@ -101,6 +69,8 @@ class Compiler:
         for module in self.modules: module.setup(self)
 
     def compile(self, code: str) -> CompiledProgram:
+        code = code.strip()
+        self.cp = CompiledProgram(code)
         self.cp.ast = self.parse(code)
         if has_errors(self.cp.ast): return self.show_errors(self.cp.ast)
         self.generate_code(self.cp)
@@ -147,8 +117,8 @@ class Compiler:
     # below the line
 
     def stage(self, name: str): self.cp.reports.append(Report(name))
-    def report(self, entity: Entity|Lex, msg: str): self.cp.reports[-1].report.append((entity, msg))
-    def error(self, entity: Entity|Lex, msg: str): self.cp.reports[-1].errors.append((entity, msg))
+    def report(self, entity: Entity|Lex, msg: str): self.cp.reports[-1].report.append(ReportItem(entity, msg))
+    def error(self, entity: Entity|Lex, msg: str): self.cp.reports[-1].errors.append(ReportItem(entity, msg))
 
     #--------------------------------------------------------------------
     # called by Entity methods
@@ -171,3 +141,67 @@ class Compiler:
         else:
             if raise_errors: self.error(name, f"no {of_type.__name__} in {scope}, {caller()}")
         return None
+
+#--------------------------------------------------------------------------------------------------
+# Report holds log of everything that happened in a compilation stage
+
+class ReportItem:
+    def __init__(self, e: Entity|Lex, msg: str):
+        self.e = e
+        log(self.e)
+        self.msg = msg
+        self.first_loc = SourceLocation(file="", i_line=0, i_col=0)
+        self.last_loc = SourceLocation(file="", i_line=0, i_col=0)
+        if not isinstance(e, str):
+            first_lex = get_first_lex(e)
+            last_lex = get_last_lex(e)
+            if first_lex and last_lex:
+                self.first_loc = first_lex.location()
+                self.last_loc = last_lex.location()
+                self.last_loc.i_col += len(last_lex.val)
+                log(self.first_loc, self.last_loc)
+            
+    def __str__(self):
+        loc = f"{self.first_loc}..{self.last_loc}"
+        return f"{log_grey(loc)} => {self.msg}"
+    def __repr__(self):
+        return self.__str__()
+
+class Report:
+    def __init__(self, name: str):
+        self.name = name                            # stage name
+        self.report : List[ReportItem] = []         # log of all things done (for testing/debug): location, msg
+        self.errors : List[ReportItem] = []         # all errors : location, msg
+    def show(self) -> str:
+        width = 80
+        out = f"{self.name} {"-"*(width-len(self.name))}\n"
+        for r in self.report: out += f"{r}\n"
+        return out
+    
+    def show_code(self, code: str) -> str:
+        self.report.sort(key=lambda r: r.first_loc.i_line, reverse=True)
+        lines = code.split("\n")
+        n_lines = len(lines)
+        digit_count = len(str(n_lines))
+        width = 80
+        out = f"{self.name} {"-"*(width-len(self.name))}\n"
+        for i, line in enumerate(lines):
+            line_number = f"{i+1:>{digit_count}}"
+            out += f"{log_grey(line_number)}: {self.highlight_line(i+1,line, log_orange)}\n"
+        return out
+    
+    def highlight_line(self, i_line: int, line: str, fn) -> str:
+        items = [r for r in self.report if r.first_loc.i_line <= i_line and r.last_loc.i_line >= i_line]
+        if len(items) == 0: return line
+        items.sort(key=lambda r: r.first_loc.i_col, reverse=True)
+        for item in items:
+            if i_line > item.first_loc.i_line and i_line < item.last_loc.i_line:
+                return fn(line) # highlight entire line
+            elif i_line == item.first_loc.i_line and i_line == item.last_loc.i_line:
+                line = line[0:item.first_loc.i_col-1] + fn(line[item.first_loc.i_col-1:item.last_loc.i_col-1]) + line[item.last_loc.i_col-1:]
+            elif i_line == item.first_loc.i_line:
+                line = line[0:item.first_loc.i_col-1] + fn(line[item.first_loc.i_col-1:])
+            elif i_line == item.last_loc.i_line:
+                line = fn(line[0:item.last_loc.i_col-1]) + line[item.last_loc.i_col-1:]
+        return line
+        

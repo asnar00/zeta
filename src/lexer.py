@@ -58,6 +58,17 @@ def test_source():
     # in all cases, source location should map back to the right place
     test("source_location", source.location(0), "src/test/Hello.zero.md:22:1")
 
+class SourceLocation:
+    def __init__(self, file: str, i_line: int, i_col: int):
+        self.file = file
+        self.i_line = i_line
+        self.i_col = i_col
+    def __str__(self):
+        if self.i_line==0: return ""
+        return f"{self.file}:{self.i_line}:{self.i_col}"
+    def __repr__(self):
+        return self.__str__()
+
 class Source:
     s_cwd = os.getcwd()
     def __init__(self, path=None, text=None, code=None):
@@ -91,7 +102,7 @@ class Source:
         original_line = self.map[line]                  # then, find the line number in the original text using the map:
         column = pos - self.code[:pos].rfind("\n") - 1  # count backwards from pos to the start of the line it's on
         path = self.path.replace(Source.s_cwd, "") if self.path else ""
-        return f"{path}:{original_line+1}:{column+1}"
+        return SourceLocation(path, original_line+1, column+1)
 
 #--------------------------------------------------------------------------------------------------
 # Lexer

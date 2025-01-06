@@ -2,13 +2,34 @@
 # scribblez
 "slow is smooth, smooth is fast"
 
+actually no: we are going to do the visual feedback, we're just going to make it work.
 
+first, rather than key it to entities, we'll key it to Lex - which means no overlaps are possible, and everything's just one lex long. Much simpler.
+
+We'll use SourceLocation(None, None) to indicate something that isn't in the text, which makes them easy to filter.
+
+We can combine the add/resolve thing into a single view, with two colours.
+
+key check-types off the function name (first item with 'name' property).
+
+go right to left, arrange things onto multiple lines just below the actual code line.
+
+
+------
+
+errors/reports kind of work, the code pattern is kind of ok,
+but there's still a few like issues and stuff. but we'll figure it out.
+The key point is that we need some kind of lex-range,
+also we shouldn't put things in there that are generated from code, rather than the code itself. Eg. Never Function/Type/Variable, only FunctionDef/TypeDef/VariableDef/Ref
+
+Of course that means we can't show Function/Type/Variable in this view, which is bad, but anyway. We could maybe show derived whatsits, eg. this TypeDef generated this Type, and so on.
+-------
 to get "hello world" example working
 
 - errors, reports and tests from stage outputs
 - result-var type-check
 - use-before-declare check (statement index tag)
-- stream handling
+- stream handling so we can print
 - string literals with vars "hello \(name)"
 - python code generation
 
