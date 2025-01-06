@@ -10,7 +10,6 @@ from grammar import *
 from entity import *
 from parser import *
 from symbols import *
-import importlib
 import zero_classes as zc
 
 #--------------------------------------------------------------------------------------------------
@@ -82,22 +81,16 @@ class Compiler:
     def __init__(self, import_module):
         self.import_module = import_module
         self.modules : List[LanguageModule] = []
-        self.grammar : Grammar= Grammar()
+        self.grammar : Grammar= Grammar(import_module)
         self.cp = CompiledProgram()
 
     def add_modules(self, modules: List[LanguageModule]): self.modules.extend(modules)
-    def stage(self, name: str): self.cp.reports.append(Report(name))
-    def report(self, entity: Entity|Lex, msg: str): self.cp.reports[-1].report.append((entity, msg))
-    def error(self, entity: Entity|Lex, msg: str): self.cp.reports[-1].errors.append((entity, msg))
-
+    
     def setup(self):
         for module in self.modules: 
             module.setup_syntax(self)
             
         self.grammar.build_classes()
-        Entity.write_classes(self.import_module.__file__)
-        importlib.reload(self.import_module)
-        self.grammar.set_rule_classes(self.import_module)
         
         for module in self.modules:
             module.setup_validate(self)
@@ -153,6 +146,13 @@ class Compiler:
 
     #--------------------------------------------------------------------
     # below the line
+
+    def stage(self, name: str): self.cp.reports.append(Report(name))
+    def report(self, entity: Entity|Lex, msg: str): self.cp.reports[-1].report.append((entity, msg))
+    def error(self, entity: Entity|Lex, msg: str): self.cp.reports[-1].errors.append((entity, msg))
+
+    #--------------------------------------------------------------------
+    # called by Entity methods
     
     # add symbol and report name and alias (if any); called by add_symbols
     def add_symbol(self, name: Lex, e: Entity, scope: Entity, alias: Lex=None):

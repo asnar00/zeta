@@ -9,6 +9,7 @@ from util import *
 from typing import get_type_hints
 from lexer import Lex
 from entity import Entity
+import importlib
 
 #--------------------------------------------------------------------------------------------------
 # Term: a single term of a rule
@@ -75,10 +76,11 @@ class Rule:
 
 class Grammar:
     current: 'Grammar' = None
-    def __init__(self):
+    def __init__(self, import_module):
         if Grammar.current != None:
             raise Exception("trying to build grammar twice")
         Grammar.current = self
+        self.import_module = import_module
         self.rules : List[Rule] = []
         self.rule_named = {}                    # rule name => rule
         self.new_rules = []                     # list of rules added since last add()
@@ -187,6 +189,10 @@ class Grammar:
         for rule in rules:
             if rule.name == "Entity": continue
             self.build_class(rule)
+        
+        Entity.write_classes(self.import_module.__file__)
+        importlib.reload(self.import_module)
+        self.grammar.set_rule_classes(self.import_module)
     
     def set_rule_classes(self, module):
         for rule in self.rules:
