@@ -412,8 +412,7 @@ class module_Expressions(LanguageModule):
                 if None not in dist_list: filtered_functions.append(functions[i])
             log(f" filtered_functions: {filtered_functions}")
             if len(filtered_functions) == 0:
-                log(log_red(f"no function found for {print_code_formatted(fc)} in {scope}"))
-                errors.append(f"no function found for {print_code_formatted(fc)} in {scope}")
+                compiler.error(fc, f"no function found for {log_strip(print_code_formatted(fc))} in {scope}")
                 return []
             fc._constraints = fn_types # dunno what this is really for, but we'll find out later
             log(f" fc._constraints: {fc._constraints}")
