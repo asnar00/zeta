@@ -192,7 +192,7 @@ class Grammar:
         
         Entity.write_classes(self.import_module.__file__)
         importlib.reload(self.import_module)
-        self.grammar.set_rule_classes(self.import_module)
+        self.set_rule_classes(self.import_module)
     
     def set_rule_classes(self, module):
         for rule in self.rules:
