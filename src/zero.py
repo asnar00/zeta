@@ -106,8 +106,13 @@ def test_zero():
     code = s_test_program
     program = compiler.compile(code)
     log_clear()
-    #log(program.show_report())
-    log(visual_report([ (program.reports[1].items, log_orange), (program.reports[2].items, log_green)], code))
+    if program.is_ok():
+        log("ok")
+        log(visual_report([ (program.reports[1].items, log_orange), (program.reports[2].items, log_green)], code))
+    else:
+        log("not ok")
+        log(visual_report([ (program.reports[-2].items, log_orange), (program.reports[-1].items, log_green), (program.reports[-1].errors, log_red)], code))
+
 
 #--------------------------------------------------------------------------------------------------
 # print ast as nicely formatted code
@@ -307,7 +312,7 @@ class module_Expressions(LanguageModule):
             for var in self.variables: # all Lex at this point
                 resolved_var = compiler.find_symbol(var, zc.Variable, scope, raise_errors=False)
                 if resolved_var == None:
-                    compiler.error(f"variable not found: {var}")
+                    compiler.error(var, f"variable not found: {var}")
                     resolved_vars.append(var)
                     return self
                 else:
@@ -360,11 +365,10 @@ class module_Expressions(LanguageModule):
         @Entity.method(zc.VariableRef) # VariableRef.check_type
         def check_type(self, scope):
             if not hasattr(self, "_resolved_vars"):
-                log(f"{self} {type(self).__name__}")
-                log(Visitor.trace)
-                log_exit("trace")
-            self._type = self._resolved_vars[-1].type
-            if self._type: compiler.report(self._resolved_vars[-1].name, f"{self._type}")
+                self._type = None
+            else:
+                self._type = self._resolved_vars[-1].type
+                if self._type: compiler.report(self._resolved_vars[-1].name, f"{self._type}")
         
         @Entity.method(zc.FunctionCallVariable) # FunctionCallVariable.check_type
         def check_type(self, scope):

@@ -51,6 +51,9 @@ class CompiledProgram:
         for i, report in enumerate(self.reports):
             out += self.reports[i].show(self.code)
         return out
+    
+    def is_ok(self) -> bool:
+        return len(self.reports[-1].errors) == 0
 
 #--------------------------------------------------------------------------------------------------
 # Compiler collects all modules into one unit, and does the work
@@ -74,10 +77,7 @@ class Compiler:
         self.cp = CompiledProgram(code)
         self.cp.ast = self.parse(code)
         if has_errors(self.cp.ast): return self.show_errors(self.cp.ast)
-        self.generate_code(self.cp)
-        self.add_symbols(self.cp)
-        self.resolve_symbols(self.cp)
-        self.check_types(self.cp)
+        success = self.run_stages()
         for report in self.cp.reports: report.process()
         return self.cp
     
@@ -90,28 +90,37 @@ class Compiler:
         log(dbg_entity(ast))
         return ast
     
-    def generate_code(self, cp: CompiledProgram) -> str:
+    def run_stages(self) -> bool:
+        if not self.generate_code(): return False
+        if not self.add_symbols(): return False
+        if not self.resolve_symbols(): return False
+        if not self.check_types(): return False
+        return True
+    
+    def generate_code(self) -> bool:
         self.stage("generate code")
         visitor = Visitor(has_method="generate", is_ref=False, children_first=False)
-        visitor.apply(cp.ast, lambda e, scope, type_name: e.generate())
+        visitor.apply(self.cp.ast, lambda e, scope, type_name: e.generate())
+        return self.cp.is_ok()
 
-    def add_symbols(self, cp: CompiledProgram) -> SymbolTable:
+    def add_symbols(self) -> bool:
         self.stage("add symbols")
-        cp.st = SymbolTable()
+        self.cp.st = SymbolTable()
         visitor = Visitor(has_method="add_symbols", is_ref=False, children_first=False)
-        visitor.apply(cp.ast, lambda e, scope, type_name: e.add_symbols(scope))
-
-    def resolve_symbols(self, cp: CompiledProgram):
+        visitor.apply(self.cp.ast, lambda e, scope, type_name: e.add_symbols(scope))
+        return self.cp.is_ok()
+    
+    def resolve_symbols(self) -> bool:
         self.stage("resolve symbols")
         visitor = Visitor("resolve", is_ref=True, children_first=True)
-        visitor.apply(cp.ast, lambda e, scope, type_name: e.resolve(scope, type_name)) 
-
-    def check_types(self, cp: CompiledProgram):
+        visitor.apply(self.cp.ast, lambda e, scope, type_name: e.resolve(scope, type_name)) 
+        return self.cp.is_ok()
+    
+    def check_types(self) -> bool:
         self.stage("check types")
         visitor = Visitor("check_type", is_ref=False, children_first=True)
-        errors = []
-        visitor.apply(cp.ast, lambda e, scope, type_name: e.check_type(scope))
-        pass
+        visitor.apply(self.cp.ast, lambda e, scope, type_name: e.check_type(scope))
+        return self.cp.is_ok()
 
     #--------------------------------------------------------------------
     # below the line
@@ -121,7 +130,8 @@ class Compiler:
     def report(self, lex: Lex, msg: str): 
         if not isinstance(lex, Lex): raise ValueError(f"lex is not a Lex: {lex}")
         self.cp.reports[-1].items.append(ReportItem(lex, msg))
-    def error(self, lex: Lex, msg: str): 
+
+    def error(self, lex: Lex, msg: str):
         if not isinstance(lex, Lex): raise ValueError(f"lex is not a Lex: {lex}")
         self.cp.reports[-1].errors.append(ReportItem(lex, msg))
 
@@ -167,7 +177,7 @@ class Report:
     def sort_items(self, items: List[ReportItem]):
         items.sort(key=lambda x: x.lex.location())
     def check_errors(self):
-        self.errors = [item for item in self.items if not self.error_was_overridden(item)]
+        self.errors = [item for item in self.errors if not self.error_was_overridden(item)]
     def error_was_overridden(self, item: ReportItem) -> bool:
         return any(item.lex == report_item.lex for report_item in self.items)
     def show(self, code: str) -> str:
@@ -196,12 +206,13 @@ class Report:
 @log_suppress
 def visual_report(reports: List[Tuple[List[ReportItem], Callable]], code: str) -> str:
     lines = code.strip().split("\n")
+    n_digits = len(str(len(lines)))
     out = ""
     for i, line in enumerate(lines):
         log("------------------------------------------------")
         line = highlight_line(line, i+1, reports)
         log(line)
-        out += line + "\n"
+        out += f"{i+1:>{n_digits}} {line}\n"
     return out
 
 def highlight_line(line: str, i_line: int, reports: List[Tuple[List[ReportItem], Callable]]) -> str:

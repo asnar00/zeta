@@ -2,6 +2,10 @@
 # scribblez
 "slow is smooth, smooth is fast"
 
+
+Okay so visual feedback works nicely! Let
+-----
+
 actually no: we are going to do the visual feedback, we're just going to make it work.
 
 first, rather than key it to entities, we'll key it to Lex - which means no overlaps are possible, and everything's just one lex long. Much simpler.
