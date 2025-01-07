@@ -364,6 +364,7 @@ class module_Expressions(LanguageModule):
             cf= log_strip(print_code_formatted(self))
             self._resolved_functions = []
             functions = find_functions(self, scope)
+            self._resolved_functions = functions
             for f in functions:
                 if not hasattr(f, "_type"): f.check_type(scope)
             if len(functions) == 0:
@@ -394,29 +395,21 @@ class module_Expressions(LanguageModule):
             fc_types = get_param_types(fc)
             for param_type in fc_types:
                 if isinstance(param_type, Lex):
-                    log(log_red("Flagging: fc_types contains a Lex type."))
+                    compiler.error(get_first_lex(fc), "fc_types contains a Lex type.")
                     break
-            log(f" short_sig: {short_sig}")
             functions = [f.element for f in compiler.cp.st.find(short_sig, zc.Function, scope)]
-            log(f" functions: {functions}")
             fn_types = [get_sig_param_types(f.signature) for f in functions]
-            log(f" fc_types: {fc_types}")
-            log(f" fn_types: {fn_types}")
             distances = [get_distances(fc_types,fn_types[i]) for i in range(len(fn_types))]
-            log(f" distances: {distances}")
             i_best = find_best_positive_distance(distances)
-            log(f" i_best: {i_best}")
             if i_best is not None: return [functions[i_best]]
             # filter out functions with None in their distances
             filtered_functions = []
             for i, dist_list in enumerate(distances):
                 if None not in dist_list: filtered_functions.append(functions[i])
-            log(f" filtered_functions: {filtered_functions}")
             if len(filtered_functions) == 0:
                 compiler.error(fc, f"no function found for {log_strip(print_code_formatted(fc))} in {scope}")
                 return []
             fc._constraints = fn_types # dunno what this is really for, but we'll find out later
-            log(f" fc._constraints: {fc._constraints}")
             return filtered_functions
         
         def get_param_types(fc: zc.FunctionCall) -> List[zc.Type]:
@@ -1011,18 +1004,15 @@ class module_Functions(LanguageModule):
         @Entity.method(zc.FunctionSignature)
         def typed_handle(self) -> str:
             out = ""
-            try:
-                for e in self.elements:
-                    if hasattr(e, "name"): out += str(e.name)
-                    elif isinstance(e, zc.FunctionSignatureParams):
-                        out += "("
-                        for p in e.params:
-                            for v in p.names:
-                                out += str(p.type) + ", "
-                        if out.endswith(", "): out = out[:-2]
-                        out += ")"
-            except Exception as e:
-                log(f"error in FunctionSignature.typed_handle: {e}")
+            for e in self.elements:
+                if hasattr(e, "name"): out += str(e.name)
+                elif isinstance(e, zc.FunctionSignatureParams):
+                    out += "("
+                    for p in e.params:
+                        for v in p.names:
+                            out += str(p.type) + ", "
+                    if out.endswith(", "): out = out[:-2]
+                    out += ")"
             return out
         
     def setup_scope(self, compiler: Compiler):
