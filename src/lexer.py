@@ -68,6 +68,8 @@ class SourceLocation:
         return f"{self.file}:{self.i_line}:{self.i_col}"
     def __repr__(self):
         return self.__str__()
+    def __lt__(self, other):
+        return self.i_line < other.i_line or (self.i_line == other.i_line and self.i_col < other.i_col)
 
 class Source:
     s_cwd = os.getcwd()

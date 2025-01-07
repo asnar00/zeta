@@ -160,19 +160,25 @@ class Report:
         self.name : str = name
         self.items : List[ReportItem] = []
         self.errors : List[ReportItem] = []
+    def sort_items(self, items: List[ReportItem]):
+        items.sort(key=lambda x: x.lex.location())
     def check_errors(self):
         self.errors = [item for item in self.items if not self.error_was_overridden(item)]
     def error_was_overridden(self, item: ReportItem) -> bool:
         return any(item.lex == report_item.lex for report_item in self.items)
     def show(self, code: str) -> str:
+        self.sort_items(self.items)
+        self.sort_items(self.errors)
         self.check_errors()
         out = ""
         width = 80
         out += f"{self.name} {'-' * (width - len(self.name))}\n"
-        out += self.show_simple(self.items)
         if len(self.errors) > 0:
             out += log_red(f"{len(self.errors)} errors\n")
             out += self.show_simple(self.errors)
+        else:
+            out += log_green("no errors\n")
+        out += self.show_simple(self.items)
         return out
     def show_simple(self, items: List[ReportItem]) -> str:
         out = ""
