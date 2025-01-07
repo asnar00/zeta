@@ -160,7 +160,12 @@ class Report:
         self.name : str = name
         self.items : List[ReportItem] = []
         self.errors : List[ReportItem] = []
+    def check_errors(self):
+        self.errors = [item for item in self.items if not self.error_was_overridden(item)]
+    def error_was_overridden(self, item: ReportItem) -> bool:
+        return any(item.lex == report_item.lex for report_item in self.items)
     def show(self, code: str) -> str:
+        self.check_errors()
         out = ""
         width = 80
         out += f"{self.name} {'-' * (width - len(self.name))}\n"
