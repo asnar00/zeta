@@ -106,7 +106,8 @@ def test_zero():
     code = s_test_program
     program = compiler.compile(code)
     log_clear()
-    log(program.show_report())
+    #log(program.show_report())
+    log(visual_report([ (program.reports[1].items, log_orange), (program.reports[2].items, log_green)], code))
 
 #--------------------------------------------------------------------------------------------------
 # print ast as nicely formatted code
@@ -167,6 +168,10 @@ class module_Features(LanguageModule):
 
     def setup_symbols(self, compiler: Compiler):
         @Entity.method(zc.FeatureDef) # FeatureDef.add_symbols
+        def add_symbols(self, scope):
+            compiler.add_symbol(self.name, self, scope, alias=self.alias)
+            
+        @Entity.method(zc.ContextDef) # ContextDef.add_symbols
         def add_symbols(self, scope):
             compiler.add_symbol(self.name, self, scope, alias=self.alias)
 
@@ -252,7 +257,7 @@ class module_Expressions(LanguageModule):
         compiler.grammar.add("""
             Expression :=
             Constant < Expression := value:(<number> | <string>)
-            VariableRef < Expression := variables:Variable&+.
+            VariableRef < Expression := variables:<identifier>+.
             Bracketed < Expression := "(" expression:Expression ")"
             FunctionCall < Expression := items:FunctionCallItem+
             FunctionCallItem :=
@@ -309,8 +314,8 @@ class module_Expressions(LanguageModule):
                     resolved_vars.append(resolved_var)
                     scope = resolved_var.type
                     if isinstance(scope, Lex): compiler.error(f"scope is Lex: {scope}")
-            compiler.report(self.variables[0].name, f"var {resolved_vars}")
-            self.variables = resolved_vars
+            compiler.report(self.variables[0], f"var {resolved_vars}")
+            self._resolved_vars = resolved_vars
             return self
 
         @Entity.method(zc.FunctionCall) #FunctionCall.resolve
@@ -319,7 +324,8 @@ class module_Expressions(LanguageModule):
                 if isinstance(item, zc.FunctionCallWord):
                     var = compiler.find_symbol(item.name, zc.Variable, scope, raise_errors=False)
                     if var:
-                        var_ref = zc.VariableRef(variables=[var])
+                        var_ref = zc.VariableRef(variables=[item.name])
+                        var_ref._resolved_vars = [var]
                         self.items[i] = zc.FunctionCallVariable(variable=var_ref)
             return self
 
@@ -349,16 +355,22 @@ class module_Expressions(LanguageModule):
         def check_type(self, scope):
             type_name = "number" if self.value.type=="number" else "string"
             self._type = compiler.find_symbol(type_name, zc.Type, scope)
+            compiler.report(self.value, f"{self._type}")
         
         @Entity.method(zc.VariableRef) # VariableRef.check_type
         def check_type(self, scope):
-            self._type = self.variables[-1].type
-            if self._type: compiler.report(self.variables[-1].name, f"{self._type}")
+            if not hasattr(self, "_resolved_vars"):
+                log(f"{self} {type(self).__name__}")
+                log(Visitor.trace)
+                log_exit("trace")
+            self._type = self._resolved_vars[-1].type
+            if self._type: compiler.report(self._resolved_vars[-1].name, f"{self._type}")
         
         @Entity.method(zc.FunctionCallVariable) # FunctionCallVariable.check_type
         def check_type(self, scope):
             self._type = self.variable._type
-
+            if self._type: compiler.report(get_first_lex(self.variable), f"{self._type}")
+            
         @Entity.method(zc.FunctionCall) # FunctionCall.check_type
         def check_type(self, scope):
             cf= log_strip(print_code_formatted(self))
@@ -495,12 +507,15 @@ class module_Expressions(LanguageModule):
 
         test("expression_1", parse_code("a", "Expression"), """
             VariableRef
-                variables => [a]
+                variables: List[str]
+                    a
             """)
         
         test("expression_1a", parse_code("a.b", "Expression"), """
             VariableRef
-                variables => [a, b]
+                variables: List[str]
+                    a
+                    b
             """)
 
         test("expression_2", parse_code("a + b", "Expression"), """
@@ -520,13 +535,17 @@ class module_Expressions(LanguageModule):
                     FunctionCallVariable
                         variable: VariableRef
                             VariableRef
-                                variables => [v, x]
+                                variables: List[str]
+                                    v
+                                    x
                     FunctionCallOperator
                         name: str = +
                     FunctionCallVariable
                         variable: VariableRef
                             VariableRef
-                                variables => [v, y]
+                                variables: List[str]
+                                    v
+                                    y
                         """)
         
         test("parameter_0", parse_code("a = 1", "FunctionCallArgument"), """
@@ -1045,7 +1064,7 @@ class module_Functions(LanguageModule):
             short_handle = untyped_handle(self)
             compiler.cp.st.add(long_handle, self, scope)
             compiler.cp.st.add(short_handle, self, scope)
-            first_lex = get_first_lex(self)
+            first_lex = get_first_name(self.signature)
             compiler.report(first_lex, f"\"{long_handle}\" => {self} in {scope}")
             compiler.report(first_lex, f"\"{short_handle}\" => {self} in {scope}")
             self._owner = scope
@@ -1061,6 +1080,11 @@ class module_Functions(LanguageModule):
                     add_alias_symbol(self, function, compiler.cp.st, long_handle, short_handle)
             else:
                 modify_function(self, function, compiler.cp.st)
+
+        def get_first_name(signature: zc.FunctionSignature) -> str:
+            for e in signature.elements:
+                if hasattr(e, "name"): return e.name
+            return None
 
         def typed_handle(funcDef) -> str:
             name = ""
@@ -1278,7 +1302,8 @@ class module_Functions(LanguageModule):
                             ResultVariableRef
                                 variable: VariableRef
                                     VariableRef
-                                        variables => [r]
+                                        variables: List[str]
+                                            r
                         assign_op: str = =
                 rhs: Expression
                     FunctionCall
@@ -1331,7 +1356,8 @@ class module_Functions(LanguageModule):
                                             ResultVariableRef
                                                 variable: VariableRef
                                                     VariableRef
-                                                        variables => [r]
+                                                        variables: List[str]
+                                                            r
                                         assign_op: str = =
                                 rhs: Expression
                                     FunctionCall
@@ -1375,7 +1401,8 @@ class module_Tests(LanguageModule):
             TestDef
                 lhs: Expression
                     VariableRef
-                        variables => [a]
+                        variables: List[str]
+                            a
                 rhs: Expression = None
         """)
 
@@ -1383,7 +1410,8 @@ class module_Tests(LanguageModule):
             TestDef
                 lhs: Expression
                     VariableRef
-                        variables => [a]
+                        variables: List[str]
+                            a
                 rhs: Expression
                     !!! premature end (expected rhs:Expression, got 'None' at <eof>)
         """)
@@ -1392,9 +1420,11 @@ class module_Tests(LanguageModule):
             TestDef
                 lhs: Expression
                     VariableRef
-                        variables => [a]
+                        variables: List[str]
+                            a
                 rhs: Expression
                     VariableRef
-                        variables => [b]
+                        variables: List[str]
+                            b
         """)
 

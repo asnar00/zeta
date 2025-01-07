@@ -161,6 +161,7 @@ def dbg_entity(e: Entity|List[Entity], indent: int=0) ->str:
 #-----------------------------------------------------------------------------------------------------------------------
 # misc functions to help with entity stuff: these should probably go somewhere else, maybe in a new ast.py?
 
+
 def get_first_lex(e: Entity|Lex) -> Lex:
     if isinstance(e, str): return Lex(source=None, pos=0, val=e, type=None)
     if isinstance(e, Lex): return e
@@ -172,7 +173,9 @@ def get_first_lex(e: Entity|Lex) -> Lex:
         if "&" in attr_type: continue
         vals = val if isinstance(val, list) else [val]
         if len(vals) > 0:
-            return get_first_lex(vals[0])
+            for val in vals:
+                lex = get_first_lex(val)
+                if lex: return lex
     return None
     
 def get_last_lex(e: Entity|Lex) -> Lex:
@@ -187,13 +190,16 @@ def get_last_lex(e: Entity|Lex) -> Lex:
         if "&" in attr_type: continue
         vals = val if isinstance(val, list) else [val]
         if len(vals) > 0:
-            return get_last_lex(vals[-1])
+            for val in reversed(vals):
+                lex = get_first_lex(val)
+                if lex: return lex
     return None
 
 #--------------------------------------------------------------------------------------------------
 # visitor runs across the tree in specified order, calling method on each matching entity
 
 class Visitor:
+    trace : str = ""
     def __init__(self, has_method: str, is_ref: bool, children_first: bool):
         self.has_method = has_method                # method name to match, or None if all
         self.is_ref = is_ref                        # match only references, or None if don't care
@@ -205,15 +211,19 @@ class Visitor:
 
     def apply(self, e: Entity, fn: Callable):   # call this from outside
         self.fn = fn
-        self.visit_rec(e, None, set(), None, None, None, 0)
+        self.trace = ""
+        self.visit_rec(e, None, set(), None, None, None, 0, "")
 
     # the main visitor recursive function... 
-    def visit_rec(self, e: Entity, scope: Entity, visited: Set, parent: Entity, parent_attr: str, parent_index: int, indent:int):        
+    def visit_rec(self, e: Entity, scope: Entity, visited: Set, parent: Entity, parent_attr: str, parent_index: int, indent:int, trace:str):        
         if not (isinstance(e, Entity) or isinstance(e, Lex)): return # allow addition of randomly-typed properties to ast entities
 
         if isinstance(e, Entity):        # don't visit the same one twice, unless we're a Lex
             if e in visited: return
             visited.add(e)
+
+        trace = f"{trace}\n{' '*indent}{e}"
+        Visitor.trace = trace
         
         entity_type_name, is_ref = self.get_type(parent, parent_attr) # find the attribute type
         
@@ -227,7 +237,7 @@ class Visitor:
         
         # visit children    
         if not isinstance(e, Lex) and not is_ref:
-            self.visit_children(e, scope, visited, parent, indent)
+            self.visit_children(e, scope, visited, parent, indent, trace)
         
         # if we matched, call function (if children_first is True)
         if match and self.children_first == True:
@@ -261,7 +271,7 @@ class Visitor:
             if self.vb: log(log_green(f"{start}set {parent}.{parent_attr} ==> {new_node}"))
             self.set_node(new_node, parent, parent_attr, parent_index, indent)
            
-    def visit_children(self, e: Entity, scope: Entity, visited: Set, parent: Entity, indent:int):
+    def visit_children(self, e: Entity, scope: Entity, visited: Set, parent: Entity, indent:int, trace:str):
         start = " " * indent
 
         if hasattr(e, "get_scope"):
@@ -279,10 +289,10 @@ class Visitor:
                 if len(val) == 0: continue
                 for i, val in enumerate(val):
                     if not (is_ref and isinstance(val, Entity)): # don't traverse references
-                        self.visit_rec(val, scope, visited, e, attr, i, indent+1)
+                        self.visit_rec(val, scope, visited, e, attr, i, indent+1, trace)
             else:
                 if not (is_ref and isinstance(val, Entity)): # don't traverse references
-                    self.visit_rec(val, scope, visited, e, attr, None, indent+1)
+                    self.visit_rec(val, scope, visited, e, attr, None, indent+1, trace)
 
 
     def visit_attrs(self, attrs: List[Tuple[str, Entity]], e: Entity, scope: Entity, visited: Set, parent: Entity, indent:int):

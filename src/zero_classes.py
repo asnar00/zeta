@@ -46,9 +46,9 @@ class Constant(Expression):
         self.value: str = value
 
 class VariableRef(Expression):
-    def __init__(self, variables: 'List[Variable]' =None):
+    def __init__(self, variables: 'List[str]' =None):
         super().__init__()
-        self.variables: List[Variable] = variables        # ref
+        self.variables: List[str] = variables
 
 class Bracketed(Expression):
     def __init__(self, expression: 'Expression' =None):

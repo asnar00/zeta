@@ -78,6 +78,7 @@ class Compiler:
         self.add_symbols(self.cp)
         self.resolve_symbols(self.cp)
         self.check_types(self.cp)
+        for report in self.cp.reports: report.process()
         return self.cp
     
     def parse(self, code: str) -> Entity:
@@ -85,7 +86,6 @@ class Compiler:
         return ast
     
     def show_errors(self, ast: Entity):
-        log_clear()
         log(log_red("errors in ast"))
         log(dbg_entity(ast))
         return ast
@@ -160,6 +160,10 @@ class Report:
         self.name : str = name
         self.items : List[ReportItem] = []
         self.errors : List[ReportItem] = []
+    def process(self):
+        self.sort_items(self.items)
+        self.sort_items(self.errors)
+        self.check_errors()
     def sort_items(self, items: List[ReportItem]):
         items.sort(key=lambda x: x.lex.location())
     def check_errors(self):
@@ -167,9 +171,6 @@ class Report:
     def error_was_overridden(self, item: ReportItem) -> bool:
         return any(item.lex == report_item.lex for report_item in self.items)
     def show(self, code: str) -> str:
-        self.sort_items(self.items)
-        self.sort_items(self.errors)
-        self.check_errors()
         out = ""
         width = 80
         out += f"{self.name} {'-' * (width - len(self.name))}\n"
@@ -186,3 +187,42 @@ class Report:
             loc = log_grey(item.lex.location())
             out += f"{loc} \"{item.lex}\" {item.msg}\n"
         return out
+
+#--------------------------------------------------------------------------------------------------
+# visual output of errors/reports
+
+# given pairs of (report, log_colour), return highlighted code
+
+@log_suppress
+def visual_report(reports: List[Tuple[List[ReportItem], Callable]], code: str) -> str:
+    lines = code.strip().split("\n")
+    out = ""
+    for i, line in enumerate(lines):
+        log("------------------------------------------------")
+        line = highlight_line(line, i+1, reports)
+        log(line)
+        out += line + "\n"
+    return out
+
+def highlight_line(line: str, i_line: int, reports: List[Tuple[List[ReportItem], Callable]]) -> str:
+    matching = []
+    for items, colour in reports:
+        for item in items:
+            loc = item.lex.location()
+            if loc.i_line == i_line and item.lex.val in line:
+                matching.append((item.lex.val, loc.i_col-1, loc.i_col-1 + len(item.lex.val), colour))
+    matching.sort(key=lambda x: x[1])
+    unique = []
+    for i, (val, i_col, j_col, colour) in enumerate(matching):
+        log(val, i_col, j_col, colour.__name__)
+        if i == 0 or i_col >= unique[-1][2]:
+            unique.append((val, i_col, j_col, colour))
+        else: 
+            log("removed overlapping", val, i_col, j_col, colour.__name__)
+    unique.sort(key=lambda x: x[1], reverse=True)
+    for i, (val, i_col, j_col, colour) in enumerate(unique):
+        log(val, i_col, j_col, colour.__name__)
+        line = line[:i_col] + colour(line[i_col:j_col]) + line[j_col:]
+    return line
+        
+        
