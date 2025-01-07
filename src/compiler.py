@@ -44,11 +44,12 @@ class CompiledProgram:
         self.code = code
         self.ast : Entity = None                            # abstract syntax tree: a tree of Entity objects
         self.st : SymbolTable = None                        # symbol table; maps name => {object, scope, tag}
-        self.reports : List[Report] = []                     # all reports from all stages
+        self.reports : List[Report] = []                    # all reports from all stages
+
     def show_report(self) -> str:
         out = ""
-        for report in self.reports:
-            out += report.show_code(self.code)
+        for i, report in enumerate(self.reports):
+            out += self.reports[i].show(self.code)
         return out
 
 #--------------------------------------------------------------------------------------------------
@@ -102,7 +103,6 @@ class Compiler:
 
     def resolve_symbols(self, cp: CompiledProgram):
         self.stage("resolve symbols")
-        errors = []
         visitor = Visitor("resolve", is_ref=True, children_first=True)
         visitor.apply(cp.ast, lambda e, scope, type_name: e.resolve(scope, type_name)) 
 
@@ -116,9 +116,14 @@ class Compiler:
     #--------------------------------------------------------------------
     # below the line
 
-    def stage(self, name: str): self.cp.reports.append(Report(name))
-    def report(self, entity: Entity|Lex, msg: str): self.cp.reports[-1].report.append(ReportItem(entity, msg))
-    def error(self, entity: Entity|Lex, msg: str): self.cp.reports[-1].errors.append(ReportItem(entity, msg))
+    def stage(self, name: str): 
+        self.cp.reports.append(Report(name))
+    def report(self, lex: Lex, msg: str): 
+        if not isinstance(lex, Lex): raise ValueError(f"lex is not a Lex: {lex}")
+        self.cp.reports[-1].items.append(ReportItem(lex, msg))
+    def error(self, lex: Lex, msg: str): 
+        if not isinstance(lex, Lex): raise ValueError(f"lex is not a Lex: {lex}")
+        self.cp.reports[-1].errors.append(ReportItem(lex, msg))
 
     #--------------------------------------------------------------------
     # called by Entity methods
@@ -134,7 +139,7 @@ class Compiler:
         if isinstance(name, of_type): return name # already matched
         found = self.cp.st.find(name, of_type, scope)
         if len(found) == 1:
-            self.report(name, f"{found[0].element} in {scope}")
+            if isinstance(name, Lex):self.report(name, f"{found[0].element} in {scope}")
             return found[0].element
         elif len(found) > 1:
             if raise_errors: self.error(name, f"multiple matches in {scope}")
@@ -146,62 +151,27 @@ class Compiler:
 # Report holds log of everything that happened in a compilation stage
 
 class ReportItem:
-    def __init__(self, e: Entity|Lex, msg: str):
-        self.e = e
-        log(self.e)
+    def __init__(self, lex: Lex, msg: str):
+        self.lex = lex
         self.msg = msg
-        self.first_loc = SourceLocation(file="", i_line=0, i_col=0)
-        self.last_loc = SourceLocation(file="", i_line=0, i_col=0)
-        if not isinstance(e, str):
-            first_lex = get_first_lex(e)
-            last_lex = get_last_lex(e)
-            if first_lex and last_lex:
-                self.first_loc = first_lex.location()
-                self.last_loc = last_lex.location()
-                self.last_loc.i_col += len(last_lex.val)
-                log(self.first_loc, self.last_loc)
-            
-    def __str__(self):
-        loc = f"{self.first_loc}..{self.last_loc}"
-        return f"{log_grey(loc)} => {self.msg}"
-    def __repr__(self):
-        return self.__str__()
 
 class Report:
     def __init__(self, name: str):
-        self.name = name                            # stage name
-        self.report : List[ReportItem] = []         # log of all things done (for testing/debug): location, msg
-        self.errors : List[ReportItem] = []         # all errors : location, msg
-    def show(self) -> str:
+        self.name : str = name
+        self.items : List[ReportItem] = []
+        self.errors : List[ReportItem] = []
+    def show(self, code: str) -> str:
+        out = ""
         width = 80
-        out = f"{self.name} {"-"*(width-len(self.name))}\n"
-        for r in self.report: out += f"{r}\n"
+        out += f"{self.name} {'-' * (width - len(self.name))}\n"
+        out += self.show_simple(self.items)
+        if len(self.errors) > 0:
+            out += log_red(f"{len(self.errors)} errors\n")
+            out += self.show_simple(self.errors)
         return out
-    
-    def show_code(self, code: str) -> str:
-        self.report.sort(key=lambda r: r.first_loc.i_line, reverse=True)
-        lines = code.split("\n")
-        n_lines = len(lines)
-        digit_count = len(str(n_lines))
-        width = 80
-        out = f"{self.name} {"-"*(width-len(self.name))}\n"
-        for i, line in enumerate(lines):
-            line_number = f"{i+1:>{digit_count}}"
-            out += f"{log_grey(line_number)}: {self.highlight_line(i+1,line, log_orange)}\n"
-        return out
-    
-    def highlight_line(self, i_line: int, line: str, fn) -> str:
-        items = [r for r in self.report if r.first_loc.i_line <= i_line and r.last_loc.i_line >= i_line]
-        if len(items) == 0: return line
-        items.sort(key=lambda r: r.first_loc.i_col, reverse=True)
+    def show_simple(self, items: List[ReportItem]) -> str:
+        out = ""
         for item in items:
-            if i_line > item.first_loc.i_line and i_line < item.last_loc.i_line:
-                return fn(line) # highlight entire line
-            elif i_line == item.first_loc.i_line and i_line == item.last_loc.i_line:
-                line = line[0:item.first_loc.i_col-1] + fn(line[item.first_loc.i_col-1:item.last_loc.i_col-1]) + line[item.last_loc.i_col-1:]
-            elif i_line == item.first_loc.i_line:
-                line = line[0:item.first_loc.i_col-1] + fn(line[item.first_loc.i_col-1:])
-            elif i_line == item.last_loc.i_line:
-                line = fn(line[0:item.last_loc.i_col-1]) + line[item.last_loc.i_col-1:]
-        return line
-        
+            loc = log_grey(item.lex.location())
+            out += f"{loc} \"{item.lex}\" {item.msg}\n"
+        return out

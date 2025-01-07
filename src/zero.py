@@ -309,7 +309,7 @@ class module_Expressions(LanguageModule):
                     resolved_vars.append(resolved_var)
                     scope = resolved_var.type
                     if isinstance(scope, Lex): compiler.error(f"scope is Lex: {scope}")
-            compiler.report(self.variables[0], f"var {resolved_vars}")
+            compiler.report(self.variables[0].name, f"var {resolved_vars}")
             self.variables = resolved_vars
             return self
 
@@ -340,7 +340,7 @@ class module_Expressions(LanguageModule):
             if len(before) > 1: before = [zc.FunctionCall(items=before)]
             after = fc.items[i_operator+1:]
             if len(after) > 1: after = [zc.FunctionCall(items=after)]
-            compiler.report(fc.items[i_operator], f"split: left = \"{log_strip(print_code_formatted(before[0]))}\", right = \"{log_strip(print_code_formatted(after[0]))}\"")
+            compiler.report(fc.items[i_operator].name, f"split: left = \"{log_strip(print_code_formatted(before[0]))}\", right = \"{log_strip(print_code_formatted(after[0]))}\"")
             fc.items = before + [fc.items[i_operator]] + after
             return fc
             
@@ -353,7 +353,7 @@ class module_Expressions(LanguageModule):
         @Entity.method(zc.VariableRef) # VariableRef.check_type
         def check_type(self, scope):
             self._type = self.variables[-1].type
-            if self._type: compiler.report(self.variables[-1], f"{self._type}")
+            if self._type: compiler.report(self.variables[-1].name, f"{self._type}")
         
         @Entity.method(zc.FunctionCallVariable) # FunctionCallVariable.check_type
         def check_type(self, scope):
@@ -373,7 +373,8 @@ class module_Expressions(LanguageModule):
                 self._type = zc.MaybeTypes([f._type for f in functions])
             else:
                 self._type = functions[0]._type
-            compiler.report(self, f"{self._type}")
+            first_item = next((item for item in self.items if hasattr(item, "name")), None)
+            compiler.report(first_item.name, f"{self._type}")
 
         @Entity.method(zc.Function) # Function.check_type
         def check_type(self, scope):
@@ -818,7 +819,7 @@ class module_Types(LanguageModule):
                     for var in prop.names:
                         code += f"{result_var}.{var.name} = {var.name}; "
                 code += "}"
-                compiler.report(self, f"make_constructor:{code}")
+                compiler.report(self.names[0].name, f"make_constructor:{code}")
                 constructor = parse_simple(code, "FunctionDef")
                 constructor._is_constructor_for_typedef = typeDef
                 typeDef._constructor = constructor
@@ -847,19 +848,19 @@ class module_Types(LanguageModule):
                 
         @Entity.method(zc.TypeDef)
         def resolve(self, scope, type_name):
-            log(f"typeDef.resolve:\n{print_code_formatted(self)}")
+            first_lex = get_first_lex(self)
             if isinstance(self.rhs, zc.TypeParentDef):
                 #log(" is parent")
                 for parent in self.rhs.parents:
                     assert_parent_type(self._resolved_types[0], parent)
+                    compiler.report(first_lex, f"asserting that '{self._resolved_types[0].name}' is a child of '{parent.name}'")
             elif isinstance(self.rhs, zc.TypeChildrenDef):
                 #log(" is children")
                 for child in self.rhs.children:
                     assert_parent_type(child, self._resolved_types[0])
-            
+                    compiler.report(first_lex, f"asserting that '{child.name}' is a child of '{self._resolved_types[0].name}'")
         def assert_parent_type(type: zc.Type, parent: zc.Type):
             if isinstance(type, str) or isinstance(parent, str): return
-            log(log_green(f"asserting that {type.name} is a child of {parent.name}"))
             if type.parents == None: type.parents = []
             if parent not in type.parents: type.parents.append(parent)
             if parent.children == None: parent.children = []
@@ -1054,8 +1055,9 @@ class module_Functions(LanguageModule):
             short_handle = untyped_handle(self)
             compiler.cp.st.add(long_handle, self, scope)
             compiler.cp.st.add(short_handle, self, scope)
-            compiler.report(self, f"\"{long_handle}\" => {self} in {scope}")
-            compiler.report(self, f"\"{short_handle}\" => {self} in {scope}")
+            first_lex = get_first_lex(self)
+            compiler.report(first_lex, f"\"{long_handle}\" => {self} in {scope}")
+            compiler.report(first_lex, f"\"{short_handle}\" => {self} in {scope}")
             self._owner = scope
             function = compiler.find_symbol(long_handle, zc.Function, None, raise_errors=False)
             if function == None:
@@ -1063,8 +1065,8 @@ class module_Functions(LanguageModule):
                 self._function = function
                 compiler.cp.st.add(long_handle, function, None)
                 compiler.cp.st.add(short_handle, function, None)
-                compiler.report(self, f"\"{long_handle}\" => {function} in {scope}")
-                compiler.report(self, f"\"{short_handle}\" => {function} in {scope}")
+                compiler.report(first_lex, f"\"{long_handle}\" => {function} in {scope}")
+                compiler.report(first_lex, f"\"{short_handle}\" => {function} in {scope}")
                 if hasattr(self, "_is_constructor_for_typedef"):    # add alias handle
                     add_alias_symbol(self, function, compiler.cp.st, long_handle, short_handle)
             else:
@@ -1112,8 +1114,9 @@ class module_Functions(LanguageModule):
                 alias_short_handle = short_handle.replace(str(name), str(alias))
                 st.add(alias_long_handle, function, None)
                 st.add(alias_short_handle, function, None)
-                compiler.report(self, f"\"{alias_long_handle}\" => {function}")
-                compiler.report(self, f"\"{alias_short_handle}\" => {function}")
+                first_lex = get_first_lex(funcDef)
+                compiler.report(first_lex, f"\"{alias_long_handle}\" => {function}")
+                compiler.report(first_lex, f"\"{alias_short_handle}\" => {function}")
         
         def modify_function(funcDef, existing, st):
             long_handle = funcDef.signature.typed_handle()
