@@ -203,8 +203,17 @@ class Report:
 #--------------------------------------------------------------------------------------------------
 # visual output of errors/reports
 
-# given pairs of (report, log_colour), return highlighted code
+def visual_report_from_stage(stage: Report, code: str) -> str:
+    out = "----------------------------------------------------------------\n"
+    out += "output from stage: \"" + stage.name + "\"\n"
+    if len(stage.errors) > 0: out += log_red(f"({len(stage.errors)} errors)")
+    else: out += log_green("(no errors)")
+    out += "\n\n"
+    out += visual_report([(stage.items, log_green), (stage.errors, log_red)], code)
+    out += "\n---------------------------------------------------------------------\n"
+    return out
 
+# given pairs of (report, log_colour), return highlighted code
 @log_suppress
 def visual_report(reports: List[Tuple[List[ReportItem], Callable]], code: str) -> str:
     lines = code.strip().split("\n")

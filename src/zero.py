@@ -106,13 +106,7 @@ def test_zero():
     code = s_test_program
     program = compiler.compile(code)
     log_clear()
-    if program.is_ok():
-        log("ok")
-        log(visual_report([ (program.reports[-1].items, log_orange)], code))
-    else:
-        log("not ok")
-        log(visual_report([ (program.reports[-2].items, log_orange), (program.reports[-1].items, log_green), (program.reports[-1].errors, log_red)], code))
-
+    log(visual_report_from_stage(program.reports[-1], code))
 
 #--------------------------------------------------------------------------------------------------
 # print ast as nicely formatted code
