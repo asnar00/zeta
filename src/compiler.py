@@ -118,6 +118,8 @@ class Compiler:
     
     def check_types(self) -> bool:
         self.stage("check types")
+        visitor = Visitor(has_method="embracket", is_ref=False, children_first=False)
+        visitor.apply(self.cp.ast, lambda e, scope, type_name: e.embracket())
         visitor = Visitor("check_type", is_ref=False, children_first=True)
         visitor.apply(self.cp.ast, lambda e, scope, type_name: e.check_type(scope))
         return self.cp.is_ok()

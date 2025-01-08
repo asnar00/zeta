@@ -303,10 +303,6 @@ class module_Expressions(LanguageModule):
             return log_strip(print_code_formatted(self, compiler.grammar))
             
     def setup_symbols(self, compiler: Compiler):
-        @Entity.method(zc.FunctionCall) # FunctionCall.add_symbols
-        def add_symbols(self, scope):
-            embracket(self)
-
         @Entity.method(zc.VariableRef) # VariableRef.resolve
         def resolve(self, scope, type_name):
             resolved_vars = []
@@ -335,26 +331,28 @@ class module_Expressions(LanguageModule):
                         self.items[i] = zc.FunctionCallVariable(variable=var_ref)
             return self
 
-        def embracket(fc: zc.FunctionCall):
-            def find_lowest_ranked_operator(items):
-                i_found = -1
-                lowest_rank = 10240
-                for i, item in enumerate(items):
-                    if isinstance(item, zc.FunctionCallOperator) and item.name != ".":
-                        rank = item.name.rank
-                        if rank < lowest_rank:
-                            lowest_rank = rank
-                            i_found = i
-                return i_found
-            i_operator = find_lowest_ranked_operator(fc.items)
-            if i_operator == -1: return fc
-            before = fc.items[0:i_operator]
+        @Entity.method(zc.FunctionCall) # FunctionCall.embracket
+        def embracket(self):
+            i_operator = find_lowest_ranked_operator(self.items)
+            if i_operator == -1: return self
+            before = self.items[0:i_operator]
             if len(before) > 1: before = [zc.FunctionCall(items=before)]
-            after = fc.items[i_operator+1:]
+            after = self.items[i_operator+1:]
             if len(after) > 1: after = [zc.FunctionCall(items=after)]
-            compiler.report(fc.items[i_operator].name, f"split: left = \"{log_strip(print_code_formatted(before[0], compiler.grammar))}\", right = \"{log_strip(print_code_formatted(after[0], compiler.grammar))}\"")
-            fc.items = before + [fc.items[i_operator]] + after
-            return fc
+            compiler.report(self.items[i_operator].name, f"split: left = \"{log_strip(print_code_formatted(before[0], compiler.grammar))}\", right = \"{log_strip(print_code_formatted(after[0], compiler.grammar))}\"")
+            self.items = before + [self.items[i_operator]] + after
+            return self
+    
+        def find_lowest_ranked_operator(items):
+            i_found = -1
+            lowest_rank = 10240
+            for i, item in enumerate(items):
+                if isinstance(item, zc.FunctionCallOperator) and item.name != ".":
+                    rank = item.name.rank
+                    if rank < lowest_rank:
+                        lowest_rank = rank
+                        i_found = i
+            return i_found
             
     def setup_check_types(self, compiler: Compiler):
         @Entity.method(zc.Constant) # Constant.check_type
