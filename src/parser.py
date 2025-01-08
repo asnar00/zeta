@@ -16,37 +16,37 @@ from entity import *
 
 # given a rule and a reader, parse the rule and return an entity
 @log_indent
-def parse_rule(rule: Rule, reader: Reader) -> Entity:
+def parse_rule(rule: Rule, reader: Reader, grammar: Grammar) -> Entity:
     log("rule:", rule.dbg())
-    children = parse_terms(rule, reader)
+    children = parse_terms(rule, reader, grammar)
     check_child_errors(rule, children)
     entity = merge_children(rule, children, rule.entity_cls())
     return post_parse(entity)
 
 # parse each term in the rule, returns list of results
-def parse_terms(rule: Rule, reader: Reader) -> List[Term]:
+def parse_terms(rule: Rule, reader: Reader, grammar: Grammar) -> List[Term]:
     children = []
     for term in rule.terms:
-        child = parse_term(term, reader)
+        child = parse_term(term, reader, grammar)
         children.append(child)
         if has_errors(child) and not term.is_optional(): break
     return children
 
 # dispatch term parser to the correct case (take term.dec into account)
-def parse_term(term: Term, reader: Reader) -> Entity:
-    if term.is_singular(): return parse_singular_term(term, reader)
-    elif term.is_optional(): return parse_optional(term, reader.scan(term.followers))
-    else: return parse_list_term(term, reader.scan(term.followers))
+def parse_term(term: Term, reader: Reader, grammar: Grammar) -> Entity:
+    if term.is_singular(): return parse_singular_term(term, reader, grammar)
+    elif term.is_optional(): return parse_optional(term, reader.scan(term.followers), grammar)
+    else: return parse_list_term(term, reader.scan(term.followers), grammar)
 
 # dispatch singular term parser to the correct case (ignore term.dec)
-def parse_singular_term(term: Term, reader: Reader) -> Dict:
-    if term.is_terminal() or term.is_reference(): return parse_terminal(term, reader)
-    elif term.is_rule(): return parse_rule_term(term, reader.scan(term.followers))
+def parse_singular_term(term: Term, reader: Reader, grammar: Grammar) -> Dict:
+    if term.is_terminal() or term.is_reference(): return parse_terminal(term, reader, grammar)
+    elif term.is_rule(): return parse_rule_term(term, reader.scan(term.followers), grammar)
     else: raise Exception(f"unknown term type: {term.vals}")
 
 # simplest case: parse a terminal singular term
 @log_indent
-def parse_terminal(term: Term, reader: Reader) -> Union[Lex, Error]:
+def parse_terminal(term: Term, reader: Reader, grammar: Grammar) -> Union[Lex, Error]:
     if reader.eof():
         return parse_error("premature end", term, reader)
     vals = term.vals
@@ -57,15 +57,15 @@ def parse_terminal(term: Term, reader: Reader) -> Union[Lex, Error]:
 
 # term is a list of rules: rule1 | rule 2..; try each in turn until one succeeds
 @log_indent
-def parse_rule_term(term: Term, reader: Reader) -> Entity:
+def parse_rule_term(term: Term, reader: Reader, grammar: Grammar) -> Entity:
     if reader.eof():
         return parse_error("premature end", term, reader)
-    rules = reduce_rules(term, reader.peek())
+    rules = reduce_rules(term, reader.peek(), grammar)
     if len(rules) == 0: return parse_error("no matched rules", term, reader)
     entity = None
     for rule in rules:
         pos = reader.pos()
-        entity = parse_rule(rule, reader)
+        entity = parse_rule(rule, reader, grammar)
         if not has_errors(entity): return entity
         reader.restore(pos)
     if entity: return entity
@@ -73,13 +73,13 @@ def parse_rule_term(term: Term, reader: Reader) -> Entity:
 
 # parse an optional term, return None if eof or error
 @log_indent
-def parse_optional(term: Term, reader: Reader) -> Entity:
+def parse_optional(term: Term, reader: Reader, grammar: Grammar) -> Entity:
     vb = (str(term) == "FunctionCallArgument_?")
     if reader.eof(): 
         log(log_red("optional: eof"))
         return None
     pos = reader.pos()
-    child = parse_singular_term(term, reader)
+    child = parse_singular_term(term, reader, grammar)
     if has_errors(child): 
         log(log_red("parse_optional: child has errors- restoring"))
         reader.restore(pos)
@@ -87,22 +87,22 @@ def parse_optional(term: Term, reader: Reader) -> Entity:
     return child
 
 @log_indent
-def parse_list_term(term: Term, reader: Reader) -> Dict:
+def parse_list_term(term: Term, reader: Reader, grammar: Grammar) -> Dict:
     items = []
     pos = reader.pos()
     before_sep_pos = pos
     while not reader.eof():
         term_reader = scan_separator(reader, term)
-        child = parse_singular_term(term, term_reader)
+        child = parse_singular_term(term, term_reader, grammar)
         items.append(child)
         if has_errors(child):
             log(log_red("last item has errors!"))
-            items = truncate_list(term, reader, items, pos)
+            items = truncate_list(term, reader, items, pos, grammar)
             log(f"reader after restore: {reader}")
             break
         if reader.eof(): break
         pos = reader.pos()
-        items, cont = parse_separator(term, reader, items, before_sep_pos)
+        items, cont = parse_separator(term, reader, items, before_sep_pos, grammar)
         if not cont: break
         before_sep_pos = pos
     if term.dec == "+" and len(items) == 0:
@@ -236,8 +236,8 @@ def parse_error(message: str, term: Term, reader: Reader) -> Dict:
     return err
 
 # reduce a term to a list of rules
-def reduce_rules(term: Term, lex: Lex) -> List[Rule]:
-    rules = term.rules()
+def reduce_rules(term: Term, lex: Lex, grammar: Grammar) -> List[Rule]:
+    rules = term.rules(grammar)
     if len(rules) == 1: return rules
     leaf_rules = []
     for key, rules in term.leaves.items():
@@ -252,9 +252,9 @@ def scan_separator(reader: Reader, term: Term) -> Reader:
     return term_reader
 
 #@log_indent
-def truncate_list(term: Term, reader: Reader, items: List[Dict], pos: int) -> List[Dict]:
+def truncate_list(term: Term, reader: Reader, items: List[Dict], pos: int, grammar: Grammar) -> List[Dict]:
     if isinstance(items[-1], Error):
-        if term.is_rule() and term.rules()[0].is_placeholder(): 
+        if term.is_rule() and term.rules(grammar)[0].is_placeholder(): 
             log(log_red("item is a placeholder... returning empty list"))
             return []
     if reader.nested_sep == None: return items
@@ -267,14 +267,14 @@ def truncate_list(term: Term, reader: Reader, items: List[Dict], pos: int) -> Li
     return items
 
 #@log_indent
-def parse_separator(term: Term, reader: Reader, items: List[Dict], restore_pos: int) -> Tuple[List[Dict], bool]:
+def parse_separator(term: Term, reader: Reader, items: List[Dict], restore_pos: int, grammar: Grammar) -> Tuple[List[Dict], bool]:
     if term.sep == "": return items, True
     if lex_matches(reader.peek(), [f'"{term.sep}"']):
         reader.next()
         return items, True
     if term.sep == ";": return items, True
     log(log_red(f"separator error: expected {term.sep} but got {reader.peek()}"))
-    items = truncate_list(term, reader, items, restore_pos)
+    items = truncate_list(term, reader, items, restore_pos, grammar)
     return items,False
 
 def remove_errors(e: Entity) -> Entity:
@@ -295,29 +295,29 @@ def remove_errors(e: Entity) -> Entity:
 # test routine: returns a nicely formatted AST
 
 @log_indent
-def parse_code(code: str, rule_name: str) -> str:
+def parse_code(code: str, rule_name: str, grammar: Grammar) -> str:
     ls = lexer(Source(code=code))
     reader = Reader(ls)
-    rule = Grammar.current.rule_named[rule_name]
-    ast= parse_rule(rule, reader)
+    rule = grammar.rule_named[rule_name]
+    ast= parse_rule(rule, reader, grammar)
     return dbg_entity(ast)
 
 @log_suppress
-def parse_simple(code: str, rule_name: str) -> Entity:
+def parse_simple(code: str, rule_name: str, grammar: Grammar) -> Entity:
     ls = lexer(Source(code=code))
     reader = Reader(ls)
-    rule = Grammar.current.rule_named[rule_name]
-    ast= parse_rule(rule, reader)
+    rule = grammar.rule_named[rule_name]
+    ast= parse_rule(rule, reader, grammar)
     return ast
 
     
 #--------------------------------------------------------------------------------------------------
 # print routines : the inverse of parse
 
-def print_code_formatted(e: Entity, use_aliases: bool = False) -> str:
+def print_code_formatted(e: Entity, grammar: Grammar, use_aliases: bool = False) -> str:
     def cleanup(out: str) -> str:
         return out.replace("•", " ").strip()
-    out = print_code(e, False, use_aliases)
+    out = print_code(e, False, grammar, use_aliases)
     fmt = ""
     ic = 0
     indent_level = 0
@@ -342,28 +342,28 @@ def print_code_formatted(e: Entity, use_aliases: bool = False) -> str:
             break
     return fmt.replace("    \n", "").replace("\n\n", "\n").replace("( ", "(").replace(" )", ")").replace(". ", ".").replace(" .", ".").replace(" ,", ",")
 
-def print_code(e: Entity, is_reference: bool, use_aliases: bool) -> str|List[str]:
+def print_code(e: Entity, is_reference: bool, grammar: Grammar,use_aliases: bool) -> str|List[str]:
     if e is None: return ""
     if isinstance(e, Lex) or isinstance(e, str): 
         if is_reference: return log_orange(str(e)) # indicate not found
         else: return str(e)
-    if isinstance(e, List): return [print_code(item, is_reference, use_aliases) for item in e]
+    if isinstance(e, List): return [print_code(item, is_reference, grammar, use_aliases) for item in e]
     if isinstance(e, Entity) and is_reference: 
         if use_aliases and e.alias != None: 
             return log_green(str(e.alias))
         else:
             return log_green(str(e.name)) if hasattr(e, "name") else str(e)
     if hasattr(e, "print_code"): return e.print_code()
-    rule = Grammar.current.rule_named[e.__class__.__name__]
-    return print_code_rule(rule, e, use_aliases)
+    rule = grammar.rule_named[e.__class__.__name__]
+    return print_code_rule(rule, e, grammar, use_aliases)
 
-def print_code_rule(rule: Rule, e: Entity, use_aliases: bool = False) -> str:
+def print_code_rule(rule: Rule, e: Entity, grammar: Grammar, use_aliases: bool = False) -> str:
     out = ""
     for term in rule.terms:
         is_reference = (term.ref != "")
         if term.var:
             if hasattr(e, term.var):
-                code = print_code(getattr(e, term.var), is_reference, use_aliases)
+                code = print_code(getattr(e, term.var), is_reference, grammar, use_aliases)
                 if isinstance(code, str):
                     out += code
                 elif isinstance(code, List):
@@ -374,10 +374,10 @@ def print_code_rule(rule: Rule, e: Entity, use_aliases: bool = False) -> str:
             elif term.is_type():
                 out += log_red("unnamed type")
             elif term.is_rule():
-                sub_rules = term.rules()
+                sub_rules = term.rules(grammar)
                 for sub_rule in sub_rules:
                     if can_print_rule(sub_rule, e):
-                        out += print_code_rule(sub_rule, e, use_aliases)
+                        out += print_code_rule(sub_rule, e, grammar, use_aliases)
                         break
         if (len(out) > 0 and out[-1] != "•"): out += "•"
     return out.replace("••", "•")

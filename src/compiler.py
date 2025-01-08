@@ -25,7 +25,7 @@ class LanguageModule:
     def setup_scope(self, compiler: 'Compiler'): pass             # add get_scope methods to rule classes
     def setup_symbols(self, compiler: 'Compiler'): pass           # add add_symbols/resolve methods to rule classes
     def setup_check_types(self, compiler: 'Compiler'): pass       # add check_type methods to rule classes
-    def test_parser(self): pass                             # test parser with some examples
+    def test_parser(self, compiler: 'Compiler'): pass             # test parser with some examples
 
     def setup(self, compiler: 'Compiler'):
         self.setup_validate(compiler)
@@ -34,7 +34,7 @@ class LanguageModule:
         self.setup_generate(compiler)
         self.setup_symbols(compiler)
         self.setup_check_types(compiler)
-        self.test_parser()
+        self.test_parser(compiler)
 
 #--------------------------------------------------------------------------------------------------
 # CompiledProgram holds ast, st, all the other artefacts
@@ -82,7 +82,7 @@ class Compiler:
         return self.cp
     
     def parse(self, code: str) -> Entity:
-        ast = parse_simple(code, "Program")
+        ast = parse_simple(code, "Program", self.grammar)
         return ast
     
     def show_errors(self, ast: Entity):

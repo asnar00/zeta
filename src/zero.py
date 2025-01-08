@@ -185,8 +185,9 @@ class module_Features(LanguageModule):
             cls = Entity.get_class(type_name)
             return compiler.find_symbol(self, cls, scope)
 
-    def test_parser(self):
-        test("feature_0", parse_code("", "FeatureDef"), """
+    def test_parser(self, compiler: Compiler):
+        grammar = compiler.grammar
+        test("feature_0", parse_code("", "FeatureDef", grammar), """
             FeatureDef
                 !!! premature end (expected 'feature', got 'None' at <eof>)
                 name: str = None
@@ -195,7 +196,7 @@ class module_Features(LanguageModule):
                 components: List[Component] = None
             """)
         
-        test("feature_1", parse_code("feature", "FeatureDef"), """
+        test("feature_1", parse_code("feature", "FeatureDef", grammar), """
             FeatureDef
                 !!! premature end (expected NameDef, got 'None' at <eof>)
                 name: str = None
@@ -204,7 +205,7 @@ class module_Features(LanguageModule):
                 components: List[Component] = None
             """)
 
-        test("feature_2", parse_code("feature MyFeature", "FeatureDef"), """
+        test("feature_2", parse_code("feature MyFeature", "FeatureDef", grammar), """
             FeatureDef
                 !!! premature end (expected '{', got 'None' at <eof>)
                 name: str = MyFeature
@@ -213,7 +214,7 @@ class module_Features(LanguageModule):
                 components: List[Component] = None
             """)
 
-        test("feature_3", parse_code("feature MyFeature extends", "FeatureDef"), """
+        test("feature_3", parse_code("feature MyFeature extends", "FeatureDef", grammar), """
             FeatureDef
                 !!! mismatch (expected '{', got 'extends' at :...:19)
                 name: str = MyFeature
@@ -222,7 +223,7 @@ class module_Features(LanguageModule):
                 components: List[Component] = None
             """)
         
-        test("feature_4", parse_code("feature MyFeature extends Another", "FeatureDef"), """
+        test("feature_4", parse_code("feature MyFeature extends Another", "FeatureDef", grammar), """
             FeatureDef
                 !!! premature end (expected '{', got 'None' at <eof>)
                 name: str = MyFeature
@@ -231,7 +232,7 @@ class module_Features(LanguageModule):
                 components: List[Component] = None        
             """)
         
-        test("feature_5", parse_code("feature MyFeature {}", "FeatureDef"), """
+        test("feature_5", parse_code("feature MyFeature {}", "FeatureDef", grammar), """
             FeatureDef
                 name: str = MyFeature
                 alias: str = None
@@ -239,14 +240,14 @@ class module_Features(LanguageModule):
                 components: List[Component] = []
             """)
         
-        test("feature_6", parse_code("feature MyFeature extends Another {}", "FeatureDef"), """
+        test("feature_6", parse_code("feature MyFeature extends Another {}", "FeatureDef", grammar), """
             FeatureDef
                 name: str = MyFeature
                 alias: str = None
                 parent: FeatureDef => Another
                 components: List[Component] = []
             """)
-        test("context_0", parse_code("context MyContext = Hello, Goodbye, Countdown", "ContextDef"), """
+        test("context_0", parse_code("context MyContext = Hello, Goodbye, Countdown", "ContextDef", grammar), """
             ContextDef
                 name: str = MyContext
                 alias: str = None
@@ -299,7 +300,7 @@ class module_Expressions(LanguageModule):
             return ""
         @Entity.method(zc.FunctionCall) # FunctionCall.get_name
         def get_name(self) -> str:
-            return log_strip(print_code_formatted(self))
+            return log_strip(print_code_formatted(self, compiler.grammar))
             
     def setup_symbols(self, compiler: Compiler):
         @Entity.method(zc.FunctionCall) # FunctionCall.add_symbols
@@ -351,7 +352,7 @@ class module_Expressions(LanguageModule):
             if len(before) > 1: before = [zc.FunctionCall(items=before)]
             after = fc.items[i_operator+1:]
             if len(after) > 1: after = [zc.FunctionCall(items=after)]
-            compiler.report(fc.items[i_operator].name, f"split: left = \"{log_strip(print_code_formatted(before[0]))}\", right = \"{log_strip(print_code_formatted(after[0]))}\"")
+            compiler.report(fc.items[i_operator].name, f"split: left = \"{log_strip(print_code_formatted(before[0], compiler.grammar))}\", right = \"{log_strip(print_code_formatted(after[0], compiler.grammar))}\"")
             fc.items = before + [fc.items[i_operator]] + after
             return fc
             
@@ -377,7 +378,7 @@ class module_Expressions(LanguageModule):
             
         @Entity.method(zc.FunctionCall) # FunctionCall.check_type
         def check_type(self, scope):
-            cf= log_strip(print_code_formatted(self))
+            cf= log_strip(print_code_formatted(self, compiler.grammar))
             self._resolved_functions = []
             functions = find_functions(self, scope)
             self._resolved_functions = functions
@@ -488,26 +489,27 @@ class module_Expressions(LanguageModule):
             return i_best
         
 
-    def test_parser(self):
-        test("expression_0", parse_code("1", "Expression"), """
+    def test_parser(self, compiler: Compiler):
+        grammar = compiler.grammar
+        test("expression_0", parse_code("1", "Expression", grammar), """
             Constant
                 value: str = 1
             """)
 
-        test("expression_1", parse_code("a", "Expression"), """
+        test("expression_1", parse_code("a", "Expression", grammar), """
             VariableRef
                 variables: List[str]
                     a
             """)
         
-        test("expression_1a", parse_code("a.b", "Expression"), """
+        test("expression_1a", parse_code("a.b", "Expression", grammar), """
             VariableRef
                 variables: List[str]
                     a
                     b
             """)
 
-        test("expression_2", parse_code("a + b", "Expression"), """
+        test("expression_2", parse_code("a + b", "Expression", grammar), """
             FunctionCall
                 items: List[FunctionCallItem]
                     FunctionCallWord
@@ -518,7 +520,7 @@ class module_Expressions(LanguageModule):
                         name: str = b
             """)
         
-        test("expression_2a", parse_code("v.x + v.y", "Expression"), """
+        test("expression_2a", parse_code("v.x + v.y", "Expression", grammar), """
             FunctionCall
                 items: List[FunctionCallItem]
                     FunctionCallVariable
@@ -537,7 +539,7 @@ class module_Expressions(LanguageModule):
                                     y
                         """)
         
-        test("parameter_0", parse_code("a = 1", "FunctionCallArgument"), """
+        test("parameter_0", parse_code("a = 1", "FunctionCallArgument", grammar), """
                 FunctionCallArgument
                     argument: Variable => a
                     value: Expression
@@ -545,7 +547,7 @@ class module_Expressions(LanguageModule):
                             value: str = 1
                 """)
 
-        test("parameter_1", parse_code("a + b", "FunctionCallArgument"), """
+        test("parameter_1", parse_code("a + b", "FunctionCallArgument", grammar), """
             FunctionCallArgument
                 argument: Variable = None
                 value: Expression
@@ -559,7 +561,7 @@ class module_Expressions(LanguageModule):
                                 name: str = b
             """)
 
-        test("brackets_0", parse_code("(a + b)", "Bracketed"), """
+        test("brackets_0", parse_code("(a + b)", "Bracketed", grammar), """
             Bracketed
                 expression: Expression
                     FunctionCall
@@ -572,7 +574,7 @@ class module_Expressions(LanguageModule):
                                 name: str = b
             """)
         
-        test("brackets_1", parse_code("(v = a + b)", "Expression"), """
+        test("brackets_1", parse_code("(v = a + b)", "Expression", grammar), """
             FunctionCall
                 items: List[FunctionCallItem]
                     FunctionCallArguments
@@ -590,7 +592,7 @@ class module_Expressions(LanguageModule):
                                                 name: str = b
             """)
         
-        test("expression_3", parse_code("2 - c", "Expression"), """
+        test("expression_3", parse_code("2 - c", "Expression", grammar), """
             FunctionCall
                 items: List[FunctionCallItem]
                     FunctionCallConstant
@@ -603,7 +605,7 @@ class module_Expressions(LanguageModule):
                         name: str = c
         """)
 
-        test("expression_4", parse_code("a + (2 - c)", "Expression"), """
+        test("expression_4", parse_code("a + (2 - c)", "Expression", grammar), """
             FunctionCall
                 items: List[FunctionCallItem]
                     FunctionCallWord
@@ -627,7 +629,7 @@ class module_Expressions(LanguageModule):
                                                 name: str = c
         """)
 
-        test("expression_5", parse_code("hello(name = \"world\")", "Expression"), """
+        test("expression_5", parse_code("hello(name = \"world\")", "Expression", grammar), """
             FunctionCall
                 items: List[FunctionCallItem]
                     FunctionCallWord
@@ -641,7 +643,7 @@ class module_Expressions(LanguageModule):
                                         value: str = "world"
             """)
         
-        test("expression_6", parse_code("bye()", "FunctionCall"), """
+        test("expression_6", parse_code("bye()", "FunctionCall", grammar), """
             FunctionCall
                 items: List[FunctionCallItem]
                     FunctionCallWord
@@ -674,8 +676,9 @@ class module_Variables(LanguageModule):
                 compiler.add_symbol(name.name, var, scope, alias=name.alias)
                 self._defined_vars.append(var)
 
-    def test_parser(self):
-        test("variable_0", parse_code("int a", "VariableDef"), """
+    def test_parser(self, compiler: Compiler):
+        grammar = compiler.grammar
+        test("variable_0", parse_code("int a", "VariableDef", grammar), """
             VariableDef
                 type: Type => int
                 names: List[NameDef]
@@ -685,7 +688,7 @@ class module_Variables(LanguageModule):
                 value: Expression = None
             """)
         
-        test("variable_1", parse_code("a : int", "VariableDef"), """
+        test("variable_1", parse_code("a : int", "VariableDef", grammar), """
             VariableDef
                 type: Type => int
                 names: List[NameDef]
@@ -695,7 +698,7 @@ class module_Variables(LanguageModule):
                 value: Expression = None
             """)
         
-        test("variable_2", parse_code("a : int = 0", "VariableDef"), """
+        test("variable_2", parse_code("a : int = 0", "VariableDef", grammar), """
             VariableDef
                 type: Type => int
                 names: List[NameDef]
@@ -707,7 +710,7 @@ class module_Variables(LanguageModule):
                         value: str = 0
             """) 
         
-        test("variable_3", parse_code("int a = 0", "VariableDef"), """
+        test("variable_3", parse_code("int a = 0", "VariableDef", grammar), """
             VariableDef
                 type: Type => int
                 names: List[NameDef]
@@ -719,7 +722,7 @@ class module_Variables(LanguageModule):
                         value: str = 0
             """)
         
-        test("variable_4", parse_code("r|red, g|green, b|blue: number = 0", "VariableDef"), """
+        test("variable_4", parse_code("r|red, g|green, b|blue: number = 0", "VariableDef", grammar), """
             VariableDef
                 type: Type => number
                 names: List[NameDef]
@@ -737,7 +740,7 @@ class module_Variables(LanguageModule):
                         value: str = 0
             """)
         
-        test("variable_5", parse_code("int x,y = 0", "VariableDef"), """
+        test("variable_5", parse_code("int x,y = 0", "VariableDef", grammar), """
             VariableDef
                 type: Type => int
                 names: List[NameDef]
@@ -814,14 +817,14 @@ class module_Types(LanguageModule):
                     code += f"{prop.type} "
                     for var in prop.names: code += f"{var.name}, "
                     if code.endswith(", "): code = code[:-2]
-                    if prop.value: code += f" = {print_code_formatted(prop.value)}"
+                    if prop.value: code += f" = {print_code_formatted(prop.value, compiler.grammar)}"
                 code += ") {"
                 for prop in typeDef.rhs.properties:
                     for var in prop.names:
                         code += f"{result_var}.{var.name} = {var.name}; "
                 code += "}"
                 compiler.report(self.names[0].name, f"make_constructor:{code}")
-                constructor = parse_simple(code, "FunctionDef")
+                constructor = parse_simple(code, "FunctionDef", compiler.grammar)
                 constructor._is_constructor_for_typedef = typeDef
                 typeDef._constructor = constructor
             make_constructor(self)
@@ -867,8 +870,9 @@ class module_Types(LanguageModule):
             if parent.children == None: parent.children = []
             if type not in parent.children: parent.children.append(type)
 
-    def test_parser(self):
-        test("type_0", parse_code("type vec | vector", "TypeDef"), """
+    def test_parser(self, compiler: Compiler):
+        grammar = compiler.grammar
+        test("type_0", parse_code("type vec | vector", "TypeDef", grammar), """
             TypeDef
                 names: List[NameDef]
                     NameDef
@@ -877,7 +881,7 @@ class module_Types(LanguageModule):
                 rhs: TypeRhs = None
             """)
     
-        test("type_1", parse_code("type vec | vector = { x, y, z: number =0 }", "TypeDef"), """
+        test("type_1", parse_code("type vec | vector = { x, y, z: number =0 }", "TypeDef", grammar), """
             TypeDef
                 names: List[NameDef]
                     NameDef
@@ -903,7 +907,7 @@ class module_Types(LanguageModule):
                                         value: str = 0
             """)
         
-        test("type_2", parse_code("type int > i8, i16", "TypeDef"), """
+        test("type_2", parse_code("type int > i8, i16", "TypeDef", grammar), """
             TypeDef
                 names: List[NameDef]
                     NameDef
@@ -914,7 +918,7 @@ class module_Types(LanguageModule):
                         children => [i8, i16]
             """)
         
-        test("type_3", parse_code("type offset < vector", "TypeDef"), """
+        test("type_3", parse_code("type offset < vector", "TypeDef", grammar), """
             TypeDef
                 names: List[NameDef]
                     NameDef
@@ -925,7 +929,7 @@ class module_Types(LanguageModule):
                         parents => [vector]
             """)
         
-        test("type_4", parse_code("type evil = no | yes | maybe", "TypeDef"), """
+        test("type_4", parse_code("type evil = no | yes | maybe", "TypeDef", grammar), """
             TypeDef
                 names: List[NameDef]
                     NameDef
@@ -941,7 +945,7 @@ class module_Types(LanguageModule):
                             EnumOptionId
                                 val: str = maybe
             """)
-        test("type_4a", parse_code("type bit = 0 | 1", "TypeDef"), """
+        test("type_4a", parse_code("type bit = 0 | 1", "TypeDef", grammar), """
             TypeDef
                 names: List[NameDef]
                     NameDef
@@ -956,7 +960,7 @@ class module_Types(LanguageModule):
                                 val: str = 1
             """)
         
-        test("type_5", parse_code("type str | string = char$$$", "TypeDef"), """
+        test("type_5", parse_code("type str | string = char$$$", "TypeDef", grammar), """
             TypeDef
                 names: List[NameDef]
                     NameDef
@@ -1203,8 +1207,9 @@ class module_Functions(LanguageModule):
                 if result: return result
             return None
 
-    def test_parser(self):
-        test("result_vars_1", parse_code("(a, b: int, k, l: float) =", "FunctionResults"), """
+    def test_parser(self, compiler: Compiler):
+        grammar = compiler.grammar
+        test("result_vars_1", parse_code("(a, b: int, k, l: float) =", "FunctionResults", grammar), """
             FunctionResults
                 results: List[ResultVariableDef]
                     ResultVariableDef
@@ -1228,7 +1233,7 @@ class module_Functions(LanguageModule):
                 assign_op: str = =
             """)
     
-        test("result_vars_2", parse_code("(int a, b, float k) <<", "FunctionResults"), """
+        test("result_vars_2", parse_code("(int a, b, float k) <<", "FunctionResults", grammar), """
             FunctionResults
                 results: List[ResultVariableDef]
                     ResultVariableDef
@@ -1249,7 +1254,7 @@ class module_Functions(LanguageModule):
                 assign_op: str = <<
             """)
         
-        test("param_group_0", parse_code("(int a, b=0, float k=0)", "FunctionSignatureParams"), """
+        test("param_group_0", parse_code("(int a, b=0, float k=0)", "FunctionSignatureParams", grammar), """
             FunctionSignatureParams
                 params: List[VariableDef]
                     VariableDef
@@ -1275,7 +1280,7 @@ class module_Functions(LanguageModule):
                                 value: str = 0
             """)
         
-        test("param_group_1", parse_code("(int a, b, float k)", "FunctionSignatureParams"), """
+        test("param_group_1", parse_code("(int a, b, float k)", "FunctionSignatureParams", grammar), """
             FunctionSignatureParams
                 params: List[VariableDef]
                     VariableDef
@@ -1297,7 +1302,7 @@ class module_Functions(LanguageModule):
                         value: Expression = None
             """)
         
-        test("param_group_2", parse_code("(a, b: int, k: float)", "FunctionSignatureParams"), """
+        test("param_group_2", parse_code("(a, b: int, k: float)", "FunctionSignatureParams", grammar), """
             FunctionSignatureParams
                 params: List[VariableDef]
                     VariableDef
@@ -1319,7 +1324,7 @@ class module_Functions(LanguageModule):
                         value: Expression = None
                     """)
         
-        test("function_0", parse_code("r = a + b", "Statement"), """
+        test("function_0", parse_code("r = a + b", "Statement", grammar), """
             Assignment
                 lhs: AssignmentLhs
                     AssignmentLhs
@@ -1341,7 +1346,7 @@ class module_Functions(LanguageModule):
                                 name: str = b
             """)
         
-        test("function_1", parse_code("on (int r) = min (int a, b) { r = if (a < b) then a else b }", "FunctionDef"), """
+        test("function_1", parse_code("on (int r) = min (int a, b) { r = if (a < b) then a else b }", "FunctionDef", grammar), """
             FunctionDef
                 modifier: str = on
                 results: FunctionResults
@@ -1421,8 +1426,9 @@ class module_Tests(LanguageModule):
         TestDef < Component := ">" lhs:Expression ("=>" rhs:Expression)?
         """)
 
-    def test_parser(self):
-        test("test_0", parse_code("> a", "TestDef"), """
+    def test_parser(self, compiler: Compiler):
+        grammar = compiler.grammar
+        test("test_0", parse_code("> a", "TestDef", grammar), """
             TestDef
                 lhs: Expression
                     VariableRef
@@ -1431,7 +1437,7 @@ class module_Tests(LanguageModule):
                 rhs: Expression = None
         """)
 
-        test("test_1", parse_code("> a =>", "TestDef"), """
+        test("test_1", parse_code("> a =>", "TestDef", grammar), """
             TestDef
                 lhs: Expression
                     VariableRef
@@ -1441,7 +1447,7 @@ class module_Tests(LanguageModule):
                     !!! premature end (expected rhs:Expression, got 'None' at <eof>)
         """)
 
-        test("test_2", parse_code("> a => b", "TestDef"), """
+        test("test_2", parse_code("> a => b", "TestDef", grammar), """
             TestDef
                 lhs: Expression
                     VariableRef
