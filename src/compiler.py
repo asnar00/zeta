@@ -18,7 +18,7 @@ import zero_classes as zc
 # LanguageModule collects all compilation stages (grammar, parser, resolver, etc) for some part of the language
 class LanguageModule:
     def __init__(self): pass
-    def setup_syntax(self, compiler: 'Compiler'): pass            # add grammar rules and validation functions
+    def setup_grammar(self, compiler: 'Compiler'): pass            # add grammar rules and validation functions
     def setup_validate(self, compiler: 'Compiler'): pass          # add validate methods to rule classes
     def setup_naming(self, compiler: 'Compiler'): pass            # add naming methods to rule classes
     def setup_constructors(self, compiler: 'Compiler'): pass      # add make_constructor methods to rule classes    
@@ -68,7 +68,7 @@ class Compiler:
     def add_modules(self, modules: List[LanguageModule]): self.modules.extend(modules)
     
     def setup(self):
-        for module in self.modules: module.setup_syntax(self)
+        for module in self.modules: module.setup_grammar(self)
         self.grammar.build_classes()
         for module in self.modules: module.setup(self)
 

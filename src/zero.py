@@ -142,7 +142,7 @@ def test_print_code(ast):
 # features and contexts 
 
 class module_Features(LanguageModule):
-    def setup_syntax(self, compiler: Compiler):
+    def setup_grammar(self, compiler: Compiler):
         compiler.grammar.add("""
             NameDef := name:<identifier> ("|" alias:<identifier>)?
             FeatureDef := "feature" NameDef ("extends" parent:FeatureDef&)? "{" components:Component*; "}"
@@ -259,7 +259,7 @@ class module_Features(LanguageModule):
 # Expressions
 
 class module_Expressions(LanguageModule):
-    def setup_syntax(self, compiler: Compiler):
+    def setup_grammar(self, compiler: Compiler):
         compiler.grammar.add("""
             Expression :=
             Constant < Expression := value:(<number> | <string>)
@@ -486,7 +486,6 @@ class module_Expressions(LanguageModule):
                         i_best = i
             return i_best
         
-
     def test_parser(self, compiler: Compiler):
         grammar = compiler.grammar
         test("expression_0", parse_code("1", "Expression", grammar), """
@@ -654,7 +653,7 @@ class module_Expressions(LanguageModule):
 # variables
 
 class module_Variables(LanguageModule):
-    def setup_syntax(self, compiler: Compiler):
+    def setup_grammar(self, compiler: Compiler):
         compiler.grammar.add("""
             Variable := type:Type& NameDef "=" value:Expression
             VariableDef < Component := ((type:Type& names:NameDef+,) | (names:NameDef+, ":" type:Type&)) ("=" value:Expression)?
@@ -757,7 +756,7 @@ class module_Variables(LanguageModule):
 # types
 
 class module_Types(LanguageModule):
-    def setup_syntax(self, compiler: Compiler):
+    def setup_grammar(self, compiler: Compiler):
         compiler.grammar.add("""
             Type := NameDef properties:Variable* parents:Type&* children:Type&* options:<identifier>+
             TypeDef < Component := "type" names:NameDef+, rhs:TypeRhs?
@@ -972,7 +971,7 @@ class module_Types(LanguageModule):
 # functions
 
 class module_Functions(LanguageModule):
-    def setup_syntax(self, compiler: Compiler):
+    def setup_grammar(self, compiler: Compiler):
         compiler.grammar.add("""
             Function := "_function" results:FunctionResults signature:FunctionSignature body:FunctionBody
             FunctionDef < Component := FunctionModifier results:FunctionResults? signature:FunctionSignature body:FunctionBody
@@ -1417,7 +1416,7 @@ class module_Functions(LanguageModule):
 # tests
 
 class module_Tests(LanguageModule):
-    def setup_syntax(self, compiler: Compiler):
+    def setup_grammar(self, compiler: Compiler):
         compiler.grammar.add("""
         TestDef < Component := ">" lhs:Expression ("=>" rhs:Expression)?
         """)
