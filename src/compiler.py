@@ -212,30 +212,40 @@ def visual_report(reports: List[Tuple[List[ReportItem], Callable]], code: str) -
     out = ""
     for i, line in enumerate(lines):
         log("------------------------------------------------")
-        line = highlight_line(line, i+1, reports)
+        line = highlight_line(line, i+1, reports, n_digits)
         log(line)
-        out += f"{i+1:>{n_digits}} {line}\n"
+        out += log_grey(f"{i+1:>{n_digits}} ") + f"{line}\n"
     return out
 
-def highlight_line(line: str, i_line: int, reports: List[Tuple[List[ReportItem], Callable]]) -> str:
+def highlight_line(line: str, i_line: int, reports: List[Tuple[List[ReportItem], Callable]], n_digits: int) -> str:
     matching = []
     for items, colour in reports:
         for item in items:
             loc = item.lex.location()
             if loc.i_line == i_line and item.lex.val in line:
-                matching.append((item.lex.val, loc.i_col-1, loc.i_col-1 + len(item.lex.val), colour))
+                matching.append((item, loc.i_col-1, colour))
     matching.sort(key=lambda x: x[1])
     unique = []
-    for i, (val, i_col, j_col, colour) in enumerate(matching):
-        log(val, i_col, j_col, colour.__name__)
+    preamble = ""
+    for i, (item, i_col, colour) in enumerate(matching):
+        j_col = i_col + len(item.lex.val)
+        log(item.lex.val, i_col, j_col, colour.__name__)
         if i == 0 or i_col >= unique[-1][2]:
-            unique.append((val, i_col, j_col, colour))
+            unique.append((item, i_col, j_col, colour))
+            n_chars_add = i_col - len(preamble)
+            preamble += (" " * (n_chars_add-1)) + "⏐"
         else: 
-            log("removed overlapping", val, i_col, j_col, colour.__name__)
+            log("removed overlapping", item.lex.val, i_col, j_col, colour.__name__)
     unique.sort(key=lambda x: x[1], reverse=True)
-    for i, (val, i_col, j_col, colour) in enumerate(unique):
-        log(val, i_col, j_col, colour.__name__)
+    if len(unique) == 0: return line
+
+    tags = []
+    start = " "*(n_digits+2)
+    for i, (item, i_col, j_col, colour) in enumerate(unique):
+        log(item.lex.val, i_col, j_col, colour.__name__)
         line = line[:i_col] + colour(line[i_col:j_col]) + line[j_col:]
+        tags.append(start + log_grey(preamble[0:i_col-1] + "+- " + item.msg))
+    if len(tags) > 0: line = line + "\n" + "\n".join(tags) + "\n"
     return line
         
         
