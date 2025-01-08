@@ -21,7 +21,7 @@ class LanguageModule:
     def setup_syntax(self, compiler: 'Compiler'): pass            # add grammar rules and validation functions
     def setup_validate(self, compiler: 'Compiler'): pass          # add validate methods to rule classes
     def setup_naming(self, compiler: 'Compiler'): pass            # add naming methods to rule classes
-    def setup_generate(self, compiler: 'Compiler'): pass          # add generate methods to rule classes    
+    def setup_constructors(self, compiler: 'Compiler'): pass      # add make_constructor methods to rule classes    
     def setup_scope(self, compiler: 'Compiler'): pass             # add get_scope methods to rule classes
     def setup_symbols(self, compiler: 'Compiler'): pass           # add add_symbols/resolve methods to rule classes
     def setup_check_types(self, compiler: 'Compiler'): pass       # add check_type methods to rule classes
@@ -31,7 +31,7 @@ class LanguageModule:
         self.setup_validate(compiler)
         self.setup_naming(compiler)
         self.setup_scope(compiler)
-        self.setup_generate(compiler)
+        self.setup_constructors(compiler)
         self.setup_symbols(compiler)
         self.setup_check_types(compiler)
         self.test_parser(compiler)
@@ -91,16 +91,16 @@ class Compiler:
         return ast
     
     def run_stages(self) -> bool:
-        if not self.generate_code(): return False
+        if not self.constructors(): return False
         if not self.add_symbols(): return False
         if not self.resolve_symbols(): return False
         if not self.check_types(): return False
         return True
     
-    def generate_code(self) -> bool:
-        self.stage("generate code")
-        visitor = Visitor(has_method="generate", is_ref=False, children_first=False)
-        visitor.apply(self.cp.ast, lambda e, scope, type_name: e.generate())
+    def constructors(self) -> bool:
+        self.stage("constructors")
+        visitor = Visitor(has_method="make_constructor", is_ref=False, children_first=False)
+        visitor.apply(self.cp.ast, lambda e, scope, type_name: e.make_constructor())
         return self.cp.is_ok()
 
     def add_symbols(self) -> bool:

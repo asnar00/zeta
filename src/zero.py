@@ -803,29 +803,27 @@ class module_Types(LanguageModule):
         @Entity.method(zc.Type) #Type.get_scope
         def get_scope(self) -> str: return self
 
-    def setup_generate(self, compiler: Compiler):
+    def setup_constructors(self, compiler: Compiler):
         @Entity.method(zc.TypeDef)
-        def generate(self):
+        def make_constructor(self):
             if not isinstance(self.rhs, zc.StructDef): return
-            def make_constructor(typeDef: zc.TypeDef):
-                name = typeDef.names[0].name
-                result_var = "_" + str(name)[0].lower()
-                code = f"on ({name} {result_var}) = {name}("
-                for prop in typeDef.rhs.properties:
-                    code += f"{prop.type} "
-                    for var in prop.names: code += f"{var.name}, "
-                    if code.endswith(", "): code = code[:-2]
-                    if prop.value: code += f" = {print_code_formatted(prop.value, compiler.grammar)}"
-                code += ") {"
-                for prop in typeDef.rhs.properties:
-                    for var in prop.names:
-                        code += f"{result_var}.{var.name} = {var.name}; "
-                code += "}"
-                compiler.report(self.names[0].name, f"make_constructor:{code}")
-                constructor = parse_simple(code, "FunctionDef", compiler.grammar)
-                constructor._is_constructor_for_typedef = typeDef
-                typeDef._constructor = constructor
-            make_constructor(self)
+            name = self.names[0].name
+            result_var = "_" + str(name)[0].lower()
+            code = f"on ({name} {result_var}) = {name}("
+            for prop in self.rhs.properties:
+                code += f"{prop.type} "
+                for var in prop.names: code += f"{var.name}, "
+                if code.endswith(", "): code = code[:-2]
+                if prop.value: code += f" = {print_code_formatted(prop.value, compiler.grammar)}"
+            code += ") {"
+            for prop in self.rhs.properties:
+                for var in prop.names:
+                    code += f"{result_var}.{var.name} = {var.name}; "
+            code += "}"
+            compiler.report(self.names[0].name, f"make_constructor:{code}")
+            constructor = parse_simple(code, "FunctionDef", compiler.grammar)
+            constructor._is_constructor_for_typedef = self
+            self._constructor = constructor
 
     def setup_symbols(self, compiler: Compiler):
         @Entity.method(zc.TypeDef) # TypeDef.add_symbols
