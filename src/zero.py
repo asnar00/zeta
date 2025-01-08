@@ -108,7 +108,7 @@ def test_zero():
     log_clear()
     if program.is_ok():
         log("ok")
-        log(visual_report([ (program.reports[1].items, log_orange), (program.reports[2].items, log_green)], code))
+        log(visual_report([ (program.reports[-1].items, log_orange)], code))
     else:
         log("not ok")
         log(visual_report([ (program.reports[-2].items, log_orange), (program.reports[-1].items, log_green), (program.reports[-1].errors, log_red)], code))
@@ -368,7 +368,7 @@ class module_Expressions(LanguageModule):
                 self._type = None
             else:
                 self._type = self._resolved_vars[-1].type
-                if self._type: compiler.report(self._resolved_vars[-1].name, f"{self._type}")
+                if self._type: compiler.report(self.variables[-1], f"{self._type}")
         
         @Entity.method(zc.FunctionCallVariable) # FunctionCallVariable.check_type
         def check_type(self, scope):
@@ -471,7 +471,7 @@ class module_Expressions(LanguageModule):
         def get_distances(sig_types, fc_types):
             distances = []
             for i, t in enumerate(sig_types):
-                distance = find_type_relationship(t, fc_types[i])
+                distance = t.find_relationship(fc_types[i])
                 distances.append(distance)
             return distances
 
@@ -487,21 +487,6 @@ class module_Expressions(LanguageModule):
                         i_best = i
             return i_best
         
-        def find_type_relationship(type_a: zc.Type, type_b: zc.Type) -> int|None:
-            depth = find_type_relationship_rec(type_a, type_b, 0)
-            if depth != None: return depth
-            depth = find_type_relationship_rec(type_b, type_a, 0)
-            if depth != None: return -depth
-            return None
-        
-        def find_type_relationship_rec(child: zc.Type, parent: zc.Type, depth: int) -> int|None:
-            if child == parent: return depth
-            if child.parents == None: return None
-            for p in child.parents:
-                if not isinstance(p, zc.Type): raise Exception(f"find_type_relationship_rec: {p} is not a Type")
-                result = find_type_relationship_rec(p, parent, depth + 1)
-                if result: return result
-            return None
 
     def test_parser(self):
         test("expression_0", parse_code("1", "Expression"), """
@@ -1001,7 +986,7 @@ class module_Functions(LanguageModule):
             FunctionStatements < FunctionBody := "{" statements:Statement*; "}"
             EmptyFunctionBody < FunctionBody := "pass"
             Statement := 
-            Assignment < Statement :=(lhs:AssignmentLhs)? rhs:Expression
+            Assignment < Statement := (lhs:AssignmentLhs)? rhs:Expression
             AssignmentLhs := results:ResultVariable+, assign_op:("=" | "<<") 
             ResultVariable :=
             ResultVariableDef < ResultVariable := ((type:Type& names:NameDef+,) | (names:NameDef+, ":" type:Type&))
@@ -1166,21 +1151,57 @@ class module_Functions(LanguageModule):
 
     def setup_check_types(self, compiler: Compiler):
         @Entity.method(zc.ResultVariableRef) # ResultVariableRef.check_types
-        def check_types(self, st, scope, errors): 
+        def check_type(self, scope): 
             self._type = self.variable._type
-            compiler.report(self, f"{self._type}")
+            compiler.report(get_first_lex(self), f"{self._type}")
 
         @Entity.method(zc.ResultVariableDef) # ResultVariableDef.check_types
-        def check_types(self, st, scope, errors): 
+        def check_type(self, scope): 
             self._type = self.type
-            compiler.report(self, f"{self._type}")
+            compiler.report(get_first_lex(self), f"{self._type}")
 
         @Entity.method(zc.AssignmentLhs) # AssignmentLhs.check_types
-        def check_types(self, st, scope, errors):
+        def check_type(self, scope):
             if len(self.results) == 0: self._type = None
             elif len(self.results) == 1: self._type = self.results[0]._type
             else: self._type = zc.MultipleTypes([r._type for r in self.results])
-            compiler.report(self, f"{self._type}")
+            compiler.report(get_first_lex(self), f"{self._type}")
+
+        @Entity.method(zc.Assignment) #Assignment.check_types
+        def check_type(self, scope):
+            type_a = self.lhs._type if hasattr(self.lhs, "_type") else None
+            type_b = self.rhs._type
+            if not can_assign(type_a, type_b):
+                compiler.error(get_first_lex(self), f"cannot assign {type_a} to {type_b}")
+
+        def can_assign(type_a, type_b):
+            if type_a == type_b: return True
+            if isinstance(type_a, zc.Type) and isinstance(type_b, zc.MaybeTypes):
+                distances = [type_a.find_relationship(t) for t in type_b.types]
+                if any(d is None for d in distances): return False
+                if all(isinstance(d, int) and d <= 0 for d in distances): return True
+                log_exit("can_assign " + str(type_a) + " = " + str(type_b))
+                return True
+            return False
+
+        # -ve means type_b is a child of self, +ve type_b is a parent of self, None means no relationship
+        # reminder: type_a > type_b means "every type_a is a type_b, but not every type_b is a type_a"
+        @Entity.method(zc.Type) # Type.find_relationship
+        def find_relationship(self, type_b: zc.Type) -> int|None:
+            depth = find_type_relationship_rec(self, type_b, 0)
+            if depth != None: return depth
+            depth = find_type_relationship_rec(type_b, self, 0)
+            if depth != None: return -depth
+            return None
+        
+        def find_type_relationship_rec(child: zc.Type, parent: zc.Type, depth: int) -> int|None:
+            if child == parent: return depth
+            if child.parents == None: return None
+            for p in child.parents:
+                if not isinstance(p, zc.Type): raise Exception(f"find_type_relationship_rec: {p} is not a Type")
+                result = find_type_relationship_rec(p, parent, depth + 1)
+                if result: return result
+            return None
 
     def test_parser(self):
         test("result_vars_1", parse_code("(a, b: int, k, l: float) =", "FunctionResults"), """
