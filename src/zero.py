@@ -151,7 +151,9 @@ class module_Features(LanguageModule):
         def get_scope(self): return self
 
         @Entity.method(zc.FeatureDef) # FeatureDef.can_see_scope
-        def can_see_scope(self, scope):
+        def can_see_scope(self, scope, read_only: bool):
+            if not isinstance(scope, zc.FeatureDef): return False
+            if read_only: return True
             featureDef = self
             safe_count = 100
             while True and safe_count > 0:
@@ -178,7 +180,7 @@ class module_Features(LanguageModule):
         @Entity.method(Lex) # Lex.resolve
         def resolve(self, scope, type_name):
             cls = Entity.get_class(type_name)
-            return compiler.find_symbol(self, cls, scope)
+            return compiler.find_symbol(self, cls, scope, raise_errors=True, read_only=True)
 
     def test_parser(self, compiler: Compiler):
         grammar = compiler.grammar
@@ -300,9 +302,14 @@ class module_Expressions(LanguageModule):
     def setup_symbols(self, compiler: Compiler):
         @Entity.method(zc.VariableRef) # VariableRef.resolve
         def resolve(self, scope, type_name):
+            self._resolved_vars = self.resolve_names(scope, read_only=True)
+            return self
+        
+        @Entity.method(zc.VariableRef) # VariableRef.resolve_names
+        def resolve_names(self, scope, read_only) -> List[zc.Variable]:
             resolved_vars = []
             for var in self.variables: # all Lex at this point
-                resolved_var = compiler.find_symbol(var, zc.Variable, scope, raise_errors=False)
+                resolved_var = compiler.find_symbol(var, zc.Variable, scope, raise_errors=False, read_only=read_only)
                 if resolved_var == None:
                     compiler.error(var, f"variable not found: {var}")
                     resolved_vars.append(var)
@@ -312,14 +319,13 @@ class module_Expressions(LanguageModule):
                     resolved_vars.append(resolved_var)
                     scope = resolved_var.type
                     if isinstance(scope, Lex): compiler.error(f"scope is Lex: {scope}")
-            self._resolved_vars = resolved_vars
-            return self
+            return resolved_vars
 
         @Entity.method(zc.FunctionCall) #FunctionCall.resolve
         def resolve(self, scope, type_name):
             for i, item in enumerate(self.items):
                 if isinstance(item, zc.FunctionCallWord):
-                    var = compiler.find_symbol(item.name, zc.Variable, scope, raise_errors=False)
+                    var = compiler.find_symbol(item.name, zc.Variable, scope, raise_errors=False, read_only = True)
                     if var:
                         var_ref = zc.VariableRef(variables=[item.name])
                         var_ref._resolved_vars = [var]
@@ -353,7 +359,7 @@ class module_Expressions(LanguageModule):
         @Entity.method(zc.Constant) # Constant.check_type
         def check_type(self, scope):
             type_name = "number" if self.value.type=="number" else "string"
-            self._type = compiler.find_symbol(type_name, zc.Type, scope)
+            self._type = compiler.find_symbol(type_name, zc.Type, scope, raise_errors=True, read_only=True)
             compiler.report(self.value, f"{self._type}")
         
         @Entity.method(zc.VariableRef) # VariableRef.check_type
@@ -409,7 +415,7 @@ class module_Expressions(LanguageModule):
                 if isinstance(param_type, Lex):
                     compiler.error(get_first_lex(fc), "fc_types contains a Lex type.")
                     break
-            functions = [f.element for f in compiler.cp.st.find(short_sig, zc.Function, scope)]
+            functions = [f.element for f in compiler.cp.st.find(short_sig, zc.Function, scope, read_only=True)]
             fn_types = [get_sig_param_types(f.signature) for f in functions]
             distances = [get_distances(fc_types,fn_types[i]) for i in range(len(fn_types))]
             i_best = find_best_positive_distance(distances)
@@ -799,6 +805,12 @@ class module_Types(LanguageModule):
         @Entity.method(zc.Type) #Type.get_scope
         def get_scope(self) -> str: return self
 
+        @Entity.method(zc.Type) #Type.can_see_scope
+        def can_see_scope(self, scope, read_only):
+            if read_only and isinstance(scope, zc.FeatureDef):
+                return True
+            return self == scope
+
     def setup_constructors(self, compiler: Compiler):
         @Entity.method(zc.TypeDef)
         def make_constructor(self):
@@ -826,15 +838,15 @@ class module_Types(LanguageModule):
         def add_symbols(self, scope):
             name = self.names[0]
             for name in self.names:
-                existing_type_objects = compiler.cp.st.find(name.name, zc.Type, scope)
+                existing_type_objects = compiler.cp.st.find(name.name, zc.Type, scope, read_only=False)
                 if len(existing_type_objects) == 0:
                     self._resolved_types = []
                     type_object = zc.Type(name=name.name, alias=name.alias)
-                    compiler.add_symbol(name.name, type_object, None, alias=name.alias)
+                    compiler.add_symbol(name.name, type_object, scope, alias=name.alias)
                     self._resolved_types.append(type_object)
                     if isinstance(self.rhs, zc.StructDef):
                         type_object.properties = self.rhs.properties
-                        compiler.add_symbol(name.name, self._constructor, None, alias=name.alias)
+                        compiler.add_symbol(name.name, self._constructor, scope, alias=name.alias)
                 elif len(existing_type_objects) == 1:
                     self._resolved_types.append(existing_type_objects[0].element)
                     if isinstance(self.rhs, zc.StructDef):
@@ -855,7 +867,9 @@ class module_Types(LanguageModule):
                 for child in self.rhs.children:
                     assert_parent_type(child, self._resolved_types[0])
                     compiler.report(first_lex, f"asserting that '{child.name}' is a child of '{self._resolved_types[0].name}'")
+        
         def assert_parent_type(type: zc.Type, parent: zc.Type):
+            if isinstance(type, Lex): raise Exception(f"type {type} is lex")
             if isinstance(type, str) or isinstance(parent, str): return
             if type.parents == None: type.parents = []
             if parent not in type.parents: type.parents.append(parent)
@@ -1026,12 +1040,12 @@ class module_Functions(LanguageModule):
         def get_scope(self): return self
 
         @Entity.method(zc.FunctionDef)
-        def can_see_scope(self, scope):
+        def can_see_scope(self, scope, read_only):
             if self == scope: return True
             if not isinstance(scope, zc.FeatureDef): return False
             if self._owner == scope: return True
             if self._owner == scope: return True
-            if self._owner.can_see_scope(scope): return True
+            if self._owner.can_see_scope(scope, read_only): return True
             return False
         
     def setup_symbols(self, compiler: Compiler):
@@ -1053,7 +1067,7 @@ class module_Functions(LanguageModule):
             compiler.report(first_lex, f"\"{long_handle}\" => {self} in {scope}")
             compiler.report(first_lex, f"\"{short_handle}\" => {self} in {scope}")
             self._owner = scope
-            function = compiler.find_symbol(long_handle, zc.Function, None, raise_errors=False)
+            function = compiler.find_symbol(long_handle, zc.Function, None, raise_errors=False, read_only=False)
             if function == None:
                 function = make_function(self, compiler.cp.st)
                 self._function = function
@@ -1065,6 +1079,10 @@ class module_Functions(LanguageModule):
                     add_alias_symbol(self, function, compiler.cp.st, long_handle, short_handle)
             else:
                 modify_function(self, function, compiler.cp.st)
+
+        @Entity.method(zc.ResultVariableRef)  # ResultVariableRef.resolve
+        def resolve(self, scope, type_name):
+            self.variable._resolved_vars = self.variable.resolve_names(scope, read_only=False)
 
         def get_first_name(signature: zc.FunctionSignature) -> str:
             for e in signature.elements:

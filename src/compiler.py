@@ -134,6 +134,7 @@ class Compiler:
 
     def stage(self, name: str): 
         self.cp.reports.append(Report(name))
+
     def report(self, lex: Lex, msg: str): 
         if not isinstance(lex, Lex): raise ValueError(f"lex is not a Lex: {lex}")
         self.cp.reports[-1].items.append(ReportItem(lex, msg))
@@ -152,9 +153,9 @@ class Compiler:
         if alias: self.report(alias, f"{e} in {scope}")
 
     # resolve a symbol name; called by resolve
-    def find_symbol(self, name: Lex, of_type: Any, scope: Any, raise_errors: bool=True) -> Any:
+    def find_symbol(self, name: Lex, of_type: Any, scope: Any, raise_errors: bool, read_only: bool) -> Any:
         if isinstance(name, of_type): return name # already matched
-        found = self.cp.st.find(name, of_type, scope)
+        found = self.cp.st.find(name, of_type, scope, read_only)
         if len(found) == 1:
             if isinstance(name, Lex):self.report(name, f"{found[0].element} in {scope}")
             return found[0].element
@@ -163,7 +164,7 @@ class Compiler:
         else:
             if raise_errors: self.error(name, f"no {of_type.__name__} in {scope}, {caller()}")
         return None
-
+    
 #--------------------------------------------------------------------------------------------------
 # Report holds log of everything that happened in a compilation stage
 
@@ -209,7 +210,7 @@ class Report:
 # visual output of errors/reports
 
 def visual_report_from_stage(stage: Report, code: str) -> str:
-    out = "----------------------------------------------------------------\n"
+    out = "------------------------------------------------------------------------------------\n"
     out += "output from stage: \"" + stage.name + "\"\n"
     if len(stage.errors) > 0: out += log_red(f"({len(stage.errors)} errors)")
     else: out += log_green("(no errors)")

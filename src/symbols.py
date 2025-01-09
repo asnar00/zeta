@@ -62,18 +62,19 @@ class SymbolTable:
                 break
         list.insert(0, item)
 
-    def find(self, name: str|Lex, of_type: Any|None, scope: Any|None) -> List[SymbolItem]:
+    def find(self, name: str|Lex, of_type: Any|None, scope: Any|None, read_only: bool) -> List[SymbolItem]:
         if isinstance(name, Lex): name = name.val
-        if not name in self.symbols: return []
-        result= [item for item in self.symbols[name] if self.scope_can_see(scope, item.scope)]
+        if not name in self.symbols:
+            return []
+        result= [item for item in self.symbols[name] if self.scope_can_see(scope, item.scope, read_only)]
         if of_type is not None:
             result = [item for item in result if isinstance(item.element, of_type)]
         return result
     
-    def scope_can_see(self, scope1: Any, scope2: Any) -> bool:
+    def scope_can_see(self, scope1: Any, scope2: Any, read_only: bool) -> bool:
         if scope1 is None or scope2 is None: return True
         if hasattr(scope1, "can_see_scope"):
-            return scope1.can_see_scope(scope2)
+            return scope1.can_see_scope(scope2, read_only)
         return scope1 == scope2
     
     def dbg(self) -> str:
