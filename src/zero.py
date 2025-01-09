@@ -308,10 +308,10 @@ class module_Expressions(LanguageModule):
                     resolved_vars.append(var)
                     return self
                 else:
+                    compiler.report(var, f"{resolved_var} in {scope}")
                     resolved_vars.append(resolved_var)
                     scope = resolved_var.type
                     if isinstance(scope, Lex): compiler.error(f"scope is Lex: {scope}")
-            compiler.report(self.variables[0], f"var {resolved_vars}")
             self._resolved_vars = resolved_vars
             return self
 
@@ -360,9 +360,11 @@ class module_Expressions(LanguageModule):
         def check_type(self, scope):
             if not hasattr(self, "_resolved_vars"):
                 self._type = None
+                compiler.error(self.variables[0], f"variable not resolved")
             else:
+                for i, var in enumerate(self._resolved_vars):
+                    compiler.report(self.variables[i], f"{var.type}")
                 self._type = self._resolved_vars[-1].type
-                if self._type: compiler.report(self.variables[-1], f"{self._type}")
         
         @Entity.method(zc.FunctionCallVariable) # FunctionCallVariable.check_type
         def check_type(self, scope):

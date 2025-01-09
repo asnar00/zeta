@@ -2,7 +2,22 @@
 # scribblez
 "slow is smooth, smooth is fast"
 
+need to figure out the following:
 
+what are the rules for what scope things get defined in?
+eg. if a VarDef is in scope X, then the Var it defines should also be in X.
+but if a TypeDef/FunctionDef is in X, then the Type/Function is defined in global scope.
+same for feature-scope variables; they are visible from anywhere.
+
+I propose the following rule:
+- if something is defined in feature X, it can be read from anywhere but only modified from X/children.
+
+so type u8 is defined in backend, and can be seen anywhere, but only modified in a subfeature of backend. same with functions; you can call them from anywhere, but you can only extend or modify them from a child of the feature they were defined in.
+
+I think this works for everything.
+
+
+----
 Next step: let's clean up the reports from each stage.
 - make sure no scopes are "None" => types, functions, etc
 - separate stage reports properly (embracket/split)
