@@ -94,6 +94,7 @@ class Compiler:
         if not self.constructors(): return False
         if not self.add_symbols(): return False
         if not self.resolve_symbols(): return False
+        if not self.embracket(): return False
         if not self.check_types(): return False
         return True
     
@@ -116,10 +117,14 @@ class Compiler:
         visitor.apply(self.cp.ast, lambda e, scope, type_name: e.resolve(scope, type_name)) 
         return self.cp.is_ok()
     
-    def check_types(self) -> bool:
-        self.stage("check types")
+    def embracket(self) -> bool:
+        self.stage("embracket")
         visitor = Visitor(has_method="embracket", is_ref=False, children_first=False)
         visitor.apply(self.cp.ast, lambda e, scope, type_name: e.embracket())
+        return self.cp.is_ok()
+    
+    def check_types(self) -> bool:
+        self.stage("check types")
         visitor = Visitor("check_type", is_ref=False, children_first=True)
         visitor.apply(self.cp.ast, lambda e, scope, type_name: e.check_type(scope))
         return self.cp.is_ok()
@@ -210,7 +215,6 @@ def visual_report_from_stage(stage: Report, code: str) -> str:
     else: out += log_green("(no errors)")
     out += "\n\n"
     out += visual_report([(stage.items, log_green), (stage.errors, log_red)], code)
-    out += "\n---------------------------------------------------------------------\n"
     return out
 
 # given pairs of (report, log_colour), return highlighted code
@@ -253,7 +257,10 @@ def highlight_line(line: str, i_line: int, reports: List[Tuple[List[ReportItem],
     for i, (item, i_col, j_col, colour) in enumerate(unique):
         log(item.lex.val, i_col, j_col, colour.__name__)
         line = line[:i_col] + colour(line[i_col:j_col]) + line[j_col:]
-        tags.append(start + log_grey(preamble[0:i_col-1] + "+- " + item.msg))
+        msg = item.msg
+        if colour.__name__ == "log_red": msg = log_red(msg) 
+        else: msg = log_grey(msg)
+        tags.append(start + log_grey(preamble[0:i_col-1] + "+- ") + msg)
     if len(tags) > 0: line = line + "\n" + "\n".join(tags) + "\n"
     return line
         

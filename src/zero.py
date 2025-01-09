@@ -106,7 +106,8 @@ def test_zero():
     code = s_test_program
     program = compiler.compile(code)
     log_clear()
-    log(visual_report_from_stage(program.reports[-1], code))
+    for stage in program.reports:
+        log(visual_report_from_stage(stage, code))
 
 #--------------------------------------------------------------------------------------------------
 # print ast as nicely formatted code

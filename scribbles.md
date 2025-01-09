@@ -3,7 +3,15 @@
 "slow is smooth, smooth is fast"
 
 
-Okay so visual feedback works nicely! Let
+Next step: let's clean up the reports from each stage.
+- make sure no scopes are "None" => types, functions, etc
+- separate stage reports properly (embracket/split)
+- make v.x report "v" and "x" properly
+- get some tests going so we can catch regressions easily
+- exercise the error pathways as well
+
+Then on to code generation!
+
 -----
 
 actually no: we are going to do the visual feedback, we're just going to make it work.
