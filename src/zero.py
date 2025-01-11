@@ -3,9 +3,11 @@
 # author: asnaroo
 # zero to anything
 
-from compiler import *
+from .compiler import *
 from copy import deepcopy
-import zero_classes as zc
+from src import zero_classes as zc
+from src.backends import *
+from src.backends.python import *
 import re
 
 #--------------------------------------------------------------------------------------------------
@@ -108,6 +110,9 @@ def test_zero():
     log_clear()
     for stage in program.reports:
         log(visual_report_from_stage(stage, code))
+    config = BackendConfig()
+    backend = PythonBackend()
+    backend.generate(program, config)
 
 #--------------------------------------------------------------------------------------------------
 # print ast as nicely formatted code
@@ -1194,7 +1199,7 @@ class module_Functions(LanguageModule):
                 distances = [type_a.find_relationship(t) for t in type_b.types]
                 if any(d is None for d in distances): return False
                 if all(isinstance(d, int) and d <= 0 for d in distances): return True
-                log_exit("can_assign " + str(type_a) + " = " + str(type_b))
+                log_exit("not implemented: can_assign " + str(type_a) + " = " + str(type_b))
                 return True
             return False
 

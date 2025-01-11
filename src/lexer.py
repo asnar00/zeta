@@ -3,7 +3,7 @@
 # author: asnaroo
 # zero to anything
 
-from util import *
+from src.util import *
 from typing import List, Dict, Tuple, Union
 import json
 

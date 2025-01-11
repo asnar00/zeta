@@ -5,10 +5,10 @@
 
 from typing import List, Type, Tuple, Dict, Callable, TypeVar
 T = TypeVar('T')
-from util import *
+from src.util import *
 from typing import get_type_hints
-from lexer import Lex
-from entity import Entity
+from src.lexer import Lex
+from src.entity import Entity
 import importlib
 
 #--------------------------------------------------------------------------------------------------

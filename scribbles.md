@@ -2,6 +2,38 @@
 # scribblez
 "slow is smooth, smooth is fast"
 
+shall we think a bit about code-generation?
+to do this we need:
+1- concrete type assignment to all abstract types
+2- backend class definition
+3- spit out some code
+
+structure wise, each backend is going in its own py file. we're going to put them into the same folder for the moment.
+but let's see how to handle this actually.
+
+-----
+
+Possible things to do next:
+1- if/then: my preferred form is "a if cond else b"; and I think that's an expression type.
+2- separate assignment from push-chain, so we want to do "a << b << c .. cond"
+3- we want array notations for things; I like the unification of string and array, but we definitely need [] something, because we want to to build them.
+4- but we also super need to actually generate some python code. zeta.py
+
+So I think the first order of business is to generate python code.
+Let's do that today at soho house berlin.
+-----
+
+Fixed the scope visibility thing. Now everything (except FeatureDefs) are scoped to the feature they got declared in. FeatureDefs still have scope None; which we should probably replace with some kind of Context or Global scope, we'll see how that works out when we get into multiple contexts etc.
+
+On that subject, some thoughts:
+
+Context = a set of Features that are enabled, and values for their Feature-scope variables. I.e. it's a saved state plus some behaviour, not at all dissimilar to an object.
+
+However, we want to be able to spread a Context across multiple physical Devices (which seems like a good enough name for a hardware unit, including a GPU), and there's obviously such a thing as a Cluster (a Cluster is a Device, discuss...).
+
+A running Context can obviousy be spread out over a Cluster. So Clusters are trees, really, and they have to communicate. The bit that's interesting is the part that specifies which data and functions of the Context live on which Device/Cluster (and of course which concrete types are used for which abstract ones).
+--------
+
 need to figure out the following:
 
 what are the rules for what scope things get defined in?

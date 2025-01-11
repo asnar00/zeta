@@ -4,11 +4,11 @@
 # zero to anything
 
 from typing import Type, Dict, Any, List, Set
-from grammar import Entity, Grammar
-from entity import dbg_entity
-from parser import print_code_formatted
-from util import *
-from lexer import Lex
+from src.grammar import Entity, Grammar
+from src.entity import dbg_entity
+from src.parser import print_code_formatted
+from src.util import *
+from src.lexer import Lex
 
 #--------------------------------------------------------------------------------------------------
 # symbol tables and that
@@ -70,6 +70,16 @@ class SymbolTable:
         if of_type is not None:
             result = [item for item in result if isinstance(item.element, of_type)]
         return result
+    
+    def objects_of_type(self, of_type: Any, scope: Any|None=None, read_only: bool=True) -> List[Any]:
+        results = []
+        for name, items in self.symbols.items():
+            for item in items:
+                if isinstance(item.element, of_type):
+                    if scope is None or self.scope_can_see(scope, item.scope, read_only):
+                        if not item.element in results:
+                            results.append(item.element)
+        return results
     
     def scope_can_see(self, scope1: Any, scope2: Any, read_only: bool) -> bool:
         if scope1 is None or scope2 is None: return True

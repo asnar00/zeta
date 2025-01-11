@@ -4,13 +4,13 @@
 # zero to anything
 
 from typing import List
-from util import *
-from lexer import *
-from grammar import *
-from entity import *
-from parser import *
-from symbols import *
-import zero_classes as zc
+from src.util import *
+from src.lexer import *
+from src.grammar import *
+from src.entity import *
+from src.parser import *
+from src.symbols import *
+from src import zero_classes as zc
 
 #--------------------------------------------------------------------------------------------------
 # modular language definition; so we can add a bit at a time
@@ -157,7 +157,8 @@ class Compiler:
         if isinstance(name, of_type): return name # already matched
         found = self.cp.st.find(name, of_type, scope, read_only)
         if len(found) == 1:
-            if isinstance(name, Lex):self.report(name, f"{found[0].element} in {scope}")
+            if isinstance(name, Lex):
+                self.report(name, f"{found[0].element} in {found[0].scope}")
             return found[0].element
         elif len(found) > 1:
             if raise_errors: self.error(name, f"multiple matches in {scope}")
