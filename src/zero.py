@@ -112,7 +112,7 @@ def test_zero():
         log(visual_report_from_stage(stage, code))
     config = BackendConfig()
     backend = PythonBackend()
-    #backend.generate(program, config)
+    backend.generate(program, config)
 
 #--------------------------------------------------------------------------------------------------
 # print ast as nicely formatted code
