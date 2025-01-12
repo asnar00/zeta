@@ -10,7 +10,7 @@ from src.lexer import *
 #--------------------------------------------------------------------------------------------------
 # Entity is the base class for all AST Nodes
 
-# Entity is the base class; all entities have a name and an alias
+# Entity is the base class
 class Entity:
     class_defs = {}                    # class name => text class definition (init method only)
     class_types = {}                   # class.attribute => type
@@ -35,7 +35,11 @@ class Entity:
                     if name: return name
         return ".."
     
+    #----------------------------------------------------------------------------------------------
+    # class building
+    
     @staticmethod
+    # given a class name, parent and list of typed attributes, build a class definition
     def build_class(name: str, parent: str, attributes: Dict[str, str]):
         if not parent: parent = "Entity"
         names = attributes.keys()
@@ -57,6 +61,7 @@ class Entity:
         Entity.class_defs[name] = class_def
 
     @staticmethod
+    # write all classe definitions to a text file
     def write_classes(path: str):
         preamble = log_deindent(f"""
             # ᕦ(ツ)ᕤ
@@ -81,14 +86,15 @@ class Entity:
         return Entity.class_types[key]
     
     @staticmethod
+    # given a class name, return the class
     def get_class(class_name: str) -> Type:
         class_name = class_name.replace("&", "")
         if class_name not in Entity.classes:
             raise Exception(f"can't find class {class_name}")
         return Entity.classes[class_name]
     
-    # add method to class (general)
     @staticmethod
+    # add method to class
     def method(cls: Type[T], method_name: str="") -> Callable:
         def decorator(func: Callable) -> Callable:
             class_name = cls.__name__
@@ -101,22 +107,9 @@ class Entity:
             # Important: return the original function or method
             return method
         return decorator
-
-#--------------------------------------------------------------------------------------------------
-# Error represents something that went wrong
-class Error:
-    def __init__(self, message: str, expected: str, got: str, at: str):
-        self.message = message
-        self.expected = expected
-        self.got = got
-        self.at = at
-    def __str__(self):
-        expected = f"(expected {self.expected}, got '{self.got}'" if self.expected else ""
-        return f"!!! {self.message} {expected} at {self.at})"
-    def __repr__(self): return self.__str__()
-
-#-----------------------------------------------------------------------------------------------------------------------
-# print out an Entity tree
+    
+#----------------------------------------------------------------------------------------------
+# debugging 
 
 # detailed printout of every property of an entity
 def dbg_entity(e: Entity|List[Entity], indent: int=0) ->str:
@@ -161,7 +154,6 @@ def dbg_entity(e: Entity|List[Entity], indent: int=0) ->str:
 #-----------------------------------------------------------------------------------------------------------------------
 # misc functions to help with entity stuff: these should probably go somewhere else, maybe in a new ast.py?
 
-
 def get_first_lex(e: Entity|Lex) -> Lex:
     if isinstance(e, str): return Lex(source=None, pos=0, val=e, type=None)
     if isinstance(e, Lex): return e
@@ -194,6 +186,20 @@ def get_last_lex(e: Entity|Lex) -> Lex:
                 lex = get_first_lex(val)
                 if lex: return lex
     return None
+
+#--------------------------------------------------------------------------------------------------
+# Error represents something that went wrong during parsing
+
+class Error:
+    def __init__(self, message: str, expected: str, got: str, at: str):
+        self.message = message
+        self.expected = expected
+        self.got = got
+        self.at = at
+    def __str__(self):
+        expected = f"(expected {self.expected}, got '{self.got}'" if self.expected else ""
+        return f"!!! {self.message} {expected} at {self.at})"
+    def __repr__(self): return self.__str__()
 
 #--------------------------------------------------------------------------------------------------
 # visitor runs across the tree in specified order, calling method on each matching entity
