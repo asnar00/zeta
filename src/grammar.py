@@ -97,7 +97,7 @@ class Grammar:
                 self.build_rule(rule)
         for rule in self.new_rules:
             self.connect_parent(rule)
-        compute_meta_stuff(self)
+        self.compute_meta_stuff()
 
     def build_rule(self, rule: Rule):
         if rule.rhs == "": self.build_abstract_rule(rule)
@@ -207,7 +207,7 @@ class Grammar:
         log("rule:", rule.dbg())
         for term in rule.terms:
             if term.var:
-                attribute_type = get_attribute_type(term, self)
+                attribute_type = self.get_attribute_type(term)
                 if term.var in attributes:
                     if not (attribute_type in attributes[term.var]):
                         attributes[term.var] += " | " + attribute_type
@@ -219,6 +219,268 @@ class Grammar:
             elif not term.is_keyword():
                 raise Exception(f"unnamed non-rule type")
         return attributes
+    
+    #-----------------------------------------------------------------------------------
+    # second-order grammar properties
+
+    # check that the following assumptions made by the parser are true:
+    # 1- all referred to rules actually exist
+    # 2- any unbound list terms are the only variable term in the rule
+    # 3- a term's values are all the same type ("keyword", <type>, or rule)
+
+    def get_errors(self) -> str:
+        out = ""
+        for rule in self.rules:
+            unbound_list_terms = []
+            variable_terms = []
+            for i_term, term in enumerate(rule.terms):
+                # 1- check referred-to-rules exist
+                for val in term.vals:
+                    if val[0] and not (val[0] in '"<'):
+                        if not (val in self.rule_named):
+                            out += f"term {i_term} of {rule.name}: can't find referred-to rule '{val}'\n"
+                # 2- is the term unbound, and has '+' or '*'?
+                if term.dec and (term.dec in "*+") and not term.var:
+                    unbound_list_terms.append(term)
+                # 2.1- is the term a variable term? (i.e. contains identifier or rule)
+                if len(term.vals) > 0 and term.vals[0][0] != '"':
+                    variable_terms.append(term)
+                # 3- are all the term's values the same type?
+                n_keywords = 0; n_types =0; n_rules =0
+                for val in term.vals:
+                    if val[0] == '"': n_keywords += 1
+                    elif val[0] == "<": n_types += 1
+                    else: n_rules += 1
+                n_vals = len(term.vals)
+                ok = (n_keywords == n_vals) or (n_types == n_vals) or (n_rules == n_vals)
+                if not ok:
+                    out += f"term {i_term} of {rule.name}: values are mixed types\n" 
+            if len(unbound_list_terms) > 0 and len(variable_terms) > 1:
+                out += f"rule {rule.name} has unbound list terms: {str(unbound_list_terms).replace('[', '').replace(']', '')}\n"
+        return out
+
+
+    # computes the initiators and followers for each rule and term
+    def compute_meta_stuff(self):
+        self.compute_complexity()
+        done = False
+        while not done: done = not (self.compute_initials())
+        done = False
+        while not done: done = not (self.compute_followers())
+        self.finish_compute_followers()
+        done = False
+        while not done: done = not (self.compute_leaves())
+        self.sort_leaves_by_complexity()
+        self.compute_indices()
+        self.compute_nested_separators()
+
+    def compute_initials(self) -> bool:
+        changed = False
+        # all keyword terms get their initials = vals
+        for rule in self.rules:
+            for term in rule.terms:
+                if term.is_keyword(): term.initials = term.vals
+        # first find the first keyword in each rule
+        for rule in self.rules:
+            for term in rule.terms:
+                if term.is_keyword():
+                    changed = merge_arrays(rule.initials, term.vals) or changed
+                if not term.dec or term.dec == '+':
+                    break
+        # now apply this transitively to the terms:
+        # if a term is a bunch of rules, that term's initials come from those rules
+        for rule in self.rules:
+            for term in rule.terms:
+                if term.is_rule():
+                    for sub_rule in term.rules(self):
+                        changed = merge_arrays(term.initials, sub_rule.initials) or changed
+        # and finally skim the first term's initials into the parent rule
+        for rule in self.rules:
+            for term in rule.terms:
+                changed = merge_arrays(rule.initials, term.initials) or changed
+                if not term.dec or term.dec == '+':
+                    break
+        return changed
+
+
+    def push_followers_downwards(self, term, followers, changed) -> bool:
+        if not term.is_rule(): return changed
+        for sub_rule in term.rules(self):
+            filtered_followers = [f for f in followers if f not in sub_rule.initials]
+            changed = merge_arrays(sub_rule.followers, filtered_followers) or changed
+        return changed
+
+    def compute_followers(self) -> bool:
+        changed = False
+        # set term and rule followers using initials of the next term
+        check_term = None
+        for rule in self.rules:
+            for i_term, term in enumerate(rule.terms):
+                if term.is_terminal() and term.dec == "": continue
+                if (i_term + 1) < len(rule.terms):
+                    next_term = rule.terms[i_term+1]
+                    next_initials = next_term.initials
+                    changed = merge_arrays(term.followers, next_initials) or changed
+                    changed = self.push_followers_downwards(term, next_initials, changed)
+                    if next_term.dec and (i_term + 2) < len(rule.terms):
+                        next_next_initials = rule.terms[i_term+2].initials
+                        changed = merge_arrays(term.followers, next_next_initials) or changed
+                        changed = self.push_followers_downwards(term, next_next_initials, changed)
+
+        # for the last term in each rule, set its followers to the followers of its rule
+        for rule in self.rules:
+            if len(rule.terms) == 0: continue
+            last_term = rule.terms[-1]
+            changed = merge_arrays(last_term.followers, rule.followers)
+            if last_term.is_rule():
+                changed = self.push_followers_downwards(last_term, rule.followers, changed)
+            if last_term.dec and last_term.dec in '?*' and len(rule.terms)>1:
+                second_last_term = rule.terms[-2]
+                changed = merge_arrays(second_last_term.followers, rule.followers)
+                if second_last_term.is_rule():
+                    changed = self.push_followers_downwards(second_last_term, rule.followers, changed)    
+        return changed
+
+    def finish_compute_followers(self):
+        for rule in self.rules:
+            for term in rule.terms:
+                term.followers = [f for f in term.followers if f not in term.initials]
+
+    # compute leaves: for each rule, find {terminal => [rule]}
+    def compute_leaves(self) -> bool:
+        changed = False
+        for rule in self.rules:
+            if len(rule.terms) == 0: continue
+            term = rule.terms[0]
+            if term.is_terminal():
+                for val in term.vals:
+                    changed = merge_dicts(rule.leaves, { val : [rule] }) or changed
+        # now transfer those to terms
+        for rule in self.rules:
+            for term in rule.terms:
+                if term.is_rule():
+                    for sub_rule in term.rules(self):
+                        for val in sub_rule.leaves.keys():
+                            changed = merge_dicts(term.leaves, { val : [sub_rule] }) or changed             
+        # and then back to the rules
+        for rule in self.rules:
+            if len(rule.terms) == 0: continue
+            term = rule.terms[0]
+            if term.is_rule():
+                changed = merge_dicts(rule.leaves, term.leaves) or changed
+        return changed
+
+    def sort_leaves_by_complexity(self):
+        for rule in self.rules:
+            for term in rule.terms:
+                if not term.is_rule(): continue
+                keyword_leaves = [] 
+                type_leaves = []
+                # first sort the individual rules within each list by complexity
+                for key, rule_list in term.leaves.items():
+                    rule_list.sort(key=lambda x: x.complexity, reverse=True)
+                    term.leaves[key] = rule_list
+                    if key.startswith('"'): keyword_leaves.append((key, rule_list))
+                    else: type_leaves.append((key, rule_list))
+                term.leaves = {}
+                for k in keyword_leaves: term.leaves[k[0]] = k[1]
+                for t in type_leaves: term.leaves[t[0]] = t[1]
+                    
+    # compute indices
+    def compute_indices(self):
+        for rule in self.rules:
+            for i_term, term in enumerate(rule.terms):
+                term.rule = rule
+                term.index = i_term
+
+    # computes all nested-separators
+    def compute_nested_separators(self):
+        for rule in self.rules:
+            for term in rule.terms:
+                found_terms = self.contains_nested_separator(term)
+                if len(found_terms) > 0:
+                    #log(f"rule {rule.name}: term {term.index} has nested separator {term.sep}")
+                    term.contains_nested_sep = True
+
+    # checks a term to see if it has one or more nested separators
+    def contains_nested_separator(self, term) -> List[Entity]:
+        if term.sep == "": return []
+        visited = {}   # map Rule.name => bool
+        if not term.is_rule(): return []
+        # returns True if the rule, or any reachable sub-rule, contains the separator outside of braces ("{}()")
+        def check_nested_separator(rule, visited, sep: str) -> List[Term]:
+            if rule.name in visited: return []
+            visited[rule.name] = False
+            in_braces = False
+            found_terms = []
+            for term in rule.terms:
+                if not in_braces:
+                    if term.sep == sep:
+                        found_terms.append(term)
+                    if term.is_rule():
+                        for sub_rule in term.rules(self):
+                            new_terms= check_nested_separator(sub_rule, visited, sep)
+                            found_terms += new_terms
+                if term.is_keyword() and term.is_singular():
+                    val = term.vals[0][1:-1]
+                    if val in "{(" : in_braces = True
+                    elif val in "})": in_braces = False
+
+            visited[rule.name] = found_terms
+            return found_terms
+
+        all_sub_terms_found = []
+        for sub_rule in term.rules(self):
+            if sub_rule.name in visited: continue
+            sub_terms_found = check_nested_separator(sub_rule, visited, term.sep)
+            all_sub_terms_found += sub_terms_found
+        return all_sub_terms_found
+
+    def compute_complexity(self):
+        visited = {}
+        def compute_complexity_rec(rule, visited: Dict[Rule, int]) -> int:
+            if rule.name in visited: return visited[rule.name]
+            sum = len(rule.terms)
+            visited[rule.name] = sum
+            for term in rule.terms:
+                if term.is_rule():
+                    for sub_rule in term.rules(self):
+                        term_complexity = compute_complexity_rec(sub_rule, visited)
+                        if term.dec != "": term_complexity *= 2
+                        sum += term_complexity
+                else:
+                    term_complexity = 1
+                    if term.dec != "": term_complexity *= 2
+                    sum += term_complexity
+            visited[rule.name] = sum
+            return sum
+        for rule in self.rules:
+            rule.complexity = compute_complexity_rec(rule, visited)
+
+
+    # returns a list of all rules referred to by (rule)
+    def find_rules(self, rule_names: List[str]):
+        rules = []
+        for rule in self.rules:
+            if rule.name.replace("_", "") in rule_names:
+                rules.append(rule)
+        return rules
+
+    # returns a type string for a term
+    def get_attribute_type(self, term) -> str:
+        vb = term.var == "modifier"
+        type_name = ""
+        if vb: log(term.vals)
+        if term.is_keyword() and len(term.vals) > 1:
+            type_name = "str"
+        elif term.is_type():
+            if term.ref: type_name = term.ref + "&"
+            else: type_name = "str"
+        elif term.is_rule():
+            type_name = "|".join([rule.name for rule in term.rules(self)])
+        if term.dec != "" and term.dec in "*+":
+            type_name = f"List[{type_name}]"
+        return type_name
 
 #--------------------------------------------------------------------------------------------------
 # helpers
@@ -285,242 +547,6 @@ def remove_duplicate_terms(terms: List[Term]) -> List[Term]:
         if not already_there: out.append(term)
     return out
 
-#--------------------------------------------------------------------------------------------------
-# second-order grammar properties
-
-# check that the following assumptions made by the parser are true:
-# 1- all referred to rules actually exist
-# 2- any unbound list terms are the only variable term in the rule
-# 3- a term's values are all the same type ("keyword", <type>, or rule)
-
-def get_errors(grammar: Grammar) -> str:
-    out = ""
-    for rule in grammar.rules:
-        unbound_list_terms = []
-        variable_terms = []
-        for i_term, term in enumerate(rule.terms):
-            # 1- check referred-to-rules exist
-            for val in term.vals:
-                if val[0] and not (val[0] in '"<'):
-                    if not (val in grammar.rule_named):
-                        out += f"term {i_term} of {rule.name}: can't find referred-to rule '{val}'\n"
-            # 2- is the term unbound, and has '+' or '*'?
-            if term.dec and (term.dec in "*+") and not term.var:
-                unbound_list_terms.append(term)
-            # 2.1- is the term a variable term? (i.e. contains identifier or rule)
-            if len(term.vals) > 0 and term.vals[0][0] != '"':
-                variable_terms.append(term)
-            # 3- are all the term's values the same type?
-            n_keywords = 0; n_types =0; n_rules =0
-            for val in term.vals:
-                if val[0] == '"': n_keywords += 1
-                elif val[0] == "<": n_types += 1
-                else: n_rules += 1
-            n_vals = len(term.vals)
-            ok = (n_keywords == n_vals) or (n_types == n_vals) or (n_rules == n_vals)
-            if not ok:
-                out += f"term {i_term} of {rule.name}: values are mixed types\n" 
-        if len(unbound_list_terms) > 0 and len(variable_terms) > 1:
-            out += f"rule {rule.name} has unbound list terms: {str(unbound_list_terms).replace("[", "").replace("]", "")}\n"
-    return out
-
-
-# computes the initiators and followers for each rule and term
-def compute_meta_stuff(grammar: Grammar):
-    compute_complexity(grammar)
-    done = False
-    while not done: done = not (compute_initials(grammar))
-    done = False
-    while not done: done = not (compute_followers(grammar))
-    finish_compute_followers(grammar)
-    done = False
-    while not done: done = not (compute_leaves(grammar))
-    sort_leaves_by_complexity(grammar)
-    compute_indices(grammar)
-    compute_nested_separators(grammar)
-
-def compute_initials(grammar: Grammar) -> bool:
-    changed = False
-    # all keyword terms get their initials = vals
-    for rule in grammar.rules:
-        for term in rule.terms:
-            if term.is_keyword(): term.initials = term.vals
-    # first find the first keyword in each rule
-    for rule in grammar.rules:
-        for term in rule.terms:
-            if term.is_keyword():
-                changed = merge_arrays(rule.initials, term.vals) or changed
-            if not term.dec or term.dec == '+':
-                break
-    # now apply this transitively to the terms:
-    # if a term is a bunch of rules, that term's initials come from those rules
-    for rule in grammar.rules:
-        for term in rule.terms:
-            if term.is_rule():
-                for sub_rule in term.rules(grammar):
-                    changed = merge_arrays(term.initials, sub_rule.initials) or changed
-    # and finally skim the first term's initials into the parent rule
-    for rule in grammar.rules:
-        for term in rule.terms:
-            changed = merge_arrays(rule.initials, term.initials) or changed
-            if not term.dec or term.dec == '+':
-                break
-    return changed
-
-
-def push_followers_downwards(term, grammar: Grammar, followers, changed) -> bool:
-    if not term.is_rule(): return changed
-    for sub_rule in term.rules(grammar):
-        filtered_followers = [f for f in followers if f not in sub_rule.initials]
-        changed = merge_arrays(sub_rule.followers, filtered_followers) or changed
-    return changed
-
-def compute_followers(grammar: Grammar) -> bool:
-    changed = False
-    # set term and rule followers using initials of the next term
-    check_term = None
-    for rule in grammar.rules:
-        for i_term, term in enumerate(rule.terms):
-            if term.is_terminal() and term.dec == "": continue
-            if (i_term + 1) < len(rule.terms):
-                next_term = rule.terms[i_term+1]
-                next_initials = next_term.initials
-                changed = merge_arrays(term.followers, next_initials) or changed
-                changed = push_followers_downwards(term, grammar, next_initials, changed)
-                if next_term.dec and (i_term + 2) < len(rule.terms):
-                    next_next_initials = rule.terms[i_term+2].initials
-                    changed = merge_arrays(term.followers, next_next_initials) or changed
-                    changed = push_followers_downwards(term, grammar, next_next_initials, changed)
-
-    # for the last term in each rule, set its followers to the followers of its rule
-    for rule in grammar.rules:
-        if len(rule.terms) == 0: continue
-        last_term = rule.terms[-1]
-        changed = merge_arrays(last_term.followers, rule.followers)
-        if last_term.is_rule():
-            changed = push_followers_downwards(last_term, grammar, rule.followers, changed)
-        if last_term.dec and last_term.dec in '?*' and len(rule.terms)>1:
-            second_last_term = rule.terms[-2]
-            changed = merge_arrays(second_last_term.followers, rule.followers)
-            if second_last_term.is_rule():
-                changed = push_followers_downwards(second_last_term, grammar, rule.followers, changed)    
-    return changed
-
-def finish_compute_followers(grammar: Grammar):
-    for rule in grammar.rules:
-        for term in rule.terms:
-            term.followers = [f for f in term.followers if f not in term.initials]
-
-# compute leaves: for each rule, find {terminal => [rule]}
-def compute_leaves(grammar: Grammar) -> bool:
-    changed = False
-    for rule in grammar.rules:
-        if len(rule.terms) == 0: continue
-        term = rule.terms[0]
-        if term.is_terminal():
-            for val in term.vals:
-                changed = merge_dicts(rule.leaves, { val : [rule] }) or changed
-    # now transfer those to terms
-    for rule in grammar.rules:
-        for term in rule.terms:
-            if term.is_rule():
-                for sub_rule in term.rules(grammar):
-                    for val in sub_rule.leaves.keys():
-                        changed = merge_dicts(term.leaves, { val : [sub_rule] }) or changed             
-    # and then back to the rules
-    for rule in grammar.rules:
-        if len(rule.terms) == 0: continue
-        term = rule.terms[0]
-        if term.is_rule():
-            changed = merge_dicts(rule.leaves, term.leaves) or changed
-    return changed
-
-def sort_leaves_by_complexity(grammar: Grammar):
-    for rule in grammar.rules:
-        for term in rule.terms:
-            if not term.is_rule(): continue
-            keyword_leaves = [] 
-            type_leaves = []
-            # first sort the individual rules within each list by complexity
-            for key, rule_list in term.leaves.items():
-                rule_list.sort(key=lambda x: x.complexity, reverse=True)
-                term.leaves[key] = rule_list
-                if key.startswith('"'): keyword_leaves.append((key, rule_list))
-                else: type_leaves.append((key, rule_list))
-            term.leaves = {}
-            for k in keyword_leaves: term.leaves[k[0]] = k[1]
-            for t in type_leaves: term.leaves[t[0]] = t[1]
-                
-# compute indices
-def compute_indices(grammar: Grammar):
-    for rule in grammar.rules:
-        for i_term, term in enumerate(rule.terms):
-            term.rule = rule
-            term.index = i_term
-
-# computes all nested-separators
-def compute_nested_separators(grammar: Grammar):
-    for rule in grammar.rules:
-        for term in rule.terms:
-            found_terms =contains_nested_separator(term, grammar)
-            if len(found_terms) > 0:
-                #log(f"rule {rule.name}: term {term.index} has nested separator {term.sep}")
-                term.contains_nested_sep = True
-
-# checks a term to see if it has one or more nested separators
-def contains_nested_separator(term: Term, grammar: Grammar) -> List[Entity]:
-    if term.sep == "": return []
-    visited = {}   # map Rule.name => bool
-    if not term.is_rule(): return []
-    # returns True if the rule, or any reachable sub-rule, contains the separator outside of braces ("{}()")
-    def check_nested_separator(rule: Rule, visited: Dict[Rule, bool], sep: str) -> List[Term]:
-        if rule.name in visited: return []
-        visited[rule.name] = False
-        in_braces = False
-        found_terms = []
-        for term in rule.terms:
-            if not in_braces:
-                if term.sep == sep:
-                    found_terms.append(term)
-                if term.is_rule():
-                    for sub_rule in term.rules(grammar):
-                        new_terms= check_nested_separator(sub_rule, visited, sep)
-                        found_terms += new_terms
-            if term.is_keyword() and term.is_singular():
-                val = term.vals[0][1:-1]
-                if val in "{(" : in_braces = True
-                elif val in "})": in_braces = False
-
-        visited[rule.name] = found_terms
-        return found_terms
-
-    all_sub_terms_found = []
-    for sub_rule in term.rules(grammar):
-        if sub_rule.name in visited: continue
-        sub_terms_found = check_nested_separator(sub_rule, visited, term.sep)
-        all_sub_terms_found += sub_terms_found
-    return all_sub_terms_found
-
-def compute_complexity(grammar: Grammar):
-    visited = {}
-    def compute_complexity_rec(rule: Rule, visited: Dict[Rule, int]) -> int:
-        if rule.name in visited: return visited[rule.name]
-        sum = len(rule.terms)
-        visited[rule.name] = sum
-        for term in rule.terms:
-            if term.is_rule():
-                for sub_rule in term.rules(grammar):
-                    term_complexity = compute_complexity_rec(sub_rule, visited)
-                    if term.dec != "": term_complexity *= 2
-                    sum += term_complexity
-            else:
-                term_complexity = 1
-                if term.dec != "": term_complexity *= 2
-                sum += term_complexity
-        visited[rule.name] = sum
-        return sum
-    for rule in grammar.rules:
-        rule.complexity = compute_complexity_rec(rule, visited)
     
 # merge two dicts (name => [vals]): return true if d1 changed
 def merge_dicts(d1: Dict, d2: Dict) -> bool:
@@ -541,28 +567,4 @@ def merge_arrays(a1, a2)->bool:
             a1.append(v)
             changed = True
     return changed
-
-# returns a list of all rules referred to by (rule)
-def find_rules(grammar: Grammar, rule_names: List[str]):
-    rules = []
-    for rule in grammar.rules:
-        if rule.name.replace("_", "") in rule_names:
-            rules.append(rule)
-    return rules
-
-# returns a type string for a term
-def get_attribute_type(term: Term, grammar: Grammar) -> str:
-    vb = term.var == "modifier"
-    type_name = ""
-    if vb: log(term.vals)
-    if term.is_keyword() and len(term.vals) > 1:
-        type_name = "str"
-    elif term.is_type():
-        if term.ref: type_name = term.ref + "&"
-        else: type_name = "str"
-    elif term.is_rule():
-        type_name = "|".join([rule.name for rule in term.rules(grammar)])
-    if term.dec != "" and term.dec in "*+":
-        type_name = f"List[{type_name}]"
-    return type_name
 
