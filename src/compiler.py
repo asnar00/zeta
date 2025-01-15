@@ -53,7 +53,7 @@ class CompiledProgram:
         return out
     
     def is_ok(self) -> bool:
-        return len(self.reports[-1].errors) == 0
+        return len(self.reports) > 0 and len(self.reports[-1].errors) == 0
 
 #--------------------------------------------------------------------------------------------------
 # Compiler collects all modules into one unit, and does the work
@@ -75,19 +75,26 @@ class Compiler:
     def compile(self, code: str) -> CompiledProgram:
         code = code.strip()
         self.cp = CompiledProgram(code)
-        self.cp.ast = self.parse(code)
-        if has_errors(self.cp.ast): return self.show_errors(self.cp.ast)
+        if not self.parse(code): return self.cp
         success = self.run_stages()
         for report in self.cp.reports: report.process()
         return self.cp
     
-    def parse(self, code: str) -> Entity:
-        ast = parse_simple(code, "Program", self.grammar)
-        return ast
+    def parse(self, code: str) -> bool: # returns True if ok
+        self.stage("parse")
+        self.cp.ast = parse_simple(code, "Program", self.grammar)
+        if has_errors(self.cp.ast):
+            errors = get_error_list(self.cp.ast)
+            log(errors)
+            for error in errors:
+                self.error(error.lex, f"{error.message}: expected {error.expected}")
+            return False
+        return True
     
     def show_errors(self, ast: Entity):
         log(log_red("errors in ast"))
         log(dbg_entity(ast))
+        
         return ast
     
     def run_stages(self) -> bool:
@@ -182,7 +189,7 @@ class Report:
     def process(self):
         self.sort_items(self.items)
         self.sort_items(self.errors)
-        self.check_errors()
+        #self.check_errors()
     def sort_items(self, items: List[ReportItem]):
         items.sort(key=lambda x: x.lex.location())
     def check_errors(self):

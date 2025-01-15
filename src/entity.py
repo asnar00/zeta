@@ -108,6 +108,11 @@ class Entity:
             return method
         return decorator
     
+    @staticmethod
+    # remove method from class
+    def remove_method(cls: Type[T], method_name: str):
+        if hasattr(cls, method_name): delattr(cls, method_name)
+    
 #----------------------------------------------------------------------------------------------
 # debugging 
 
@@ -191,14 +196,20 @@ def get_last_lex(e: Entity|Lex) -> Lex:
 # Error represents something that went wrong during parsing
 
 class Error:
-    def __init__(self, message: str, expected: str, got: str, at: str):
+    def __init__(self, lex: Lex, message: str, expected: str):
+        self.lex = lex
         self.message = message
         self.expected = expected
-        self.got = got
-        self.at = at
     def __str__(self):
-        expected = f"(expected {self.expected}, got '{self.got}'" if self.expected else ""
-        return f"!!! {self.message} {expected} at {self.at})"
+        loc = (str(self.lex.location())+" ") if self.lex else ""
+        return f"{loc}{self.message}: expected {self.expected}"
+    def __repr__(self): return self.__str__()
+
+class Errors(Error):
+    def __init__(self, errors: List[Error]):
+        self.errors = errors
+    def __str__(self):
+        return "\n".join([str(error) for error in self.errors])
     def __repr__(self): return self.__str__()
 
 #--------------------------------------------------------------------------------------------------

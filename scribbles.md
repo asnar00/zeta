@@ -2,16 +2,10 @@
 # scribblez
 "slow is smooth, smooth is fast"
 
-shall we think a bit about code-generation?
-to do this we need:
-1- concrete type assignment to all abstract types
-2- backend class definition
-3- spit out some code
+OK let's clean up error reporting.
+1- errors from the parser.
 
-structure wise, each backend is going in its own py file. we're going to put them into the same folder for the moment.
-but let's see how to handle this actually.
-
------
+---
 
 Possible things to do next:
 1- if/then: my preferred form is "a if cond else b"; and I think that's an expression type.

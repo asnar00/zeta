@@ -63,12 +63,15 @@ def parse_rule_term(term: Term, reader: Reader, grammar: Grammar) -> Entity:
     rules = reduce_rules(term, reader.peek(), grammar)
     if len(rules) == 0: return parse_error("no matched rules", term, reader)
     entity = None
+    errors = []
     for rule in rules:
         pos = reader.pos()
         entity = parse_rule(rule, reader, grammar)
         if not has_errors(entity): return entity
         reader.restore(pos)
-    if entity: return entity
+        errors += get_error_list(entity)
+    if entity:
+        return entity
     return parse_error("no matched rules", term, reader)
 
 # parse an optional term, return None if eof or error
@@ -119,7 +122,7 @@ def post_parse(entity: Entity) -> Entity:
     if msg=="": return entity
     log(log_red(f"post-parse error: {msg}"))
     lex = find_first_lex(entity)
-    return Error(msg, "", "", lex.location() if lex else "")
+    return Error(lex, msg, "")
 
 # search through for the first lex you find in the entity tree, return its location
 def find_first_lex(entity: Entity) -> Lex:
@@ -226,12 +229,30 @@ def has_errors(entity: Entity | Lex | None) -> bool:
         elif isinstance(val, Entity):
             if has_errors(val):
                 return True
-    
     return False
+
+# as has_errors, but returns a list of errors
+def get_error_list(entity: Entity | Lex | None) -> List[Error]:
+    if entity == None: return []
+    if isinstance(entity, Lex): return []
+    if isinstance(entity, Error): return [entity]
+    if isinstance(entity, List):
+        return [item for item in entity if isinstance(item, Error)]
+    if hasattr(entity, "_error") and entity._error != None: return [entity._error]
+    errors = []
+    for attr in vars(entity):
+        val = getattr(entity, attr)
+        if isinstance(val, Error): errors.append(val)
+        elif isinstance(val, list):
+            for item in val:
+                errors += get_error_list(item)
+        elif isinstance(val, Entity):
+            errors += get_error_list(val)
+    return errors
 
 # return an Error
 def parse_error(message: str, term: Term, reader: Reader) -> Dict:
-    err = Error(message, expected= str(term), got = str(reader.peek_unrestricted()), at= reader.location())
+    err = Error(lex=reader.peek(), message=message, expected=str(term))
     log(log_red(f"{err}"))
     return err
 

@@ -7,7 +7,7 @@ from .compiler import *
 from copy import deepcopy
 from src import zero_classes as zc
 from src.backends import *
-from src.backends.python import *
+from src.backends.python_backend import *
 import re
 
 #--------------------------------------------------------------------------------------------------
@@ -32,7 +32,7 @@ feature Goodbye extends Hello
     after hello(string name)
         bye()
         
-feature Math
+feature Math extends Program
     type int > i8, i16, i32, i64
     type float > f32, f64
     type number > int, float
@@ -50,6 +50,8 @@ feature VectorMath extends Math
         number x, y, z = 0
     on (vec v) = (vec a) + (vec b)
         v = vec(a.x + b.x, a.y + b.y, a.z + b.z)
+    on (vec v) = (vec a) - (vec b)
+        v = vec(a.x - b.x, a.y - b.y, a.z - b.z)
     on (vec v) = (vec a) * (number n)
         v = vec(a.x * n, a.y * n, a.z * n)
     on (vec r) = (vec v) / (number n)
@@ -58,23 +60,33 @@ feature VectorMath extends Math
         n = a.x * b.x + a.y * b.y + a.z * b.z
     on (number l) = length(vec v)
         l = sqrt(v dot v)
+    on (number l) = distance between (vec a) and (vec b)
+        l = length(a - b)
+    on (number n) = angle between (vec a) and (vec b)
+        n = (a dot b) / (length(a) * length(b))
     on (vec n) = normalise(vec v)
         n = v / length(v)
+    on test_vectormath()
+        vec a = vec(1, 2, 3)
+        vec b = vec(4, 5, 6)
+        number d = distance between a and b
+        number t = angle between a and b
+        out$ << "distance between \(a) and \(b) is \(d)"
+        out$ << "angle between \(a) and \(b) is \(t)"
 
 feature Backend
-    type bit = 0 | 1
     type u8, u16, u32, u64
     type i8, i16, i32, i64
     type f16, f32, f64
     on (f32 r) = add(f32 a, b) pass
-    on (i32 r) = add(i32 a, b) pass
     on (f32 r) = sub(f32 a, b) pass
-    on (i32 r) = sub(i32 a, b) pass
     on (f32 r) = mul(f32 a, b) pass
-    on (i32 r) = mul(i32 a, b) pass
     on (f32 r) = div(f32 a, b) pass
-    on (i32 r) = div(i32 a, b) pass
     on (f32 r) = sqrt(f32 n) pass
+    on (i32 r) = add(i32 a, b) pass
+    on (i32 r) = sub(i32 a, b) pass
+    on (i32 r) = mul(i32 a, b) pass
+    on (i32 r) = div(i32 a, b) pass
     on (i32 r) = sqrt(i32 n) pass
 
 context MyContext = Program, Hello, Goodbye, Math, VectorMath, Backend
@@ -110,9 +122,13 @@ def test_zero():
     log_clear()
     for stage in program.reports:
         log(visual_report_from_stage(stage, code))
+    if not program.is_ok():
+        return
     config = BackendConfig()
     backend = PythonBackend()
-    backend.generate(program, config)
+    backend.setup(program, config)
+    python_code =backend.generate(program, config)
+    log(python_code)
 
 #--------------------------------------------------------------------------------------------------
 # print ast as nicely formatted code
@@ -191,7 +207,7 @@ class module_Features(LanguageModule):
         grammar = compiler.grammar
         test("feature_0", parse_code("", "FeatureDef", grammar), """
             FeatureDef
-                !!! premature end (expected 'feature', got 'None' at <eof>)
+                premature end: expected 'feature'
                 name: str = None
                 alias: str = None
                 parent: FeatureDef = None
@@ -200,7 +216,7 @@ class module_Features(LanguageModule):
         
         test("feature_1", parse_code("feature", "FeatureDef", grammar), """
             FeatureDef
-                !!! premature end (expected NameDef, got 'None' at <eof>)
+                premature end: expected NameDef
                 name: str = None
                 alias: str = None
                 parent: FeatureDef = None
@@ -209,7 +225,7 @@ class module_Features(LanguageModule):
 
         test("feature_2", parse_code("feature MyFeature", "FeatureDef", grammar), """
             FeatureDef
-                !!! premature end (expected '{', got 'None' at <eof>)
+                premature end: expected '{'
                 name: str = MyFeature
                 alias: str = None
                 parent: FeatureDef = None
@@ -218,20 +234,20 @@ class module_Features(LanguageModule):
 
         test("feature_3", parse_code("feature MyFeature extends", "FeatureDef", grammar), """
             FeatureDef
-                !!! mismatch (expected '{', got 'extends' at :...:19)
+                :...:19 mismatch: expected '{'
                 name: str = MyFeature
                 alias: str = None
-                parent => !!! premature end (expected parent:FeatureDef&, got 'None' at <eof>)
+                parent => premature end: expected parent:FeatureDef&
                 components: List[Component] = None
             """)
         
         test("feature_4", parse_code("feature MyFeature extends Another", "FeatureDef", grammar), """
             FeatureDef
-                !!! premature end (expected '{', got 'None' at <eof>)
+                premature end: expected '{'
                 name: str = MyFeature
                 alias: str = None
                 parent: FeatureDef => Another
-                components: List[Component] = None        
+                components: List[Component] = None    
             """)
         
         test("feature_5", parse_code("feature MyFeature {}", "FeatureDef", grammar), """
@@ -430,7 +446,7 @@ class module_Expressions(LanguageModule):
             for i, dist_list in enumerate(distances):
                 if None not in dist_list: filtered_functions.append(functions[i])
             if len(filtered_functions) == 0:
-                compiler.error(fc, f"no function found for {log_strip(print_code_formatted(fc))} in {scope}")
+                compiler.error(fc, f"no function found for {log_strip(print_code_formatted(fc, compiler.grammar))} in {scope}")
                 return []
             fc._constraints = fn_types # dunno what this is really for, but we'll find out later
             return filtered_functions
@@ -1459,7 +1475,7 @@ class module_Tests(LanguageModule):
                         variables: List[str]
                             a
                 rhs: Expression
-                    !!! premature end (expected rhs:Expression, got 'None' at <eof>)
+                    premature end: expected rhs:Expression
         """)
 
         test("test_2", parse_code("> a => b", "TestDef", grammar), """
