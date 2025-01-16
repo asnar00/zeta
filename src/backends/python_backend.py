@@ -17,7 +17,7 @@ class PythonBackend(Backend):
         test_function = self.find_function("test_vectormath")
         test_function.generate({})
 
-        
+        log_clear()
         log("----------------------------------------------")
         log(self.out)
         log_exit("done")
@@ -29,11 +29,10 @@ class PythonBackend(Backend):
         var = self.add_var("a", "vector")
         test_function.generate({"x":"1", "y":"2", "z":"3", "_results":[var]})
         test("test_function", self.out, """
-            var a_0: vector
-            # _function (vector _v) = vector (number x, y, z = 0)
-            mov a_0.x, 1
-            mov a_0.y, 2
-            mov a_0.z, 3
+            a_0 = var("vector")
+            a_0.x = 1
+            a_0.y = 2
+            a_0.z = 3
         """)
 
 
@@ -48,6 +47,7 @@ class PythonBackend(Backend):
             result_vars = replace["_results"] if "_results" in replace else []
             replace.pop("_results", None)
             if len(result_vars) == 0:
+                log(" making temp_vars")
                 result_vars = backend.make_temp_vars(function)
             args = []
             for item in self.items:
@@ -57,13 +57,14 @@ class PythonBackend(Backend):
             function = self._resolved_functions[0]
             params = backend.get_function_params(function)
             log(f"  params: {params}")
+            fn_replace = {}
             for p, a in zip(params, args):
-                replace[p] = a
-            replace["_results"] = result_vars
-            log(f"  replace: {replace}")
-            results = function.generate(replace)
+                a = try_replace(a, replace)
+                fn_replace[p] = a
+            fn_replace["_results"] = result_vars
+            log(f"  fn_replace: {fn_replace}")
+            results = function.generate(fn_replace)
             return result_vars
-            log_exit("FunctionCall.generate")
 
         @Entity.method(zc.FunctionCallArguments) # FunctionCallArguments.generate
         def generate(self, replace):
@@ -89,7 +90,6 @@ class PythonBackend(Backend):
         @Entity.method(zc.Function)     # Function.generate
         def generate(self, replace):
             log(f"Function.generate: {backend.show(self)}, {replace}")
-            backend.output(f"# {backend.show(self).split('↩︎')[0]}")
             for s in self.body.statements:
                 s.generate(replace)
 
@@ -105,56 +105,58 @@ class PythonBackend(Backend):
                 results = backend.get_function_results(self)
                 for r, v in zip(results, replace["_results"]):
                     replace[r] = v
-            for s in self.body.statements:
-                s.generate(replace)
-
-        @Entity.method(zc.Assignment)   # Assignment.generate
-        def generate(self, replace):
-            log(f"Assignment.generate: {backend.show(self)}, {replace}")
-            if self.lhs is not None:
-                lhs = self.lhs.generate(replace)
+            if isinstance(self.body, zc.EmitFunctionBody):
+                return backend.emit(self, replace)
+            return self.body.generate(replace)
+        
+        @Entity.method(zc.FunctionStatements)   # FunctionStatements.generate
+        def generate(self, replace) -> List[str]:
+            log(f"FunctionStatements.generate: {backend.show(self)}, {replace}")
+            for s in self.statements:
+                if not isinstance(s, zc.Assignment): continue
+                lhs = s.lhs.generate(replace) if s.lhs else []
                 log(f"  lhs: {lhs}")
-            rhs_replace = replace.copy()
-            lhs_vars = [str(var) for var in lhs.values()]
-            rhs_replace.update({"_results": lhs_vars})
-            rhs = self.rhs.generate(rhs_replace)
-            log(f"  rhs: {rhs}")
-            if len(lhs) != len(rhs): backend.error(f"Assignment.generate: {backend.show(self)}, {lhs} != {rhs}")
-            for l, r in zip(lhs, rhs):
-                if not r in lhs_vars:
-                    backend.output(f"mov {l}, {r}")
+                fn_replace = replace.copy()
+                if len(lhs) > 0: fn_replace["_results"] = lhs
+                rhs = s.rhs.generate(fn_replace)
+                log(f"  rhs: {rhs}")
+                if len(lhs) != len(rhs):
+                    backend.error(f"FunctionStatements.generate: {backend.show(self)}, {lhs} != {rhs}")
+                for l, r in zip(lhs, rhs):
+                    if l != r:
+                        backend.output(f"{l} = {r}")
+                log(f"  after assign: replace = {replace}")
+
+        
 
         @Entity.method(zc.AssignmentLhs)   # AssignmentLhs.generate
-        def generate(self, replace):
-            results = {}
+        def generate(self, replace) -> List[str]:
+            results = []
             for r in self.results:
-                results.update(r.generate(replace))
+                results += r.generate(replace)
             return results
         
         @Entity.method(zc.ResultVariableRef)   # ResultVariableRef.generate
         def generate(self, replace):
-            result_names = [ str(var) for var in self.variable.variables]
-            if result_names[0] in replace:
-                result_names[0] = replace[result_names[0]]
-            result_name = ".".join(result_names)
-            return { result_name : result_name }
-        
+            return self.variable.generate(replace)
+
         @Entity.method(zc.ResultVariableDef)   # ResultVariableDef.generate
         def generate(self, replace):
             result_names = [ str(name.name) for name in self.names]
-            if result_names[0] in replace:
-                result_names[0] = replace[result_names[0]]
-            result_name = ".".join(result_names)
-            actual_name = backend.add_var(result_name, str(self.type.name))
-            return { result_name : actual_name }
+            actual_names = [backend.add_var(r, str(self.type.name)) for r in result_names]
+            log(f"  result_names: {result_names}")
+            log(f"  actual_names: {actual_names}")
+            for r, a in zip(result_names, actual_names):
+                replace[r] = a
+            return actual_names
         
         @Entity.method(zc.VariableRef)   # VariableRef.generate
-        def generate(self, replace):
-            result_names = [ str(var) for var in self.variables]
-            if result_names[0] in replace:
-                result_names[0] = replace[result_names[0]]
-            result_name = ".".join(result_names)
-            return { result_name : result_name }
+        def generate(self, replace) -> List[str]:
+            log(f"VariableRef.generate: {backend.show(self)}, {replace}")
+            full = ".".join(str(v) for v in self.variables)
+            return [try_replace(full, replace)]
+
+            
 
     
     #-----------------------------------------------------------------------
@@ -169,7 +171,7 @@ class PythonBackend(Backend):
 
     def add_var(self, name, type) -> str:
         var_name = f"{name}_{self.i_var}"
-        self.output(f"var {var_name}: {type}")
+        self.output(f"{var_name} = var(\"{type}\")")
         self.i_var += 1
         return var_name
     
@@ -183,10 +185,6 @@ class PythonBackend(Backend):
 
     def show(self, e):
         return print_code_formatted(e, self.compiler.grammar).replace("\n", "↩︎").replace("    ", "")
-
-    def get_function_replace(self, func_def: zc.Function, func_args: List[str]) -> Dict:
-        func_params = self.get_function_params(func_def)
-        return make_replace_dict(func_args, func_params)
 
     def get_function_params(self, func: zc.Function) -> List[str]:
         vars = []
@@ -225,11 +223,41 @@ class PythonBackend(Backend):
             result_vars.append(temp_var)
         return result_vars
     
+    def emit(self, func: zc.Function, replace):
+        log(f"emit: {self.show(func)}, {replace}")
+        fn_name = self.typed_emit_fn(func)
+        result_vars = self.get_function_results(func)
+        result_vars = [try_replace(r, replace) for r in result_vars]
+        params = self.get_function_params(func) 
+        params = [try_replace(p, replace) for p in params]
+        log(f"  fn_name: {fn_name}")
+        log(f"  result_vars: {result_vars}")
+        log(f"  params: {params}")
+        self.output(f"{', '.join(result_vars)} = {fn_name}({', '.join(params)})")
+        return result_vars
+
+    def typed_emit_fn(self, func: zc.Function):
+        out = ""
+        for element in func.signature.elements:
+            if hasattr(element, "name"): out += f"{element.name}_"
+            elif isinstance(element, zc.FunctionSignatureParams):
+                for param in element.params:
+                    type = str(param.type.name)
+                    for name in param.names:
+                        out += f"{type}_"
+        result_types = self.get_function_result_types(func)
+        for t in result_types: out += f"_{str(t)}"
+        return out
+
+    
 #--------------------------------------------------------------------------------------------------
 # super below the line
 
-def make_replace_dict(func_vars: List[str], args: List[str]) -> Dict[str, str]:
-    replace = {}
-    for i in range(len(func_vars)):
-        replace[func_vars[i]] = args[i]
-    return replace
+def try_replace(var, replace):
+    if "." in var:
+        vars = var.split(".")
+        if vars[0] in replace:
+            return replace[vars[0]] + "." + ".".join(vars[1:])
+    else:
+        if var in replace: return replace[var]
+    return var

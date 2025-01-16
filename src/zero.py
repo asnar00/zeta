@@ -76,16 +76,17 @@ feature Backend
     type u8, u16, u32, u64
     type i8, i16, i32, i64
     type f16, f32, f64
-    on (f32 r) = add(f32 a, b) emit
-    on (f32 r) = sub(f32 a, b) emit
-    on (f32 r) = mul(f32 a, b) emit
-    on (f32 r) = div(f32 a, b) emit
-    on (f32 r) = sqrt(f32 n) emit
     on (i32 r) = add(i32 a, b) emit
     on (i32 r) = sub(i32 a, b) emit
     on (i32 r) = mul(i32 a, b) emit
     on (i32 r) = div(i32 a, b) emit
     on (i32 r) = sqrt(i32 n) emit
+    on (f32 r) = add(f32 a, b) emit
+    on (f32 r) = sub(f32 a, b) emit
+    on (f32 r) = mul(f32 a, b) emit
+    on (f32 r) = div(f32 a, b) emit
+    on (f32 r) = sqrt(f32 n) emit
+
 
 context MyContext = Program, Hello, Goodbye, Math, VectorMath, Backend
 """
