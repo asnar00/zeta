@@ -76,16 +76,16 @@ feature Backend
     type u8, u16, u32, u64
     type i8, i16, i32, i64
     type f16, f32, f64
-    on (f32 r) = add(f32 a, b) pass
-    on (f32 r) = sub(f32 a, b) pass
-    on (f32 r) = mul(f32 a, b) pass
-    on (f32 r) = div(f32 a, b) pass
-    on (f32 r) = sqrt(f32 n) pass
-    on (i32 r) = add(i32 a, b) pass
-    on (i32 r) = sub(i32 a, b) pass
-    on (i32 r) = mul(i32 a, b) pass
-    on (i32 r) = div(i32 a, b) pass
-    on (i32 r) = sqrt(i32 n) pass
+    on (f32 r) = add(f32 a, b) emit
+    on (f32 r) = sub(f32 a, b) emit
+    on (f32 r) = mul(f32 a, b) emit
+    on (f32 r) = div(f32 a, b) emit
+    on (f32 r) = sqrt(f32 n) emit
+    on (i32 r) = add(i32 a, b) emit
+    on (i32 r) = sub(i32 a, b) emit
+    on (i32 r) = mul(i32 a, b) emit
+    on (i32 r) = div(i32 a, b) emit
+    on (i32 r) = sqrt(i32 n) emit
 
 context MyContext = Program, Hello, Goodbye, Math, VectorMath, Backend
 """
@@ -118,10 +118,11 @@ def test_zero():
     code = s_test_program
     program = compiler.compile(code)
     log_clear()
-    for stage in program.reports:
-        log(visual_report_from_stage(stage, code))
+    #log(program.show_report())
+    #for stage in program.reports:
+    #    log(visual_report_from_stage(stage, code))
     if not program.is_ok():
-        return
+        log_exit("program is not ok")
     config = BackendConfig()
     backend = PythonBackend(compiler,program, config)
     log_clear()
@@ -1013,7 +1014,7 @@ class module_Functions(LanguageModule):
             FunctionSignatureParams < FunctionSignatureElement := "(" params:VariableDef*, ")"
             FunctionBody := 
             FunctionStatements < FunctionBody := "{" statements:Statement*; "}"
-            EmptyFunctionBody < FunctionBody := "pass"
+            EmitFunctionBody < FunctionBody := "emit"
             Statement := 
             Assignment < Statement := (lhs:AssignmentLhs)? rhs:Expression
             AssignmentLhs := results:ResultVariable+, assign_op:("=" | "<<") 
@@ -1021,7 +1022,7 @@ class module_Functions(LanguageModule):
             ResultVariableDef < ResultVariable := ((type:Type& names:NameDef+,) | (names:NameDef+, ":" type:Type&))
             ResultVariableRef < ResultVariable := variable:VariableRef
             CompositeFunction < Statement:=
-            SingleFunctionDef < CompositeFunction := funcDef:FunctionDef&
+            SingleFunctionDef < CompositeFunction := func_def:FunctionDef&
             SequenceFunctionDef < CompositeFunction := "seq" "(" comps:CompositeFunction+, ")"
             ParallelFunctionDef < CompositeFunction := "par" "(" comps:CompositeFunction+, ")"
         """)
@@ -1108,9 +1109,9 @@ class module_Functions(LanguageModule):
                 if hasattr(e, "name"): return e.name
             return None
 
-        def typed_handle(funcDef) -> str:
+        def typed_handle(func_def) -> str:
             name = ""
-            for item in funcDef.signature.elements:
+            for item in func_def.signature.elements:
                 if isinstance(item, zc.FunctionSignatureWord):
                     name += str(item.name) + " "
                 elif isinstance(item, zc.FunctionSignatureParams):
@@ -1124,9 +1125,9 @@ class module_Functions(LanguageModule):
                     name += brace
             return name
         
-        def untyped_handle(funcDef) -> str:
+        def untyped_handle(func_def) -> str:
             name = ""
-            for item in funcDef.signature.elements:
+            for item in func_def.signature.elements:
                 if isinstance(item, zc.FunctionSignatureWord):
                     name += str(item.name)
                 elif isinstance(item, zc.FunctionSignatureParams):
@@ -1135,14 +1136,14 @@ class module_Functions(LanguageModule):
                             name += "◦"
             return name    
 
-        def make_function(funcDef, st):
-            refToFunc = zc.SingleFunctionDef(funcDef=funcDef)
+        def make_function(func_def, st):
+            refToFunc = zc.SingleFunctionDef(func_def=func_def)
             statements = zc.FunctionStatements(statements=[refToFunc])
-            function = zc.Function( results=funcDef.results, signature=funcDef.signature, body=statements)
+            function = zc.Function( results=func_def.results, signature=func_def.signature, body=statements)
             return function
         
-        def add_alias_symbol(funcDef, function, st, long_handle, short_handle):
-            typedef = funcDef._is_constructor_for_typedef
+        def add_alias_symbol(func_def, function, st, long_handle, short_handle):
+            typedef = func_def._is_constructor_for_typedef
             name = typedef.names[0].name
             alias = typedef.names[0].alias
             if alias:
@@ -1150,14 +1151,14 @@ class module_Functions(LanguageModule):
                 alias_short_handle = short_handle.replace(str(name), str(alias))
                 st.add(alias_long_handle, function, None)
                 st.add(alias_short_handle, function, None)
-                first_lex = get_first_lex(funcDef)
+                first_lex = get_first_lex(func_def)
                 compiler.report(first_lex, f"\"{alias_long_handle}\" => {function}")
                 compiler.report(first_lex, f"\"{alias_short_handle}\" => {function}")
         
-        def modify_function(funcDef, existing, st):
-            long_handle = funcDef.signature.typed_handle()
-            mod = str(funcDef.modifier)
-            this_def = zc.SingleFunctionDef(funcDef=funcDef)
+        def modify_function(func_def, existing, st):
+            long_handle = func_def.signature.typed_handle()
+            mod = str(func_def.modifier)
+            this_def = zc.SingleFunctionDef(func_def=func_def)
             if mod == "replace":
                 existing.body.statements = [this_def]
             elif mod == "after":

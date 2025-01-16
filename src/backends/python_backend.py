@@ -12,28 +12,55 @@ from copy import deepcopy
 #--------------------------------------------------------------------------------------------------
 class PythonBackend(Backend):
     def generate(self):
-        self.out = ""
-        self.i_var = 0
-        #self.out += self.preamble()
-        test_function = self.compiler.cp.st.find("vector", zc.FunctionDef, None, True)[0].element
-        var = self.add_var("a", "vector")
-        test_function.generate([var, "1", "2", "3"])
+        self.test_function()
+        self.reset()
+        test_function = self.find_function("test_vectormath")
+        test_function.generate({})
+
+        
         log("----------------------------------------------")
         log(self.out)
         log_exit("done")
         return self.out
+    
+    def test_function(self):
+        self.reset()
+        test_function = self.find_function("vector◦◦◦")
+        var = self.add_var("a", "vector")
+        test_function.generate({"_v":var, "x":"1", "y":"2", "z":"3"})
+        test("test_function", self.out, """
+            var a_0: vector
+            # _function (vector _v) = vector (number x, y, z = 0)
+            mov a_0.x, 1
+            mov a_0.y, 2
+            mov a_0.z, 3
+        """)
+
 
     #-----------------------------------------------------------------------
     def setup_generate(self):
         backend = self
 
+        @Entity.method(zc.FunctionCall)  # FunctionCall.generate
+        def generate(self, replace):
+            log(f"FunctionCall.generate: {backend.show(self)}, {replace}")
+            raise Exception("FunctionCall.generate")
+
+        @Entity.method(zc.Function)     # Function.generate
+        def generate(self, replace):
+            log(f"Function.generate: {backend.show(self)}, {replace}")
+            backend.output(f"# {backend.show(self).split('↩︎')[0]}")
+            for s in self.body.statements:
+                s.generate(replace)
+
+        @Entity.method(zc.SingleFunctionDef)
+        def generate(self, replace):
+            log(f"SingleFunctionDef.generate: {backend.show(self)}, {replace}")
+            self.func_def.generate(replace)
+
         @Entity.method(zc.FunctionDef)     # FunctionDef.generate
-        def generate(self, args: List[str]):
-            log(f"FunctionDef.generate: {backend.show(self)}, {args}")
-            func_vars = backend.get_function_vars(self)
-            log(f"  func_vars: {func_vars}")
-            replace = make_replace_dict(func_vars, args)
-            log(f"  replace: {replace}")
+        def generate(self, replace):
+            log(f"FunctionDef.generate: {backend.show(self)}, {replace}")
             for s in self.body.statements:
                 s.generate(replace)
 
@@ -43,17 +70,19 @@ class PythonBackend(Backend):
             if self.lhs is not None:
                 lhs = self.lhs.generate(replace)
                 log(f"  lhs: {lhs}")
-            rhs = self.rhs.generate(replace)
+            rhs_replace = replace.copy()
+            rhs_replace.update(lhs)
+            rhs = self.rhs.generate(rhs_replace)
             log(f"  rhs: {rhs}")
             if len(lhs) != len(rhs): backend.error(f"Assignment.generate: {backend.show(self)}, {lhs} != {rhs}")
-            for i in range(len(lhs)):
-                backend.output(f"{lhs[i]} = {rhs[i]}")
+            for l, r in zip(lhs, rhs):
+                backend.output(f"mov {l}, {r}")
 
         @Entity.method(zc.AssignmentLhs)   # AssignmentLhs.generate
         def generate(self, replace):
-            results = []
+            results = {}
             for r in self.results:
-                results.append(r.generate(replace))
+                results.update(r.generate(replace))
             return results
         
         @Entity.method(zc.ResultVariableRef)   # ResultVariableRef.generate
@@ -61,25 +90,36 @@ class PythonBackend(Backend):
             result_names = [ str(var) for var in self.variable.variables]
             if result_names[0] in replace:
                 result_names[0] = replace[result_names[0]]
-            return ".".join(result_names)
+            result_name = ".".join(result_names)
+            return { result_name : result_name }
         
         @Entity.method(zc.ResultVariableDef)   # ResultVariableDef.generate
         def generate(self, replace):
             result_names = [ str(name.name) for name in self.names]
             if result_names[0] in replace:
                 result_names[0] = replace[result_names[0]]
-            return ".".join(result_names)
+            result_name = ".".join(result_names)
+            actual_name = backend.add_var(result_name, str(self.type.name))
+            return { result_name : actual_name }
         
         @Entity.method(zc.VariableRef)   # VariableRef.generate
         def generate(self, replace):
             result_names = [ str(var) for var in self.variables]
             if result_names[0] in replace:
                 result_names[0] = replace[result_names[0]]
-            return [".".join(result_names)]
+            result_name = ".".join(result_names)
+            return { result_name : result_name }
 
     
     #-----------------------------------------------------------------------
     # below the line
+
+    def find_function(self, short_sig: str) -> zc.Function:
+        return self.compiler.cp.st.find(short_sig, zc.Function, None, True)[0].element
+
+    def reset(self):
+        self.out = ""
+        self.i_var = 0
 
     def add_var(self, name, type) -> str:
         var_name = f"{name}_{self.i_var}"
@@ -98,17 +138,23 @@ class PythonBackend(Backend):
     def show(self, e):
         return print_code_formatted(e, self.compiler.grammar).replace("\n", "↩︎").replace("    ", "")
 
-    def get_function_vars(self, funcDef: zc.FunctionDef) -> List[str]:
+    def get_function_replace(self, func_def: zc.Function, func_args: List[str]) -> Dict:
+        func_params = self.get_function_params(func_def)
+        return make_replace_dict(func_args, func_params)
+
+    def get_function_params(self, func: zc.Function) -> List[str]:
         vars = []
-        for r in funcDef.results.results:
-            for name in r.names:
-                vars.append(str(name.name))
-        for item in funcDef.signature.elements:
+        if func.results is not None:
+            for r in func.results.results:
+                for name in r.names:
+                    vars.append(str(name.name))
+        for item in func.signature.elements:
             if isinstance(item, zc.FunctionSignatureParams):
                 for param in item.params:
                     for name in param.names:
                         vars.append(str(name.name))
         return vars
+    
 
 #--------------------------------------------------------------------------------------------------
 # super below the line

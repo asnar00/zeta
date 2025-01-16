@@ -373,7 +373,7 @@ def print_code(e: Entity, is_reference: bool, grammar: Grammar,use_aliases: bool
         if use_aliases and e.alias != None: 
             return str(e.alias) #log_green(str(e.alias))
         else:
-            return str(e.name) #log_green(str(e.name)) if hasattr(e, "name") else str(e)
+            return str(e.get_name()) #log_green(str(e.name)) if hasattr(e, "name") else str(e)
     if hasattr(e, "print_code"): return e.print_code()
     rule = grammar.rule_named[e.__class__.__name__]
     return print_code_rule(rule, e, grammar, use_aliases)

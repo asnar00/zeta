@@ -2,23 +2,15 @@
 # scribblez
 "slow is smooth, smooth is fast"
 
-OK let's clean up error reporting.
-1- errors from the parser. DONE.
 
-now code generation.
-should we do arrays first? I don't think so. Let's just get code working.
+end of play today: jan 16 2025.
 
-compile (fn) with (types)
+have managed to call the constructor functiondef with replacements for dest_var and arguments. So far so good.
 
-for this to work, we need to define the instruction set.
+Next: figure out why constructor Function hasn't been built.
+Then make that work for constructor Function.
 
-the output code can only ever consist of two things:
-
-    var = const
-    var = fn(var, var)
-
-
-
+=> 
 
 
 

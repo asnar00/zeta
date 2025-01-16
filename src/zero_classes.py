@@ -234,7 +234,7 @@ class FunctionStatements(FunctionBody):
         super().__init__()
         self.statements: List[Statement] = statements
 
-class EmptyFunctionBody(FunctionBody):
+class EmitFunctionBody(FunctionBody):
     def __init__(self, ):
         super().__init__()
 
@@ -274,9 +274,9 @@ class CompositeFunction(Statement):
         super().__init__()
 
 class SingleFunctionDef(CompositeFunction):
-    def __init__(self, funcDef: 'FunctionDef' =None):
+    def __init__(self, func_def: 'FunctionDef' =None):
         super().__init__()
-        self.funcDef: FunctionDef = funcDef        # ref
+        self.func_def: FunctionDef = func_def        # ref
 
 class SequenceFunctionDef(CompositeFunction):
     def __init__(self, comps: 'List[CompositeFunction]' =None):
