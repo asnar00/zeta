@@ -27,7 +27,7 @@ class PythonBackend(Backend):
         self.reset()
         test_function = self.find_function("vector◦◦◦")
         var = self.add_var("a", "vector")
-        test_function.generate({"_v":var, "x":"1", "y":"2", "z":"3"})
+        test_function.generate({"x":"1", "y":"2", "z":"3", "_results":[var]})
         test("test_function", self.out, """
             var a_0: vector
             # _function (vector _v) = vector (number x, y, z = 0)
@@ -44,7 +44,47 @@ class PythonBackend(Backend):
         @Entity.method(zc.FunctionCall)  # FunctionCall.generate
         def generate(self, replace):
             log(f"FunctionCall.generate: {backend.show(self)}, {replace}")
-            raise Exception("FunctionCall.generate")
+            function = self._resolved_functions[0]
+            result_vars = replace["_results"] if "_results" in replace else []
+            replace.pop("_results", None)
+            if len(result_vars) == 0:
+                result_vars = backend.make_temp_vars(function)
+            args = []
+            for item in self.items:
+                if not hasattr(item, "name"):
+                    args += item.generate(replace)
+            log(f"  args: {args}")
+            function = self._resolved_functions[0]
+            params = backend.get_function_params(function)
+            log(f"  params: {params}")
+            for p, a in zip(params, args):
+                replace[p] = a
+            replace["_results"] = result_vars
+            log(f"  replace: {replace}")
+            results = function.generate(replace)
+            return result_vars
+            log_exit("FunctionCall.generate")
+
+        @Entity.method(zc.FunctionCallArguments) # FunctionCallArguments.generate
+        def generate(self, replace):
+            log(f"FunctionCallArguments.generate: {backend.show(self)}, {replace}")
+            args = []
+            for item in self.arguments:
+                args += item.generate(replace)
+            return args
+        
+        @Entity.method(zc.FunctionCallArgument) # FunctionCallArgument.generate
+        def generate(self, replace):
+            log(f"FunctionCallArgument.generate: {backend.show(self)}, {replace}")
+            return self.value.generate(replace)
+        
+        @Entity.method(zc.Constant) # Constant.generate
+        def generate(self, replace) -> List[str]:
+            return [str(self.value)]
+        
+        @Entity.method(zc.FunctionCallVariable) # FunctionCallVariable.generate
+        def generate(self, replace) -> List[str]:
+            return self.variable.generate(replace)
 
         @Entity.method(zc.Function)     # Function.generate
         def generate(self, replace):
@@ -61,6 +101,10 @@ class PythonBackend(Backend):
         @Entity.method(zc.FunctionDef)     # FunctionDef.generate
         def generate(self, replace):
             log(f"FunctionDef.generate: {backend.show(self)}, {replace}")
+            if "_results" in replace:
+                results = backend.get_function_results(self)
+                for r, v in zip(results, replace["_results"]):
+                    replace[r] = v
             for s in self.body.statements:
                 s.generate(replace)
 
@@ -71,12 +115,14 @@ class PythonBackend(Backend):
                 lhs = self.lhs.generate(replace)
                 log(f"  lhs: {lhs}")
             rhs_replace = replace.copy()
-            rhs_replace.update(lhs)
+            lhs_vars = [str(var) for var in lhs.values()]
+            rhs_replace.update({"_results": lhs_vars})
             rhs = self.rhs.generate(rhs_replace)
             log(f"  rhs: {rhs}")
             if len(lhs) != len(rhs): backend.error(f"Assignment.generate: {backend.show(self)}, {lhs} != {rhs}")
             for l, r in zip(lhs, rhs):
-                backend.output(f"mov {l}, {r}")
+                if not r in lhs_vars:
+                    backend.output(f"mov {l}, {r}")
 
         @Entity.method(zc.AssignmentLhs)   # AssignmentLhs.generate
         def generate(self, replace):
@@ -144,10 +190,6 @@ class PythonBackend(Backend):
 
     def get_function_params(self, func: zc.Function) -> List[str]:
         vars = []
-        if func.results is not None:
-            for r in func.results.results:
-                for name in r.names:
-                    vars.append(str(name.name))
         for item in func.signature.elements:
             if isinstance(item, zc.FunctionSignatureParams):
                 for param in item.params:
@@ -155,7 +197,34 @@ class PythonBackend(Backend):
                         vars.append(str(name.name))
         return vars
     
-
+    def get_function_results(self, func: zc.Function) -> List[str]:
+        vars = []
+        if func.results is not None:
+            for r in func.results.results:
+                for name in r.names:
+                    vars.append(str(name.name))
+        return vars
+    
+    def get_function_result_types(self, func: zc.Function) -> List[str]:
+        types = []
+        if func.results is not None:
+            for r in func.results.results:
+                for name in r.names:
+                    types.append(str(r.type.name))
+        return types
+    
+    def make_temp_vars(self, func: zc.Function) -> List[str]:
+        result_vars = []
+        results = self.get_function_results(func)
+        types = self.get_function_result_types(func)
+        log(f"  results: {results}")
+        log(f"  types: {types}")
+        temp_results = []
+        for r, t in zip(results, types):
+            temp_var = self.add_var(r, t)
+            result_vars.append(temp_var)
+        return result_vars
+    
 #--------------------------------------------------------------------------------------------------
 # super below the line
 
