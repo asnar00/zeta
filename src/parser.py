@@ -366,14 +366,14 @@ def print_code_formatted(e: Entity, grammar: Grammar, use_aliases: bool = False)
 def print_code(e: Entity, is_reference: bool, grammar: Grammar,use_aliases: bool) -> str|List[str]:
     if e is None: return ""
     if isinstance(e, Lex) or isinstance(e, str): 
-        if is_reference: return log_orange(str(e)) # indicate not found
+        if is_reference: return str(e) #log_orange(str(e)) # indicate not found
         else: return str(e)
     if isinstance(e, List): return [print_code(item, is_reference, grammar, use_aliases) for item in e]
     if isinstance(e, Entity) and is_reference: 
         if use_aliases and e.alias != None: 
-            return log_green(str(e.alias))
+            return str(e.alias) #log_green(str(e.alias))
         else:
-            return log_green(str(e.name)) if hasattr(e, "name") else str(e)
+            return str(e.name) #log_green(str(e.name)) if hasattr(e, "name") else str(e)
     if hasattr(e, "print_code"): return e.print_code()
     rule = grammar.rule_named[e.__class__.__name__]
     return print_code_rule(rule, e, grammar, use_aliases)

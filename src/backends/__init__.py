@@ -3,7 +3,7 @@
 # author: asnaroo
 # zero to anything
 
-from src.compiler import CompiledProgram
+from src.compiler import CompiledProgram, Compiler
 from src.entity import Entity
 from src.util import *
 from src import zero_classes as zc
@@ -12,30 +12,19 @@ class BackendConfig:
     def __init__(self): pass
 
 class Backend:
-    def __init__(self): pass
-    def setup(self, cp: CompiledProgram, config: BackendConfig):
+    def __init__(self, compiler: Compiler, cp: CompiledProgram, config: BackendConfig):
+        self.compiler = compiler
+        self.cp = cp
+        self.config = config
         self.clear_methods()
-        self.setup_methods(cp, config)
-    def generate(self, cp: CompiledProgram, config: BackendConfig) -> str:
-        out = ""
-        out += self.preamble(cp, config)
-        return out
+        self.setup_generate()
 
-    def preamble(self, cp: CompiledProgram, config: BackendConfig) -> str:
-        pass
+    def generate(self): pass
 
-    def generate_objects(self, obj_type: type, cp: CompiledProgram, config: BackendConfig) -> str:
-        out = ""
-        objects = cp.st.objects_of_type(obj_type)
-        for obj in objects:
-            code = obj.generate_code(cp, config) if hasattr(obj, "generate_code") else None     
-            if code == None: continue
-            out += code
-        return out
 
     #-----------------------------------------------------------------------
     # override this in the backend subclass to set up per-class output methods
-    def setup_methods(self, cp: CompiledProgram, config: BackendConfig): pass
+    def setup_generate(self): pass
 
     #-----------------------------------------------------------------------
     # below the line / helpers

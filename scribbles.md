@@ -3,7 +3,24 @@
 "slow is smooth, smooth is fast"
 
 OK let's clean up error reporting.
-1- errors from the parser.
+1- errors from the parser. DONE.
+
+now code generation.
+should we do arrays first? I don't think so. Let's just get code working.
+
+compile (fn) with (types)
+
+for this to work, we need to define the instruction set.
+
+the output code can only ever consist of two things:
+
+    var = const
+    var = fn(var, var)
+
+
+
+
+
 
 ---
 

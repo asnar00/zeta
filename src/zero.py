@@ -71,8 +71,6 @@ feature VectorMath extends Math
         vec b = vec(4, 5, 6)
         number d = distance between a and b
         number t = angle between a and b
-        out$ << "distance between \(a) and \(b) is \(d)"
-        out$ << "angle between \(a) and \(b) is \(t)"
 
 feature Backend
     type u8, u16, u32, u64
@@ -125,9 +123,9 @@ def test_zero():
     if not program.is_ok():
         return
     config = BackendConfig()
-    backend = PythonBackend()
-    backend.setup(program, config)
-    python_code =backend.generate(program, config)
+    backend = PythonBackend(compiler,program, config)
+    log_clear()
+    python_code = backend.generate()
     log(python_code)
 
 #--------------------------------------------------------------------------------------------------
