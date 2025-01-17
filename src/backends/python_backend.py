@@ -7,7 +7,6 @@ from typing import Dict
 from src.backends import Backend, BackendConfig
 from src.compiler import *
 from src.entity import *
-import numpy as np
 from copy import deepcopy
 #--------------------------------------------------------------------------------------------------
 class PythonBackend(Backend):
@@ -15,7 +14,10 @@ class PythonBackend(Backend):
         self.test_function()
         self.reset()
         test_function = self.find_function("test_vectormath")
+        self.output(f"def {self.emit_fn_name(test_function)}():")
+        self.indent += 1
         test_function.generate({})
+        self.indent -= 1
 
         log_clear()
         log("----------------------------------------------")
@@ -167,12 +169,12 @@ class PythonBackend(Backend):
 
     def add_var(self, name, type) -> str:
         var_name = f"{name}_{self.i_var}"
-        self.output(f"{"    "*self.indent}var('{var_name}', '{type}')")
+        self.output(f"var('{var_name}', '{type}')")
         self.i_var += 1
         return var_name
     
     def output(self, s: str):
-        self.out += s + "\n"
+        self.out += "    "*self.indent + s + "\n"
         log(log_green(s))
 
     def error(self, s: str):
@@ -240,6 +242,20 @@ class PythonBackend(Backend):
             if hasattr(element, "name"): out += f"{element.name}_"
         if out.endswith("_"): out = out[:-1]
         return out
+    
+    def typed_emit_fn(self, func: zc.Function):
+        out = ""
+        for element in func.signature.elements:
+            if hasattr(element, "name"): out += f"{element.name}_"
+            elif isinstance(element, zc.FunctionSignatureParams):
+                for param in element.params:
+                    type = str(param.type.name)
+                    for name in param.names:
+                        out += f"{type}_"
+        result_types = self.get_function_result_types(func)
+        for t in result_types: out += f"_{str(t)}"
+        return out
+    
 
     
 #--------------------------------------------------------------------------------------------------
