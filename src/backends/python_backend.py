@@ -29,10 +29,10 @@ class PythonBackend(Backend):
         var = self.add_var("a", "vector")
         test_function.generate({"x":"1", "y":"2", "z":"3", "_results":[var]})
         test("test_function", self.out, """
-            a_0 = var("vector")
-            a_0.x = 1
-            a_0.y = 2
-            a_0.z = 3
+            var('a_0', 'vector')
+            mov('a_0.x', '1')
+            mov('a_0.y', '2')
+            mov('a_0.z', '3')
         """)
 
 
@@ -124,10 +124,8 @@ class PythonBackend(Backend):
                     backend.error(f"FunctionStatements.generate: {backend.show(self)}, {lhs} != {rhs}")
                 for l, r in zip(lhs, rhs):
                     if l != r:
-                        backend.output(f"{l} = {r}")
+                        backend.output(f"mov('{l}', '{r}')")
                 log(f"  after assign: replace = {replace}")
-
-        
 
         @Entity.method(zc.AssignmentLhs)   # AssignmentLhs.generate
         def generate(self, replace) -> List[str]:
@@ -155,9 +153,6 @@ class PythonBackend(Backend):
             log(f"VariableRef.generate: {backend.show(self)}, {replace}")
             full = ".".join(str(v) for v in self.variables)
             return [try_replace(full, replace)]
-
-            
-
     
     #-----------------------------------------------------------------------
     # below the line
@@ -168,10 +163,11 @@ class PythonBackend(Backend):
     def reset(self):
         self.out = ""
         self.i_var = 0
+        self.indent = 0
 
     def add_var(self, name, type) -> str:
         var_name = f"{name}_{self.i_var}"
-        self.output(f"{var_name} = var(\"{type}\")")
+        self.output(f"{"    "*self.indent}var('{var_name}', '{type}')")
         self.i_var += 1
         return var_name
     
@@ -225,7 +221,7 @@ class PythonBackend(Backend):
     
     def emit(self, func: zc.Function, replace):
         log(f"emit: {self.show(func)}, {replace}")
-        fn_name = self.typed_emit_fn(func)
+        fn_name = self.emit_fn_name(func)
         result_vars = self.get_function_results(func)
         result_vars = [try_replace(r, replace) for r in result_vars]
         params = self.get_function_params(func) 
@@ -233,20 +229,16 @@ class PythonBackend(Backend):
         log(f"  fn_name: {fn_name}")
         log(f"  result_vars: {result_vars}")
         log(f"  params: {params}")
-        self.output(f"{', '.join(result_vars)} = {fn_name}({', '.join(params)})")
+        result_vars = [f"'{r}'" for r in result_vars]
+        params = [f"'{p}'" for p in params]
+        self.output(f"{fn_name}({', '.join(result_vars)}, {', '.join(params)})")
         return result_vars
 
-    def typed_emit_fn(self, func: zc.Function):
+    def emit_fn_name(self, func: zc.Function):
         out = ""
         for element in func.signature.elements:
             if hasattr(element, "name"): out += f"{element.name}_"
-            elif isinstance(element, zc.FunctionSignatureParams):
-                for param in element.params:
-                    type = str(param.type.name)
-                    for name in param.names:
-                        out += f"{type}_"
-        result_types = self.get_function_result_types(func)
-        for t in result_types: out += f"_{str(t)}"
+        if out.endswith("_"): out = out[:-1]
         return out
 
     
