@@ -10,6 +10,7 @@ from src.grammar import *
 from src.entity import *
 from src.parser import *
 from src.symbols import *
+from src.codegen import *
 from src import zero_classes as zc
 
 #--------------------------------------------------------------------------------------------------
@@ -25,6 +26,7 @@ class LanguageModule:
     def setup_scope(self, compiler: 'Compiler'): pass             # add get_scope methods to rule classes
     def setup_symbols(self, compiler: 'Compiler'): pass           # add add_symbols/resolve methods to rule classes
     def setup_check_types(self, compiler: 'Compiler'): pass       # add check_type methods to rule classes
+    def setup_generate(self, compiler: 'Compiler'): pass          # add generate methods to rule classes
     def test_parser(self, compiler: 'Compiler'): pass             # test parser with some examples
 
     def setup(self, compiler: 'Compiler'):
@@ -34,6 +36,7 @@ class LanguageModule:
         self.setup_constructors(compiler)
         self.setup_symbols(compiler)
         self.setup_check_types(compiler)
+        self.setup_generate(compiler)
         self.test_parser(compiler)
 
 #--------------------------------------------------------------------------------------------------
@@ -64,13 +67,17 @@ class Compiler:
         self.modules : List[LanguageModule] = []
         self.grammar : Grammar= Grammar(import_module)
         self.cp = None
+        self.codegen = None
+        self.codegen_config = None
 
     def add_modules(self, modules: List[LanguageModule]): self.modules.extend(modules)
     
-    def setup(self):
+    def setup(self, config: CodegenConfig):
+        self.codegen_config = config
         for module in self.modules: module.setup_grammar(self)
         self.grammar.build_classes()
         for module in self.modules: module.setup(self)
+        
 
     def compile(self, code: str) -> CompiledProgram:
         code = code.strip()
@@ -103,6 +110,7 @@ class Compiler:
         if not self.resolve_symbols(): return False
         if not self.embracket(): return False
         if not self.check_types(): return False
+        if not self.generate(): return False
         return True
     
     def constructors(self) -> bool:
@@ -135,6 +143,15 @@ class Compiler:
         visitor = Visitor("check_type", is_ref=False, children_first=True)
         visitor.apply(self.cp.ast, lambda e, scope, type_name: e.check_type(scope))
         return self.cp.is_ok()
+    
+    def generate(self) -> bool:
+        self.stage("generate")
+        self.codegen = CodeGenerator(self.codegen_config, self.cp.st, self.grammar)
+        ast = self.cp.ast
+        if hasattr(ast, "generate"): ast.generate(self)
+        else: log_exit("no generate method in ast")
+        
+
 
     #--------------------------------------------------------------------
     # below the line

@@ -2,6 +2,90 @@
 # scribblez
 "slow is smooth, smooth is fast"
 
+ok so next steps:
+
+1- concrete type substitution
+2- actually run it and produce results
+3- if/then/else and a test for it
+4- streams/arrays/whatever
+
+
+------
+
+jan 18: we are not generating something that looks like assembler.
+instruction set is defined in the backend, replacing "pass" with "emit" keyword. It emits just to a sort of middleware VM assembler, not dissimilar to LLVM or MLIR or whatever, but substantially less lines of code (backend.py currently has 300 lines) and no dependencies on byzantine legacy bullshit.
+
+Here's the test input code we're trying out:
+
+    on test_vectormath()
+        vec a = vec(1, 2, 3)
+        vec b = vec(4, 5, 6)
+        number d = distance between a and b
+
+and here's the code we spit out:
+
+    def test_vectormath():
+        var('a_0.x', 'number')
+        var('a_0.y', 'number')
+        var('a_0.z', 'number')
+        mov('a_0.x', '1')
+        mov('a_0.y', '2')
+        mov('a_0.z', '3')
+        var('b_1.x', 'number')
+        var('b_1.y', 'number')
+        var('b_1.z', 'number')
+        mov('b_1.x', '4')
+        mov('b_1.y', '5')
+        mov('b_1.z', '6')
+        var('d_2', 'number')
+        var('v_3.x', 'number')
+        var('v_3.y', 'number')
+        var('v_3.z', 'number')
+        var('n_4', 'number')
+        sub('n_4', 'a_0.x', 'b_1.x')
+        var('n_5', 'number')
+        sub('n_5', 'a_0.y', 'b_1.y')
+        var('n_6', 'number')
+        sub('n_6', 'a_0.z', 'b_1.z')
+        mov('v_3.x', 'n_4')
+        mov('v_3.y', 'n_5')
+        mov('v_3.z', 'n_6')
+        var('n_7', 'number')
+        var('n_8', 'number')
+        mul('n_8', 'v_3.x', 'v_3.x')
+        var('n_9', 'number')
+        var('n_10', 'number')
+        mul('n_10', 'v_3.y', 'v_3.y')
+        var('n_11', 'number')
+        mul('n_11', 'v_3.z', 'v_3.z')
+        add('n_9', 'n_10', 'n_11')
+        add('n_7', 'n_8', 'n_9')
+        sqrt('d_2', 'n_7')
+
+Which on inspection looks correct. It'll just inline all the way down until it finds "emit" functions, at which point it writes the function call to the output. So you can define any instruction set you want in the Backend like this:
+
+    feature Backend
+        type u8, u16, u32, u64
+        type i8, i16, i32, i64
+        type f16, f32, f64
+        on (i32 r) = add(i32 a, b) emit
+        on (i32 r) = sub(i32 a, b) emit
+        on (i32 r) = mul(i32 a, b) emit
+        on (i32 r) = div(i32 a, b) emit
+        on (i32 r) = sqrt(i32 n) emit
+        on (f32 r) = add(f32 a, b) emit
+        on (f32 r) = sub(f32 a, b) emit
+        on (f32 r) = mul(f32 a, b) emit
+        on (f32 r) = div(f32 a, b) emit
+        on (f32 r) = sqrt(f32 n) emit
+
+The next step is to actually make this work for f32, so we need a type-substitution policy and figure out how to represent / apply it. The simplest one is just go replace = { 'number': 'f32', 'int': i32 } and that'll be fine. We can poke that into the config class and all is good.
+
+We need to look into compiling things as "functions", i.e. not inline. We need to get conditionals working (jumps) and then arrays/streams so we can handle strings and printing.
+
+It feels like that's the right order to tackle the next steps in.
+
+-------
 
 end of play today: jan 16 2025.
 
