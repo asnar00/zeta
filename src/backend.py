@@ -1,15 +1,27 @@
 # ᕦ(ツ)ᕤ
-# backends/python.py
+# backend.py
 # author: asnaroo
 # zero to anything
 
 from typing import Dict
-from src.backends import Backend, BackendConfig
 from src.compiler import *
 from src.entity import *
 from copy import deepcopy
+
 #--------------------------------------------------------------------------------------------------
-class PythonBackend(Backend):
+# configuration options for code production
+
+class BackendConfig:
+    def __init__(self): pass
+
+class Backend:
+    def __init__(self, compiler: Compiler, cp: CompiledProgram, config: BackendConfig):
+        self.compiler = compiler
+        self.cp = cp
+        self.config = config
+        self.clear_methods()
+        self.setup_generate()
+
     def generate(self):
         self.test_function()
         self.reset()
@@ -40,6 +52,8 @@ class PythonBackend(Backend):
         """)
 
     #-----------------------------------------------------------------------
+    # setup generate() methods for relevant entities
+    
     def setup_generate(self):
         backend = self
 
@@ -267,7 +281,12 @@ class PythonBackend(Backend):
         result_types = self.get_function_result_types(func)
         for t in result_types: out += f"_{str(t)}"
         return out
-    
+
+    # so we can support multiple backends (one at a time)
+    def clear_methods(self):
+        for cls in Entity.classes.values():
+            Entity.remove_method(cls, "generate_code")
+
 
     
 #--------------------------------------------------------------------------------------------------

@@ -6,8 +6,7 @@
 from .compiler import *
 from copy import deepcopy
 from src import zero_classes as zc
-from src.backends import *
-from src.backends.python_backend import *
+from .backend import *
 import re
 
 #--------------------------------------------------------------------------------------------------
@@ -122,7 +121,7 @@ def test_zero():
     if not program.is_ok():
         log_exit("program is not ok")
     config = BackendConfig()
-    backend = PythonBackend(compiler,program, config)
+    backend = Backend(compiler,program, config)
     log_clear()
     python_code = backend.generate()
     log(python_code)
