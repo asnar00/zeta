@@ -31,12 +31,13 @@ class PythonBackend(Backend):
         var = self.add_var("a", "vector")
         test_function.generate({"x":"1", "y":"2", "z":"3", "_results":[var]})
         test("test_function", self.out, """
-            var('a_0', 'vector')
+            var('a_0.x', 'number')
+            var('a_0.y', 'number')
+            var('a_0.z', 'number')
             mov('a_0.x', '1')
             mov('a_0.y', '2')
             mov('a_0.z', '3')
         """)
-
 
     #-----------------------------------------------------------------------
     def setup_generate(self):
@@ -162,14 +163,25 @@ class PythonBackend(Backend):
     def find_function(self, short_sig: str) -> zc.Function:
         return self.compiler.cp.st.find(short_sig, zc.Function, None, True)[0].element
 
+    def find_type(self, type_name: str) -> zc.Type:
+        return self.compiler.cp.st.find(type_name, zc.Type, None, True)[0].element
+    
     def reset(self):
         self.out = ""
         self.i_var = 0
         self.indent = 0
 
-    def add_var(self, name, type) -> str:
+    def add_var(self, name, type_name) -> str:
         var_name = f"{name}_{self.i_var}"
-        self.output(f"var('{var_name}', '{type}')")
+        type = self.find_type(type_name)
+        if type.properties:
+            log(f"  type has properties: {type.properties}")
+            for p in type.properties:
+                var_type_name = f"{p.type.name}"
+                for n in p.names:
+                    self.output(f"var('{var_name}.{n.name}', '{var_type_name}')")
+        else:
+            self.output(f"var('{var_name}', '{type_name}')")
         self.i_var += 1
         return var_name
     
