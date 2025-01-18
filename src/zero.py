@@ -62,15 +62,12 @@ feature VectorMath extends Math
         l = sqrt(v dot v)
     on (number l) = distance between (vec a) and (vec b)
         l = length(a - b)
-    on (number n) = angle between (vec a) and (vec b)
-        n = (a dot b) / (length(a) * length(b))
     on (vec n) = normalise(vec v)
         n = v / length(v)
     on test_vectormath()
         vec a = vec(1, 2, 3)
         vec b = vec(4, 5, 6)
         number d = distance between a and b
-        number t = angle between a and b
 
 feature Backend
     type u8, u16, u32, u64
