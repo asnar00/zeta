@@ -63,7 +63,7 @@ feature VectorMath extends Math
         l = length(a - b)
     on (vec n) = normalise(vec v)
         n = v / length(v)
-    on test_vectormath()
+    replace run()
         vec a = vec(1, 2, 3)
         vec b = vec(4, 5, 6)
         number d = distance between a and b
@@ -111,11 +111,9 @@ def test_zero():
     compiler.add_modules([module_Features(), module_Expressions(), module_Variables(), module_Types(), module_Functions(), module_Tests()])
     test_verbose(False)
     log_max_depth(12)
-    
 
     config = CodegenConfig()
-    config.setup_type_substitution("number", "f32")
-    config.setup_type_substitution("int", "i32")
+    config.setup_types({ "number": "f32", "int": "i32"})
 
     compiler.setup(config)
     code = s_test_program
@@ -127,6 +125,9 @@ def test_zero():
     #    log(visual_report_from_stage(stage, code))
     if not program.is_ok():
         log_exit("program is not ok")
+    log("----------------------------------------------")
+    log(program.assembly)
+    log_exit("done")
     
 
 #--------------------------------------------------------------------------------------------------
@@ -231,6 +232,18 @@ class module_Features(LanguageModule):
         def resolve(self, scope, type_name):
             cls = Entity.get_class(type_name)
             return compiler.find_symbol(self, cls, scope, raise_errors=True, read_only=True)
+
+    def setup_generate(self, compiler: Compiler):
+        codegen = compiler.codegen
+        @Entity.method(zc.Program) # Program.generate
+        def generate(self):
+            run_func = codegen.find_entity("run", zc.Function)
+            if run_func == None:
+                compiler.error(self, "no run function found")
+                return
+            codegen.reset()
+            run_func.generate({})
+            compiler.assembly = codegen.out
 
     def test_parser(self, compiler: Compiler):
         grammar = compiler.grammar
@@ -548,13 +561,13 @@ class module_Expressions(LanguageModule):
             result_vars = replace["_results"] if "_results" in replace else []
             replace.pop("_results", None)
             if len(result_vars) == 0:
-                result_vars = codegen.make_temp_vars(function)
+                result_vars = function.make_temp_vars()
             args = []
             for item in self.items:
                 if not hasattr(item, "name"):
                     args += item.generate(replace)
             function = self._resolved_functions[0]
-            params = get_function_params(function)
+            params = function.get_params()
             fn_replace = {}
             for p, a in zip(params, args):
                 a = try_replace(a, replace)
@@ -1327,14 +1340,24 @@ class module_Functions(LanguageModule):
         def generate(self, replace):
             self.func_def.generate(replace)
 
+        @Entity.method(zc.SequenceFunctionDef)
+        def generate(self, replace):
+            for comp in self.comps:
+                comp.generate(replace)
+
+        @Entity.method(zc.ParallelFunctionDef)
+        def generate(self, replace):
+            for comp in self.comps:
+                comp.generate(replace)
+
         @Entity.method(zc.FunctionDef)     # FunctionDef.generate
         def generate(self, replace):
             if "_results" in replace:
-                results = codegen.get_function_results(self)
+                results = self.get_results()
                 for r, v in zip(results, replace["_results"]):
                     replace[r] = v
             if isinstance(self.body, zc.EmitFunctionBody):
-                return codegen.emit(self, replace)
+                return self.emit(replace)
             return self.body.generate(replace)
         
         @Entity.method(zc.FunctionStatements)   # FunctionStatements.generate
@@ -1365,12 +1388,26 @@ class module_Functions(LanguageModule):
         @Entity.method(zc.ResultVariableDef)   # ResultVariableDef.generate
         def generate(self, replace):
             result_names = [ str(name.name) for name in self.names]
-            actual_names = [codegen.add_var(r, str(self.type.name)) for r in result_names]
+            actual_names = [self.type.add_var(r) for r in result_names]
             log(f"  result_names: {result_names}")
             log(f"  actual_names: {actual_names}")
             for r, a in zip(result_names, actual_names):
                 replace[r] = a
             return actual_names
+        
+        @Entity.method(zc.Type) # Type.add_var
+        def add_var(self, name: str) -> str:
+            i_var = codegen.get_var_index()
+            var_name = f"{name}_{i_var}"
+            if self.properties:
+                for p in self.properties:
+                    var_type_name = codegen.config.get_concrete_type(f"{p.type.name}")
+                    for n in p.names:
+                        codegen.output(f"var('{var_name}.{n.name}', '{var_type_name}')")
+            else:
+                var_type_name = codegen.config.get_concrete_type(f"{self.name}")
+                codegen.output(f"var('{var_name}', '{var_type_name}')")
+            return var_name
         
         @Entity.method(zc.Function) # Function.get_params
         def get_params(self) -> List[str]:
@@ -1380,6 +1417,25 @@ class module_Functions(LanguageModule):
                     for param in item.params:
                         for name in param.names:
                             vars.append(str(name.name))
+            return vars
+        
+        @Entity.method(zc.FunctionDef) # FunctionDef.get_params
+        def get_params(self) -> List[str]:
+            vars = []
+            for item in self.signature.elements:
+                if isinstance(item, zc.FunctionSignatureParams):
+                    for param in item.params:
+                        for name in param.names:
+                            vars.append(str(name.name))
+            return vars
+        
+        @Entity.method(zc.FunctionDef) # FunctionDef.get_results
+        def get_results(self) -> List[str]:
+            vars = []
+            if self.results is not None:
+                for r in self.results.results:
+                    for name in r.names:
+                        vars.append(str(name.name))
             return vars
         
         @Entity.method(zc.Function) # Function.get_results
@@ -1413,10 +1469,10 @@ class module_Functions(LanguageModule):
                 result_vars.append(temp_var)
             return result_vars
         
-        @Entity.method(zc.Function) # Function.emit
+        @Entity.method(zc.FunctionDef) # FunctionDef.emit
         def emit(self, replace):
-            log(f"emit: {self.show(self)}, {replace}")
-            fn_name = self.emit_fn_name(self)
+            log(f"emit: {codegen.show(self)}, {replace}")
+            fn_name = self.emit_fn_name()
             result_vars = self.get_results()
             result_vars = [try_replace(r, replace) for r in result_vars]
             params = self.get_params() 
@@ -1429,7 +1485,7 @@ class module_Functions(LanguageModule):
             codegen.output(f"{fn_name}({', '.join(result_vars)}, {', '.join(params)})")
             return result_vars
 
-        @Entity.method(zc.Function) # Function.emit_fn_name
+        @Entity.method(zc.FunctionDef) # Function.emit_fn_name
         def emit_fn_name(self):
             out = ""
             for element in self.signature.elements:

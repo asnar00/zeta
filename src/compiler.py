@@ -47,6 +47,7 @@ class CompiledProgram:
         self.code = code
         self.ast : Entity = None                            # abstract syntax tree: a tree of Entity objects
         self.st : SymbolTable = None                        # symbol table; maps name => {object, scope, tag}
+        self.assembly = ""                                  # assembly code (in our own vm isa)
         self.reports : List[Report] = []                    # all reports from all stages
 
     def show_report(self) -> str:
@@ -67,8 +68,7 @@ class Compiler:
         self.modules : List[LanguageModule] = []
         self.grammar : Grammar= Grammar(import_module)
         self.cp = None
-        self.codegen = None
-        self.codegen_config = None
+        self.codegen = CodeGenerator()
 
     def add_modules(self, modules: List[LanguageModule]): self.modules.extend(modules)
     
@@ -145,11 +145,13 @@ class Compiler:
         return self.cp.is_ok()
     
     def generate(self) -> bool:
-        self.stage("generate")
-        self.codegen = CodeGenerator(self.codegen_config, self.cp.st, self.grammar)
+        self.stage("codegen")
+        self.codegen.setup(self.codegen_config, self.cp.st, self.grammar)
         ast = self.cp.ast
-        if hasattr(ast, "generate"): ast.generate(self)
+        if hasattr(ast, "generate"): ast.generate()
         else: log_exit("no generate method in ast")
+        self.cp.assembly = self.codegen.out
+        return self.cp.is_ok()
         
 
 
@@ -168,7 +170,7 @@ class Compiler:
         self.cp.reports[-1].errors.append(ReportItem(lex, msg))
 
     #--------------------------------------------------------------------
-    # called by Entity methods
+    # called by Entity methods in add_symbols, resolve, type
     
     # add symbol and report name and alias (if any); called by add_symbols
     def add_symbol(self, name: Lex, e: Entity, scope: Entity, alias: Lex=None):
@@ -189,6 +191,7 @@ class Compiler:
         else:
             if raise_errors: self.error(name, f"no {of_type.__name__} in {scope}, {caller()}")
         return None
+    
     
 #--------------------------------------------------------------------------------------------------
 # Report holds log of everything that happened in a compilation stage
