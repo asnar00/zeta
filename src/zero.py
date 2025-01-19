@@ -129,37 +129,6 @@ def test_zero():
     log(program.assembly)
     log_exit("done")
     
-
-#--------------------------------------------------------------------------------------------------
-
-def test_vectormath(self):
-    self.test_function()
-    self.reset()
-    test_function = self.find_entity("test_vectormath", zc.Function)
-    self.output(f"def {self.emit_fn_name(test_function)}():")
-    self.indent += 1
-    test_function.generate({})
-    self.indent -= 1
-
-    log_clear()
-    log("----------------------------------------------")
-    log(self.out)
-    log_exit("done")
-    return self.out
-
-def test_constructor(self):
-    self.reset()
-    test_function = self.find_entity("vector◦◦◦", zc.Function)
-    var = self.add_var("a", "vector")
-    test_function.generate({"x":"1", "y":"2", "z":"3", "_results":[var]})
-    test("test_function", self.out, """
-        var('a_0.x', 'f32')
-        var('a_0.y', 'f32')
-        var('a_0.z', 'f32')
-        mov('a_0.x', '1')
-        mov('a_0.y', '2')
-        mov('a_0.z', '3')
-    """)
 #--------------------------------------------------------------------------------------------------
 # print ast as nicely formatted code
 
@@ -1448,12 +1417,12 @@ class module_Functions(LanguageModule):
             return vars
         
         @Entity.method(zc.Function) # Function.get_result_types
-        def get_result_types(self) -> List[str]:
+        def get_result_types(self) -> List[zc.Type]:
             types = []
             if self.results is not None:
                 for r in self.results.results:
                     for name in r.names:
-                        types.append(str(r.type.name))
+                        types.append(r.type)
             return types
         
         @Entity.method(zc.Function) # Function.make_temp_vars
@@ -1465,7 +1434,7 @@ class module_Functions(LanguageModule):
             log(f"  types: {types}")
             temp_results = []
             for r, t in zip(results, types):
-                temp_var = codegen.add_var(r, t)
+                temp_var = t.add_var(r)
                 result_vars.append(temp_var)
             return result_vars
         
