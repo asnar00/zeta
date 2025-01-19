@@ -71,9 +71,9 @@ class Compiler:
         self.codegen = CodeGenerator()
 
     def add_modules(self, modules: List[LanguageModule]): self.modules.extend(modules)
-    
-    def setup(self, config: CodegenConfig):
-        self.codegen_config = config
+    def set_backend(self, config: CodegenConfig): self.config = config
+
+    def setup(self):
         for module in self.modules: module.setup_grammar(self)
         self.grammar.build_classes()
         for module in self.modules: module.setup(self)
@@ -145,7 +145,7 @@ class Compiler:
     
     def generate(self) -> bool:
         self.stage("codegen")
-        self.codegen.setup(self.codegen_config, self.cp.st, self.grammar)
+        self.codegen.setup(self.config, self.cp.st, self.grammar)
         ast = self.cp.ast
         if hasattr(ast, "generate"): ast.generate()
         else: log_exit("no generate method in ast")

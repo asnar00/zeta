@@ -107,16 +107,18 @@ feature ConcreteMath extends Math
 @this_is_the_test
 def test_zero():
     log("test_zero")
+
     compiler = Compiler(zc)
     compiler.add_modules([module_Features(), module_Expressions(), module_Variables(), module_Types(), module_Functions(), module_Tests()])
     test_verbose(False)
     log_max_depth(12)
 
-    config = CodegenConfig()
-    config.setup_types({ "number": "f32", "int": "i32"})
-
-    compiler.setup(config)
+    compiler.setup()
     code = s_test_program
+
+    config = CodegenConfig()
+    config.concrete_types({ "number": "f32", "int": "i32"})
+    compiler.set_backend(config)
 
     program = compiler.compile(code)
     log_clear()
@@ -1343,7 +1345,7 @@ class module_Functions(LanguageModule):
                         if "_" in r:
                             codegen.output("mov", [l], [r])
                         else:
-                            codegen.output("ld", [l], [r])
+                            codegen.output("imm", [l], [r])
 
         @Entity.method(zc.AssignmentLhs)   # AssignmentLhs.generate
         def generate(self, replace) -> List[str]:
@@ -1370,6 +1372,12 @@ class module_Functions(LanguageModule):
         def add_var(self, name: str) -> str:
             i_var = codegen.add_var()
             var_name = f"{name}_{i_var}"
+            if self.properties:
+                for p in self.properties:
+                    for n in p.names:
+                        codegen.assert_type(f"{var_name}.{n.name}", p.type.name)
+            else:
+                codegen.assert_type(var_name, self.name)
             return var_name
         
         @Entity.method(zc.Function) # Function.get_params

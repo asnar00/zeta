@@ -15,33 +15,42 @@ class CodegenConfig:
     def __init__(self):
         self.type_substitution = {}
 
-    def setup_types(self, type_map: Dict[str, str]):
+    def concrete_types(self, type_map: Dict[str, str]):
         self.type_substitution.update(type_map)
+        log(f"concrete_types: {self.type_substitution}")
 
     def get_concrete_type(self, abstract_type_name: str) -> str:
-        return self.type_substitution.get(abstract_type_name, abstract_type_name)
+        return self.type_substitution.get(abstract_type_name, None)
     
 class Instruction:
     def __init__(self, opcode: str, dest_vars: List[str], src_vars: List[str]):
         self.opcode = opcode
         self.dest_vars = dest_vars
         self.src_vars = src_vars
-    def __str__(self):
-        return f"{self.opcode} {', '.join(self.dest_vars)}, {', '.join(self.src_vars)}"
-    def __repr__(self):
-        return str(self)
 
 class InstructionBlock:
     def __init__(self):
         self.instructions = []
+        self.type_map = {} # map variable name => concretetype name
+
     def __str__(self):
+        max_length = max(len(var) for var in self.type_map.keys()) if self.type_map else 0
+        max_length += max((len(type_name) for type_name in self.type_map.values()), default=0)
+        max_digits = len(str(len(self.instructions)))
+        max_length += max_digits + 26
+
         out = ""
-        for i, instruction in enumerate(self.instructions):
-            ii = log_grey(f"{i:3}: ")
-            out += f"{ii}{str(instruction)}\n"
+        for i, instr in enumerate(self.instructions):
+            ii = log_grey(f"{i:{max_digits}}: ")
+            type = log_grey(f"{self.type_map[instr.dest_vars[0]]}")
+            lhs = f"{ii}{type} {instr.dest_vars[0]}"
+            lhs += " " * (max_length - len(lhs))
+            lhs += f"{log_grey("<=")} {instr.opcode} {', '.join(instr.src_vars)}\n"
+            out += lhs
         return out
     def __repr__(self):
         return str(self)
+    
     def optimise(self):
         log_clear()
         self.optimise_live_ranges()
@@ -81,7 +90,7 @@ class InstructionBlock:
     def optimise_lds(self):
         for i in range(len(self.instructions) - 1, -1, -1):
             instruction = self.instructions[i]
-            if instruction.opcode != "ld": continue
+            if instruction.opcode != "imm": continue
             i_read = self.find_read_forward(i, instruction.dest_vars[0])
             if i_read < len(self.instructions):
                 i_dest = i_read - 1
@@ -153,6 +162,11 @@ class CodeGenerator:
         txt = "    "*self.indent + f"{opcode} {', '.join(dest_vars)}, {', '.join(src_vars)}\n"
         log(log_green(txt))
         self.block.instructions.append(Instruction(opcode, dest_vars, src_vars))
+
+    def assert_type(self, var_name, type_name):
+        concrete_type_name = self.config.get_concrete_type(str(type_name))
+        log(f"assert_type {var_name} {type_name} => {concrete_type_name}")
+        self.block.type_map[var_name] = concrete_type_name
 
     def show(self, e):
         return print_code_formatted(e, self.grammar).replace("\n", "↩︎").replace("    ", "")
