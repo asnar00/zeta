@@ -212,7 +212,6 @@ class module_Features(LanguageModule):
                 return
             codegen.reset()
             run_func.generate({})
-            compiler.assembly = codegen.out
 
     def test_parser(self, compiler: Compiler):
         grammar = compiler.grammar
@@ -382,7 +381,7 @@ class module_Expressions(LanguageModule):
             for i, item in enumerate(items):
                 if isinstance(item, zc.FunctionCallOperator) and item.name != ".":
                     rank = item.name.rank
-                    if rank < lowest_rank:
+                    if rank <= lowest_rank:
                         lowest_rank = rank
                         i_found = i
             return i_found
@@ -1338,10 +1337,13 @@ class module_Functions(LanguageModule):
                 if len(lhs) > 0: fn_replace["_results"] = lhs
                 rhs = s.rhs.generate(fn_replace)
                 if len(lhs) != len(rhs):
-                    codegen.error(f"FunctionStatements.generate: {codegen.show(self)}, {lhs} != {rhs}")
+                    compiler.error(f"FunctionStatements.generate: {codegen.show(self)}, {lhs} != {rhs}")
                 for l, r in zip(lhs, rhs):
                     if l != r:
-                        codegen.output(f"mov('{l}', '{r}')")
+                        if "_" in r:
+                            codegen.output("mov", [l], [r])
+                        else:
+                            codegen.output("ld", [l], [r])
 
         @Entity.method(zc.AssignmentLhs)   # AssignmentLhs.generate
         def generate(self, replace) -> List[str]:
@@ -1366,16 +1368,8 @@ class module_Functions(LanguageModule):
         
         @Entity.method(zc.Type) # Type.add_var
         def add_var(self, name: str) -> str:
-            i_var = codegen.get_var_index()
+            i_var = codegen.add_var()
             var_name = f"{name}_{i_var}"
-            if self.properties:
-                for p in self.properties:
-                    var_type_name = codegen.config.get_concrete_type(f"{p.type.name}")
-                    for n in p.names:
-                        codegen.output(f"var('{var_name}.{n.name}', '{var_type_name}')")
-            else:
-                var_type_name = codegen.config.get_concrete_type(f"{self.name}")
-                codegen.output(f"var('{var_name}', '{var_type_name}')")
             return var_name
         
         @Entity.method(zc.Function) # Function.get_params
@@ -1449,9 +1443,7 @@ class module_Functions(LanguageModule):
             log(f"  fn_name: {fn_name}")
             log(f"  result_vars: {result_vars}")
             log(f"  params: {params}")
-            result_vars = [f"'{r}'" for r in result_vars]
-            params = [f"'{p}'" for p in params]
-            codegen.output(f"{fn_name}({', '.join(result_vars)}, {', '.join(params)})")
+            codegen.output(fn_name, result_vars, params)
             return result_vars
 
         @Entity.method(zc.FunctionDef) # Function.emit_fn_name

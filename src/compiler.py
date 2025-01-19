@@ -47,7 +47,7 @@ class CompiledProgram:
         self.code = code
         self.ast : Entity = None                            # abstract syntax tree: a tree of Entity objects
         self.st : SymbolTable = None                        # symbol table; maps name => {object, scope, tag}
-        self.assembly = ""                                  # assembly code (in our own vm isa)
+        self.assembly = None                                # assembly code (in our own vm isa)
         self.reports : List[Report] = []                    # all reports from all stages
 
     def show_report(self) -> str:
@@ -77,7 +77,6 @@ class Compiler:
         for module in self.modules: module.setup_grammar(self)
         self.grammar.build_classes()
         for module in self.modules: module.setup(self)
-        
 
     def compile(self, code: str) -> CompiledProgram:
         code = code.strip()
@@ -150,9 +149,8 @@ class Compiler:
         ast = self.cp.ast
         if hasattr(ast, "generate"): ast.generate()
         else: log_exit("no generate method in ast")
-        self.cp.assembly = self.codegen.out
+        self.cp.assembly = self.codegen.block.optimise()
         return self.cp.is_ok()
-        
 
 
     #--------------------------------------------------------------------

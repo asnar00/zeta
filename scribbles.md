@@ -2,6 +2,157 @@
 # scribblez
 "slow is smooth, smooth is fast"
 
+rearranging instructions to improve efficiency.
+This is "find distance between a and b" which is basically length(a - b), length(v) = v dot v, a dot b = blah
+
+    mov('a_0.x', '1')
+    mov('a_0.y', '2')
+    mov('a_0.z', '3')
+    mov('b_1.x', '4')
+    mov('b_1.y', '5')
+    mov('b_1.z', '6')
+    sub('n_4', 'a_0.x', 'b_1.x')
+    sub('n_5', 'a_0.y', 'b_1.y')
+    sub('n_6', 'a_0.z', 'b_1.z')
+    mov('v_3.x', 'n_4')
+    mov('v_3.y', 'n_5')
+    mov('v_3.z', 'n_6')
+    mul('n_8', 'v_3.x', 'v_3.x')
+    mul('n_10', 'v_3.y', 'v_3.y')
+    mul('n_11', 'v_3.z', 'v_3.z')
+    add('n_9', 'n_10', 'n_11')
+    add('n_7', 'n_8', 'n_9')
+    sqrt('d_2', 'n_7')
+
+Now we could do this more compactly if we reordered it:
+
+    sub(x, a.x, b.x)
+    mul(x, x, x)
+    sub(y, a.y, b.y)
+    mul(y, y, y)
+    add(x, x, y)
+    sub(y, a.z, b.z)
+    mul(y, y, y)
+    add(x, x, y)
+    sqrt(x, x)
+
+In other words, reordering can reduce register allocation fairly drastically (from 18 to 2 temp vars).
+so we should probably be looking at this as a first-order optimisation, right?
+
+general heuristic is "move an instruction backwards to be as close to its generators as possible". So we'd do it like this.
+
+    mov('a_0.x', '1')
+    mov('b_1.x', '4')
+    sub('n_4', 'a_0.x', 'b_1.x')
+    mov('v_3.x', 'n_4')
+    mul('n_8', 'v_3.x', 'v_3.x')
+
+    mov('a_0.y', '2')
+    mov('b_1.y', '5')
+    sub('n_5', 'a_0.y', 'b_1.y')
+    mov('v_3.y', 'n_5')
+    mul('n_10', 'v_3.y', 'v_3.y')
+
+    mov('a_0.z', '3')
+    mov('b_1.z', '6')
+    sub('n_6', 'a_0.z', 'b_1.z')
+    mov('v_3.z', 'n_6')
+    mul('n_11', 'v_3.z', 'v_3.z')
+    
+    add('n_9', 'n_10', 'n_11')
+    add('n_7', 'n_8', 'n_9')
+    sqrt('d_2', 'n_7')
+
+Interesting:
+
+    a.x * b.x + a.y * b.y + a.z * b.z
+
+can be split two ways:
+
+    (a.x * b.x + a.y * b.y) + (a.z * b.z)       # choose the last highest ranked
+
+    (a.x * b.x) + (a.y * b.y + a.z * b.z)       # choose the first highest ranked
+
+=> we can do that by changing a single comparison in the embracket function!
+
+And this will change the order of computation to reduce the complexity of the mov-as-close-as-you-can algorithm.
+I think is a general improvement.
+
+That's pretty cool really. OK let's try it.
+
+I also think if we're moving instructions around then they need to be stored as actual objects, not just text.
+
+Having made that change, the new instruction output is:
+
+    mov('a_0.x', '1')
+    mov('a_0.y', '2')
+    mov('a_0.z', '3')
+    mov('b_1.x', '4')
+    mov('b_1.y', '5')
+    mov('b_1.z', '6')
+    sub('n_4', 'a_0.x', 'b_1.x')
+    sub('n_5', 'a_0.y', 'b_1.y')
+    sub('n_6', 'a_0.z', 'b_1.z')
+    mov('v_3.x', 'n_4')
+    mov('v_3.y', 'n_5')
+    mov('v_3.z', 'n_6')
+    mul('n_9', 'v_3.x', 'v_3.x')
+    mul('n_10', 'v_3.y', 'v_3.y')
+    add('n_8', 'n_9', 'n_10')
+    mul('n_11', 'v_3.z', 'v_3.z')
+    add('n_7', 'n_8', 'n_11')
+    sqrt('d_2', 'n_7')
+
+If we now apply our "move up as far as you can" repeatedly, we get this:
+
+    mov('a_0.x', '1')    
+    mov('b_1.x', '4')
+    sub('n_4', 'a_0.x', 'b_1.x')
+    mov('v_3.x', 'n_4')
+    mul('n_9', 'v_3.x', 'v_3.x')
+
+    mov('a_0.y', '2')
+    mov('b_1.y', '5')
+    sub('n_5', 'a_0.y', 'b_1.y')
+    mov('v_3.y', 'n_5')
+    mul('n_10', 'v_3.y', 'v_3.y')
+    add('n_8', 'n_9', 'n_10')
+
+    mov('a_0.z', '3')
+    mov('b_1.z', '6')
+    sub('n_6', 'a_0.z', 'b_1.z')
+    mov('v_3.z', 'n_6')
+    mul('n_11', 'v_3.z', 'v_3.z')
+    add('n_7', 'n_8', 'n_11')
+
+    sqrt('d_2', 'n_7')
+
+We can now apply the "remove-mov" optimisation (if we assign to var1 and immediate mov var2, var1, just assign to var2):
+
+    mov('a_0.x', '1')    
+    mov('b_1.x', '4')
+    sub('v_3.x', 'a_0.x', 'b_1.x')
+    mul('n_9', 'v_3.x', 'v_3.x')
+
+    mov('a_0.y', '2')
+    mov('b_1.y', '5')
+    sub('v_3.y', 'a_0.y', 'b_1.y')
+    mul('n_10', 'v_3.y', 'v_3.y')
+    add('n_8', 'n_9', 'n_10')
+
+    mov('a_0.z', '3')
+    mov('b_1.z', '6')
+    sub('v_3.z', 'a_0.z', 'b_1.z')
+    mul('n_11', 'v_3.z', 'v_3.z')
+    add('n_7', 'n_8', 'n_11')
+
+    sqrt('d_2', 'n_7')
+
+And now we have the optimal code.
+
+
+
+---
 ok so next steps:
 
 1- concrete type substitution
