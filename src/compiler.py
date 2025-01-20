@@ -68,10 +68,11 @@ class Compiler:
         self.modules : List[LanguageModule] = []
         self.grammar : Grammar= Grammar(import_module)
         self.cp = None
+        self.config = CodegenConfig()
         self.codegen = CodeGenerator()
 
     def add_modules(self, modules: List[LanguageModule]): self.modules.extend(modules)
-    def set_backend(self, config: CodegenConfig): self.config = config
+    def set_concrete_types(self, types: Dict[str, str]): self.config.concrete_types(types)
 
     def setup(self):
         for module in self.modules: module.setup_grammar(self)

@@ -110,15 +110,13 @@ def test_zero():
 
     compiler = Compiler(zc)
     compiler.add_modules([module_Features(), module_Expressions(), module_Variables(), module_Types(), module_Functions(), module_Tests()])
+    compiler.set_concrete_types({ "number": "f32", "int": "i32"})
+    
     test_verbose(False)
     log_max_depth(12)
 
     compiler.setup()
     code = s_test_program
-
-    config = CodegenConfig()
-    config.concrete_types({ "number": "f32", "int": "i32"})
-    compiler.set_backend(config)
 
     program = compiler.compile(code)
     #log_clear()
@@ -131,6 +129,12 @@ def test_zero():
     log("after optimisation:")
     log(program.assembly)
     program.assembly.measure_pressure()
+    backend = PythonBackend("test/test.py")
+    backend.generate(program.assembly)
+    results = backend.run()
+    log("\n----------------------------------------------")
+    log(results)
+
     
 #--------------------------------------------------------------------------------------------------
 # print ast as nicely formatted code
