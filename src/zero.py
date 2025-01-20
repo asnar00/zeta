@@ -121,15 +121,16 @@ def test_zero():
     compiler.set_backend(config)
 
     program = compiler.compile(code)
-    log_clear()
+    #log_clear()
     #log(program.show_report())
     #for stage in program.reports:
     #    log(visual_report_from_stage(stage, code))
     if not program.is_ok():
         log_exit("program is not ok")
-    log("----------------------------------------------")
+    log("\n----------------------------------------------")
+    log("after optimisation:")
     log(program.assembly)
-    log_exit("done")
+    program.assembly.measure_pressure()
     
 #--------------------------------------------------------------------------------------------------
 # print ast as nicely formatted code

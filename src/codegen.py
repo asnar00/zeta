@@ -48,11 +48,15 @@ class InstructionBlock:
             lhs += f"{log_grey("<=")} {instr.opcode} {', '.join(instr.src_vars)}\n"
             out += lhs
         return out
+    
     def __repr__(self):
         return str(self)
     
     def optimise(self):
         log_clear()
+        log("\nbefore optimisation:")
+        log(str(self))
+        self.measure_pressure()
         self.optimise_live_ranges()
         self.optimise_movs()
         self.optimise_lds()
@@ -62,7 +66,6 @@ class InstructionBlock:
     def optimise_live_ranges(self):
         safe_count = 0
         while safe_count < 10:
-            log(str(self))
             safe_count += 1
             n_moves = self.try_moves()
             if n_moves == 0: break
@@ -111,6 +114,11 @@ class InstructionBlock:
         while i < len(self.instructions) and var_name not in self.instructions[i].src_vars:
             i += 1
         return i
+    def find_last_read(self, var_name):
+        for i in range(len(self.instructions) - 1, -1, -1):
+            if var_name in self.instructions[i].src_vars:
+                return i
+        return -1
     def try_move(self, i_instruction) -> int:  # find earliest index we can move to, or -1 if not possible
         this_instruction = self.instructions[i_instruction]
         i_instructions = [self.find_assignment_reverse(i_instruction, var) for var in this_instruction.src_vars]
@@ -128,6 +136,22 @@ class InstructionBlock:
             i_moved_to = self.try_move(i)
             if i_moved_to >= 0: n_moves += 1
         return n_moves
+    
+    def measure_pressure(self): # for each instruction, find the number of live vars
+        max_pressure = 0
+        live_vars = set()
+        for i in range(len(self.instructions)):
+            instruction = self.instructions[i]
+            live_vars.update(instruction.dest_vars)
+            for src_var in instruction.src_vars:
+                if not ("_" in src_var): continue
+                i_last_read = self.find_last_read(src_var)
+                if i_last_read == i and src_var in live_vars:
+                    live_vars.remove(src_var)
+                max_pressure = max(max_pressure, len(live_vars))
+            #log(f"live_vars {i}: {live_vars} ({len(live_vars)})")
+        log(f"max_live: {max_pressure}")
+        return self
 
 
 class CodeGenerator:
