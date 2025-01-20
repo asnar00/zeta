@@ -57,8 +57,8 @@ class InstructionBlock:
         log("\nbefore optimisation:")
         log(str(self))
         self.measure_pressure()
-        self.optimise_live_ranges()
         self.optimise_movs()
+        self.optimise_live_ranges()
         self.optimise_lds()
         return self
 
