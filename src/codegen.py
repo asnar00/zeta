@@ -5,7 +5,7 @@
 
 from typing import Dict
 from src.symbols import *
-from src.entity import *
+from src.ast import *
 from copy import deepcopy
 import subprocess
 

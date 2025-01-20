@@ -5,7 +5,7 @@
 
 from typing import Type, Dict, Any, List, Set
 from src.grammar import Entity, Grammar
-from src.entity import dbg_entity
+from src.ast import dbg_entity
 from src.parser import print_code_formatted
 from src.util import *
 from src.lexer import Lex

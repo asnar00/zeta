@@ -7,7 +7,7 @@ from typing import Type
 from src.util import *
 from src.lexer import *
 from src.grammar import *
-from src.entity import *
+from src.ast import *
 
 #--------------------------------------------------------------------------------------------------
 # Parser

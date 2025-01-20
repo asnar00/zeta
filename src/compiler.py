@@ -7,7 +7,7 @@ from typing import List
 from src.util import *
 from src.lexer import *
 from src.grammar import *
-from src.entity import *
+from src.ast import *
 from src.parser import *
 from src.symbols import *
 from src.codegen import *

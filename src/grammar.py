@@ -8,7 +8,7 @@ T = TypeVar('T')
 from src.util import *
 from typing import get_type_hints
 from src.lexer import Lex
-from src.entity import Entity
+from src.ast import Entity
 import importlib
 
 #--------------------------------------------------------------------------------------------------
