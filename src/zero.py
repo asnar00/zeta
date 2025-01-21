@@ -128,7 +128,7 @@ def test_zero():
     log("\n----------------------------------------------")
     log("after optimisation:")
     log(program.assembly)
-    program.assembly.measure_pressure()
+    log_exit("")
     backend = PythonBackend("test/test.py")
     backend.generate(program.assembly)
     results = backend.run()
@@ -1375,14 +1375,14 @@ class module_Functions(LanguageModule):
         
         @Entity.method(zc.Type) # Type.add_var
         def add_var(self, name: str) -> str:
-            i_var = codegen.add_var()
+            i_var = codegen.alloc_var_index()
             var_name = f"{name}_{i_var}"
             if self.properties:
                 for p in self.properties:
                     for n in p.names:
-                        codegen.assert_type(f"{var_name}.{n.name}", p.type.name)
+                        codegen.add_var(f"{var_name}.{n.name}", p.type.name)
             else:
-                codegen.assert_type(var_name, self.name)
+                codegen.add_var(var_name, self.name)
             return var_name
         
         @Entity.method(zc.Function) # Function.get_params

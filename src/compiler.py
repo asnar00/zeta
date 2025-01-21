@@ -150,7 +150,9 @@ class Compiler:
         ast = self.cp.ast
         if hasattr(ast, "generate"): ast.generate()
         else: log_exit("no generate method in ast")
-        self.cp.assembly = self.codegen.block.optimise()
+        optimiser = Optimiser(self.codegen.block)
+        optimiser.optimise()
+        self.cp.assembly = self.codegen.block
         return self.cp.is_ok()
 
 
