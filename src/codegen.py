@@ -8,6 +8,7 @@ from src.symbols import *
 from src.ast import *
 from copy import deepcopy
 import subprocess
+import struct
 
 #--------------------------------------------------------------------------------------------------
 # configuration options for code production
@@ -29,6 +30,8 @@ class Var:
         self.name = name
         self.type_name = type_name          # concrete type name
         self.live_range = (-1, -1)          # instruction index of first write and last read
+        self.register = None                # physical register name (dynamic)
+        self.spill_index = None             # index in spill-memory (dynamic)
     def __str__(self): return self.name
     def __repr__(self): return self.name
 
@@ -208,6 +211,11 @@ class Optimiser:
             if var in self.block.instructions[i].src_vars:
                 return i
         return -1
+    def find_next_read(self, var: Var, i_instruction: int):
+        for i in range(i_instruction+1, len(self.block.instructions)):
+            if var in self.block.instructions[i].src_vars:
+                return i
+        return -1
     def try_move(self, i_instruction) -> int:  # find earliest index we can move to, or -1 if not possible
         this_instruction = self.block.instructions[i_instruction]
         i_instructions = [self.find_assignment_reverse(i_instruction, var) for var in this_instruction.src_vars]
@@ -247,7 +255,7 @@ class Optimiser:
 class Backend:
     def __init__(self, path: str): self.path = path
     def generate(self, block: InstructionBlock) -> str: pass
-    def run(self, path: str) -> str: return ""
+    def run(self) -> str: return ""
 
 #--------------------------------------------------------------------------------------------------
 # Python backend runs numpy
@@ -260,20 +268,20 @@ class PythonBackend(Backend):
         type_map = { "f32" : "np.float32", "i32" : "np.int32" }
 
         for instruction in block.instructions:
-            dest_var = instruction.dest_vars[0].replace(".", "_")
+            dest_var = instruction.dest_vars[0].name.replace(".", "_")
             if instruction.opcode == "imm":
-                type = type_map[block.type_map[instruction.dest_vars[0]]]
+                type = type_map[instruction.dest_vars[0].type_name]
                 out += f"    {dest_var} = {type}({instruction.src_vars[0]})\n"
             else:
                 opcode = op_map[instruction.opcode]
-                operands = [var.replace(".", "_") for var in instruction.src_vars]
+                operands = [var.name.replace(".", "_") for var in instruction.src_vars]
                 if opcode in "+-*/":
                     out += f"    {dest_var} = {operands[0]} {opcode} {operands[1]}\n"
                 elif len(operands) == 1:
                     out += f"    {dest_var} = {opcode}({operands[0]})\n"
 
         for instruction in block.instructions:
-            dest_var = instruction.dest_vars[0].replace(".", "_")
+            dest_var = instruction.dest_vars[0].name.replace(".", "_")
             out += f"    print(f\"{instruction.dest_vars[0]} = {{{dest_var}}}\")\n"
         out += self.footer()
         out = out.strip()
@@ -307,8 +315,9 @@ class PythonBackend(Backend):
         """)
 
 #--------------------------------------------------------------------------------------------------
-# ARM backends runs on the M1
+# ARM backend runs on the M1
 
+# single register set of a single type (float or int)
 class RegisterSet:
     def __init__(self, n_registers: int, name_map: Dict[str, str]):
         self.n_registers = n_registers
@@ -316,20 +325,133 @@ class RegisterSet:
         self.reset()
 
     def reset(self):
-        self.free_registers = set()
-        for i in range(0, self.n_registers): self.free_registers.add(i)
+        self.assigned_vars = [None for i in range(0, self.n_registers)]
 
-    def alloc_register(self, type_name: str) -> str:
-        if self.free_registers:
-            reg = self.free_registers.pop()
-            return f"{self.name_map[type_name]}{reg}"
+    def allocate(self, var: Var) -> str:
+        for i in range(0, self.n_registers):
+            if self.assigned_vars[i] == None:
+                self.assigned_vars[i] = var
+                reg = self.name_map[var.type_name] + str(i)
+                var.register = reg
+                return reg
         return None
     
-    def free_register(self, reg: str):
-        i_reg = int(reg[1:])
-        if i_reg in self.free_registers:
-            raise Exception(f"register {reg} is already free")
-        self.free_registers.add(i_reg)
+    def free(self, var: Var):
+        if var.register == None: return
+        self.assigned_vars[int(var.register[1:])] = None
+        var.register = None
+
+    def transfer(self, to_var: Var, from_var: Var):
+        to_var.register = from_var.register
+        from_var.register = None
+        i_register = int(from_var.register[1:])
+        self.assigned_vars[i_register] = to_var
+
+# manages multiple register sets
+class RegisterAllocator:
+    def __init__(self, register_sets: Dict[str, RegisterSet]):
+        self.register_sets = register_sets
+        self.reset()
+
+    def reset(self):
+        for register_set in self.register_sets.values(): register_set.reset()
+        
+    def allocate(self, var: Var) -> str:
+        register_set = self.register_sets[var.type_name[0]]
+        return register_set.allocate(var)
+    
+    def free(self, var: Var):
+        self.register_sets[var.type_name[0]].free(var)
+        var.register = None
+
+# manages spill slots for a single size
+class SpillManager:
+    def __init__(self, n_bytes: int):
+        self.n_bytes = n_bytes
+        self.reset()
+
+    def reset(self):
+        self.spilled_vars = []
+        self.max_spills = 0
+
+    def assign_spill_index(self, var: Var) -> int:      # return byte offset to store to
+        index = next((i for i, var in enumerate(self.spilled_vars) if var is None), None)
+        if not index:
+            index = len(self.spilled_vars)
+            self.spilled_vars.append(None)
+            self.max_spills = max(self.max_spills, index)
+        self.spilled_vars[index] = var
+        var.spill_index = index
+        return index * self.n_bytes
+
+    def unspill_var(self, var: Var) -> int:     # return byte offset to load from
+        index = var.spill_index
+        self.spilled_vars[index] = None
+        var.spill_index = None
+        return index * self.n_bytes
+
+# holds a register, two offsets (store, and load)
+class RegisterResult:
+    def __init__(self, register: str, store_offset: int=None, load_offset: int=None):
+        self.register = register
+        self.store_offset = store_offset
+        self.load_offset = load_offset
+
+# manages register allocation and splitting automatically
+class RegisterManager:
+    def __init__(self, register_sets: Dict[str, RegisterSet]):
+        self.register_allocator = RegisterAllocator(register_sets)
+        self.spill_manager_32 = SpillManager(4)
+        self.spill_manager_64 = SpillManager(8)
+        self.spill_managers = { "i32" : self.spill_manager_32, "i64" : self.spill_manager_64, "f32" : self.spill_manager_32, "f64" : self.spill_manager_64 }
+    
+    def reset(self, block: InstructionBlock):
+        self.block : InstructionBlock = block
+        self.register_allocator.reset()
+        for spill_manager in self.spill_managers.values(): spill_manager.reset()
+    
+    def find_register(self, var: Var, for_write: bool, i_instruction: int) -> RegisterResult:        # spills / unspills as necessary
+        if var.register: return RegisterResult(var.register)    # we already have a register, nothing to do
+        # some spillage
+        spill_manager = self.spill_managers[var.type_name]
+        if for_write: # we have to spill something
+            reg = self.register_allocator.allocate(var)
+            if reg: return RegisterResult(reg)
+            store_offset = self.spill_something(var.type_name, spill_manager, i_instruction)
+            reg = self.register_allocator.allocate(var)
+            return RegisterResult(reg, store_offset)
+        else: # we're unspilling this var
+            load_offset = spill_manager.unspill_var(var)
+            reg = self.register_allocator.allocate(var) # if this works we're fine
+            if reg: return RegisterResult(reg, None, load_offset)
+            store_offset = self.spill_something(var.type_name, spill_manager, i_instruction)
+            reg = self.register_allocator.allocate(var)
+            return RegisterResult(reg, store_offset, load_offset)
+        
+    def free(self, var: Var):
+        self.register_allocator.free(var)
+        
+    def spill_something(self, type_name: str, spill_manager: SpillManager, i_instruction: int) -> int:
+        victim_var = self.select_victim(type_name, i_instruction)
+        store_index = spill_manager.assign_spill_index(victim_var)
+        self.register_allocator.free(victim_var)
+        return store_index
+
+    def select_victim(self, type_name: str, i_instruction: int) -> Var:
+        potentials = [var for var in self.block.vars.values() if var.register and var.type_name == type_name]
+        this_instruction = self.block.instructions[i_instruction]
+        potentials = [var for var in potentials if var not in this_instruction.dest_vars and var not in this_instruction.src_vars]
+        if len(potentials) == 0: log_exit("no victims found")
+        if len(potentials) == 1: return potentials[0]
+        # find the one with the latest next-read instruction
+        i_best_read = -1
+        best_victim = None
+        for var in potentials:
+            i_next_read = self.block.find_next_read(var, i_instruction)
+            if i_next_read > i_best_read:
+                i_best_read = i_next_read
+                best_victim = var
+        return best_victim
 
 class ARMBackend(Backend):
     def __init__(self, path: str):
@@ -337,35 +459,117 @@ class ARMBackend(Backend):
         self.int_registers = RegisterSet(32, { "i32" : "w", "i64" : "x" })
         self.fp_registers = RegisterSet(32, { "f32" : "s", "f64" : "d", "f32x4" : "v" })
         self.register_sets = { "i" : self.int_registers, "f" : self.fp_registers }
-        self.var_to_reg = {}         # Map variable names to physical registers
-        self.reg_to_var = {}         # Reverse map to track register usage
-        self.spills = []             # Spilled variables for debugging or further handling
-    
-    def generate(self, block: InstructionBlock):
-        self.reset()
-        pass
+        self.register_manager = RegisterManager(self.register_sets)
+        self.opcode_map_float = { "add" : "fadd", "sub" : "fsub", "mul" : "fmul", "div" : "fdiv", "sqrt" : "fsqrt" }
+        self.opcode_map_int = { "add" : "add", "sub" : "sub", "mul" : "mul", "div" : "div", "sqrt" : "sqrt" }
+        self.f32_consts = {}
+        self.constant_memory = Var("constant_memory_adr", "i64")
+        self.i_instruction = None
+        self.out = ""
 
+    def generate(self, block: InstructionBlock):
+        self.block = block
+        log_clear()
+        self.reset()
+        self.find_register(self.constant_memory, for_write=True)
+        self.write(".global run")
+        self.write("run:")
+        self.write("    stp x29, x30, [sp, #-16]! ")
+        self.write("    mov x29, sp")
+        self.write(f"    adr {self.constant_memory.register}, f32_constants")
+        for i, instruction in enumerate(block.instructions):
+            self.i_instruction = i
+            src_regs = []
+            src_types = []
+            if instruction.opcode != "imm":
+                src_regs = [self.find_register(var, for_write=False) for var in instruction.src_vars]
+                src_types = [var.type_name for var in instruction.src_vars]
+                self.free_unused_registers(i, instruction.src_vars)
+            else:
+                src_regs = [instruction.src_vars[0]]
+            dest_reg = self.find_register(instruction.dest_vars[0], for_write=True)
+            dest_type = instruction.dest_vars[0].type_name
+            self.output(instruction.opcode, dest_reg, dest_type, src_regs, src_types)
+        self.out = self.output_memory_section() + self.out
+        self.write("    ret")
+        log(self.out)
+        write_file(self.path, self.out)
 
     #-------------------------------------------------------------------------
-    # below the line
+            
+    def output(self, opcode, dest_reg, dest_type, src_regs, src_types):
+        if opcode == "imm":
+            if dest_type.startswith("f"):
+                self.output_float_imm(dest_reg, src_regs[0], dest_type)
+            return
+        out_opcode = self.find_opcode(opcode, dest_type, src_types)
+        self.write(f"    {out_opcode} {dest_reg}, {', '.join(src_regs)}")
+
+    def write(self, line):
+        self.out += line + "\n"
+
+    def output_float_imm(self, reg, const, type):
+        offset = self.f32_consts.get(const, None)
+        if offset is None: 
+            offset = len(self.f32_consts) * 4
+            self.f32_consts[const] = offset
+        mem_reg = self.constant_memory.register
+        self.write(f"    ldr {reg}, [{mem_reg}, #{offset}]")
+
+    def output_memory_section(self) -> str:
+        def float_to_hex(f: float) -> str:
+            # Pack the float into 4 bytes (single-precision)
+            packed = struct.pack('>f', f)  # '<f' is little-endian single-precision
+            # Convert the packed bytes to a hexadecimal string
+            return packed.hex()
+        out = log_deindent("""
+                .section .rodata
+                .align 4
+                f32_constants:
+            """)
+        for i, (const, offset) in enumerate(self.f32_consts.items()):
+            out += f"    .word 0x{float_to_hex(float(const))} @ f32({const})\n"
+    
+        return out
+
+    #-------------------------------------------------------------------------
+    # opcode selection based on type
+
+    def find_opcode(self, opcode, dest_type, src_types):
+        if dest_type[0] == "f" and all(src_type[0] == "f" for src_type in src_types):
+            return self.opcode_map_float[opcode]
+        elif dest_type[0] == "i" and all(src_type[0] == "i" for src_type in src_types):
+            return self.opcode_map_int[opcode]
+        raise Exception(f"no opcode found for {opcode} {dest_type} {src_types}")
+    
+    #-------------------------------------------------------------------------
+    # register allocation stuff
 
     def reset(self):
-        for register_set in self.register_sets.values(): register_set.reset()
-        self.var_to_reg = {} 
-        self.reg_to_var = {}
-        self.spills = []
-
-    def var_to_register(self, var_name: str, type_name: str) -> str:
-        register_set = self.register_sets[type_name[0]]
-        reg = register_set.alloc_register(type_name)
-        if not reg:
-            reg = self.spill_register(register_set, type_name)
-        self.var_to_reg[var_name] = reg
-        self.reg_to_var[reg] = var_name
-        return reg
+        self.register_manager.reset(self.block)
     
-    def spill_register(self, register_set: RegisterSet, type_name: str) -> str:
-        pass
+    # find a register for a variable; if there isn't one, generate load instruction
+    def find_register(self, var: Var, for_write: bool) -> str:
+        if var.register: return var.register
+        reg_result = self.register_manager.find_register(var, for_write, self.i_instruction)
+        if reg_result.store_offset:
+            self.output("str", reg_result.register, var.type_name, [f"[sp, #{reg_result.store_offset}]"])
+        if reg_result.load_offset:
+            self.output("ldr", reg_result.register, var.type_name, [f"[sp, #{reg_result.load_offset}]"])
+        return reg_result.register
+    
+    # if any variables are at the end of their live range, free their registers
+    def free_unused_registers(self, i_instruction: int, vars: List[Var]):
+        for var in vars:
+            if var.live_range[1] <= i_instruction:
+                self.register_manager.free(var)
+
+    
+
+
+    
+    
+        
 
 
 
