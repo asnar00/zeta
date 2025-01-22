@@ -66,6 +66,22 @@ class InstructionBlock:
     
     def __repr__(self):
         return str(self)
+    
+    def find_last_write(self, i_instruction, var: Var):
+        i = i_instruction -1
+        while i >= 0 and var not in self.instructions[i].dest_vars:
+            i -= 1
+        return i
+    def find_next_read(self, i_instruction: int, var: Var):
+        i = i_instruction + 1
+        while i < len(self.instructions) and var not in self.instructions[i].src_vars:
+            i += 1
+        return i
+    def find_last_read(self, var: Var):
+        for i in range(len(self.instructions) - 1, -1, -1):
+            if var in self.instructions[i].src_vars:
+                return i
+        return -1
 
 #--------------------------------------------------------------------------------------------------
 
@@ -130,6 +146,9 @@ def try_replace(var, replace):
         if var in replace: return replace[var]
     return var
 
+#--------------------------------------------------------------------------------------------------
+# optimiser - works at VM level before backend does its thing
+
 class Optimiser:
     def __init__(self, block: InstructionBlock):
         self.block = block
@@ -161,7 +180,7 @@ class Optimiser:
         vars_to_replace = {}
         for i, instruction in enumerate(self.block.instructions):
             if instruction.opcode == "mov":
-                i_source = self.find_assignment_reverse(i, instruction.src_vars[0])
+                i_source = self.block.find_last_write(i, instruction.src_vars[0])
                 self.block.instructions[i_source].dest_vars[0] = instruction.dest_vars[0]
                 vars_to_replace[instruction.src_vars[0]] = instruction.dest_vars[0]
                 to_remove.append(i)
@@ -178,7 +197,7 @@ class Optimiser:
         for i in range(len(self.block.instructions) - 1, -1, -1):
             instruction = self.block.instructions[i]
             if instruction.opcode != "imm": continue
-            i_read = self.find_read_forward(i, instruction.dest_vars[0])
+            i_read = self.block.find_next_read(i, instruction.dest_vars[0])
             if i_read < len(self.block.instructions):
                 i_dest = i_read - 1
                 if i_dest > i:
@@ -190,35 +209,16 @@ class Optimiser:
         for i in range(len(self.block.instructions)):
             instruction = self.block.instructions[i]
             for var in instruction.dest_vars:
-                i_last_read = self.find_last_read(var)
+                i_last_read = self.block.find_last_read(var)
                 var.live_range = (i, i_last_read)
     
     #----------------------------------------------------------------------------------------------
     # below the line
     
-    def find_assignment_reverse(self, i_instruction, var: Var):
-        i = i_instruction -1
-        while i >= 0 and var not in self.block.instructions[i].dest_vars:
-            i -= 1
-        return i
-    def find_read_forward(self, i_instruction, var: Var):
-        i = i_instruction + 1
-        while i < len(self.block.instructions) and var not in self.block.instructions[i].src_vars:
-            i += 1
-        return i
-    def find_last_read(self, var: Var):
-        for i in range(len(self.block.instructions) - 1, -1, -1):
-            if var in self.block.instructions[i].src_vars:
-                return i
-        return -1
-    def find_next_read(self, var: Var, i_instruction: int):
-        for i in range(i_instruction+1, len(self.block.instructions)):
-            if var in self.block.instructions[i].src_vars:
-                return i
-        return -1
+    
     def try_move(self, i_instruction) -> int:  # find earliest index we can move to, or -1 if not possible
         this_instruction = self.block.instructions[i_instruction]
-        i_instructions = [self.find_assignment_reverse(i_instruction, var) for var in this_instruction.src_vars]
+        i_instructions = [self.block.find_last_write(i_instruction, var) for var in this_instruction.src_vars]
         i_can_move = max(i_instructions)
         if i_can_move >= 0 and (i_can_move+1) < i_instruction:
             #log(f"moving {i_instruction}:{this_instruction} to {i_can_move+1}")
@@ -241,7 +241,7 @@ class Optimiser:
             instruction = self.block.instructions[i]
             live_vars.update(instruction.dest_vars)
             for src_var in instruction.src_vars:
-                i_last_read = self.find_last_read(src_var)
+                i_last_read = self.block.find_last_read(src_var)
                 if i_last_read == i and src_var in live_vars:
                     live_vars.remove(src_var)
                 max_pressure = max(max_pressure, len(live_vars))
@@ -326,6 +326,9 @@ class RegisterSet:
 
     def reset(self):
         self.assigned_vars = [None for i in range(0, self.n_registers)]
+        # artificially occupy some registers
+        dummy_var = Var("dummy", "f32")
+        for i in range(2, self.n_registers): self.assigned_vars[i] = dummy_var
 
     def allocate(self, var: Var) -> str:
         for i in range(0, self.n_registers):
@@ -376,10 +379,10 @@ class SpillManager:
 
     def assign_spill_index(self, var: Var) -> int:      # return byte offset to store to
         index = next((i for i, var in enumerate(self.spilled_vars) if var is None), None)
-        if not index:
+        if index is None:
             index = len(self.spilled_vars)
             self.spilled_vars.append(None)
-            self.max_spills = max(self.max_spills, index)
+            self.max_spills = max(self.max_spills, len(self.spilled_vars))
         self.spilled_vars[index] = var
         var.spill_index = index
         return index * self.n_bytes
@@ -392,9 +395,10 @@ class SpillManager:
 
 # holds a register, two offsets (store, and load)
 class RegisterResult:
-    def __init__(self, register: str, store_offset: int=None, load_offset: int=None):
+    def __init__(self, register: str, store_offset: int, spill_var: Var, load_offset: int):
         self.register = register
         self.store_offset = store_offset
+        self.spill_var = spill_var
         self.load_offset = load_offset
 
 # manages register allocation and splitting automatically
@@ -416,26 +420,26 @@ class RegisterManager:
         spill_manager = self.spill_managers[var.type_name]
         if for_write: # we have to spill something
             reg = self.register_allocator.allocate(var)
-            if reg: return RegisterResult(reg)
-            store_offset = self.spill_something(var.type_name, spill_manager, i_instruction)
+            if reg: return RegisterResult(reg, None, None, None)
+            store_offset, victim_var = self.spill_something(var, spill_manager, i_instruction)
             reg = self.register_allocator.allocate(var)
-            return RegisterResult(reg, store_offset)
+            return RegisterResult(reg, store_offset, victim_var, None)
         else: # we're unspilling this var
             load_offset = spill_manager.unspill_var(var)
             reg = self.register_allocator.allocate(var) # if this works we're fine
-            if reg: return RegisterResult(reg, None, load_offset)
-            store_offset = self.spill_something(var.type_name, spill_manager, i_instruction)
+            if reg: return RegisterResult(reg, None, None, load_offset)
+            store_offset, victim_var = self.spill_something(var, spill_manager, i_instruction)
             reg = self.register_allocator.allocate(var)
-            return RegisterResult(reg, store_offset, load_offset)
+            return RegisterResult(reg, store_offset, victim_var, load_offset)
         
     def free(self, var: Var):
         self.register_allocator.free(var)
         
-    def spill_something(self, type_name: str, spill_manager: SpillManager, i_instruction: int) -> int:
-        victim_var = self.select_victim(type_name, i_instruction)
+    def spill_something(self, var: Var, spill_manager: SpillManager, i_instruction: int) -> Tuple[int, Var]:
+        victim_var = self.select_victim(var.type_name, i_instruction)
         store_index = spill_manager.assign_spill_index(victim_var)
         self.register_allocator.free(victim_var)
-        return store_index
+        return store_index, victim_var
 
     def select_victim(self, type_name: str, i_instruction: int) -> Var:
         potentials = [var for var in self.block.vars.values() if var.register and var.type_name == type_name]
@@ -447,11 +451,14 @@ class RegisterManager:
         i_best_read = -1
         best_victim = None
         for var in potentials:
-            i_next_read = self.block.find_next_read(var, i_instruction)
+            i_next_read = self.block.find_next_read(i_instruction, var)
             if i_next_read > i_best_read:
                 i_best_read = i_next_read
                 best_victim = var
         return best_victim
+    
+    def total_spill_bytes(self) -> int:
+        return self.spill_manager_32.max_spills * 4 + self.spill_manager_64.max_spills * 8
 
 class ARMBackend(Backend):
     def __init__(self, path: str):
@@ -469,14 +476,10 @@ class ARMBackend(Backend):
 
     def generate(self, block: InstructionBlock):
         self.block = block
-        log_clear()
+        #log_clear()
         self.reset()
         self.find_register(self.constant_memory, for_write=True)
-        self.write(".global run")
-        self.write("run:")
-        self.write("    stp x29, x30, [sp, #-16]! ")
-        self.write("    mov x29, sp")
-        self.write(f"    adr {self.constant_memory.register}, f32_constants")
+        
         for i, instruction in enumerate(block.instructions):
             self.i_instruction = i
             src_regs = []
@@ -489,24 +492,37 @@ class ARMBackend(Backend):
                 src_regs = [instruction.src_vars[0]]
             dest_reg = self.find_register(instruction.dest_vars[0], for_write=True)
             dest_type = instruction.dest_vars[0].type_name
-            self.output(instruction.opcode, dest_reg, dest_type, src_regs, src_types)
-        self.out = self.output_memory_section() + self.out
-        self.write("    ret")
+            self.output(instruction.opcode, dest_reg, dest_type, src_regs, src_types, f"{instruction.opcode} {instruction.dest_vars[0]} {instruction.src_vars}")
+        
+        prelude = log_deindent(f"""
+.global run
+run:
+    stp x29, x30, [sp, #-16]! 
+    mov x29, sp
+    {self.output_alloc_spill()}
+    adr {self.constant_memory.register}, f32_constants
+""")
+        self.out = self.output_memory_section() + prelude +self.out + self.output_dealloc_spill() + "\n"
+        self.write("    ret", "return")
         log(self.out)
         write_file(self.path, self.out)
 
     #-------------------------------------------------------------------------
             
-    def output(self, opcode, dest_reg, dest_type, src_regs, src_types):
+    def output(self, opcode, dest_reg, dest_type, src_regs, src_types, comment):
         if opcode == "imm":
             if dest_type.startswith("f"):
                 self.output_float_imm(dest_reg, src_regs[0], dest_type)
             return
-        out_opcode = self.find_opcode(opcode, dest_type, src_types)
-        self.write(f"    {out_opcode} {dest_reg}, {', '.join(src_regs)}")
+        elif opcode in ["str", "ldr"]:
+            self.write(f"    {opcode} {dest_reg}, {', '.join(src_regs)}", comment)
+        else:
+            out_opcode = self.find_opcode(opcode, dest_type, src_types)
+            self.write(f"    {out_opcode} {dest_reg}, {', '.join(src_regs)}", comment)
 
-    def write(self, line):
-        self.out += line + "\n"
+    def write(self, line, comment):
+        spaces = " "*(32-len(line))
+        self.out += line + spaces + log_grey(f"@ {comment}") + "\n"
 
     def output_float_imm(self, reg, const, type):
         offset = self.f32_consts.get(const, None)
@@ -514,7 +530,7 @@ class ARMBackend(Backend):
             offset = len(self.f32_consts) * 4
             self.f32_consts[const] = offset
         mem_reg = self.constant_memory.register
-        self.write(f"    ldr {reg}, [{mem_reg}, #{offset}]")
+        self.write(f"    ldr {reg}, [{mem_reg}, #{offset}]", f"f32({const})")
 
     def output_memory_section(self) -> str:
         def float_to_hex(f: float) -> str:
@@ -529,8 +545,17 @@ class ARMBackend(Backend):
             """)
         for i, (const, offset) in enumerate(self.f32_consts.items()):
             out += f"    .word 0x{float_to_hex(float(const))} @ f32({const})\n"
-    
         return out
+    
+    def output_alloc_spill(self) -> str:
+        n_spill_bytes = self.register_manager.total_spill_bytes()
+        return f"sub sp, sp, #{n_spill_bytes}"
+    
+    def output_dealloc_spill(self) -> str:
+        n_spill_bytes = self.register_manager.total_spill_bytes()
+        return f"    add sp, sp, #{n_spill_bytes}"
+    
+
 
     #-------------------------------------------------------------------------
     # opcode selection based on type
@@ -549,13 +574,21 @@ class ARMBackend(Backend):
         self.register_manager.reset(self.block)
     
     # find a register for a variable; if there isn't one, generate load instruction
+    @log_suppress
     def find_register(self, var: Var, for_write: bool) -> str:
-        if var.register: return var.register
+        log(f"i{self.i_instruction}: find_register {var.name} {"for write" if for_write else "for read"}")
+        if var.register: 
+            log(f"   => return {var.register}")
+            return var.register
         reg_result = self.register_manager.find_register(var, for_write, self.i_instruction)
-        if reg_result.store_offset:
-            self.output("str", reg_result.register, var.type_name, [f"[sp, #{reg_result.store_offset}]"])
-        if reg_result.load_offset:
-            self.output("ldr", reg_result.register, var.type_name, [f"[sp, #{reg_result.load_offset}]"])
+        if reg_result.store_offset==None:
+            log(f"   => no spill needed")
+        else:
+            log(log_red(f"   => spill needed; offset={reg_result.store_offset}"))
+        if reg_result.store_offset != None:
+            self.output("str", reg_result.register, var.type_name, [f"[sp, #{reg_result.store_offset}]"], [], f"spill {reg_result.spill_var.name} to make room for {var.name}")
+        if reg_result.load_offset != None:
+            self.output("ldr", reg_result.register, var.type_name, [f"[sp, #{reg_result.load_offset}]"], [], f"unspill {var.name}")
         return reg_result.register
     
     # if any variables are at the end of their live range, free their registers
