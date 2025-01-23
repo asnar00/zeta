@@ -4,11 +4,11 @@
 # zero to anything
 
 from typing import Type, Dict, Any, List, Set
-from src.grammar import Entity, Grammar
-from src.ast import dbg_entity
-from src.parser import print_code_formatted
-from src.util import *
-from src.lexer import Lex
+from grammar import Entity, Grammar
+from entity import dbg_entity
+from parser import print_code_formatted
+from util import *
+from lexer import Lex
 
 #--------------------------------------------------------------------------------------------------
 # symbol tables and that

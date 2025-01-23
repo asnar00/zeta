@@ -3,8 +3,8 @@
 # author: asnaroo
 # zero to anything
 
-from .util import *
-from .zero import *
+from util import *
+from zero import *
 
 #--------------------------------------------------------------------------------------------------
 

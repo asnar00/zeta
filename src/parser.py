@@ -4,10 +4,10 @@
 # zero to anything
 
 from typing import Type
-from src.util import *
-from src.lexer import *
-from src.grammar import *
-from src.ast import *
+from util import *
+from lexer import *
+from grammar import *
+from entity import *
 
 #--------------------------------------------------------------------------------------------------
 # Parser

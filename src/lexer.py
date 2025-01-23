@@ -3,7 +3,7 @@
 # author: asnaroo
 # zero to anything
 
-from src.util import *
+from util import *
 from typing import List, Dict, Tuple, Union
 import json
 
@@ -56,7 +56,7 @@ def test_source():
          """)
     
     # in all cases, source location should map back to the right place
-    test("source_location", source.location(0), "src/test/Hello.zero.md:22:1")
+    test("source_loc", source.location(0), "src/test/Hello.zero.md:22:1")
 
 class SourceLocation:
     def __init__(self, file: str, i_line: int, i_col: int):

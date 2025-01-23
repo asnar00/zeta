@@ -4,14 +4,14 @@
 # zero to anything
 
 from typing import List
-from src.util import *
-from src.lexer import *
-from src.grammar import *
-from src.ast import *
-from src.parser import *
-from src.symbols import *
-from src.codegen import *
-from src import zero_classes as zc
+from util import *
+from lexer import *
+from grammar import *
+from entity import *
+from parser import *
+from symbols import *
+from codegen import *
+import zero_classes as zc
 
 #--------------------------------------------------------------------------------------------------
 # modular language definition; so we can add a bit at a time

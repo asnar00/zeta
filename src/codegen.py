@@ -4,8 +4,8 @@
 # zero to anything
 
 from typing import Dict
-from src.symbols import *
-from src.ast import *
+from symbols import *
+from entity import *
 from copy import deepcopy
 import subprocess
 import struct

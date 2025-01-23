@@ -3,10 +3,10 @@
 # author: asnaroo
 # zero to anything
 
-from .compiler import *
-from .codegen import *
+from compiler import *
+from codegen import *
 from copy import deepcopy
-from src import zero_classes as zc
+import zero_classes as zc
 import re
 
 #--------------------------------------------------------------------------------------------------
@@ -149,7 +149,7 @@ def test_print_code(ast):
             string out$
         feature Hello extends Program
             on hello ( string name )
-                string message = "hello, \(name)!"
+                string message = "hello, \\(name)!"
                 out$ << message
             replace run ( )
                 hello ( "world" )
@@ -219,7 +219,7 @@ class module_Features(LanguageModule):
                 compiler.error(self, "no run function found")
                 return
             codegen.reset()
-            run_func.generate({})
+            run_func.generate({}, [])
 
     def test_parser(self, compiler: Compiler):
         grammar = compiler.grammar
@@ -532,16 +532,19 @@ class module_Expressions(LanguageModule):
         codegen = compiler.codegen
 
         @Entity.method(zc.FunctionCall)  # FunctionCall.generate
-        def generate(self, replace):
+        def generate(self, replace: Dict, source_loc: List[Lex]):
             function = self._resolved_functions[0]
             result_vars = replace["_results"] if "_results" in replace else []
             replace.pop("_results", None)
             if len(result_vars) == 0:
                 result_vars = function.make_temp_vars()
             args = []
+            first_lex = None
             for item in self.items:
                 if not hasattr(item, "name"):
-                    args += item.generate(replace)
+                    args += item.generate(replace, source_loc)
+                elif first_lex is None:
+                    first_lex = item
             function = self._resolved_functions[0]
             params = function.get_params()
             fn_replace = {}
@@ -549,30 +552,30 @@ class module_Expressions(LanguageModule):
                 a = try_replace(a, replace)
                 fn_replace[p] = a
             fn_replace["_results"] = result_vars
-            results = function.generate(fn_replace)
+            results = function.generate(fn_replace, source_loc + [first_lex])
             return result_vars
         
         @Entity.method(zc.FunctionCallArguments) # FunctionCallArguments.generate
-        def generate(self, replace):
+        def generate(self, replace: Dict, source_loc: List[Lex]):
             args = []
             for item in self.arguments:
-                args += item.generate(replace)
+                args += item.generate(replace, source_loc)
             return args
         
         @Entity.method(zc.FunctionCallArgument) # FunctionCallArgument.generate
-        def generate(self, replace):
-            return self.value.generate(replace)
+        def generate(self, replace: Dict, source_loc: List[Lex]):
+            return self.value.generate(replace, source_loc)
         
         @Entity.method(zc.Constant) # Constant.generate
-        def generate(self, replace) -> List[str]:
+        def generate(self, replace: Dict, source_loc: List[Lex]) -> List[str]:
             return [str(self.value)]
         
         @Entity.method(zc.FunctionCallVariable) # FunctionCallVariable.generate
-        def generate(self, replace) -> List[str]:
-            return self.variable.generate(replace)
+        def generate(self, replace: Dict, source_loc: List[Lex]) -> List[str]:
+            return self.variable.generate(replace, source_loc)
         
         @Entity.method(zc.VariableRef)   # VariableRef.generate
-        def generate(self, replace) -> List[str]:
+        def generate(self, replace: Dict, source_loc: List[Lex]) -> List[str]:
             full = ".".join(str(v) for v in self.variables)
             return [try_replace(full, replace)]
 
@@ -1308,42 +1311,42 @@ class module_Functions(LanguageModule):
         codegen = compiler.codegen
                 
         @Entity.method(zc.Function)     # Function.generate
-        def generate(self, replace):
+        def generate(self, replace: Dict, source_loc: List[Lex]):
             for s in self.body.statements:
-                s.generate(replace)
+                s.generate(replace, source_loc)
 
         @Entity.method(zc.SingleFunctionDef)
-        def generate(self, replace):
-            self.func_def.generate(replace)
+        def generate(self, replace: Dict, source_loc: List[Lex]):
+            self.func_def.generate(replace, source_loc)
 
         @Entity.method(zc.SequenceFunctionDef)
-        def generate(self, replace):
+        def generate(self, replace: Dict, source_loc: List[Lex]):
             for comp in self.comps:
-                comp.generate(replace)
+                comp.generate(replace, source_loc)
 
         @Entity.method(zc.ParallelFunctionDef)
-        def generate(self, replace):
+        def generate(self, replace: Dict, source_loc: List[Lex]):
             for comp in self.comps:
-                comp.generate(replace)
+                comp.generate(replace, source_loc)
 
         @Entity.method(zc.FunctionDef)     # FunctionDef.generate
-        def generate(self, replace):
+        def generate(self, replace: Dict, source_loc: List[Lex]):
             if "_results" in replace:
                 results = self.get_results()
                 for r, v in zip(results, replace["_results"]):
                     replace[r] = v
             if isinstance(self.body, zc.EmitFunctionBody):
                 return self.emit(replace)
-            return self.body.generate(replace)
+            return self.body.generate(replace, source_loc)
         
         @Entity.method(zc.FunctionStatements)   # FunctionStatements.generate
-        def generate(self, replace) -> List[str]:
+        def generate(self, replace: Dict, source_loc: List[Lex]) -> List[str]:
             for s in self.statements:
                 if not isinstance(s, zc.Assignment): continue
-                lhs = s.lhs.generate(replace) if s.lhs else []
+                lhs = s.lhs.generate(replace, source_loc) if s.lhs else []
                 fn_replace = replace.copy()
                 if len(lhs) > 0: fn_replace["_results"] = lhs
-                rhs = s.rhs.generate(fn_replace)
+                rhs = s.rhs.generate(fn_replace, source_loc)
                 if len(lhs) != len(rhs):
                     compiler.error(f"FunctionStatements.generate: {codegen.show(self)}, {lhs} != {rhs}")
                 for l, r in zip(lhs, rhs):
@@ -1354,18 +1357,18 @@ class module_Functions(LanguageModule):
                             codegen.output("imm", [l], [r])
 
         @Entity.method(zc.AssignmentLhs)   # AssignmentLhs.generate
-        def generate(self, replace) -> List[str]:
+        def generate(self, replace: Dict, source_loc: List[Lex]) -> List[str]:
             results = []
             for r in self.results:
-                results += r.generate(replace)
+                results += r.generate(replace, source_loc)
             return results
         
         @Entity.method(zc.ResultVariableRef)   # ResultVariableRef.generate
-        def generate(self, replace):
-            return self.variable.generate(replace)
+        def generate(self, replace: Dict, source_loc: List[Lex]):
+            return self.variable.generate(replace, source_loc)
 
         @Entity.method(zc.ResultVariableDef)   # ResultVariableDef.generate
-        def generate(self, replace):
+        def generate(self, replace: Dict, source_loc: List[Lex]):
             result_names = [ str(name.name) for name in self.names]
             actual_names = [self.type.add_var(r) for r in result_names]
             log(f"  result_names: {result_names}")
