@@ -464,13 +464,13 @@ class RegisterManager:
 #--------------------------------------------------------------------------------------------------
 # ARM backend outputs ARM assembly/binary
 
-class ArmBlock:
+class ARMBlock:
     def __init__(self):
         self.text = ""
         self.data = array.array('I')
     def write_text(self, line, comment):
         spaces = " "*(32-len(line))
-        self.text += line + spaces + log_grey(f"@ {comment}") + "\n"
+        self.text += line + spaces + f"@ {comment}\n"
     def write_data(self, instruction):
         self.data.append(instruction)
     def __str__(self):
@@ -480,6 +480,42 @@ class ArmBlock:
     def join(self, other_arm_block):
         self.text += other_arm_block.text
         self.data.extend(other_arm_block.data)
+    def emit_float_op(self, opcode, dest_reg, src_regs, comment):
+        self.write_text(f"    {opcode} {dest_reg}, {', '.join(src_regs)}", comment)
+        opcode_map = { "fadd": 0b00011110001, "fsub": 0b00011110011, "fmul": 0b00011110101, "fsqrt": 0b00011110000 }
+        if not opcode in opcode_map: log_exit(f"unknown opcode {opcode}")
+        opcode_bits = opcode_map[opcode]
+        if dest_reg[0] == "d": opcode_bits |= (1 << 4)
+        rd = int(dest_reg[1:])
+        rn = int(src_regs[0][1:])
+        rm = int(src_regs[1][1:]) if len(src_regs) > 1 else 0
+        instruction = ((opcode_bits << 21) | (rm << 16) | (rn << 5) | rd)
+        self.write_data(instruction)
+    def emit_int_op(self, opcode, dest_reg, src_regs, comment):
+        self.write_text(f"    {opcode} {dest_reg}, {', '.join(src_regs)}", comment)
+    def emit_ldr(self, dest_reg, mem_reg, offset, comment):
+        self.write_text(f"    ldr {dest_reg}, [{mem_reg}, #{offset}]", comment)
+    def emit_str(self, dest_reg, mem_reg, offset, comment):
+        self.write_text(f"    str {dest_reg}, [{mem_reg}, #{offset}]", comment)
+    def emit_stp(self, dest_reg, mem_reg, offset, comment):
+        self.write_text(f"    stp {dest_reg}, {mem_reg}, [sp, #{offset}]!", comment)
+    def emit_adr(self, dest_reg, mem_reg, comment):
+        self.write_text(f"    adr {dest_reg}, {mem_reg}", comment)
+    def emit_mov(self, dest_reg, src_reg, comment):
+        self.write_text(f"    mov {dest_reg}, {src_reg}", comment)
+    def emit_ret(self):
+        self.write_text("    ret", "return")
+    def emit_section(self, section_name: str, comment: str):
+        self.write_text(f".section {section_name}", comment)
+    def emit_label(self, label: str, comment: str):
+        self.write_text(f"{label}:", comment)
+    def emit_word(self, word: str, comment: str):
+        self.write_text(f"    .word {word}", comment)
+    def align(self, n_bytes: int):
+        self.write_text(f".align {n_bytes}", "align to {n_bytes} bytes")
+        n_current = len(self.data)
+        n_padding = (n_bytes - n_current) % n_bytes
+        self.data.extend([0] * n_padding)
 
 class ARMBackend(Backend):
     def __init__(self, path: str):
@@ -495,7 +531,7 @@ class ARMBackend(Backend):
         self.constant_memory_size = 0
         self.constant_memory = Var("constant_memory_adr", "i64")
         self.i_instruction = None
-        self.out = ArmBlock()
+        self.out = ARMBlock()
 
     def generate(self, block: InstructionBlock):
         self.block = block
@@ -507,12 +543,12 @@ class ARMBackend(Backend):
             self.i_instruction = i
             self.emit_instruction(instruction)
            
-        
+        self.emit_dealloc_spill(self.out)
         output_block = self.emit_prelude()
         output_block.join(self.out)
-        output_block.write_text("    ret", "return")
+        output_block.emit_ret()
         log(output_block)
-        write_file(self.path, self.out)
+        write_file(self.path, output_block)
 
     def emit_instruction(self, instruction):
         if instruction.opcode == "imm": return self.emit_immediate(instruction)
@@ -529,8 +565,8 @@ class ARMBackend(Backend):
         dest_type = instruction.dest_vars[0].type_name
         out_opcode = self.find_opcode(instruction.opcode, dest_type, src_types)
         comment = f"{instruction.dest_vars[0]} <= {instruction.opcode}{str(instruction.src_vars).replace("[", " ").replace("]", "")}"
-        self.out.write_text(f"    {out_opcode} {dest_reg}, {', '.join(src_regs)}", comment)
-        
+        self.out.emit_float_op(out_opcode, dest_reg, src_regs, comment)
+
     def emit_immediate(self, instruction):
         immediate = instruction.src_vars[0]
         dest_reg = self.find_register(instruction.dest_vars[0], for_write=True)
@@ -541,49 +577,44 @@ class ARMBackend(Backend):
             offset = int(self.constant_memory_size)  # todo: align if necessary
             self.constant_memory_size += n_bytes
             self.constants[immediate] = offset
-        self.emit_ldr(dest_reg, self.constant_memory.register, offset, f"{instruction.dest_vars[0]} <= f32({immediate})")
+        self.out.emit_ldr(dest_reg, self.constant_memory.register, offset, f"{instruction.dest_vars[0]} <= f32({immediate})")
 
-    def emit_prelude(self) -> ArmBlock:
-        prelude = ArmBlock()
+    def emit_prelude(self) -> ARMBlock:
+        prelude = ARMBlock()
         self.output_memory_section(prelude)
         prelude.write_text(".global run", "make 'run' callable from outside")
-        prelude.write_text("run:", "entry point")
-        prelude.write_text("    stp x29, x30, [sp, #-16]!", "save frame pointer and return address")
-        prelude.write_text("    mov x29, sp", "set up frame pointer")
+        prelude.emit_label("run", "entry point")
+        prelude.emit_stp("x29", "x30", "-16", "save frame pointer and return address")
+        prelude.emit_mov("x29", "sp", "set up frame pointer")
         self.emit_alloc_spill(prelude)
-        prelude.write_text(f"    adr {self.constant_memory.register}, f32_constants", "load constant memory address")
+        prelude.emit_adr(self.constant_memory.register, "f32_constants", "load constant memory address")
         return prelude
 
     #-------------------------------------------------------------------------
 
-    def emit_ldr(self, dest_reg, mem_reg, offset, comment):
-        self.out.write_text(f"    ldr {dest_reg}, [{mem_reg}, #{offset}]", comment)
 
-    def emit_str(self, dest_reg, mem_reg, offset, comment):
-        self.out.write_text(f"    str {dest_reg}, [{mem_reg}, #{offset}]", comment)
-
-    def output_memory_section(self, out_block: ArmBlock):
+    def output_memory_section(self, out_block: ARMBlock):
         def float_to_hex(f: float) -> str:
             # Pack the float into 4 bytes (single-precision)
             packed = struct.pack('>f', f)  # '<f' is little-endian single-precision
             # Convert the packed bytes to a hexadecimal string
             return packed.hex()
-        out_block.write_text(".section .rodata", "constant data section")
-        out_block.write_text(".align 4", "align to 4 bytes")
-        out_block.write_text("f32_constants:", "label for constant memory")
+        out_block.emit_section(".rodata", "constant data section")
+        out_block.align(4)
+        out_block.emit_label("f32_constants", "label for constant memory")
         for i, (const, offset) in enumerate(self.constants.items()):
-            out_block.write_text(f"    .word 0x{float_to_hex(float(const))}", f"f32({const})")
+            out_block.emit_word(f"0x{float_to_hex(float(const))}", f"f32({const})")
     
-    def emit_alloc_spill(self, output_block: ArmBlock) -> str:
+    def emit_alloc_spill(self, output_block: ARMBlock) -> str:
         n_spill_bytes = self.register_manager.total_spill_bytes()
         if n_spill_bytes > 0:
-            output_block.write_text(f"    sub sp, sp, #{n_spill_bytes}", "allocate spill space")
+            output_block.emit_int_op("sub", "sp", ["sp", f"#{n_spill_bytes}"], "allocate spill space")
     
-    def emit_dealloc_spill(self, output_block: ArmBlock) -> str:
+    def emit_dealloc_spill(self, output_block: ARMBlock) -> str:
         n_spill_bytes = self.register_manager.total_spill_bytes()
         if n_spill_bytes > 0:
-            output_block.write_text(f"    add sp, sp, #{n_spill_bytes}", "deallocate spill space")
-
+            output_block.emit_int_op("add", "sp", ["sp", f"#{n_spill_bytes}"], "deallocate spill space")
+            
 
     #-------------------------------------------------------------------------
     # opcode selection based on type
@@ -610,9 +641,9 @@ class ARMBackend(Backend):
             return var.register
         reg_result = self.register_manager.find_register(var, for_write, self.i_instruction)
         if reg_result.store_offset != None:
-            self.emit_str(reg_result.register, "sp", reg_result.store_offset, f"spill {reg_result.spill_var.name} to make room for {var.name}")
+            self.out.emit_str(reg_result.register, "sp", reg_result.store_offset, f"spill {reg_result.spill_var.name} to make room for {var.name}")
         if reg_result.load_offset != None:
-            self.emit_ldr(reg_result.register, "sp", reg_result.load_offset, f"unspill {var.name}")
+            self.out.emit_ldr(reg_result.register, "sp", reg_result.load_offset, f"unspill {var.name}")
         return reg_result.register
     
     # if any variables are at the end of their live range, free their registers
