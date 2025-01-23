@@ -551,7 +551,7 @@ def read_file(path: str) -> str:
 def write_file(path: str, text: str):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w") as file:
-        file.write(text)
+        file.write(str(text))
     s_file_cache[path] = text
 
 

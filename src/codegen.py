@@ -9,6 +9,7 @@ from entity import *
 from copy import deepcopy
 import subprocess
 import struct
+import array
 
 #--------------------------------------------------------------------------------------------------
 # configuration options for code production
@@ -459,6 +460,26 @@ class RegisterManager:
     
     def total_spill_bytes(self) -> int:
         return self.spill_manager_32.max_spills * 4 + self.spill_manager_64.max_spills * 8
+    
+#--------------------------------------------------------------------------------------------------
+# ARM backend outputs ARM assembly/binary
+
+class ArmBlock:
+    def __init__(self):
+        self.text = ""
+        self.data = array.array('I')
+    def write_text(self, line, comment):
+        spaces = " "*(32-len(line))
+        self.text += line + spaces + log_grey(f"@ {comment}") + "\n"
+    def write_data(self, instruction):
+        self.data.append(instruction)
+    def __str__(self):
+        return self.text
+    def __repr__(self):
+        return str(self)
+    def join(self, other_arm_block):
+        self.text += other_arm_block.text
+        self.data.extend(other_arm_block.data)
 
 class ARMBackend(Backend):
     def __init__(self, path: str):
@@ -474,7 +495,7 @@ class ARMBackend(Backend):
         self.constant_memory_size = 0
         self.constant_memory = Var("constant_memory_adr", "i64")
         self.i_instruction = None
-        self.out = ""
+        self.out = ArmBlock()
 
     def generate(self, block: InstructionBlock):
         self.block = block
@@ -486,17 +507,11 @@ class ARMBackend(Backend):
             self.i_instruction = i
             self.emit_instruction(instruction)
            
-        prelude = log_deindent(f"""
-            .global run
-            run:
-                stp x29, x30, [sp, #-16]! 
-                mov x29, sp
-                {self.output_alloc_spill()}
-                adr {self.constant_memory.register}, f32_constants
-            """)
-        self.out = self.output_memory_section() + prelude +self.out + self.output_dealloc_spill() + "\n"
-        self.write_text("    ret", "return")
-        log(self.out)
+        
+        output_block = self.emit_prelude()
+        output_block.join(self.out)
+        output_block.write_text("    ret", "return")
+        log(output_block)
         write_file(self.path, self.out)
 
     def emit_instruction(self, instruction):
@@ -513,8 +528,8 @@ class ARMBackend(Backend):
         dest_reg = self.find_register(instruction.dest_vars[0], for_write=True)
         dest_type = instruction.dest_vars[0].type_name
         out_opcode = self.find_opcode(instruction.opcode, dest_type, src_types)
-        comment = f"{instruction.opcode} {instruction.dest_vars[0]} {instruction.src_vars}"
-        self.write_text(f"    {out_opcode} {dest_reg}, {', '.join(src_regs)}", comment)
+        comment = f"{instruction.dest_vars[0]} <= {instruction.opcode}{str(instruction.src_vars).replace("[", " ").replace("]", "")}"
+        self.out.write_text(f"    {out_opcode} {dest_reg}, {', '.join(src_regs)}", comment)
         
     def emit_immediate(self, instruction):
         immediate = instruction.src_vars[0]
@@ -523,47 +538,51 @@ class ARMBackend(Backend):
         offset = self.constants.get(immediate, None)
         if offset is None:
             n_bytes = int(dest_type[1:])/8
-            offset = self.constant_memory_size  # todo: align if necessary
+            offset = int(self.constant_memory_size)  # todo: align if necessary
             self.constant_memory_size += n_bytes
             self.constants[immediate] = offset
-        self.emit_ldr(dest_reg, self.constant_memory.register, offset, f"f32({immediate})")
+        self.emit_ldr(dest_reg, self.constant_memory.register, offset, f"{instruction.dest_vars[0]} <= f32({immediate})")
 
-    
+    def emit_prelude(self) -> ArmBlock:
+        prelude = ArmBlock()
+        self.output_memory_section(prelude)
+        prelude.write_text(".global run", "make 'run' callable from outside")
+        prelude.write_text("run:", "entry point")
+        prelude.write_text("    stp x29, x30, [sp, #-16]!", "save frame pointer and return address")
+        prelude.write_text("    mov x29, sp", "set up frame pointer")
+        self.emit_alloc_spill(prelude)
+        prelude.write_text(f"    adr {self.constant_memory.register}, f32_constants", "load constant memory address")
+        return prelude
 
     #-------------------------------------------------------------------------
 
     def emit_ldr(self, dest_reg, mem_reg, offset, comment):
-        self.write_text(f"    ldr {dest_reg}, [{mem_reg}, #{offset}]", comment)
+        self.out.write_text(f"    ldr {dest_reg}, [{mem_reg}, #{offset}]", comment)
 
     def emit_str(self, dest_reg, mem_reg, offset, comment):
-        self.write_text(f"    str {dest_reg}, [{mem_reg}, #{offset}]", comment)
-    
-    def write_text(self, line, comment):
-        spaces = " "*(32-len(line))
-        self.out += line + spaces + log_grey(f"@ {comment}") + "\n"
-        
-    def output_memory_section(self) -> str:
+        self.out.write_text(f"    str {dest_reg}, [{mem_reg}, #{offset}]", comment)
+
+    def output_memory_section(self, out_block: ArmBlock):
         def float_to_hex(f: float) -> str:
             # Pack the float into 4 bytes (single-precision)
             packed = struct.pack('>f', f)  # '<f' is little-endian single-precision
             # Convert the packed bytes to a hexadecimal string
             return packed.hex()
-        out = log_deindent("""
-                .section .rodata
-                .align 4
-                f32_constants:
-            """)
+        out_block.write_text(".section .rodata", "constant data section")
+        out_block.write_text(".align 4", "align to 4 bytes")
+        out_block.write_text("f32_constants:", "label for constant memory")
         for i, (const, offset) in enumerate(self.constants.items()):
-            out += f"    .word 0x{float_to_hex(float(const))} @ f32({const})\n"
-        return out
+            out_block.write_text(f"    .word 0x{float_to_hex(float(const))}", f"f32({const})")
     
-    def output_alloc_spill(self) -> str:
+    def emit_alloc_spill(self, output_block: ArmBlock) -> str:
         n_spill_bytes = self.register_manager.total_spill_bytes()
-        return f"sub sp, sp, #{n_spill_bytes}"
+        if n_spill_bytes > 0:
+            output_block.write_text(f"    sub sp, sp, #{n_spill_bytes}", "allocate spill space")
     
-    def output_dealloc_spill(self) -> str:
+    def emit_dealloc_spill(self, output_block: ArmBlock) -> str:
         n_spill_bytes = self.register_manager.total_spill_bytes()
-        return f"    add sp, sp, #{n_spill_bytes}"
+        if n_spill_bytes > 0:
+            output_block.write_text(f"    add sp, sp, #{n_spill_bytes}", "deallocate spill space")
 
 
     #-------------------------------------------------------------------------
@@ -591,9 +610,9 @@ class ARMBackend(Backend):
             return var.register
         reg_result = self.register_manager.find_register(var, for_write, self.i_instruction)
         if reg_result.store_offset != None:
-            self.emit_str(reg_result.register, f"[sp]", reg_result.store_offset, f"spill {reg_result.spill_var.name} to make room for {var.name}")
+            self.emit_str(reg_result.register, "sp", reg_result.store_offset, f"spill {reg_result.spill_var.name} to make room for {var.name}")
         if reg_result.load_offset != None:
-            self.emit_ldr(reg_result.register, f"[sp]", reg_result.load_offset, f"unspill {var.name}")
+            self.emit_ldr(reg_result.register, "sp", reg_result.load_offset, f"unspill {var.name}")
         return reg_result.register
     
     # if any variables are at the end of their live range, free their registers
