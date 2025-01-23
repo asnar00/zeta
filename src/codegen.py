@@ -464,7 +464,8 @@ class RegisterManager:
 #--------------------------------------------------------------------------------------------------
 # ARM backend outputs ARM assembly/binary
 
-class ARMBlock:
+# ARMCode holds both text assembly and binary executable code
+class ARMCode:
     def __init__(self):
         self.text = ""
         self.data = array.array('I')
@@ -481,9 +482,9 @@ class ARMBlock:
         self.text += other_arm_block.text
         self.data.extend(other_arm_block.data)
     def emit_float_op(self, opcode, dest_reg, src_regs, comment):
-        self.write_text(f"    {opcode} {dest_reg}, {', '.join(src_regs)}", comment)
         opcode_map = { "fadd": 0b00011110001, "fsub": 0b00011110011, "fmul": 0b00011110101, "fsqrt": 0b00011110000 }
         if not opcode in opcode_map: log_exit(f"unknown opcode {opcode}")
+        self.write_text(f"    {opcode} {dest_reg}, {', '.join(src_regs)}", comment)
         opcode_bits = opcode_map[opcode]
         if dest_reg[0] == "d": opcode_bits |= (1 << 4)
         rd = int(dest_reg[1:])
@@ -531,7 +532,7 @@ class ARMBackend(Backend):
         self.constant_memory_size = 0
         self.constant_memory = Var("constant_memory_adr", "i64")
         self.i_instruction = None
-        self.out = ARMBlock()
+        self.out = ARMCode()
 
     def generate(self, block: InstructionBlock):
         self.block = block
@@ -579,8 +580,8 @@ class ARMBackend(Backend):
             self.constants[immediate] = offset
         self.out.emit_ldr(dest_reg, self.constant_memory.register, offset, f"{instruction.dest_vars[0]} <= f32({immediate})")
 
-    def emit_prelude(self) -> ARMBlock:
-        prelude = ARMBlock()
+    def emit_prelude(self) -> ARMCode:
+        prelude = ARMCode()
         self.output_memory_section(prelude)
         prelude.write_text(".global run", "make 'run' callable from outside")
         prelude.emit_label("run", "entry point")
@@ -593,7 +594,7 @@ class ARMBackend(Backend):
     #-------------------------------------------------------------------------
 
 
-    def output_memory_section(self, out_block: ARMBlock):
+    def output_memory_section(self, out_block: ARMCode):
         def float_to_hex(f: float) -> str:
             # Pack the float into 4 bytes (single-precision)
             packed = struct.pack('>f', f)  # '<f' is little-endian single-precision
@@ -605,12 +606,12 @@ class ARMBackend(Backend):
         for i, (const, offset) in enumerate(self.constants.items()):
             out_block.emit_word(f"0x{float_to_hex(float(const))}", f"f32({const})")
     
-    def emit_alloc_spill(self, output_block: ARMBlock) -> str:
+    def emit_alloc_spill(self, output_block: ARMCode) -> str:
         n_spill_bytes = self.register_manager.total_spill_bytes()
         if n_spill_bytes > 0:
             output_block.emit_int_op("sub", "sp", ["sp", f"#{n_spill_bytes}"], "allocate spill space")
     
-    def emit_dealloc_spill(self, output_block: ARMBlock) -> str:
+    def emit_dealloc_spill(self, output_block: ARMCode) -> str:
         n_spill_bytes = self.register_manager.total_spill_bytes()
         if n_spill_bytes > 0:
             output_block.emit_int_op("add", "sp", ["sp", f"#{n_spill_bytes}"], "deallocate spill space")
