@@ -1,14 +1,13 @@
-.section .rodata                @ constant data section
-.align 4                        @ align to {n_bytes} bytes
-f32_constants:                  @ label for constant memory
+.section .rodata
+f32_constants:
     .word 0x3f800000            @ f32(1)
     .word 0x40800000            @ f32(4)
     .word 0x40000000            @ f32(2)
     .word 0x40a00000            @ f32(5)
     .word 0x40400000            @ f32(3)
     .word 0x40c00000            @ f32(6)
-.global run                     @ make 'run' callable from outside
-run:                            @ entry point
+.global run
+run:
     stp x29, x30, [sp, #-16]!   @ save frame pointer and return address
     mov x29, sp                 @ set up frame pointer
     sub sp, sp, #4              @ allocate spill space

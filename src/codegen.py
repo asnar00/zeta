@@ -468,55 +468,201 @@ class RegisterManager:
 class ARMCode:
     def __init__(self):
         self.text = ""
+        self.lines = []
         self.data = array.array('I')
-    def write_text(self, line, comment):
-        spaces = " "*(32-len(line))
-        self.text += line + spaces + f"@ {comment}\n"
-    def write_data(self, instruction):
+        self.descriptors = []                   # array of arrays of bit-indices
+        self.labels = {}                        # name => offset from start in bytes
+        self.sections = {}                      # name => offset from start in bytes
+        self.globals = {}                       # name => offset from start in bytes
+        self.pending_relative_addresses = {}    # name => offset from start in bytes
+
+    def write_instruction(self, text, comment, instruction, descriptor):
+        spaces = " "*(32-len(text))
+        line = text + spaces + f"@ {comment}"
+        self.text += line + "\n"
+        self.lines.append(line)
         self.data.append(instruction)
+        self.descriptors.append(descriptor)
+
     def __str__(self):
         return self.text
     def __repr__(self):
         return str(self)
     def join(self, other_arm_block):
-        self.text += other_arm_block.text
+        self.text = self.text + other_arm_block.text
+        self.lines.extend(other_arm_block.lines)
         self.data.extend(other_arm_block.data)
+        self.descriptors.extend(other_arm_block.descriptors)
+
     def emit_float_op(self, opcode, dest_reg, src_regs, comment):
         opcode_map = { "fadd": 0b00011110001, "fsub": 0b00011110011, "fmul": 0b00011110101, "fsqrt": 0b00011110000 }
         if not opcode in opcode_map: log_exit(f"unknown opcode {opcode}")
-        self.write_text(f"    {opcode} {dest_reg}, {', '.join(src_regs)}", comment)
         opcode_bits = opcode_map[opcode]
         if dest_reg[0] == "d": opcode_bits |= (1 << 4)
         rd = int(dest_reg[1:])
         rn = int(src_regs[0][1:])
         rm = int(src_regs[1][1:]) if len(src_regs) > 1 else 0
         instruction = ((opcode_bits << 21) | (rm << 16) | (rn << 5) | rd)
-        self.write_data(instruction)
+        self.write_instruction(f"    {opcode} {dest_reg}, {', '.join(src_regs)}", comment, instruction, [21, 16, 5])
+
     def emit_int_op(self, opcode, dest_reg, src_regs, comment):
-        self.write_text(f"    {opcode} {dest_reg}, {', '.join(src_regs)}", comment)
+        opcode_map = {
+            # Basic arithmetic
+            "add": 0b10001011,
+            "sub": 0b11001011,
+            "mul": 0b10011011,
+            "sdiv": 0b10011010,
+            "udiv": 0b10011010,
+            # Bitwise
+            "and": 0b10001010,
+            "orr": 0b10101010,
+            "eor": 0b11001010,
+            # Compare
+            "cmp": 0b11001011
+        }
+        if not opcode in opcode_map:
+            log_exit(f"unknown opcode {opcode}")
+        rd = 31 if dest_reg == "sp" else int(dest_reg[1:])
+        rn = 31 if src_regs[0] == "sp" else int(src_regs[0][1:])
+        descriptor = []
+        if opcode in ["sdiv", "udiv"]:
+            rm = int(src_regs[1][1:])
+            div_op = 0b001 if opcode == "sdiv" else 0b010
+            instruction = (opcode_map[opcode] << 24) | (div_op << 21) | (rm << 16) | (rn << 5) | rd
+            descriptor = [24, 21, 16, 5]
+        elif opcode == "cmp":
+            if src_regs[1].startswith('#'):
+                imm = int(src_regs[1][1:])
+                instruction = (opcode_map[opcode] << 24) | (0b00 << 22) | (imm << 10) | (rn << 5) | 31  # rd = 31 (discard)
+                descriptor = [24, 22, 10, 5]
+            else:
+                rm = int(src_regs[1][1:])
+                instruction = (opcode_map[opcode] << 24) | (rm << 16) | (rn << 5) | 31
+                descriptor = [24, 16, 5]
+        elif len(src_regs) > 1 and src_regs[1].startswith('#'):
+            imm = int(src_regs[1][1:])
+            if imm > 0xFFF:
+                log_exit(f"immediate {imm} too large")
+            instruction = (opcode_map[opcode] << 24) | (0b00 << 22) | (imm << 10) | (rn << 5) | rd
+            descriptor = [24, 22, 10, 5]
+        else:
+            rm = int(src_regs[1][1:])
+            instruction = (opcode_map[opcode] << 24) | (rm << 16) | (rn << 5) | rd
+            descriptor = [24, 16, 5]
+        self.write_instruction(f"    {opcode} {dest_reg}, {', '.join(src_regs)}", comment, instruction, descriptor)
+
     def emit_ldr(self, dest_reg, mem_reg, offset, comment):
-        self.write_text(f"    ldr {dest_reg}, [{mem_reg}, #{offset}]", comment)
+        rd = int(dest_reg[1:])
+        rn = 31 if mem_reg == "sp" else int(mem_reg[1:])
+        imm12 = offset & 0xFFF
+        instruction = 0b10111000101 << 21 | (imm12 << 10) | (rn << 5) | rd
+        self.write_instruction(f"    ldr {dest_reg}, [{mem_reg}, #{offset}]", comment, instruction, [21, 10, 5])
+
     def emit_str(self, dest_reg, mem_reg, offset, comment):
-        self.write_text(f"    str {dest_reg}, [{mem_reg}, #{offset}]", comment)
+        rd = int(dest_reg[1:])
+        rn = 31 if mem_reg == "sp" else int(mem_reg[1:])
+        imm12 = offset & 0xFFF
+        instruction = 0b10111000100 << 21 | (imm12 << 10) | (rn << 5) | rd
+        self.write_instruction(f"    str {dest_reg}, [{mem_reg}, #{offset}]", comment, instruction, [21, 10, 5])
+
     def emit_stp(self, dest_reg, mem_reg, offset, comment):
-        self.write_text(f"    stp {dest_reg}, {mem_reg}, [sp, #{offset}]!", comment)
-    def emit_adr(self, dest_reg, mem_reg, comment):
-        self.write_text(f"    adr {dest_reg}, {mem_reg}", comment)
+        rt1 = int(dest_reg[1:])
+        rt2 = int(mem_reg[1:])
+        imm7 = (offset // 8) & 0x7F  # Scale by 8 and take 7 bits
+        instruction = 0b10100110 << 24 | (imm7 << 15) | (rt2 << 10) | (31 << 5) | rt1  # 31 = sp
+        self.write_instruction(f"    stp {dest_reg}, {mem_reg}, [sp, #{offset}]!", comment, instruction, [24, 15, 10, 5])
+
+    def emit_adr(self, dest_reg, mem_address, comment):
+        rd = int(dest_reg[1:])
+        relative_address = self.find_relative_offset(mem_address)
+        if relative_address == 0: self.add_pending_relative_address(mem_address, self.current())
+        immlo = (relative_address & 0b11) << 29
+        immhi = ((relative_address >> 2) & 0x7FFFF) << 5
+        instruction = 0b00010000 << 24 | immlo | immhi | rd
+        self.write_instruction(f"    adr {dest_reg}, {mem_address}", comment, instruction, [29, 24, 5])
+
     def emit_mov(self, dest_reg, src_reg, comment):
-        self.write_text(f"    mov {dest_reg}, {src_reg}", comment)
+        rd = 31 if dest_reg == "sp" else int(dest_reg[1:])
+        rn = 31 if src_reg == "sp" else int(src_reg[1:])
+        instruction = 0b10101010000 << 21 | (rn << 5) | rd    # MOV is actually an alias for ORR with zero register
+        self.write_instruction(f"    mov {dest_reg}, {src_reg}", comment, instruction, [21, 5])
+   
     def emit_ret(self):
-        self.write_text("    ret", "return")
+        instruction = 0b11010110010111110000001111000000  # Fixed encoding for RET
+        self.write_instruction("    ret", "return", instruction, None)
+
     def emit_section(self, section_name: str, comment: str):
-        self.write_text(f".section {section_name}", comment)
+        if section_name in self.sections: log_exit("section {section_name} already exists")
+        self.sections[section_name] = self.current()
+        self.text += f".section {section_name}\n"
+
+    def emit_global(self, name: str):
+        self.text += f".global {name}\n"
+        self.globals[name] = self.current()
+
     def emit_label(self, label: str, comment: str):
-        self.write_text(f"{label}:", comment)
+        if label in self.labels: log_exit(f"label {label} already exists")
+        self.labels[label] = self.current()
+        self.text += f"{label}:\n"
+
     def emit_word(self, word: str, comment: str):
-        self.write_text(f"    .word {word}", comment)
+        self.write_instruction(f"    .word {word}", comment, int(word, 16), None)
+
     def align(self, n_bytes: int):
-        self.write_text(f".align {n_bytes}", "align to {n_bytes} bytes")
-        n_current = len(self.data)
-        n_padding = (n_bytes - n_current) % n_bytes
-        self.data.extend([0] * n_padding)
+        n_padding = (n_bytes - self.current()) % n_bytes
+        n_words = int(n_padding / 4)
+        for i in range(0, n_words):
+            self.write_instruction("padding", "padding", 0, None)
+
+    def find_relative_offset(self, mem_address: str) -> int:
+        if mem_address in self.labels:
+            return (self.labels[mem_address] - self.current()) * 4 # bytes not instructions
+        return 0 # todo
+
+    def add_pending_relative_address(self, mem_address: str, offset: int):
+        self.pending_relative_addresses[mem_address] = offset
+        log(f"added pending relative address '{mem_address}' => {offset}")
+
+    def poke_relative_address(self, relative_address:int, offset:int):
+        immlo = (relative_address & 0b11) << 29
+        immhi = ((relative_address >> 2) & 0x7FFFF) << 5
+        existing = self.data[offset] # int
+        new_instruction = (existing & (0xff00001f)) | immlo | immhi
+        self.data[offset] = new_instruction
+    
+    def current(self) -> int: return len(self.data)
+
+    def show_binary(self) -> str:
+        out = ""
+        for i in range(0, len(self.data)):
+            instr = self.data[i]
+            line = self.lines[i]
+            line = line.split('@')[0].strip()
+            out += f"{i:2}: {line}" + " " * (27-len(line))
+            out += f"{self.show_instruction(instr, self.descriptors[i])}\n"
+        return out
+    
+    def show_instruction(self, instr: int, descriptor: List[int]) -> str:
+        if descriptor==None: descriptor = []
+        descriptor = [32] + descriptor + [0]
+        out = ""
+        highlight = True
+        for i_desc in range(0, len(descriptor)-1):
+            i_bit = descriptor[i_desc+1]
+            n_bits = descriptor[i_desc] - i_bit
+            val = (instr >> i_bit) & ((1 << n_bits) - 1)
+            val = bin(val)[2:]  # Convert to binary, remove the '0b' prefix, and add leading zeros up to n_bits
+            spaces = n_bits - len(val)
+            before = spaces
+            after = spaces - before
+            val = "0" * before + val + " " * after
+            if highlight: val = log_green(val)
+            else: val = log_orange(val)
+            out += val
+            highlight = not highlight
+        return out
+
+
 
 class ARMBackend(Backend):
     def __init__(self, path: str):
@@ -539,16 +685,14 @@ class ARMBackend(Backend):
         #log_clear()
         self.reset()
         self.find_register(self.constant_memory, for_write=True)
-        
         for i, instruction in enumerate(block.instructions):
             self.i_instruction = i
             self.emit_instruction(instruction)
-           
         self.emit_dealloc_spill(self.out)
         output_block = self.emit_prelude()
         output_block.join(self.out)
         output_block.emit_ret()
-        log(output_block)
+        log(output_block.show_binary())
         write_file(self.path, output_block)
 
     def emit_instruction(self, instruction):
@@ -583,9 +727,9 @@ class ARMBackend(Backend):
     def emit_prelude(self) -> ARMCode:
         prelude = ARMCode()
         self.output_memory_section(prelude)
-        prelude.write_text(".global run", "make 'run' callable from outside")
+        prelude.emit_global("run")
         prelude.emit_label("run", "entry point")
-        prelude.emit_stp("x29", "x30", "-16", "save frame pointer and return address")
+        prelude.emit_stp("x29", "x30", -16, "save frame pointer and return address")
         prelude.emit_mov("x29", "sp", "set up frame pointer")
         self.emit_alloc_spill(prelude)
         prelude.emit_adr(self.constant_memory.register, "f32_constants", "load constant memory address")
