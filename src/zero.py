@@ -1371,8 +1371,6 @@ class module_Functions(LanguageModule):
         def generate(self, replace: Dict, source_loc: List[Lex]):
             result_names = [ str(name.name) for name in self.names]
             actual_names = [self.type.add_var(r) for r in result_names]
-            log(f"  result_names: {result_names}")
-            log(f"  actual_names: {actual_names}")
             for r, a in zip(result_names, actual_names):
                 replace[r] = a
             return actual_names
