@@ -467,9 +467,11 @@ class ARMBackend(Backend):
         self.fp_registers = RegisterSet(32, { "f32" : "s", "f64" : "d", "f32x4" : "v" })
         self.register_sets = { "i" : self.int_registers, "f" : self.fp_registers }
         self.register_manager = RegisterManager(self.register_sets)
+        self.arithmetic_ops = ["add", "sub", "mul", "div", "sqrt"]
         self.opcode_map_float = { "add" : "fadd", "sub" : "fsub", "mul" : "fmul", "div" : "fdiv", "sqrt" : "fsqrt" }
         self.opcode_map_int = { "add" : "add", "sub" : "sub", "mul" : "mul", "div" : "div", "sqrt" : "sqrt" }
-        self.f32_consts = {}
+        self.constants = {}
+        self.constant_memory_size = 0
         self.constant_memory = Var("constant_memory_adr", "i64")
         self.i_instruction = None
         self.out = ""
@@ -482,56 +484,64 @@ class ARMBackend(Backend):
         
         for i, instruction in enumerate(block.instructions):
             self.i_instruction = i
-            src_regs = []
-            src_types = []
-            if instruction.opcode != "imm":
-                src_regs = [self.find_register(var, for_write=False) for var in instruction.src_vars]
-                src_types = [var.type_name for var in instruction.src_vars]
-                self.free_unused_registers(i, instruction.src_vars)
-            else:
-                src_regs = [instruction.src_vars[0]]
-            dest_reg = self.find_register(instruction.dest_vars[0], for_write=True)
-            dest_type = instruction.dest_vars[0].type_name
-            self.output(instruction.opcode, dest_reg, dest_type, src_regs, src_types, f"{instruction.opcode} {instruction.dest_vars[0]} {instruction.src_vars}")
-        
+            self.emit_instruction(instruction)
+           
         prelude = log_deindent(f"""
-.global run
-run:
-    stp x29, x30, [sp, #-16]! 
-    mov x29, sp
-    {self.output_alloc_spill()}
-    adr {self.constant_memory.register}, f32_constants
-""")
+            .global run
+            run:
+                stp x29, x30, [sp, #-16]! 
+                mov x29, sp
+                {self.output_alloc_spill()}
+                adr {self.constant_memory.register}, f32_constants
+            """)
         self.out = self.output_memory_section() + prelude +self.out + self.output_dealloc_spill() + "\n"
-        self.write("    ret", "return")
+        self.write_text("    ret", "return")
         log(self.out)
         write_file(self.path, self.out)
 
-    #-------------------------------------------------------------------------
-            
-    def output(self, opcode, dest_reg, dest_type, src_regs, src_types, comment):
-        if opcode == "imm":
-            if dest_type.startswith("f"):
-                self.output_float_imm(dest_reg, src_regs[0], dest_type)
-            return
-        elif opcode in ["str", "ldr"]:
-            self.write(f"    {opcode} {dest_reg}, {', '.join(src_regs)}", comment)
-        else:
-            out_opcode = self.find_opcode(opcode, dest_type, src_types)
-            self.write(f"    {out_opcode} {dest_reg}, {', '.join(src_regs)}", comment)
+    def emit_instruction(self, instruction):
+        if instruction.opcode == "imm": return self.emit_immediate(instruction)
+        elif instruction.opcode in self.arithmetic_ops: return self.emit_arithmetic_op(instruction)
+        else: log_exit(f"unknown opcode {instruction.opcode}")
 
-    def write(self, line, comment):
+    def emit_arithmetic_op(self, instruction):
+        src_regs = []
+        src_types = []
+        src_regs = [self.find_register(var, for_write=False) for var in instruction.src_vars]
+        src_types = [var.type_name for var in instruction.src_vars]
+        self.free_unused_registers(instruction.src_vars)
+        dest_reg = self.find_register(instruction.dest_vars[0], for_write=True)
+        dest_type = instruction.dest_vars[0].type_name
+        out_opcode = self.find_opcode(instruction.opcode, dest_type, src_types)
+        comment = f"{instruction.opcode} {instruction.dest_vars[0]} {instruction.src_vars}"
+        self.write_text(f"    {out_opcode} {dest_reg}, {', '.join(src_regs)}", comment)
+        
+    def emit_immediate(self, instruction):
+        immediate = instruction.src_vars[0]
+        dest_reg = self.find_register(instruction.dest_vars[0], for_write=True)
+        dest_type = instruction.dest_vars[0].type_name
+        offset = self.constants.get(immediate, None)
+        if offset is None:
+            n_bytes = int(dest_type[1:])/8
+            offset = self.constant_memory_size  # todo: align if necessary
+            self.constant_memory_size += n_bytes
+            self.constants[immediate] = offset
+        self.emit_ldr(dest_reg, self.constant_memory.register, offset, f"f32({immediate})")
+
+    
+
+    #-------------------------------------------------------------------------
+
+    def emit_ldr(self, dest_reg, mem_reg, offset, comment):
+        self.write_text(f"    ldr {dest_reg}, [{mem_reg}, #{offset}]", comment)
+
+    def emit_str(self, dest_reg, mem_reg, offset, comment):
+        self.write_text(f"    str {dest_reg}, [{mem_reg}, #{offset}]", comment)
+    
+    def write_text(self, line, comment):
         spaces = " "*(32-len(line))
         self.out += line + spaces + log_grey(f"@ {comment}") + "\n"
-
-    def output_float_imm(self, reg, const, type):
-        offset = self.f32_consts.get(const, None)
-        if offset is None: 
-            offset = len(self.f32_consts) * 4
-            self.f32_consts[const] = offset
-        mem_reg = self.constant_memory.register
-        self.write(f"    ldr {reg}, [{mem_reg}, #{offset}]", f"f32({const})")
-
+        
     def output_memory_section(self) -> str:
         def float_to_hex(f: float) -> str:
             # Pack the float into 4 bytes (single-precision)
@@ -543,7 +553,7 @@ run:
                 .align 4
                 f32_constants:
             """)
-        for i, (const, offset) in enumerate(self.f32_consts.items()):
+        for i, (const, offset) in enumerate(self.constants.items()):
             out += f"    .word 0x{float_to_hex(float(const))} @ f32({const})\n"
         return out
     
@@ -554,7 +564,6 @@ run:
     def output_dealloc_spill(self) -> str:
         n_spill_bytes = self.register_manager.total_spill_bytes()
         return f"    add sp, sp, #{n_spill_bytes}"
-    
 
 
     #-------------------------------------------------------------------------
@@ -565,7 +574,8 @@ run:
             return self.opcode_map_float[opcode]
         elif dest_type[0] == "i" and all(src_type[0] == "i" for src_type in src_types):
             return self.opcode_map_int[opcode]
-        raise Exception(f"no opcode found for {opcode} {dest_type} {src_types}")
+        else:
+            raise Exception(f"no opcode found for {opcode} {dest_type} {src_types}")
     
     #-------------------------------------------------------------------------
     # register allocation stuff
@@ -577,24 +587,19 @@ run:
     @log_suppress
     def find_register(self, var: Var, for_write: bool) -> str:
         log(f"i{self.i_instruction}: find_register {var.name} {"for write" if for_write else "for read"}")
-        if var.register: 
-            log(f"   => return {var.register}")
+        if var.register:
             return var.register
         reg_result = self.register_manager.find_register(var, for_write, self.i_instruction)
-        if reg_result.store_offset==None:
-            log(f"   => no spill needed")
-        else:
-            log(log_red(f"   => spill needed; offset={reg_result.store_offset}"))
         if reg_result.store_offset != None:
-            self.output("str", reg_result.register, var.type_name, [f"[sp, #{reg_result.store_offset}]"], [], f"spill {reg_result.spill_var.name} to make room for {var.name}")
+            self.emit_str(reg_result.register, f"[sp]", reg_result.store_offset, f"spill {reg_result.spill_var.name} to make room for {var.name}")
         if reg_result.load_offset != None:
-            self.output("ldr", reg_result.register, var.type_name, [f"[sp, #{reg_result.load_offset}]"], [], f"unspill {var.name}")
+            self.emit_ldr(reg_result.register, f"[sp]", reg_result.load_offset, f"unspill {var.name}")
         return reg_result.register
     
     # if any variables are at the end of their live range, free their registers
-    def free_unused_registers(self, i_instruction: int, vars: List[Var]):
+    def free_unused_registers(self, vars: List[Var]):
         for var in vars:
-            if var.live_range[1] <= i_instruction:
+            if var.live_range[1] <= self.i_instruction:
                 self.register_manager.free(var)
 
     
