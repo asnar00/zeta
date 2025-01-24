@@ -290,7 +290,7 @@ class PythonBackend(Backend):
         log_clear()
         log("----------------------------------------------")
         log(out)
-        write_file(self.path, out)
+        write_file(self.path.replace(".*", ".py"), out)
     
     def run(self) -> str:
         result = subprocess.run(['python3', self.path], capture_output=True, text=True)
@@ -460,7 +460,8 @@ class RegisterManager:
         return best_victim
     
     def total_spill_bytes(self) -> int:
-        return self.spill_manager_32.max_spills * 4 + self.spill_manager_64.max_spills * 8
+        n_bytes = self.spill_manager_32.max_spills * 4 + self.spill_manager_64.max_spills * 8
+        return (n_bytes + 15) // 16 * 16
     
 #--------------------------------------------------------------------------------------------------
 # ARM backend outputs ARM assembly/binary
@@ -479,7 +480,7 @@ class ARMCode:
 
     def write_instruction(self, text, comment, instruction, descriptor):
         spaces = " "*(32-len(text))
-        line = text + spaces + f"@ {comment}"
+        line = text + spaces + f"// {comment}"
         self.text += line + "\n"
         self.lines.append(line)
         self.data.append(instruction)
@@ -577,7 +578,9 @@ class ARMCode:
     def emit_adr(self, dest_reg, mem_address, comment):
         rd = int(dest_reg[1:])
         relative_address = self.find_relative_offset(mem_address)
-        if relative_address == 0: self.add_pending_relative_address(mem_address, self.current())
+        if relative_address is None: 
+            self.add_pending_relative_address(mem_address, self.current_address())
+            relative_address = 0
         immlo = (relative_address & 0b11) << 29
         immhi = ((relative_address >> 2) & 0x7FFFF) << 5
         instruction = 0b00010000 << 24 | immlo | immhi | rd
@@ -595,52 +598,65 @@ class ARMCode:
 
     def emit_section(self, section_name: str, comment: str):
         if section_name in self.sections: log_exit("section {section_name} already exists")
-        self.sections[section_name] = self.current()
+        self.sections[section_name] = self.current_address()
         self.text += f".section {section_name}\n"
 
     def emit_global(self, name: str):
         self.text += f".global {name}\n"
-        self.globals[name] = self.current()
+        self.globals[name] = self.current_address()
 
     def emit_label(self, label: str, comment: str):
         if label in self.labels: log_exit(f"label {label} already exists")
-        self.labels[label] = self.current()
+        self.labels[label] = self.current_address()
         self.text += f"{label}:\n"
+        if label in self.pending_relative_addresses:
+            #log(f"label '{label}' is pending relative address {self.pending_relative_addresses[label]}")
+            offsets = self.pending_relative_addresses[label]
+            for offset in offsets:
+                self.poke_relative_address(self.current_address(), offset)
+            del self.pending_relative_addresses[label]
 
     def emit_word(self, word: str, comment: str):
         self.write_instruction(f"    .word {word}", comment, int(word, 16), None)
 
-    def align(self, n_bytes: int):
-        n_padding = (n_bytes - self.current()) % n_bytes
+    def emit_align(self, n_bytes: int):
+        n_padding = (n_bytes - self.current_address()) % n_bytes
         n_words = int(n_padding / 4)
         for i in range(0, n_words):
-            self.write_instruction("padding", "padding", 0, None)
+            self.write_instruction("    .word 0x00000000", "padding", 0, None)
 
     def find_relative_offset(self, mem_address: str) -> int:
         if mem_address in self.labels:
-            return (self.labels[mem_address] - self.current()) * 4 # bytes not instructions
-        return 0 # todo
+            return (self.labels[mem_address] - self.current_address()) * 4 # bytes not instructions
+        return None
 
     def add_pending_relative_address(self, mem_address: str, offset: int):
-        self.pending_relative_addresses[mem_address] = offset
-        log(f"added pending relative address '{mem_address}' => {offset}")
+        if mem_address not in self.pending_relative_addresses:
+            self.pending_relative_addresses[mem_address] = [offset]
+        else:
+            self.pending_relative_addresses[mem_address].append(offset)
+        #log(f"added pending relative address '{mem_address}' => {offset}")
 
-    def poke_relative_address(self, relative_address:int, offset:int):
+    def poke_relative_address(self, dest_address:int, offset:int):
+        relative_address = dest_address - offset
+        #log(f"dest_address {hex(dest_address)} relative_address {hex(relative_address)} at {hex(offset)}")
         immlo = (relative_address & 0b11) << 29
         immhi = ((relative_address >> 2) & 0x7FFFF) << 5
-        existing = self.data[offset] # int
+        i_word = int(offset/4)
+        existing = self.data[i_word] # int
         new_instruction = (existing & (0xff00001f)) | immlo | immhi
-        self.data[offset] = new_instruction
+        self.data[i_word] = new_instruction
     
-    def current(self) -> int: return len(self.data)
+    def current_address(self) -> int: return len(self.data) * 4
 
     def show_binary(self) -> str:
         out = ""
         for i in range(0, len(self.data)):
             instr = self.data[i]
             line = self.lines[i]
-            line = line.split('@')[0].strip()
-            out += f"{i:2}: {line}" + " " * (27-len(line))
+            line = line.split('//')[0].strip()
+            hex_i = f"{i*4:02x}"
+            out += f"{hex_i:2}: {line}" + " " * (27-len(line))
             out += f"{self.show_instruction(instr, self.descriptors[i])}\n"
         return out
     
@@ -648,7 +664,7 @@ class ARMCode:
         if descriptor==None: descriptor = []
         descriptor = [32] + descriptor + [0]
         out = ""
-        highlight = True
+        highlight = False
         for i_desc in range(0, len(descriptor)-1):
             i_bit = descriptor[i_desc+1]
             n_bits = descriptor[i_desc] - i_bit
@@ -658,8 +674,7 @@ class ARMCode:
             before = spaces
             after = spaces - before
             val = "0" * before + val + " " * after
-            if highlight: val = log_green(val)
-            else: val = log_grey(val)
+            if highlight == False: val = log_grey(val)
             out += val
             highlight = not highlight
         return out
@@ -683,7 +698,7 @@ class ARMBackend(Backend):
         self.out = ARMCode()
 
     def generate(self, block: InstructionBlock):
-        block.dbg = True        # write temp vars into scratch
+        #block.dbg = True        # write temp vars into scratch
         self.block = block
         self.reset()
         self.add_dbg_taps()
@@ -695,6 +710,7 @@ class ARMBackend(Backend):
         output_block = self.emit_prelude()
         output_block.join(self.out)
         output_block.emit_ret()
+        self.output_memory_section(output_block)
         log("----------------------------------------------")
         log("assembly:")
         log(output_block.text)
@@ -702,7 +718,10 @@ class ARMBackend(Backend):
         log("binary:")
         log(output_block.show_binary())
         log("----------------------------------------------")
-        write_file(self.path, output_block)
+        write_file(self.path.replace(".*", ".s"), output_block)
+        with open(self.path.replace(".*", ".bin"), "wb") as f:
+            for i in range(0, len(output_block.data)):
+                f.write(struct.pack('<I', output_block.data[i]))
 
     def emit_instruction(self, instruction):
         if instruction.opcode == "imm": return self.emit_immediate(instruction)
@@ -733,7 +752,6 @@ class ARMBackend(Backend):
 
     def emit_prelude(self) -> ARMCode:
         prelude = ARMCode()
-        self.output_memory_section(prelude)
         prelude.emit_global("run")
         prelude.emit_label("run", "entry point")
         prelude.emit_stp("x29", "x30", -16, "save frame pointer and return adr")
@@ -763,15 +781,15 @@ class ARMBackend(Backend):
     
     # outputs the scratch memory section to assembly
     def output_memory_section(self, out_block: ARMCode):
-
+        out_block.emit_align(16)
         out_block.emit_section(".rodata", "constant data section")
-        out_block.align(4)
         out_block.emit_label("scratch", "label for constant memory")
         for i, (key, offset) in enumerate(self.scratch.items()):
             out_block.emit_word(self.scratch_initials[key], self.scratch_comments[key])
     
     def emit_alloc_spill(self, output_block: ARMCode) -> str:
         n_spill_bytes = self.register_manager.total_spill_bytes()
+
         if n_spill_bytes > 0:
             output_block.emit_int_op("sub", "sp", ["sp", f"#{n_spill_bytes}"], "allocate spill space")
     

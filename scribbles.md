@@ -2,6 +2,16 @@
 # scribblez
 "slow is smooth, smooth is fast"
 
+For reference, instructions to set up qemu
+
+    brew install qemu
+    brew install binutils
+
+    
+
+------
+
+
 rearranging instructions to improve efficiency.
 This is "find distance between a and b" which is basically length(a - b), length(v) = v dot v, a dot b = blah
 

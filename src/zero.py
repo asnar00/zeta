@@ -130,7 +130,7 @@ def test_zero():
     log(program.assembly)
     #log_exit("")
     #backend = PythonBackend("test/test.py")
-    backend = ARMBackend("test/test.s")
+    backend = ARMBackend("test/test.*")
     backend.generate(program.assembly)
     results = backend.run()
     log("\n----------------------------------------------")
