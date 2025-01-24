@@ -657,7 +657,7 @@ class ARMCode:
             after = spaces - before
             val = "0" * before + val + " " * after
             if highlight: val = log_green(val)
-            else: val = log_orange(val)
+            else: val = log_grey(val)
             out += val
             highlight = not highlight
         return out
