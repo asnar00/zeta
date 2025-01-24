@@ -683,7 +683,7 @@ class ARMBackend(Backend):
         self.out = ARMCode()
 
     def generate(self, block: InstructionBlock):
-        #block.dbg = True        # output all temp vars into scratch
+        block.dbg = True        # write temp vars into scratch
         self.block = block
         self.reset()
         self.add_dbg_taps()
@@ -759,7 +759,6 @@ class ARMBackend(Backend):
     # finds byte index from start of memory
     def get_scratch_offset(self, key: str) -> int:
         offset = self.scratch.get(key, None)
-        if offset is None: log_exit(f"scratch offset not found for {key}")
         return offset
     
     # outputs the scratch memory section to assembly
@@ -829,7 +828,8 @@ class ARMBackend(Backend):
     def emit_dbg_tap(self, var: Var):
         if not self.block.dbg: return
         offset = self.get_scratch_offset(var.name)
-        self.out.emit_str(var.register, self.scratch_memory_adr.register, offset, f"tap {var.name}")
+        if offset is not None:
+            self.out.emit_str(var.register, self.scratch_memory_adr.register, offset, f"tap {var.name}")
 
 
     
