@@ -1,5 +1,5 @@
 .section .rodata
-f32_constants:
+scratch:
     .word 0x3f800000            @ f32(1)
     .word 0x40800000            @ f32(4)
     .word 0x40000000            @ f32(2)
@@ -11,7 +11,7 @@ run:
     stp x29, x30, [sp, #-16]!   @ save frame pointer and return address
     mov x29, sp                 @ set up frame pointer
     sub sp, sp, #4              @ allocate spill space
-    adr x0, f32_constants       @ load constant memory address
+    adr x0, scratch             @ load constant memory address
     ldr s0, [x0, #0]            @ a_0.x <= f32(1)
     ldr s1, [x0, #4]            @ b_1.x <= f32(4)
     fsub s0, s0, s1             @ v_3.x <= sub a_0.x, b_1.x

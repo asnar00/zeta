@@ -488,6 +488,7 @@ class ARMCode:
         return self.text
     def __repr__(self):
         return str(self)
+    
     def join(self, other_arm_block):
         self.text = self.text + other_arm_block.text
         self.lines.extend(other_arm_block.lines)
@@ -662,8 +663,6 @@ class ARMCode:
             highlight = not highlight
         return out
 
-
-
 class ARMBackend(Backend):
     def __init__(self, path: str):
         super().__init__(path)
@@ -674,17 +673,16 @@ class ARMBackend(Backend):
         self.arithmetic_ops = ["add", "sub", "mul", "div", "sqrt"]
         self.opcode_map_float = { "add" : "fadd", "sub" : "fsub", "mul" : "fmul", "div" : "fdiv", "sqrt" : "fsqrt" }
         self.opcode_map_int = { "add" : "add", "sub" : "sub", "mul" : "mul", "div" : "div", "sqrt" : "sqrt" }
-        self.constants = {}
-        self.constant_memory_size = 0
-        self.constant_memory = Var("constant_memory_adr", "i64")
+        self.scratch = {}
+        self.scratch_memory_size = 0
+        self.scratch_memory_adr = Var("scratch_memory_adr", "i64")
         self.i_instruction = None
         self.out = ARMCode()
 
     def generate(self, block: InstructionBlock):
         self.block = block
-        #log_clear()
         self.reset()
-        self.find_register(self.constant_memory, for_write=True)
+        self.find_register(self.scratch_memory_adr, for_write=True)
         for i, instruction in enumerate(block.instructions):
             self.i_instruction = i
             self.emit_instruction(instruction)
@@ -716,13 +714,13 @@ class ARMBackend(Backend):
         immediate = instruction.src_vars[0]
         dest_reg = self.find_register(instruction.dest_vars[0], for_write=True)
         dest_type = instruction.dest_vars[0].type_name
-        offset = self.constants.get(immediate, None)
+        offset = self.scratch.get(immediate, None)
         if offset is None:
             n_bytes = int(dest_type[1:])/8
-            offset = int(self.constant_memory_size)  # todo: align if necessary
-            self.constant_memory_size += n_bytes
-            self.constants[immediate] = offset
-        self.out.emit_ldr(dest_reg, self.constant_memory.register, offset, f"{instruction.dest_vars[0]} <= f32({immediate})")
+            offset = int(self.scratch_memory_size)  # todo: align if necessary
+            self.scratch_memory_size += n_bytes
+            self.scratch[immediate] = offset
+        self.out.emit_ldr(dest_reg, self.scratch_memory_adr.register, offset, f"{instruction.dest_vars[0]} <= f32({immediate})")
 
     def emit_prelude(self) -> ARMCode:
         prelude = ARMCode()
@@ -732,7 +730,7 @@ class ARMBackend(Backend):
         prelude.emit_stp("x29", "x30", -16, "save frame pointer and return address")
         prelude.emit_mov("x29", "sp", "set up frame pointer")
         self.emit_alloc_spill(prelude)
-        prelude.emit_adr(self.constant_memory.register, "f32_constants", "load constant memory address")
+        prelude.emit_adr(self.scratch_memory_adr.register, "scratch", "load constant memory address")
         return prelude
 
     #-------------------------------------------------------------------------
@@ -746,8 +744,8 @@ class ARMBackend(Backend):
             return packed.hex()
         out_block.emit_section(".rodata", "constant data section")
         out_block.align(4)
-        out_block.emit_label("f32_constants", "label for constant memory")
-        for i, (const, offset) in enumerate(self.constants.items()):
+        out_block.emit_label("scratch", "label for constant memory")
+        for i, (const, offset) in enumerate(self.scratch.items()):
             out_block.emit_word(f"0x{float_to_hex(float(const))}", f"f32({const})")
     
     def emit_alloc_spill(self, output_block: ARMCode) -> str:
