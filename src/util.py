@@ -9,6 +9,7 @@ from typing import Any, get_type_hints
 import inspect
 import traceback
 import sys
+import struct
 
 from functools import wraps
 
@@ -631,6 +632,15 @@ def test_get_attribute_type():
     log("test_get_attribute_type")
     test("get_attribute_type", get_attribute_type(MyClass, "my_str"), "str")
     test("has_attribute", has_attribute(MySub, "my_str"), True)
+
+#------------------------------------------------------------------------------
+# misc math etc
+
+def float_to_hex(f: float) -> str:
+    # Pack the float into 4 bytes (single-precision)
+    packed = struct.pack('>f', f)  # '<f' is little-endian single-precision
+    # Convert the packed bytes to a hexadecimal string
+    return packed.hex()
 
 #------------------------------------------------------------------------------
 # startup

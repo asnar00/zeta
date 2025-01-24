@@ -134,6 +134,7 @@ def test_zero():
     backend.generate(program.assembly)
     results = backend.run()
     log("\n----------------------------------------------")
+    log("results of run:")
     log(results)
 
     

@@ -47,6 +47,7 @@ class InstructionBlock:
         self.instructions = []
         self.vars = {}
         self.max_live = 0
+        self.dbg = False            # set to True to generate debug code
         
     def __str__(self):
         max_length = max(len(var.name) for var in self.vars.values())
@@ -674,14 +675,18 @@ class ARMBackend(Backend):
         self.opcode_map_float = { "add" : "fadd", "sub" : "fsub", "mul" : "fmul", "div" : "fdiv", "sqrt" : "fsqrt" }
         self.opcode_map_int = { "add" : "add", "sub" : "sub", "mul" : "mul", "div" : "div", "sqrt" : "sqrt" }
         self.scratch = {}
+        self.scratch_initials = {}
+        self.scratch_comments = {}
         self.scratch_memory_size = 0
         self.scratch_memory_adr = Var("scratch_memory_adr", "i64")
         self.i_instruction = None
         self.out = ARMCode()
 
     def generate(self, block: InstructionBlock):
+        #block.dbg = True        # output all temp vars into scratch
         self.block = block
         self.reset()
+        self.add_dbg_taps()
         self.find_register(self.scratch_memory_adr, for_write=True)
         for i, instruction in enumerate(block.instructions):
             self.i_instruction = i
@@ -690,7 +695,13 @@ class ARMBackend(Backend):
         output_block = self.emit_prelude()
         output_block.join(self.out)
         output_block.emit_ret()
+        log("----------------------------------------------")
+        log("assembly:")
+        log(output_block.text)
+        log("----------------------------------------------")
+        log("binary:")
         log(output_block.show_binary())
+        log("----------------------------------------------")
         write_file(self.path, output_block)
 
     def emit_instruction(self, instruction):
@@ -709,25 +720,23 @@ class ARMBackend(Backend):
         out_opcode = self.find_opcode(instruction.opcode, dest_type, src_types)
         comment = f"{instruction.dest_vars[0]} <= {instruction.opcode}{str(instruction.src_vars).replace("[", " ").replace("]", "")}"
         self.out.emit_float_op(out_opcode, dest_reg, src_regs, comment)
+        self.emit_dbg_tap(instruction.dest_vars[0])
 
     def emit_immediate(self, instruction):
         immediate = instruction.src_vars[0]
         dest_reg = self.find_register(instruction.dest_vars[0], for_write=True)
         dest_type = instruction.dest_vars[0].type_name
-        offset = self.scratch.get(immediate, None)
-        if offset is None:
-            n_bytes = int(dest_type[1:])/8
-            offset = int(self.scratch_memory_size)  # todo: align if necessary
-            self.scratch_memory_size += n_bytes
-            self.scratch[immediate] = offset
+        initial_value = f"0x{float_to_hex(float(immediate))}"
+        offset = self.alloc_scratch_offset(immediate, dest_type, initial_value, f"constant {dest_type} {immediate}")
         self.out.emit_ldr(dest_reg, self.scratch_memory_adr.register, offset, f"{instruction.dest_vars[0]} <= f32({immediate})")
+        self.emit_dbg_tap(instruction.dest_vars[0])
 
     def emit_prelude(self) -> ARMCode:
         prelude = ARMCode()
         self.output_memory_section(prelude)
         prelude.emit_global("run")
         prelude.emit_label("run", "entry point")
-        prelude.emit_stp("x29", "x30", -16, "save frame pointer and return address")
+        prelude.emit_stp("x29", "x30", -16, "save frame pointer and return adr")
         prelude.emit_mov("x29", "sp", "set up frame pointer")
         self.emit_alloc_spill(prelude)
         prelude.emit_adr(self.scratch_memory_adr.register, "scratch", "load constant memory address")
@@ -735,18 +744,32 @@ class ARMBackend(Backend):
 
     #-------------------------------------------------------------------------
 
-
+    # returns byte index from start of scratch memory
+    def alloc_scratch_offset(self, key: str, type_name: str, initial_val: int, comment: str) -> int:
+        offset = self.scratch.get(key, None)
+        if offset is None:
+            n_bytes = int(type_name[1:])/8
+            offset = int(self.scratch_memory_size)  # todo: align if necessary
+            self.scratch_memory_size += n_bytes
+            self.scratch[key] = offset
+            self.scratch_initials[key] = initial_val
+            self.scratch_comments[key] = comment
+        return offset
+    
+    # finds byte index from start of memory
+    def get_scratch_offset(self, key: str) -> int:
+        offset = self.scratch.get(key, None)
+        if offset is None: log_exit(f"scratch offset not found for {key}")
+        return offset
+    
+    # outputs the scratch memory section to assembly
     def output_memory_section(self, out_block: ARMCode):
-        def float_to_hex(f: float) -> str:
-            # Pack the float into 4 bytes (single-precision)
-            packed = struct.pack('>f', f)  # '<f' is little-endian single-precision
-            # Convert the packed bytes to a hexadecimal string
-            return packed.hex()
+
         out_block.emit_section(".rodata", "constant data section")
         out_block.align(4)
         out_block.emit_label("scratch", "label for constant memory")
-        for i, (const, offset) in enumerate(self.scratch.items()):
-            out_block.emit_word(f"0x{float_to_hex(float(const))}", f"f32({const})")
+        for i, (key, offset) in enumerate(self.scratch.items()):
+            out_block.emit_word(self.scratch_initials[key], self.scratch_comments[key])
     
     def emit_alloc_spill(self, output_block: ARMCode) -> str:
         n_spill_bytes = self.register_manager.total_spill_bytes()
@@ -795,7 +818,18 @@ class ARMBackend(Backend):
             if var.live_range[1] <= self.i_instruction:
                 self.register_manager.free(var)
 
-    
+    #-------------------------------------------------------------------------
+    # debugging
+
+    def add_dbg_taps(self):
+        if not self.block.dbg: return
+        for var in self.block.vars.values():
+            self.alloc_scratch_offset(var.name, var.type_name, "0x00000000", f"tap {var.name}")
+
+    def emit_dbg_tap(self, var: Var):
+        if not self.block.dbg: return
+        offset = self.get_scratch_offset(var.name)
+        self.out.emit_str(var.register, self.scratch_memory_adr.register, offset, f"tap {var.name}")
 
 
     

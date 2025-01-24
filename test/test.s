@@ -1,14 +1,14 @@
 .section .rodata
 scratch:
-    .word 0x3f800000            @ f32(1)
-    .word 0x40800000            @ f32(4)
-    .word 0x40000000            @ f32(2)
-    .word 0x40a00000            @ f32(5)
-    .word 0x40400000            @ f32(3)
-    .word 0x40c00000            @ f32(6)
+    .word 0x3f800000            @ constant f32 1
+    .word 0x40800000            @ constant f32 4
+    .word 0x40000000            @ constant f32 2
+    .word 0x40a00000            @ constant f32 5
+    .word 0x40400000            @ constant f32 3
+    .word 0x40c00000            @ constant f32 6
 .global run
 run:
-    stp x29, x30, [sp, #-16]!   @ save frame pointer and return address
+    stp x29, x30, [sp, #-16]!   @ save frame pointer and return adr
     mov x29, sp                 @ set up frame pointer
     sub sp, sp, #4              @ allocate spill space
     adr x0, scratch             @ load constant memory address
