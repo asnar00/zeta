@@ -2,13 +2,36 @@
 # scribblez
 "slow is smooth, smooth is fast"
 
-For reference, instructions to set up qemu
+Steps needed to get to "hello world" in the language:
 
-    brew install qemu
-    brew install binutils
+string literals need to go in memory -> same process as numbers
+bit of pre-processing to replace the string literals with <<
+I kind of want to think a little bit about the precise correct syntax.
+simple model is that out$ is a char out$ => so it's just a string.
 
-    
+I quite like the idea of "hidden" structures that don't have language equivalents;
+eg. we could do class ForLoop; and generate those exclusively from within the compiler.
+We almost kind of have already with Seq and Par classes.
 
+Get the OS working just with standard character in and out, that's canonical.
+Method should be: do the C/risc-v course, in C, but also follow along with the language.
+It provides a very nice set of graded goals to go through.
+
+So next task is risc-v output. We're SO damn close.
+
+----------
+
+OK so quick recap of last bit of gnurg.
+What's been achieved:
+
+1- building a verification step into the compiler to check our binary against that produced by assemble/dissassemble.
+2- wasting a whole day fucking about with qemu trying to get it to run my binary. Long story short, chatgpt/claude know nothing but pretend they do. About either ARM instructions or how to set up QEMU. 4o is basically 3.5-level dumb, which I hadn't quite twigged. o2-mini slightly better but slow and rate-limited. Sore need for a "read the manual and help me do X" application.
+3- Anyway ARM output now works, but in the process discovered ARM ISA is nightmarishly complex and large. Crazy crazy. SO many cases and edge combos and weird stuff.
+4- Started the "OS in 1000 lines" book, following along, much more joy. Have followed them up to "Hello World" using C - the next task is to output RISC-V code from zeta, use the llvm assembler for the last mile, and get to "Hello world".
+
+Great to finally be getting to grips with this level of stuff.
+
+Next step: RISC-V assembler output. "Hello world" on QEMU.
 ------
 
 

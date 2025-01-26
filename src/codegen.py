@@ -498,14 +498,16 @@ class ARMCode:
         self.descriptors.extend(other_arm_block.descriptors)
 
     def emit_float_op(self, opcode, dest_reg, src_regs, comment):
-        opcode_map = { "fadd": 0b00011110001, "fsub": 0b00011110011, "fmul": 0b00011110101, "fsqrt": 0b00011110000 }
+        opcode_map = { "fadd": 0b00011110001, "fsub": 0b00011110001, "fmul": 0b00011110001, "fsqrt": 0b00011110001 }
+        op_map = { "fadd" : 0b001010, "fsub" : 0b001110, "fmul" : 0b000010, "fsqrt" : 0b110000 }
         if not opcode in opcode_map: log_exit(f"unknown opcode {opcode}")
         opcode_bits = opcode_map[opcode]
+        op_bits = op_map[opcode]
         if dest_reg[0] == "d": opcode_bits |= (1 << 4)
         rd = int(dest_reg[1:])
         rn = int(src_regs[0][1:])
-        rm = int(src_regs[1][1:]) if len(src_regs) > 1 else 0
-        instruction = ((opcode_bits << 21) | (rm << 16) | (rn << 5) | rd)
+        rm = int(src_regs[1][1:]) if len(src_regs) > 1 else 1 # for weird fsqrt encoding
+        instruction = ((opcode_bits << 21) | (rm << 16) | (op_bits << 10) |(rn << 5) | rd)
         self.write_instruction(f"    {opcode} {dest_reg}, {', '.join(src_regs)}", comment, instruction, [21, 16, 5])
 
     def emit_int_op(self, opcode, dest_reg, src_regs, comment):
@@ -557,16 +559,26 @@ class ARMCode:
     def emit_ldr(self, dest_reg, mem_reg, offset, comment):
         rd = int(dest_reg[1:])
         rn = 31 if mem_reg == "sp" else int(mem_reg[1:])
-        imm12 = offset & 0xFFF
-        instruction = 0b10111000101 << 21 | (imm12 << 10) | (rn << 5) | rd
-        self.write_instruction(f"    ldr {dest_reg}, [{mem_reg}, #{offset}]", comment, instruction, [21, 10, 5])
+        size = 8 if dest_reg=="sp" or dest_reg[0] in "xw" else 4
+        fp = True if (size==4 and dest_reg.startswith("s")) or (size==8 and dest_reg.startswith("d")) else False
+        if size==4 and fp==True: opcode = 0b10111101010
+        else: log_exit(f"unsupported ldr register type '{dest_reg}'")
+        imm = (offset // size) & 0b11111111111
+        instruction = opcode << 21 | (imm << 10) | (rn << 5) | rd
+        offset_str = "" if offset==0 else f", #0x{offset:02x}"
+        self.write_instruction(f"    ldr {dest_reg}, [{mem_reg}{offset_str}]", comment, instruction, [21, 10, 5])
 
     def emit_str(self, dest_reg, mem_reg, offset, comment):
         rd = int(dest_reg[1:])
         rn = 31 if mem_reg == "sp" else int(mem_reg[1:])
-        imm12 = offset & 0xFFF
-        instruction = 0b10111000100 << 21 | (imm12 << 10) | (rn << 5) | rd
-        self.write_instruction(f"    str {dest_reg}, [{mem_reg}, #{offset}]", comment, instruction, [21, 10, 5])
+        size = 8 if dest_reg=="sp" or dest_reg[0] in "xw" else 4
+        fp = True if (size==4 and dest_reg.startswith("s")) or (size==8 and dest_reg.startswith("d")) else False
+        if size==4 and fp==True: opcode = 0b10111101000
+        else: log_exit(f"unsupported str register type '{dest_reg}'")
+        imm = (offset // size) & 0b11111111111
+        instruction = opcode << 21 | (imm << 10) | (rn << 5) | rd
+        offset_str = "" if offset==0 else f", #0x{offset:02x}"
+        self.write_instruction(f"    str {dest_reg}, [{mem_reg}{offset_str}]", comment, instruction, [21, 10, 5])
 
     def emit_stp(self, dest_reg, mem_reg, offset, comment):
         rt1 = int(dest_reg[1:])
@@ -576,7 +588,7 @@ class ARMCode:
         self.write_instruction(f"    stp {dest_reg}, {mem_reg}, [sp, #{offset}]!", comment, instruction, [24, 15, 10, 5])
 
     def emit_adr(self, dest_reg, mem_address, comment):
-        rd = int(dest_reg[1:])
+        rd = 31 if dest_reg == "sp" else int(dest_reg[1:])
         relative_address = self.find_relative_offset(mem_address)
         if relative_address is None: 
             self.add_pending_relative_address(mem_address, self.current_address())
@@ -587,14 +599,33 @@ class ARMCode:
         self.write_instruction(f"    adr {dest_reg}, {mem_address}", comment, instruction, [29, 24, 5])
 
     def emit_mov(self, dest_reg, src_reg, comment):
-        rd = 31 if dest_reg == "sp" else int(dest_reg[1:])
-        rn = 31 if src_reg == "sp" else int(src_reg[1:])
-        instruction = 0b10101010000 << 21 | (rn << 5) | rd    # MOV is actually an alias for ORR with zero register
+        dest_type, dest_nbytes, dest_index = self.parse_reg(dest_reg)
+        src_type, src_nbytes, src_index = self.parse_reg(src_reg)
+        instruction = 0
+        if src_type != "imm":
+            opcode = 0b10010001000 if dest_nbytes==8 else 0b10010000000
+            instruction = (opcode << 21) | (src_index << 16) | dest_index
+        else:
+            imm_val = src_index
+            if imm_val < 0 or imm_val > 0xFFFF:
+                raise ValueError("Immediate out of 0..65535 range for this demo")
+            base = 0xD2800000 if dest_nbytes==8 else 0x52800000
+            instruction = base | (imm_val << 5) | dest_index
         self.write_instruction(f"    mov {dest_reg}, {src_reg}", comment, instruction, [21, 5])
    
     def emit_ret(self):
         instruction = 0b11010110010111110000001111000000  # Fixed encoding for RET
         self.write_instruction("    ret", "return", instruction, None)
+
+    def emit_wfi(self):
+        instruction = 0xD503207F
+        self.write_instruction("    wfi", "wait for interrupt", instruction, None)
+
+    def emit_hlt(self, comment: str, immediate: int):
+        if not (0 <= immediate <= 0xFFFF):
+            raise ValueError("HLT immediate must be in range 0..65535")
+        instruction = (0b11010100010 << 21) | (immediate << 5)
+        self.write_instruction(f"    hlt 0x{immediate:04x}", comment, instruction, None)
 
     def emit_section(self, section_name: str, comment: str):
         if section_name in self.sections: log_exit("section {section_name} already exists")
@@ -656,7 +687,9 @@ class ARMCode:
             line = self.lines[i]
             line = line.split('//')[0].strip()
             hex_i = f"{i*4:02x}"
-            out += f"{hex_i:2}: {line}" + " " * (27-len(line))
+            out += f"{hex_i:2}: {line}" + " " * (20-len(line))
+            if ".word" in line: out += " " * 12
+            else: out += hex(instr) + "  "
             out += f"{self.show_instruction(instr, self.descriptors[i])}\n"
         return out
     
@@ -678,6 +711,16 @@ class ARMCode:
             out += val
             highlight = not highlight
         return out
+    
+    def parse_reg(self, reg: str) -> Tuple[str, int, int]: # returns (is_fp, nbytes, index)
+        if reg=="sp": return "int", 8, 31
+        elif reg.startswith("x"): return "int", 8, int(reg[1:])
+        elif reg.startswith("w"): return "int", 4, int(reg[1:])
+        elif reg.startswith("s"): return "fp", 4, int(reg[1:])
+        elif reg.startswith("d"): return "fp", 8, int(reg[1:])
+        elif reg.startswith("v"): return "fp4", 16, int(reg[1:])
+        elif reg.startswith("0x"): return "imm", 4, int(reg[2:], 16)
+        raise Exception(f"unknown register name {reg}")
 
 class ARMBackend(Backend):
     def __init__(self, path: str):
@@ -698,7 +741,7 @@ class ARMBackend(Backend):
         self.out = ARMCode()
 
     def generate(self, block: InstructionBlock):
-        #block.dbg = True        # write temp vars into scratch
+        block.dbg = True        # write temp vars into scratch
         self.block = block
         self.reset()
         self.add_dbg_taps()
@@ -709,8 +752,9 @@ class ARMBackend(Backend):
         self.emit_dealloc_spill(self.out)
         output_block = self.emit_prelude()
         output_block.join(self.out)
-        output_block.emit_ret()
+        self.emit_shutdown(output_block)
         self.output_memory_section(output_block)
+        self.output_block = output_block
         log("----------------------------------------------")
         log("assembly:")
         log(output_block.text)
@@ -719,10 +763,94 @@ class ARMBackend(Backend):
         log(output_block.show_binary())
         log("----------------------------------------------")
         write_file(self.path.replace(".*", ".s"), output_block)
-        with open(self.path.replace(".*", ".bin"), "wb") as f:
+        with open(self.bin_path(), "wb") as f:
             for i in range(0, len(output_block.data)):
                 f.write(struct.pack('<I', output_block.data[i]))
 
+    def run(self):
+        self.check_binary()
+        qemu_command = log_deindent(f"""
+            qemu-system-aarch64 \
+            -machine virt,virtualization=off \
+            -cpu cortex-a53 \
+            -m 128M \
+            -nographic \
+            -bios test/empty_bios.bin \
+            -kernel {self.path.replace(".*", ".elf")} \
+            -semihosting-config enable=on,target=native \
+            -object memory-backend-file,id=mem0,mem-path={self.path.replace(".*", ".mem")},size=128M,share=on \
+            -machine memory-backend=mem0 \
+            -d exec,in_asm
+        """)
+        qemu_command = re.sub(r'\s+', ' ', qemu_command).strip()
+        log(qemu_command)
+        #os.system(qemu_command)
+        log_exit()
+
+    #-------------------------------------------------------------------------
+
+    # using system tools, assemble our code, disassemble it, and check each instruction's bit pattern
+    def check_binary(self):
+        # assemble
+        os.system(f"clang -target aarch64-none-elf -c {self.path.replace('.*', '.s')} -o {self.path.replace('.*', '.o')} -nostdlib")
+        
+        # disassemble
+        os.system(f"llvm-objdump -D {self.path.replace('.*', '.o')} > {self.path.replace('.*', '.txt')}")
+        dis_text = read_file(self.path.replace('.*', '.txt'))
+        
+        i_start = dis_text.find("<run>:")
+        lines = (dis_text[i_start:]).split("\n")[1:]
+        for line in lines:
+            line = line.strip()
+            if line == "" or ".word" in line: break
+            line = ' '.join(line.split())
+            parts = line.split(" ")
+            #log(parts)
+            offset  = int(parts[0][:-1], 16)
+            instruction = int(parts[1], 16)
+            opcode_str = parts[2]
+            dest = parts[3] if len(parts) > 3 else None
+            src1 = parts[4] if len(parts) > 4 else None
+            src2 = parts[5] if len(parts) > 5 else None
+            if src1 is not None and src1.startswith("[") and not src1.endswith("]"): 
+                src1 = src1 + " " + src2
+                src2 = parts[6] if len(parts) > 6 else None
+            if dest is not None and dest.endswith(","): dest = dest[:-1]
+            if src1 is not None and src1.endswith(","): src1 = src1[:-1]
+            i_instruction = int(offset / 4)
+            our_instruction = self.output_block.data[i_instruction]
+            if our_instruction != instruction:
+                log(f"{offset:02x}: {instruction:08x} {opcode_str} {dest if dest is not None else ''} {src1 if src1 is not None else ''} {src2 if src2 is not None else ''}")
+                log(log_red(f"    {our_instruction:08x}"))
+                their_opcode = (instruction >> 21) & 0b11111111111
+                our_opcode = (our_instruction >> 21) & 0b11111111111
+                our_opcode_str = f"{our_opcode:011b}"
+                if their_opcode == our_opcode: our_opcode_str = log_green(our_opcode_str)
+                else: our_opcode_str = log_red(our_opcode_str)
+                their_remaining = instruction & 0b00000000000111111111111111111111
+                our_remaining = our_instruction & 0b00000000000111111111111111111111
+                their_upper = (their_remaining >> 10)
+                our_upper = (our_remaining >> 10)
+                their_rd = (their_remaining >> 5) & 0b11111
+                our_rd = (our_remaining >> 5) & 0b11111
+                their_rt = (their_remaining & 0b11111)
+                our_rt = (our_remaining & 0b11111)
+                log(f"  theirs: {their_opcode:011b} {their_upper:011b} {their_rd:05b} {their_rt:05b}")
+                our_upper_str = log_green(f"{our_upper:011b}") if their_upper == our_upper else log_red(f"{our_upper:011b}")
+                our_rd_str = log_green(f"{our_rd:05b}") if their_rd == our_rd else log_red(f"{our_rd:05b}")
+                our_rt_str = log_green(f"{our_rt:05b}") if their_rt == our_rt else log_red(f"{our_rt:05b}")
+                log(f"  ours:   {our_opcode_str} {our_upper_str} {our_rd_str} {our_rt_str}")
+                log_exit()
+        log(log_green("binary check passed"))
+
+
+
+   
+    #-------------------------------------------------------------------------
+
+    def bin_path(self) -> str:
+        return self.path.replace(".*", ".bin")
+    
     def emit_instruction(self, instruction):
         if instruction.opcode == "imm": return self.emit_immediate(instruction)
         elif instruction.opcode in self.arithmetic_ops: return self.emit_arithmetic_op(instruction)
@@ -754,11 +882,16 @@ class ARMBackend(Backend):
         prelude = ARMCode()
         prelude.emit_global("run")
         prelude.emit_label("run", "entry point")
-        prelude.emit_stp("x29", "x30", -16, "save frame pointer and return adr")
-        prelude.emit_mov("x29", "sp", "set up frame pointer")
-        self.emit_alloc_spill(prelude)
+        #prelude.emit_stp("x29", "x30", -16, "save frame pointer and return adr")
+        #prelude.emit_mov("x29", "sp", "set up frame pointer")
+        self.emit_init_spill(prelude)
         prelude.emit_adr(self.scratch_memory_adr.register, "scratch", "load constant memory address")
         return prelude
+    
+    def emit_shutdown(self, out_block: ARMCode):
+        out_block.emit_mov("w0", "0x18", "semihosting SYS_EXIT operation")
+        out_block.emit_mov("w1", "0x0", "exit status")
+        out_block.emit_hlt("halt", 0xF000)
 
     #-------------------------------------------------------------------------
 
@@ -782,21 +915,28 @@ class ARMBackend(Backend):
     # outputs the scratch memory section to assembly
     def output_memory_section(self, out_block: ARMCode):
         out_block.emit_align(16)
-        out_block.emit_section(".rodata", "constant data section")
+        #out_block.emit_section(".rodata", "constant data section")
         out_block.emit_label("scratch", "label for constant memory")
         for i, (key, offset) in enumerate(self.scratch.items()):
             out_block.emit_word(self.scratch_initials[key], self.scratch_comments[key])
-    
-    def emit_alloc_spill(self, output_block: ARMCode) -> str:
-        n_spill_bytes = self.register_manager.total_spill_bytes()
+        self.emit_alloc_spill_memory(out_block)
 
-        if n_spill_bytes > 0:
-            output_block.emit_int_op("sub", "sp", ["sp", f"#{n_spill_bytes}"], "allocate spill space")
-    
-    def emit_dealloc_spill(self, output_block: ARMCode) -> str:
+    def emit_alloc_spill_memory(self, out_block: ARMCode) -> str:
         n_spill_bytes = self.register_manager.total_spill_bytes()
-        if n_spill_bytes > 0:
-            output_block.emit_int_op("add", "sp", ["sp", f"#{n_spill_bytes}"], "deallocate spill space")
+        out_block.emit_align(16)
+        out_block.emit_label("spill", "spill space")
+        if n_spill_bytes == 0: return
+        n_spill_words = int(n_spill_bytes / 4)
+        for i in range(0, n_spill_words):
+            out_block.emit_word("0x00000000", "spill")
+
+
+    def emit_init_spill(self, out_block: ARMCode) -> str:
+        out_block.emit_adr("x0", "spill", "load spill adr")
+        out_block.emit_mov("sp", "x0", "load spill adr")
+
+    def emit_dealloc_spill(self, output_block: ARMCode) -> str:
+        pass
             
 
     #-------------------------------------------------------------------------
