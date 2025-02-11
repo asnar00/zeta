@@ -636,11 +636,16 @@ def test_get_attribute_type():
 #------------------------------------------------------------------------------
 # misc math etc
 
-def float_to_hex(f: float) -> str:
+def pack_float(f: float) -> bytes:
     # Pack the float into 4 bytes (single-precision)
     packed = struct.pack('>f', f)  # '<f' is little-endian single-precision
-    # Convert the packed bytes to a hexadecimal string
-    return packed.hex()
+    return packed
+
+#------------------------------------------------------------------------------
+# override: one-word way to fnorf if we forgot to override a method
+
+def override_me():
+    raise Exception("override me")
 
 #------------------------------------------------------------------------------
 # startup

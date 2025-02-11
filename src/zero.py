@@ -14,8 +14,6 @@ import re
 
 s_test_program = """
 feature Program
-    type char > u8
-    type string | str = char$
     string out$
 
 feature Hello extends Program
@@ -72,6 +70,8 @@ feature Backend
     type u8, u16, u32, u64
     type i8, i16, i32, i64
     type f16, f32, f64
+    type char > u8
+    type string | str = char$
     on (i32 r) = add(i32 a, b) emit
     on (i32 r) = sub(i32 a, b) emit
     on (i32 r) = mul(i32 a, b) emit
@@ -130,7 +130,9 @@ def test_zero():
     log(program.assembly)
     #log_exit("")
     #backend = PythonBackend("test/test.py")
-    backend = ARMBackend("test/test.*")
+    processor = ARM()
+    processor.max_fp_registers = 2
+    backend = CPUBackend("test/test.*", processor, dbg=False)
     backend.generate(program.assembly)
     results = backend.run()
     log("\n----------------------------------------------")
@@ -550,7 +552,7 @@ class module_Expressions(LanguageModule):
             params = function.get_params()
             fn_replace = {}
             for p, a in zip(params, args):
-                a = try_replace(a, replace)
+                a = codegen.try_replace(a, replace)
                 fn_replace[p] = a
             fn_replace["_results"] = result_vars
             results = function.generate(fn_replace, source_loc + [first_lex])
@@ -578,7 +580,7 @@ class module_Expressions(LanguageModule):
         @Entity.method(zc.VariableRef)   # VariableRef.generate
         def generate(self, replace: Dict, source_loc: List[Lex]) -> List[str]:
             full = ".".join(str(v) for v in self.variables)
-            return [try_replace(full, replace)]
+            return [codegen.try_replace(full, replace)]
 
     def test_parser(self, compiler: Compiler):
         grammar = compiler.grammar
@@ -1355,7 +1357,7 @@ class module_Functions(LanguageModule):
                         if "_" in r:
                             codegen.output("mov", [l], [r])
                         else:
-                            codegen.output("imm", [l], [r])
+                            codegen.output("const", [l], [r])
 
         @Entity.method(zc.AssignmentLhs)   # AssignmentLhs.generate
         def generate(self, replace: Dict, source_loc: List[Lex]) -> List[str]:
@@ -1453,9 +1455,9 @@ class module_Functions(LanguageModule):
             log(f"emit: {codegen.show(self)}, {replace}")
             fn_name = self.emit_fn_name()
             result_vars = self.get_results()
-            result_vars = [try_replace(r, replace) for r in result_vars]
+            result_vars = [codegen.try_replace(r, replace) for r in result_vars]
             params = self.get_params() 
-            params = [try_replace(p, replace) for p in params]
+            params = [codegen.try_replace(p, replace) for p in params]
             log(f"  fn_name: {fn_name}")
             log(f"  result_vars: {result_vars}")
             log(f"  params: {params}")

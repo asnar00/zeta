@@ -2,6 +2,138 @@
 # scribblez
 "slow is smooth, smooth is fast"
 
+super aside: what if you had 
+
+    opcode: src1 src2
+
+where src1 / 2 are relative offsets back to the instruction that generated the operand.
+
+    6-bit opcode; 5-bit operands. => 16 bits per instruction.
+
+If the top bit is set, then you load the next 15 bits into a shift register.
+
+
+-----------
+
+Next: arm and risc-v output for distance sample.
+- correct the feature-always-on issue => two contexts
+- get distance example working
+- then into hello world and stream fun land.
+- once working, compile into a kernel
+- then get kernel running on qemu
+
+------------
+Thoughts on system organisation:
+=> each system holds certain code and data
+=> code and data can flow across the network
+=> but the network can fail, and is slow
+
+so we want to carefully understand the speed and latency of each connection, and therefore what kind of response times it can support
+so measuring talking about frequency and latency *as part of the language* is very important.
+
+A network pipe will have (f, l) => and so that limits the amount of data we can send over it.
+
+Say we have machines A and B holding data a and b.  (a and b are data streams generated locally on their machine)
+We want to run f(a, b) continuously. We can do this either by sending b to machine A and running f(a, b) on A; or the converse, sending a to machine B and running f(a, b) on machine B.
+
+We can figure out which where to place this task by looking at the rate requirements of each option, compared with the network channel speed; and taking into account the performance of A and B.
+
+For instance, if A is a high-performance machine and a is a video stream, and B is a slow machine and b is audio, and the connection speed is super slow, then we would clearly prefer to send b to A. If on the other hand, B is vastly more powerful than a, and the network is fast enough, then we might prefer to send a from A to B.
+
+We could also add "reliability" as a measure of network quality; so a network channel is characterised by (f, l, r).
+
+But the point here is that we want to be able to write
+
+    f(a, b)
+
+and *not care* about underlying details. Could all be on a single machine, or could be on a cluster, we don't care.
+note that this "location transparency" (we need a better term) is recursive in scope, so a and b could be complex data structures whose various parts are themselves distributed across multiple machines.
+
+This abstraction is the key to zero being super cool.
+
+-------------
+TODAY'S JOB: rewrite with this in mind.
+backend architecture thought: (bleary):
+- this attempt uses a generic Instruction format which definitely feels simpler; we just modify instructions in-place. Maybe add a tag.
+
+That's good, but I'm thinking actually there's an issue with where RegisterManagement happens.
+I think maybe it should be:
+
+    Processor
+        RegisterProcessor (risc-v, arm, etc)
+        StackProcessor (webasm etc)
+
+This would seem to push the management code into RegisterProcessor, which makes a bunch more sense.
+----------------
+
+Architecture of distributed applications:
+1- each node that spins up runs a certain set of Contexts (all in parallel); each has a bunch of state and a set of enabled features.
+A Context plus a set of Tasks is basically a Process, right? Let's call that a Node.
+The idea is that a Node has a bunch of state (static and dynamic coming from sensors) and capabilities, and we can query the node to understand what functions we can call and what state we can access.
+So we can then command the node to run function f on data d. voila.
+So when any bit of code on any node calls function f on d, its request will automatically route to the node that can run it.
+YES. That's it.
+
+
+--------------
+
+Interesting thing to think about re. zero streams:
+
+in python, there's just "str" type, no separate char type. If you take str[i] you get a str with length 1, not a char.
+Now what if this convention was general for all streams of things.
+So consider how we define the string type (which is the simplest stream, right?)
+
+    in is a string source
+    out is a string sink
+
+    out << "hello world"
+
+So that would be cool.
+
+--------------
+
+quick thought resurfaced:
+take the example of "locations" (the MemoryLocation class).
+I want to find a location based on its name; and I want to find all locations that are at the current memory address I'm printing.
+so right now I have:
+
+    Location = ( name, offset, size )
+    self.locations : Dict(str, Location)                    name => Location whose name matches
+    self.offset_to_location : Dict(int, Location)           offset => Location whose offset matches
+
+OK, so it's obviously completely daft to store a pair of hash tables, right? If there's (say) 10 names, then there can be 10 fixed strings in memory, and the key value then is just an index into that array. If you really want to *type in a string* then you'd need a hash table, but most of the time you don't do that - you're just passing the index/ptr around.
+
+Two related ideas here:
+
+    - finding things by filtering an array
+    - storing pointers to things as (array/index) pairs
+
+Finding things:
+
+    type Location = { name: string, offset: index; size: bytes }
+    location$ : Location
+
+    match$ = all location$ (.name == name)
+    match$ = all location$ (.offset == offset)
+
+Now under the hood this can do all kinds of things (like a pair of hash tables, or something a bit more efficient). But the point is that *we don't care* what the compiler does; we just trust the compiler to do the best it can.
+
+----
+
+you need a keyword in python called "override" instead of pass, which means "throw not implemented if you execute this"
+actually you can do this easy using a decorator, hmm
+
+    @override def blah(params) pass
+
+OR
+
+    def blah(params) override_me() 
+
+    def override_me(): raise Exception("calling fn that should have been overridden: " + caller())
+
+That's a reasonable thing to do.
+--------------
+
 Steps needed to get to "hello world" in the language:
 
 string literals need to go in memory -> same process as numbers
@@ -16,6 +148,16 @@ We almost kind of have already with Seq and Par classes.
 Get the OS working just with standard character in and out, that's canonical.
 Method should be: do the C/risc-v course, in C, but also follow along with the language.
 It provides a very nice set of graded goals to go through.
+
+We just need to implement
+
+    a << b
+
+which does a concatenate. I wonder whether we can analyse this statically?? We should definitely look into compile time stuff at some point.
+
+Whenever we declare a stream, we're also going to give it a fixed area - it's a circular buffer over a much longer stream.
+
+If we want to see a stream on a different machine, writing to the stream on machine A will send it to the equivalent object on machine B.
 
 So next task is risc-v output. We're SO damn close.
 
