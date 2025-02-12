@@ -29,7 +29,7 @@ class Const:
     def __init__(self, value: str, type: str):
         self.value = value                    # value as a string
         self.type = type                      # concrete type, eg. "i32", "i64", "f32", "f64" etc   
-    def __str__(self): return f"#{self.value}"
+    def __str__(self): return f"{self.value}"
     def __repr__(self): return str(self)
 
 # instruction: can be either VM or processor specific
@@ -46,7 +46,7 @@ class Instruction:
         return line
     def __repr__(self): return str(self)
     def show(self) -> str:
-        return f"{self.dests[0].type} {self.dests[0].name} <= {self.opcode} {', '.join([str(var) for var in self.sources])}"
+        return f"{self.dests[0].name} <= {self.opcode} {', '.join([str(var) for var in self.sources])}"
        
 # instruction block : just a list of instructions
 class InstructionBlock:
@@ -385,14 +385,24 @@ class Data:
 class DataBlock:
     def __init__(self, name: str):
         self.address = 0
+        self.size_bytes = 0
         self.data : List[Data] = []
-
+        self.name_to_data : Dict[str, Data] = {}
+    def allocate(self, name: str, type: str, size_bytes: int, value: bytes):
+        if name in self.name_to_data: return self.name_to_data[name]
+        data = Data(name, type, size_bytes, value)
+        data.offset_bytes = self.size_bytes
+        self.data.append(data)
+        self.size_bytes += size_bytes
+        self.name_to_data[name] = data
+        return data
+    
 #--------------------------------------------------------------------------------------------------
 # Processor is base class for all architectures
 
 class Processor:
     def __init__(self): pass
-    def setup(self, block: InstructionBlock): override_me()
+    def setup(self, block: InstructionBlock, data: DataBlock): override_me()
     def prologue(self) -> List[Instruction]: override_me()
     def epilogue(self) -> List[Instruction]: override_me()
     def instruction(self, instruction: Instruction, i_instruction: int) -> List[Instruction]: override_me()
@@ -403,15 +413,16 @@ class RegisterProcessor(Processor):
         self.max_fp_registers = None
     def init_register_sets(self) -> Dict[str, RegisterSet]: override_me()
     def register_name(self, register_name: str, type: str) -> str: override_me()
-    def map_opcode(self, opcode: str, type: str) -> str: override_me()
+    def emit(self, instruction: Instruction) -> List[Instruction]: override_me()
     def spill(self, register: Register, slot: int, comment: str = ""): override_me()
     def unspill(self, register: Register, slot: int, comment: str = ""): override_me()
 
     #----------------------------------------------------------------------------------------------
     # setup : call before you start emitting instructions
 
-    def setup(self, block: InstructionBlock):
+    def setup(self, block: InstructionBlock, data: DataBlock):
         self.block = block
+        self.data : DataBlock= data
         self.register_sets = self.init_register_sets()
         self.spill_slots = []
         if self.max_fp_registers != None:
@@ -435,13 +446,12 @@ class RegisterProcessor(Processor):
         source_registers = [self.assign_register(source) for source in instruction.sources]
         self.free_eol_registers(instruction)
         instruction.comment = instruction.show()
-        instruction.opcode = self.map_opcode(instruction.opcode, instruction.dests[0].type)
         for i, dest in enumerate(instruction.dests):
             instruction.dests[i] = self.assign_register(dest)
         for i in range(len(instruction.sources)):
             if source_registers[i] is not None:
                 instruction.sources[i] = source_registers[i]
-        return self.out + [instruction]
+        return self.out + self.emit(instruction)
             
     #----------------------------------------------------------------------------------------------
     # register allocation and spill
@@ -512,7 +522,7 @@ class RISCV(RegisterProcessor):
     def init_register_sets(self): return { "i" : RegisterSet("i", 32, "x"), "f" : RegisterSet("f", 32, "f") }
     def prologue(self) -> List[Instruction]: return []
     def epilogue(self) -> List[Instruction]: return []
-    def instruction(self, instruction: Instruction): return []
+    def emit(self, instruction: Instruction): return []
     def spill(self, register: Register, slot: int): return []
     def unspill(self, register: Register, slot: int): return []
 
@@ -527,14 +537,13 @@ class ARM(RegisterProcessor):
         return { "i" : RegisterSet("i", 32, "x"), "f" : RegisterSet("f", 32, "d") }
     def register_name(self, register: Register, type: str) -> str:
         return f"{self.register_prefixes[type]}{register.index}"
-    def map_opcode(self, opcode: str, type: str) -> str:
-        if opcode in self.arithmetic_ops: return opcode if type.startswith("i") else f"f{opcode}"
-        elif opcode == "const": return "ldr"
-        raise Exception(f"unknown opcode: {opcode}")
+    
+    
     def spill(self, register: Register, slot: int, comment: str = ""): 
         return [Instruction("str", [register], [self.stack_register, f"{slot*4}"], comment=comment)]
     def unspill(self, register: Register, slot: int, comment: str = ""): 
         return [Instruction("ldr", [register], [self.stack_register, f"{slot*4}"], comment=comment)]
+    
     def prologue(self) -> List[Instruction]:
         self.stack_register = self.register_sets["i"].registers[31]
         self.stack_register.name = "sp"
@@ -543,8 +552,36 @@ class ARM(RegisterProcessor):
         self.set_register(self.data, self.data_register)
         return [ Instruction("adr", [self.data_register], ["data"], "load data start address"),
             Instruction("sub", [self.stack_register], [self.stack_register, "spill_size"], "allocate stack space")]
+
+    def emit(self, instruction: Instruction):
+        if instruction.opcode == "const":
+            type = instruction.dests[0].contents.type
+            value = instruction.sources[0].value
+            name = f"const_{type}_{value}"
+            n_bytes = int(type[1:])//8
+            packed_value = self.pack_value(type, value)
+            const_adr = self.data.allocate(name, type, n_bytes, packed_value)
+            return [Instruction("ldr", [instruction.dests[0]], [self.data_register, const_adr.offset_bytes], f"load constant {type} {value}")]
+        else:
+            instruction.opcode = self.map_opcode(instruction.opcode, instruction.dests[0].type)
+        return [instruction]
+    
     def epilogue(self) -> List[Instruction]:
         return [Instruction("add", [self.stack_register], [self.stack_register, "spill_size"], "deallocate stack space")]
+
+    #----------------------------------------------------------------------------------------------
+
+    def map_opcode(self, opcode: str, type: str) -> str:
+        if opcode in self.arithmetic_ops: return opcode if type.startswith("i") else f"f{opcode}"
+        elif opcode == "const": return "ldr"
+        raise Exception(f"unknown opcode: {opcode}")
+    
+    def pack_value(self, type: str, value: str) -> bytes:
+        if type == "f32": return struct.pack(">f", float(value))
+        elif type == "f64": return struct.pack(">d", float(value))
+        elif type == "i32": return struct.pack(">i", int(value))
+        elif type == "i64": return struct.pack(">q", int(value))
+        raise Exception(f"unsupported type: {type}")
 
 #--------------------------------------------------------------------------------------------------
 # stubs for now: but you see how this can work
@@ -579,9 +616,9 @@ class CPUBackend(Backend):
     #----------------------------------------------------------------------------------------------
     
     def reset(self, block: InstructionBlock):
-        self.processor.setup(block)
         self.out = InstructionBlock()
         self.data = DataBlock("data")
+        self.processor.setup(block, self.data)
 
     def resolve_addresses(self):
         pass
