@@ -130,9 +130,7 @@ def test_zero():
     log(program.assembly)
     #log_exit("")
     #backend = PythonBackend("test/test.py")
-    processor = ARM()
-    processor.max_fp_registers = 2
-    backend = CPUBackend("test/test.*", processor, dbg=False)
+    backend = RISCV32("test/test.*", dbg=False)
     backend.generate(program.assembly)
     results = backend.run()
     log("\n----------------------------------------------")

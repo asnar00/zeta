@@ -2,6 +2,123 @@
 # scribblez
 "slow is smooth, smooth is fast"
 
+OK: path we're on now is just write RiscVBackend as a class, all code in there and RegisterManager.
+Goal is to get the distance sample running in qemu asap.
+THEN: implement stream stuff (language level and output) so we can compile hello world.
+Get on with it :-/
+
+------------------------------
+
+ok so I think I've figured out streams for this implementation, with my new invisible-for construct.
+I know the road ahead. But let's get this executing in QEMU.
+Order should be :
+- get distance sample running on qemu and dumping correctly
+- implement array stuff sufficient for hello world
+- get hello world running on qemu
+----------------------
+
+ok, time to think a few late-night-clubbamental thoughts about streams and tings.
+
+See, for hello world, we're going to need an in/out terminal. So we have to define the program as something that takes in keystrokes (in-stream) and outputs text (out-stream).
+
+And that is fine, right? There is in fact an in() and out() stream.
+
+Let's get this right.
+
+First:
+
+no arrays, just streams, either timed or untimed (default). We may not use the stream features of an array, in which case they should be zero cost; but if we do use them, they "just work".
+
+    int i$ << 0 << (i$ + 1) .. (i$ == 10)
+    int i$ << [0 .. 10]
+
+Input and output text streams are done through out and in, defined:
+
+    feature Console
+        string out$
+        string in$
+        on out$ << string s
+            out$ << s[0 .. len(s)]              # output one char at a time
+        on out$ << char c
+            output(c)                           # call the system output-char routine
+
+    feature String
+        type char | character > u16, u8         # 'char' can be u8 or u16
+        type str | string = char$               # 'string' is a stream of characters
+
+    feature Backend
+        replace output(char c) emit             # and now that's an instruction so we can generate
+
+The `s[0 .. len(s)]` construction is interesting because
+
+    [0 .. < len(s)]   is the array of numbers [0, 1, 2, ..., len(s)-1 ]
+    s[0 .. < len(s)] is the [] operator mapped to this array, so [s[0], s[1], ... s[n-1]]
+
+We can also use 1..n like this s[1 .. <= n]
+
+So this makes perfect sense, I think.
+
+So the new syntax we need to get this working is:
+
+- multiple invocation of << in a stream expression
+- array notation, list or range: [a, b, ... ] or [a to b] formats
+
+I think we then need do if-then-else and (dare I say it) some kind of invisible for-loop.
+Invisible in that it's a private formulation that helps us generate code, but isn't actually available.
+
+It would be something super simple like:
+
+    for var <= start, finish, step
+        some code
+
+I think that would be fine basically.
+
+I think this also works super nicely for bit streams as well:
+
+    bit$ << 0[5] << [1 0 1 0 0 1] << binary(10)
+
+    on bit$ << (i32 v):
+        bit$ << v[0 to 31 inclusive]
+
+OK and this is super fucking fantastic. Because the same things apply to this as to other streams.
+It's very, very nice, basically.
+
+So this comes down to the idea of representing the integer types as bit-arrays, which I think is super nice.
+I think it also means that we can do interesting things with for instance constructing a 32-bit uint instruction from binary fields, it's a very very nice notation for when we get there.
+
+=> ok come on!
+
+------------------------------------------------------
+
+
+
+
+
+
+
+
+
+---------------------------------------------------------
+
+word of the day : "redo"
+this idea that you can handle momentum loss by throwing something away, is quite cool.
+based on this I should really now throw away the ARM code and just do RISC-V.
+I'm not in love with the way the architecture came out. So I'm going to throw it away again.
+
+It's unnecessarily complicated. Let's break this inheritance structure and just make small components.
+eg. RegisterSet => nice
+and DataSet
+and InstructionSet => 
+
+Fundamentally, use traits instead of inheritance; I think that's just a better idea.
+So make components that each backend can use, but don't arrange backend classes into a complex tree.
+Just too hard to follow code that way - what's been overridden, etc etc. Just too fiddly.
+
+Try following the rule of small, simple units.
+
+
+-----------------
+
 super aside: what if you had 
 
     opcode: src1 src2
