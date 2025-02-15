@@ -433,6 +433,8 @@ class RISCV32(Backend):
         self.data = DataBlock("data")
         self.data_var = Var("_data", "u32")
         self.data_var.live_range = (0, len(self.in_block.instructions))
+        data_register = self.get_register(self.data_var)
+        self.emit(Instruction("la", [data_register], ["_constants"], "load address of constants"))
         pass
     
     def epilogue(self):
