@@ -411,6 +411,7 @@ class RISCV32(Backend):
         int_registers = RegisterSet("x", 32)
         fp_registers = RegisterSet("f", 32)
         self.register_manager = RegisterManager( { "i" : int_registers, "u" : int_registers, "f" : fp_registers }, self)
+        int_registers.registers[0].contents = Const("0", "u32")
         self.load_opcodes = { "u32" : "lw", "i32" : "lw", "f32" : "flw" }
         self.store_opcodes = { "u32" : "sw", "i32" : "sw", "f32" : "fsw" }
         self.arithmetic_opcodes = { "add", "sub", "mul", "div" }
@@ -418,9 +419,6 @@ class RISCV32(Backend):
     def generate(self, block: InstructionBlock):
         self.in_block = block
         self.out_block = InstructionBlock()
-        self.data = DataBlock("data")
-        self.data_var = Var("_data", "u32")
-        self.data_var.live_range = (0, len(self.in_block.instructions))
         self.prologue()
         for i in range(len(self.in_block.instructions)):
             self.generate_instruction(i)
@@ -428,6 +426,9 @@ class RISCV32(Backend):
         self.show(self.out_block)
 
     def prologue(self):
+        self.data = DataBlock("data")
+        self.data_var = Var("_data", "u32")
+        self.data_var.live_range = (0, len(self.in_block.instructions))
         pass
     
     def epilogue(self):
@@ -445,8 +446,13 @@ class RISCV32(Backend):
         log("----------------------------------------------")
         log("riscv32 assembly:\n")
         for i, instr in enumerate(block.instructions):
-            log(f"{i}: {instr}")
+            log(f"{i}: {self.show_instruction(instr)}")
 
+    def show_instruction(self, instr):
+        if len(instr.sources) == 2 and isinstance(instr.sources[1], int):
+            return f"{instr.opcode} {instr.dests[0]}, {instr.sources[1]}({instr.sources[0]})"
+        else:
+            return str(instr)
     #----------------------------------------------------------------------------------------------
 
     def handle_constants(self):
@@ -470,7 +476,9 @@ class RISCV32(Backend):
             if isinstance(source, Var): instr.sources[i] = source_registers[i]
 
     def handle_memory(self):
-        pass
+        for i, source in enumerate(self.instruction.sources):
+            if isinstance(source, Data):
+                self.instruction.sources[i] = source.offset_bytes
 
     def emit(self, instr):
         self.out_block.instructions.append(instr)
