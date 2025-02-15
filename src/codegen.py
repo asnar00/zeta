@@ -374,6 +374,10 @@ class RegisterSet:
         self.registers = [Register(f"{prefix}{i}", type, i) for i in range(n_registers)]
     def __str__(self): return f"{self.type}"
     def __repr__(self): return str(self)
+    def restrict(self, n_registers: int):
+        dummy_var = Var("dummy", self.type)
+        for i in range(n_registers, len(self.registers)):
+            self.registers[i].contents = dummy_var
     
 class Data:
     def __init__(self, name: str, type: str, size_bytes: int, value: bytes, comment: str = ""):
@@ -413,32 +417,47 @@ class RISCV32(Backend):
     def setup(self):
         int_registers = RegisterSet("x", 32)
         fp_registers = RegisterSet("f", 32)
+        fp_registers.restrict(2)
         self.register_manager = RegisterManager( { "i" : int_registers, "u" : int_registers, "f" : fp_registers }, self)
         int_registers.registers[0].contents = Const("0", "u32")
         self.load_opcodes = { "u32" : "lw", "i32" : "lw", "f32" : "flw" }
         self.store_opcodes = { "u32" : "sw", "i32" : "sw", "f32" : "fsw" }
         self.arithmetic_opcodes = { "add", "sub", "mul", "div" }
+        self.i_prologue = None
+        self.i_epilogue = None
 
     def generate(self, block: InstructionBlock):
         self.in_block = block
         self.out_block = InstructionBlock()
         self.out_block.label("_start")
+        self.initialise()
         self.prologue()
         for i in range(len(self.in_block.instructions)):
             self.generate_instruction(i)
         self.epilogue()
+        self.finalise()
         self.show(self.out_block)
 
-    def prologue(self):
+    def initialise(self):
         self.data = DataBlock("data")
         self.data_var = Var("_data", "u32")
         self.data_var.live_range = (0, len(self.in_block.instructions))
         data_register = self.get_register(self.data_var)
+        self.sp_var = Var("_sp", "u32")
+        sp_register = self.get_register(self.sp_var)
+        sp_register.name = "sp"
         self.emit(Instruction("la", [data_register], ["_constants"], "load address of constants"))
-        pass
+        self.emit(Instruction("la", [sp_register], ["_stack_top"], "load address of stack top"))
+
+    def prologue(self):
+        self.out_block.label("_prologue")
+        self.i_prologue = len(self.out_block.instructions)
+        self.emit(Instruction("addi", [self.sp_var.register], [self.sp_var.register, "-slots"], "allocate stack"))
     
     def epilogue(self):
-        pass
+        self.out_block.label("_epilogue")
+        self.i_epilogue = len(self.out_block.instructions)
+        self.emit(Instruction("addi", [self.sp_var.register], [self.sp_var.register, "slots"], "deallocate stack"))
     
     def generate_instruction(self, i_instruction):
         self.i_instruction = i_instruction
@@ -448,6 +467,10 @@ class RISCV32(Backend):
         self.handle_registers()
         self.handle_memory()
         self.emit(self.instruction)
+
+    def finalise(self):
+        prologue_instr = self.out_block.instructions[self.i_prologue]
+        prologue_instr.sources[1] = -len(self.register_manager.spill_slots)*4
 
     def show(self, block: InstructionBlock):
         log("----------------------------------------------")
@@ -466,8 +489,8 @@ class RISCV32(Backend):
             if instr.comment != "": line += (" "*(25-len(line))) + f" # {instr.comment}"
             out += line + "\n"
         out += """
-    .section .data        # Data section
-    .align 4              # Align to 4-byte boundary\n
+    .section .data        # data section
+    .align 4              # align to 4-byte boundary\n
 """
         out += "_constants:\n"
         for data in self.data.data:
@@ -475,12 +498,16 @@ class RISCV32(Backend):
             line += (" " * (25-len(line))) + f" # {data.name}"
             out += line + "\n"
         out += """
-    .section .bss         # Uninitialized data section (if needed)
+    .section .bss         # uninitialized data section
+    .align 4              # align to 16-byte boundary\n
+_stack_bottom:            # label for bottom of stack
+    .zero 4096            # allocate 4KB for stack
+_stack_top:               # label for top of stack
 """
         return out
 
     def show_instruction(self, instr):
-        if len(instr.sources) == 2 and isinstance(instr.sources[1], int):
+        if instr.opcode[0] in "sl" and len(instr.sources) == 2 and isinstance(instr.sources[1], int):
             return f"{instr.opcode} {instr.dests[0]}, {instr.sources[1]}({instr.sources[0]})"
         else:
             return str(instr)
@@ -515,7 +542,8 @@ class RISCV32(Backend):
         self.out_block.instructions.append(instr)
 
     #----------------------------------------------------------------------------------------------
-    
+    # these vary between different CPU types
+
     def map_opcode(self, opcode: str, type: str) -> str:
         if type[0] in "iu":
             if opcode == "sqrt": raise Exception(f"sqrt not supported for integer type: {type}")
@@ -523,6 +551,15 @@ class RISCV32(Backend):
             return opcode
         else: # "f"
             return f"f{opcode}.s"
+        
+    def emit_spill(self, var: Var, slot: int):
+        self.emit(Instruction("sw", [var.register], [self.sp_var.register, slot*4], f"spill {var} to slot {slot}"))
+
+    def emit_unspill(self, var: Var, slot: int):
+        self.emit(Instruction("lw", [var.register], [self.sp_var.register, slot*4], f"unspill {var} from slot {slot}"))
+        
+    #----------------------------------------------------------------------------------------------
+    # these are the same across different CPU types
 
     def free_eol_vars(self, instr):
         for src in instr.sources:
@@ -558,17 +595,61 @@ class RISCV32(Backend):
 class RegisterManager:
     def __init__(self, register_sets: Dict[str, RegisterSet], backend: Backend):
         self.register_sets = register_sets
-        self.backend = backend
+        self.backend :Backend = backend
+        self.spill_slots : List[Var] = []
 
     def allocate_register(self, var: Var) -> Register:
         register_set = self.register_sets[var.type[0]]
         register = next((r for r in register_set.registers if r.contents is None), None)
-        if register is None: register = self.spill(var.type)
+        if register is None: register = self.spill(register_set,var.type)
         var.register = register
         register.contents = var
+        if var.spill_slot is not None:
+            self.unspill(var)
         return register
     
     def free_register(self, register: Register):
         var = register.contents
         if isinstance(var, Var): var.register = None
         register.contents = None
+
+    def spill(self, register_set: RegisterSet, type: str) -> Register:
+        this_instruction = self.backend.in_block.instructions[self.backend.i_instruction]
+        last_i_read = -1
+        victim_var = None
+        for register in register_set.registers:
+            potential_var = register.contents
+            if potential_var is None: continue
+            if potential_var.register != register: continue
+            if not isinstance(potential_var, Var): continue
+            if potential_var in this_instruction.sources or potential_var in this_instruction.dests: continue
+            i_next_read = self.backend.in_block.find_next_read(self.backend.i_instruction, potential_var)
+            if i_next_read > last_i_read:
+                last_i_read = i_next_read
+                victim_var = potential_var
+        if victim_var is None: raise Exception(f"no spill slot available for {type} in {register_set}")
+        slot = next((i for i, s in enumerate(self.spill_slots) if s is None), None)
+        if slot is None:
+            self.spill_slots.append(victim_var)
+            slot = len(self.spill_slots) - 1
+        self.spill_slots[slot] = victim_var
+        log(f"spilling {victim_var} to slot {slot}")
+        self.backend.emit_spill(victim_var, slot)
+        victim_var.spill_slot = slot
+        victim_register = victim_var.register
+        victim_register.contents = None
+        victim_var.register = None
+        return victim_register
+        
+
+        
+    
+    def unspill(self, var: Var):
+        log(f"unspilling {var} from slot {var.spill_slot}")
+        self.backend.emit_unspill(var, var.spill_slot)
+        self.spill_slots[var.spill_slot] = None
+        var.spill_slot = None
+
+
+
+    
