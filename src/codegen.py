@@ -39,10 +39,8 @@ class Instruction:
         self.dests : List[Var] = dests                  # destination variables
         self.sources : List[Var|Const] = sources        # source variables or constants
         self.comment : str = comment                    # comment
-    def __str__(self): 
-        comment = log_grey(f"// {self.comment}" if self.comment else "")
+    def __str__(self):
         line = f"{self.opcode} {', '.join([str(var) for var in self.dests])}, {', '.join([str(var) for var in self.sources])}"
-        if comment != "": line += " "*(25-len(line)) + comment
         return line
     def __repr__(self): return str(self)
     def show(self) -> str:
@@ -98,6 +96,10 @@ class InstructionBlock:
             if var in self.instructions[i].sources:
                 return i
         return -1
+    
+    # add a label at the current index
+    def label(self, name: str):
+        self.labels[name] = len(self.instructions)
 
 #--------------------------------------------------------------------------------------------------
 # configuration options for code production
@@ -374,11 +376,12 @@ class RegisterSet:
     def __repr__(self): return str(self)
     
 class Data:
-    def __init__(self, name: str, type: str, size_bytes: int, value: bytes):
+    def __init__(self, name: str, type: str, size_bytes: int, value: bytes, comment: str = ""):
         self.name = name
         self.type = type
         self.size_bytes = size_bytes
         self.value = value
+        self.comment = comment
         self.offset_bytes = None
     def __str__(self): return f"{self.name}"
 
@@ -419,6 +422,7 @@ class RISCV32(Backend):
     def generate(self, block: InstructionBlock):
         self.in_block = block
         self.out_block = InstructionBlock()
+        self.out_block.label("_start")
         self.prologue()
         for i in range(len(self.in_block.instructions)):
             self.generate_instruction(i)
@@ -437,6 +441,7 @@ class RISCV32(Backend):
     def generate_instruction(self, i_instruction):
         self.i_instruction = i_instruction
         self.instruction = self.in_block.instructions[i_instruction]
+        self.instruction.comment = self.instruction.show()
         self.handle_constants()
         self.handle_registers()
         self.handle_memory()
@@ -445,8 +450,32 @@ class RISCV32(Backend):
     def show(self, block: InstructionBlock):
         log("----------------------------------------------")
         log("riscv32 assembly:\n")
+        log(self.output(block))
+
+    def output(self, block: InstructionBlock) -> str:
+        index_to_label = { i : label for label, i in block.labels.items() }
+        out = """    .section .text        # Code section
+    .globl _start         # Entry point must be global
+    .type _start, @function\n\n"""
         for i, instr in enumerate(block.instructions):
-            log(f"{i}: {self.show_instruction(instr)}")
+            if i in index_to_label:
+                out += f"{index_to_label[i]}:\n"
+            line = f"    {self.show_instruction(instr)}"
+            if instr.comment != "": line += (" "*(25-len(line))) + f" # {instr.comment}"
+            out += line + "\n"
+        out += """
+    .section .data        # Data section
+    .align 4              # Align to 4-byte boundary\n
+"""
+        out += "_constants:\n"
+        for data in self.data.data:
+            line = f"    .word 0x{data.value.hex()}"
+            line += (" " * (25-len(line))) + f" # {data.name}"
+            out += line + "\n"
+        out += """
+    .section .bss         # Uninitialized data section (if needed)
+"""
+        return out
 
     def show_instruction(self, instr):
         if len(instr.sources) == 2 and isinstance(instr.sources[1], int):
@@ -510,7 +539,7 @@ class RISCV32(Backend):
         return data
     
     def pack_constant(self, c: Const) -> bytes:
-        if c.type == "u64": return struct.pack("<Q", int(c.value))
+        if c.type == "u64": return struct.pack(">Q", int(c.value))
         if c.type == "u32": return struct.pack("<I", int(c.value))
         if c.type == "i64": return struct.pack("<q", int(c.value))
         if c.type == "i32": return struct.pack("<i", int(c.value))
