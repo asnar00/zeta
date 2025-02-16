@@ -40,7 +40,9 @@ class Instruction:
         self.sources : List[Var|Const] = sources        # source variables or constants
         self.comment : str = comment                    # comment
     def __str__(self):
-        line = f"{self.opcode} {', '.join([str(var) for var in self.dests])}, {', '.join([str(var) for var in self.sources])}"
+        line = f"{self.opcode}"
+        if len(self.dests) > 0: line += f" {', '.join([str(var) for var in self.dests])}"
+        if len(self.sources) > 0: line += f", {', '.join([str(var) for var in self.sources])}"
         return line
     def __repr__(self): return str(self)
     def show(self) -> str:
@@ -437,6 +439,7 @@ class RISCV32(Backend):
         for i in range(len(self.in_block.instructions)):
             self.generate_instruction(i)
         self.epilogue()
+        self.shutdown()
         self.finalise()
         self.show(self.out_block)
 
@@ -451,6 +454,11 @@ class RISCV32(Backend):
         self.count_constants_vars()
         self.emit(Instruction("la", [data_register], ["_constants"], "load address of constants"))
         self.emit(Instruction("la", [sp_register], ["_stack_top"], "load address of stack top"))
+
+    def shutdown(self):
+        self.out_block.label("_shutdown")
+        self.emit(Instruction("wfi", [], [], "wait for interrupt"))
+        self.emit(Instruction("j", ["_shutdown"], [], "loop back if we awaken"))
 
     def prologue(self):
         self.out_block.label("_prologue")
@@ -487,8 +495,10 @@ class RISCV32(Backend):
 
     def output(self, block: InstructionBlock) -> str:
         index_to_label = { i : label for label, i in block.labels.items() }
-        out = """    .section .text        # Code section
-    .globl _start         # Entry point must be global
+        out = """    .section .text
+    .option norvc          # disable compressed instructions
+    .org 0x1000            # set program origin to 0x1000
+    .globl _start          # entry point must be global
     .type _start, @function\n\n"""
         for i, instr in enumerate(block.instructions):
             if i in index_to_label:
@@ -511,7 +521,7 @@ class RISCV32(Backend):
 _dbg_vars:                # label for debug variables
     .zero {self.n_vars*4}              # allocate space for debug variables
     .align 16
-    
+
 _stack_bottom:            # label for bottom of stack
     .zero 4096            # allocate 4KB for stack
 _stack_top:               # label for top of stack
@@ -661,7 +671,6 @@ class RegisterManager:
             self.spill_slots.append(victim_var)
             slot = len(self.spill_slots) - 1
         self.spill_slots[slot] = victim_var
-        log(f"spilling {victim_var} to slot {slot}")
         self.backend.emit_spill(victim_var, slot)
         victim_var.spill_slot = slot
         victim_register = victim_var.register
@@ -670,7 +679,6 @@ class RegisterManager:
         return victim_register
     
     def unspill(self, var: Var):
-        log(f"unspilling {var} from slot {var.spill_slot}")
         self.backend.emit_unspill(var, var.spill_slot)
         self.spill_slots[var.spill_slot] = None
         var.spill_slot = None
