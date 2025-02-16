@@ -130,7 +130,7 @@ def test_zero():
     log(program.assembly)
     #log_exit("")
     #backend = PythonBackend("test/test.py")
-    backend = RISCV32("test/test.*", dbg=False)
+    backend = RISCV32("test/test.*", dbg=True)
     backend.generate(program.assembly)
     results = backend.run()
     log("\n----------------------------------------------")

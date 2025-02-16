@@ -423,8 +423,10 @@ class RISCV32(Backend):
         self.load_opcodes = { "u32" : "lw", "i32" : "lw", "f32" : "flw" }
         self.store_opcodes = { "u32" : "sw", "i32" : "sw", "f32" : "fsw" }
         self.arithmetic_opcodes = { "add", "sub", "mul", "div" }
+        self.load_store_opcodes = { "lw", "sw", "flw", "fsw" }
         self.i_prologue = None
         self.i_epilogue = None
+        self.dbg_vars = []
 
     def generate(self, block: InstructionBlock):
         self.in_block = block
@@ -446,6 +448,7 @@ class RISCV32(Backend):
         self.sp_var = Var("_sp", "u32")
         sp_register = self.get_register(self.sp_var)
         sp_register.name = "sp"
+        self.count_constants_vars()
         self.emit(Instruction("la", [data_register], ["_constants"], "load address of constants"))
         self.emit(Instruction("la", [sp_register], ["_stack_top"], "load address of stack top"))
 
@@ -453,6 +456,7 @@ class RISCV32(Backend):
         self.out_block.label("_prologue")
         self.i_prologue = len(self.out_block.instructions)
         self.emit(Instruction("addi", [self.sp_var.register], [self.sp_var.register, "-slots"], "allocate stack"))
+        self.out_block.label("_code")
     
     def epilogue(self):
         self.out_block.label("_epilogue")
@@ -463,14 +467,18 @@ class RISCV32(Backend):
         self.i_instruction = i_instruction
         self.instruction = self.in_block.instructions[i_instruction]
         self.instruction.comment = self.instruction.show()
+        dest_var = self.instruction.dests[0]
         self.handle_constants()
         self.handle_registers()
         self.handle_memory()
         self.emit(self.instruction)
+        self.emit_dbg(dest_var)
 
     def finalise(self):
         prologue_instr = self.out_block.instructions[self.i_prologue]
         prologue_instr.sources[1] = -len(self.register_manager.spill_slots)*4
+        epilogue_instr = self.out_block.instructions[self.i_epilogue]
+        epilogue_instr.sources[1] = len(self.register_manager.spill_slots)*4
 
     def show(self, block: InstructionBlock):
         log("----------------------------------------------")
@@ -497,9 +505,13 @@ class RISCV32(Backend):
             line = f"    .word 0x{data.value.hex()}"
             line += (" " * (25-len(line))) + f" # {data.name}"
             out += line + "\n"
-        out += """
+        out += f"""
     .section .bss         # uninitialized data section
     .align 4              # align to 16-byte boundary\n
+_dbg_vars:                # label for debug variables
+    .zero {self.n_vars*4}              # allocate space for debug variables
+    .align 16
+    
 _stack_bottom:            # label for bottom of stack
     .zero 4096            # allocate 4KB for stack
 _stack_top:               # label for top of stack
@@ -507,7 +519,7 @@ _stack_top:               # label for top of stack
         return out
 
     def show_instruction(self, instr):
-        if instr.opcode[0] in "sl" and len(instr.sources) == 2 and isinstance(instr.sources[1], int):
+        if instr.opcode in self.load_store_opcodes and len(instr.sources) == 2 and isinstance(instr.sources[1], int):
             return f"{instr.opcode} {instr.dests[0]}, {instr.sources[1]}({instr.sources[0]})"
         else:
             return str(instr)
@@ -553,13 +565,29 @@ _stack_top:               # label for top of stack
             return f"f{opcode}.s"
         
     def emit_spill(self, var: Var, slot: int):
-        self.emit(Instruction("sw", [var.register], [self.sp_var.register, slot*4], f"spill {var} to slot {slot}"))
+        self.emit(Instruction(self.store_opcodes[var.type], [var.register], [self.sp_var.register, slot*4], f"spill {var} to slot {slot}"))
 
     def emit_unspill(self, var: Var, slot: int):
-        self.emit(Instruction("lw", [var.register], [self.sp_var.register, slot*4], f"unspill {var} from slot {slot}"))
+        self.emit(Instruction(self.load_opcodes[var.type], [var.register], [self.sp_var.register, slot*4], f"unspill {var} from slot {slot}"))
+
+    def emit_dbg(self, var: Var):
+        if self.dbg == False: return
+        offset = len(self.dbg_vars)
+        self.dbg_vars.append(var)
+        self.emit(Instruction(self.store_opcodes[var.type], [var.register], [self.data_var.register, offset*4 + self.n_constants*4], f"dbg: store {var} at offset {offset}"))
         
     #----------------------------------------------------------------------------------------------
     # these are the same across different CPU types
+
+    def count_constants_vars(self):
+        constants = {}
+        vars = {}
+        for instr in self.in_block.instructions:
+            for var in instr.dests: vars[var] = True
+            for src in instr.sources: 
+                if isinstance(src, Const): constants[src] = True
+        self.n_constants = len(constants)
+        self.n_vars = len(vars)
 
     def free_eol_vars(self, instr):
         for src in instr.sources:
@@ -640,9 +668,6 @@ class RegisterManager:
         victim_register.contents = None
         victim_var.register = None
         return victim_register
-        
-
-        
     
     def unspill(self, var: Var):
         log(f"unspilling {var} from slot {var.spill_slot}")

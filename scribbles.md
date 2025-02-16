@@ -2,6 +2,22 @@
 # scribblez
 "slow is smooth, smooth is fast"
 
+higher level saturday night kind of thoughts.
+
+1) a new name popped up, superexcited.org (image on t shirt)
+2) a sort of a thought about intuituive ways of visualising multi-dimensional "streams".
+
+A stream is a function (t => state), and it's continuous.
+When you look at a stream "all together", it looks like a graph with t on the x-axis, and the value on the y-axis *projected somehow". So a 0-d value is a "point"; a 1-d value is a series of 0-d values making a "curve"; a 2-d value is the "landscape" that gets made when that curve undulates to make a surface; and then the 3-d value is "how that landscape changes over time"; or a 'narrative'. 
+
+But here's the thing; what if we add a fourth dimension, let's call it 'q'. If each 'frame' of q is a narrative, then 'q' is best described by "how the narrative evolved over multiple retellings" or something like that. It's a sequence of narratives. OR something or something or nothing yeah but no but,
+
+BUT: this notion of the 4th dimension as a "narrative dimension" (how a narrative evolves over time) seems like actually the correct way to think about it.
+
+Or wrong, or banal, or whatever.
+    
+-----------------------------
+
 OK: path we're on now is just write RiscVBackend as a class, all code in there and RegisterManager.
 Goal is to get the distance sample running in qemu asap.
 THEN: implement stream stuff (language level and output) so we can compile hello world.
