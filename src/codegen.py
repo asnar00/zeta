@@ -571,26 +571,32 @@ class RISCV32(Backend):
         def rd(instr): return int(instr.dests[0].original_name[1:]) if len(instr.dests) > 0 else 0
         def rs1(instr): return int(instr.sources[0].original_name[1:])
         def rs2(instr): return int(instr.sources[1].original_name[1:])
-        def imm(instr, i_source): return int(instr.sources[i_source], 16) if isinstance(instr.sources[i_source], str) else instr.sources[i_source]
-        def jump_bits(instr, pc):
-            rel_pc = (pc - imm(instr, 0))*4
-            imm_bits = ((rel_pc & 0x80000) >> 19) | ((rel_pc & 0x7FE) << 20) | ((rel_pc & 0x800) << 9) | ((rel_pc & 0xFF000) >> 11)
-            return imm_bits
-        
+        def imm(instr, i_source): return int(instr.sources[i_source], 16) if isinstance(instr.sources[i_source], str) else instr.sources[i_source]    
+        def encode_jal(target_address, pc, rd):
+            imm = target_address - pc
+            if imm % 2 != 0: raise Exception("imm must be aligned to 2 bytes (even number)")
+            if imm < 0: imm = ((1 << 21) + imm) & 0x1fffff
+            imm_20 = (imm & 0b100000000000000000000) >> 20
+            imm_10_1 = (imm & 0b000000000011111111110) >> 1
+            imm_11 = (imm & 0b000000000100000000000) >> 11
+            imm_19_12 = (imm & 0b011111111000000000000) >> 12
+            instr = (imm_20 << 31) | (imm_10_1 << 21) | (imm_11 << 20) | (imm_19_12 << 12) | (rd << 7) | 0x6f
+            return instr
+
         encoded_instructions : List[int] = []
         for pc, i in enumerate(self.out_block.instructions):
             out : int = 0
             if i.opcode == "auipc":        out = (imm(i, 0) << 12) | (rd(i) << 7) | 0b0010111
             elif i.opcode == "addi":       out = ((imm(i, 1) & 0xfff) << 20) | (rs1(i) << 15) | (rd(i) << 7) | 0b0010011 
             elif i.opcode == "flw":        out = (imm(i, 1) << 20) | (rs1(i) << 15) | (0b010 << 12) | (rd(i) << 7) | 0b000111 
-            elif i.opcode == "fsw":        out = ((imm(i, 1) >> 5) << 25) | (rd(i) << 20) | (rs1(i) << 15) | (0b010 << 12) | ((imm(i, 1) & 0x1f) << 7) | 0b010011
+            elif i.opcode == "fsw":        out = ((imm(i, 1) >> 5) << 25) | (rd(i) << 20) | (rs1(i) << 15) | (0b010 << 12) | ((imm(i, 1) & 0x1f) << 7) | 0b0100111
             elif i.opcode == "fadd.s":     out = (0b0000000 << 25) | (rs2(i) << 20) | (rs1(i) << 15) | (0b000 << 12) | (rd(i) << 7) | 0b1010011
             elif i.opcode == "fsub.s":     out = (0b0000100 << 25) | (rs2(i) << 20) | (rs1(i) << 15) | (0b000 << 12) | (rd(i) << 7) | 0b1010011
             elif i.opcode == "fmul.s":     out = (0b0001000 << 25) | (rs2(i) << 20) | (rs1(i) << 15) | (0b000 << 12) | (rd(i) << 7) | 0b1010011
             elif i.opcode == "fdiv.s":     out = (0b0001000 << 25) | (rs2(i) << 20) | (rs1(i) << 15) | (0b000 << 12) | (rd(i) << 7) | 0b1010011
             elif i.opcode == "fsqrt.s":    out = (0b0101100 << 25) | (0 << 20) | (rs1(i) << 15) | (0b000 << 12) | (rd(i) << 7) | 0b1010011
             elif i.opcode == "wfi":        out = (0x105 << 20) | (0 << 15) | (0 << 12) | (0 << 7) | 0x73
-            elif i.opcode == "j":          out = ((jump_bits(i, pc) & 0x3fffff) << 12) | (rd(i) << 7) | 0x6f
+            elif i.opcode == "j":          out = encode_jal(imm(i, 0)*4, pc*4, rd(i))
             else: raise Exception(f"unsupported instruction: {i.opcode}")
             encoded_instructions.append(out)
             
