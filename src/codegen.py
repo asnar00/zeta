@@ -411,6 +411,7 @@ class DataBlock:
 
 class RISCV32(Backend):
     def __init__(self, path: str, dbg: bool = False):
+        log_clear()
         self.path = path
         self.block = InstructionBlock()
         self.dbg = dbg
@@ -500,15 +501,16 @@ class RISCV32(Backend):
         epilogue_instr.sources[1] = len(self.register_manager.spill_slots)*4
         # align instruction count to 16-byte boundary
         data_start = len(self.out_block.instructions) * 4
-        data_start = ((data_start + 15) // 16) * 16
+        self.data_start = ((data_start + 15) // 16) * 16
 
         data_size = (self.n_constants + self.n_vars)*4
-        data_end = data_start + data_size
+        log("data_size", hex(data_size))
+        data_end = self.data_start + data_size
         data_end = ((data_end + 15) // 16) * 16
-        stack_bottom = data_end
-        stack_size = 1024 # replace this with whatever
-        stack_top = stack_bottom + stack_size
-        data_addresses = { "constants" : data_start, "stack_top" : stack_top }
+        self.stack_bottom = data_end
+        self.stack_size = 1024 # replace this with whatever
+        self.stack_top = self.stack_bottom + self.stack_size
+        data_addresses = { "constants" : self.data_start, "stack_top" : self.stack_top }
         # poke relative addresses into all "la" instruction-pairs
         for i in self.i_la_instructions:
             aiupc_instr = self.out_block.instructions[i]
@@ -529,14 +531,23 @@ class RISCV32(Backend):
 
     def output(self, block: InstructionBlock) -> str:
         index_to_label = { v : k for k, v in block.labels.items() }
-
         out = ""
         for i, instr in enumerate(block.instructions):
             if i in index_to_label:
                 out += f"{index_to_label[i]}:\n"
-            line = f"    {(i*4):02x}: {self.show_instruction(instr)}"
-            line += (" " * (30 - len(line))) + log_grey("# " + instr.comment)
-            out += line + "\n"
+            out += self.show_line(f"{(i*4):03x}: {self.show_instruction(instr)}", instr.comment) + "\n"
+        out += f"constants:\n"
+        for i, data in enumerate(self.data.data):
+            val = data.value.hex()
+            out += self.show_line(f"{(data.offset_bytes + self.data_start):03x}: 0x{val}", data.name) + "\n"
+        if self.dbg:
+            out += f"dbg:\n"
+            for i, var in enumerate(self.dbg_vars):
+                out += self.show_line(f"{(self.n_constants*4 +(i*4) + self.data_start):03x}: 0x00000000", var.name) + "\n"
+        out += "stack_bottom:\n"
+        out += self.show_line(f"{self.stack_bottom:03x}: 0x00000000", "stack bottom") + "\n"
+        out += "stack_top:\n"
+        out += self.show_line(f"{self.stack_top:03x}: 0x00000000", "stack top") + "\n"
         return out
 
     def show_instruction(self, instr):
@@ -544,6 +555,9 @@ class RISCV32(Backend):
             return f"{instr.opcode} {instr.dests[0]}, {instr.sources[1]}({instr.sources[0]})"
         else:
             return str(instr)
+        
+    def show_line(self, line, comment):
+        return "    " + line + (" " * (26-len(line))) + log_grey("# " + comment)
     #----------------------------------------------------------------------------------------------
 
     def handle_constants(self):
@@ -602,7 +616,6 @@ class RISCV32(Backend):
         offset = len(self.dbg_vars)
         self.dbg_vars.append(var)
         constant_size = self.n_constants*4
-        constant_size  = ((constant_size + 15) // 16) * 16
         self.emit(Instruction(self.store_opcodes[var.type], [var.register], [self.data_var.register, offset*4 + constant_size], f"dbg: store {var} at offset {offset}"))
         
     #----------------------------------------------------------------------------------------------
