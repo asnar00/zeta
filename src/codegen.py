@@ -362,6 +362,7 @@ class PythonBackend(Backend):
 
 class Register:
     def __init__(self, name: str, type: str, index: int):
+        self.original_name = name
         self.name = name
         self.type = type
         self.index = index
@@ -442,6 +443,7 @@ class RISCV32(Backend):
         self.shutdown()
         self.finalise()
         self.show(self.out_block)
+        self.assemble()
 
     def run(self) -> str:
        pass
@@ -470,7 +472,7 @@ class RISCV32(Backend):
     def shutdown(self):
         self.out_block.label("shutdown")
         self.emit(Instruction("wfi", [], [], "wait for interrupt"))
-        self.emit(Instruction("j", ["shutdown"], [], "loop back if we awaken"))
+        self.emit(Instruction("j", [], [self.out_block.labels["shutdown"]], "loop back if we awaken"))
 
     def prologue(self):
         self.out_block.label("prologue")
@@ -504,7 +506,6 @@ class RISCV32(Backend):
         self.data_start = ((data_start + 15) // 16) * 16
 
         data_size = (self.n_constants + self.n_vars)*4
-        log("data_size", hex(data_size))
         data_end = self.data_start + data_size
         data_end = ((data_end + 15) // 16) * 16
         self.stack_bottom = data_end
@@ -524,6 +525,9 @@ class RISCV32(Backend):
             aiupc_instr.sources[0] = hex(high_part)
             addi_instr.sources[1] = hex(low_part)    
             
+    #----------------------------------------------------------------------------------------------
+    # show
+
     def show(self, block: InstructionBlock):
         log("----------------------------------------------")
         log("riscv32 assembly:\n")
@@ -552,12 +556,52 @@ class RISCV32(Backend):
 
     def show_instruction(self, instr):
         if instr.opcode in self.load_store_opcodes and len(instr.sources) == 2 and isinstance(instr.sources[1], int):
-            return f"{instr.opcode} {instr.dests[0]}, {instr.sources[1]}({instr.sources[0]})"
+            return f"{instr.opcode} {instr.dests[0]}, {instr.sources[1]:x}({instr.sources[0]})"
         else:
             return str(instr)
         
     def show_line(self, line, comment):
         return "    " + line + (" " * (26-len(line))) + log_grey("# " + comment)
+    
+    #----------------------------------------------------------------------------------------------
+    # assemble
+
+    def assemble(self):
+        log_clear()
+        def rd(instr): return int(instr.dests[0].original_name[1:]) if len(instr.dests) > 0 else 0
+        def rs1(instr): return int(instr.sources[0].original_name[1:])
+        def rs2(instr): return int(instr.sources[1].original_name[1:])
+        def imm(instr, i_source): return int(instr.sources[i_source], 16) if isinstance(instr.sources[i_source], str) else instr.sources[i_source]
+        def jump_bits(instr, pc):
+            rel_pc = (pc - imm(instr, 0))*4
+            imm_bits = ((rel_pc & 0x80000) >> 19) | ((rel_pc & 0x7FE) << 20) | ((rel_pc & 0x800) << 9) | ((rel_pc & 0xFF000) >> 11)
+            return imm_bits
+        
+        encoded_instructions : List[int] = []
+        for pc, i in enumerate(self.out_block.instructions):
+            out : int = 0
+            if i.opcode == "auipc":        out = (imm(i, 0) << 12) | (rd(i) << 7) | 0b0010111
+            elif i.opcode == "addi":       out = ((imm(i, 1) & 0xfff) << 20) | (rs1(i) << 15) | (rd(i) << 7) | 0b0010011 
+            elif i.opcode == "flw":        out = (imm(i, 1) << 20) | (rs1(i) << 15) | (0b010 << 12) | (rd(i) << 7) | 0b000111 
+            elif i.opcode == "fsw":        out = ((imm(i, 1) >> 5) << 25) | (rd(i) << 20) | (rs1(i) << 15) | (0b010 << 12) | ((imm(i, 1) & 0x1f) << 7) | 0b010011
+            elif i.opcode == "fadd.s":     out = (0b0000000 << 25) | (rs2(i) << 20) | (rs1(i) << 15) | (0b000 << 12) | (rd(i) << 7) | 0b1010011
+            elif i.opcode == "fsub.s":     out = (0b0000100 << 25) | (rs2(i) << 20) | (rs1(i) << 15) | (0b000 << 12) | (rd(i) << 7) | 0b1010011
+            elif i.opcode == "fmul.s":     out = (0b0001000 << 25) | (rs2(i) << 20) | (rs1(i) << 15) | (0b000 << 12) | (rd(i) << 7) | 0b1010011
+            elif i.opcode == "fdiv.s":     out = (0b0001000 << 25) | (rs2(i) << 20) | (rs1(i) << 15) | (0b000 << 12) | (rd(i) << 7) | 0b1010011
+            elif i.opcode == "fsqrt.s":    out = (0b0101100 << 25) | (0 << 20) | (rs1(i) << 15) | (0b000 << 12) | (rd(i) << 7) | 0b1010011
+            elif i.opcode == "wfi":        out = (0x105 << 20) | (0 << 15) | (0 << 12) | (0 << 7) | 0x73
+            elif i.opcode == "j":          out = ((jump_bits(i, pc) & 0x3fffff) << 12) | (rd(i) << 7) | 0x6f
+            else: raise Exception(f"unsupported instruction: {i.opcode}")
+            encoded_instructions.append(out)
+            
+        with open(self.path.replace(".*", ".bin"), "wb") as f:
+            for i, instruction in enumerate(encoded_instructions):
+                log(f"{i*4:03x}:    {instruction:08x}    {self.show_instruction(self.out_block.instructions[i])}")
+                f.write(struct.pack("<I", instruction))
+                      
+
+
+
     #----------------------------------------------------------------------------------------------
 
     def handle_constants(self):
