@@ -593,7 +593,7 @@ class RISCV32(Backend):
             elif i.opcode == "fadd.s":     out = (0b0000000 << 25) | (rs2(i) << 20) | (rs1(i) << 15) | (0b000 << 12) | (rd(i) << 7) | 0b1010011
             elif i.opcode == "fsub.s":     out = (0b0000100 << 25) | (rs2(i) << 20) | (rs1(i) << 15) | (0b000 << 12) | (rd(i) << 7) | 0b1010011
             elif i.opcode == "fmul.s":     out = (0b0001000 << 25) | (rs2(i) << 20) | (rs1(i) << 15) | (0b000 << 12) | (rd(i) << 7) | 0b1010011
-            elif i.opcode == "fdiv.s":     out = (0b0001000 << 25) | (rs2(i) << 20) | (rs1(i) << 15) | (0b000 << 12) | (rd(i) << 7) | 0b1010011
+            elif i.opcode == "fdiv.s":     out = (0b0001100 << 25) | (rs2(i) << 20) | (rs1(i) << 15) | (0b000 << 12) | (rd(i) << 7) | 0b1010011
             elif i.opcode == "fsqrt.s":    out = (0b0101100 << 25) | (0 << 20) | (rs1(i) << 15) | (0b000 << 12) | (rd(i) << 7) | 0b1010011
             elif i.opcode == "wfi":        out = (0x105 << 20) | (0 << 15) | (0 << 12) | (0 << 7) | 0x73
             elif i.opcode == "j":          out = encode_jal(imm(i, 0)*4, pc*4, rd(i))
