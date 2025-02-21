@@ -2,6 +2,17 @@
 # scribblez
 "slow is smooth, smooth is fast"
 
+Now: we have a verified binary risc-v output.
+
+Next:
+1. add data section
+2. build an ELF file
+3. run it as baremetal on QEMU following https://popovicu.com/posts/bare-metal-programming-risc-v/
+
+Get on with it. You just need to sit down and begin.
+
+------------------------------------------
+
 higher level saturday night kind of thoughts.
 
 1) a new name popped up, superexcited.org (image on t shirt)

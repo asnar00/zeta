@@ -444,6 +444,7 @@ class RISCV32(Backend):
         self.finalise()
         self.show(self.out_block)
         self.assemble()
+        self.check_disassembly()
 
     def run(self) -> str:
        pass
@@ -457,12 +458,10 @@ class RISCV32(Backend):
         self.data_var = Var("_data", "u32")
         self.data_var.live_range = (0, len(self.in_block.instructions))
         self.data_register = self.int_registers.registers[3]
-        self.data_register.name = "gp"
         self.register_manager.assign_register(self.data_var, self.data_register)
         self.sp_var = Var("_sp", "u32")
         self.sp_var.live_range = (0, len(self.in_block.instructions))
         self.sp_register = self.int_registers.registers[2]
-        self.sp_register.name = "sp"
         self.register_manager.assign_register(self.sp_var, self.sp_register)
         self.data = DataBlock("data")
         self.count_constants_vars()
@@ -472,7 +471,7 @@ class RISCV32(Backend):
     def shutdown(self):
         self.out_block.label("shutdown")
         self.emit(Instruction("wfi", [], [], "wait for interrupt"))
-        self.emit(Instruction("j", [], [self.out_block.labels["shutdown"]], "loop back if we awaken"))
+        self.emit(Instruction("jal", [], [self.out_block.labels["shutdown"]], "loop back if we awaken"))
 
     def prologue(self):
         self.out_block.label("prologue")
@@ -556,7 +555,14 @@ class RISCV32(Backend):
 
     def show_instruction(self, instr):
         if instr.opcode in self.load_store_opcodes and len(instr.sources) == 2 and isinstance(instr.sources[1], int):
-            return f"{instr.opcode} {instr.dests[0]}, {instr.sources[1]:x}({instr.sources[0]})"
+            return f"{instr.opcode} {instr.dests[0]}, {instr.sources[1]}({instr.sources[0]})"
+        elif instr.opcode == "jal":
+            dest = instr.dests[0] if len(instr.dests) > 0 else "x0"
+            return f"{instr.opcode} {dest}, 0x{(instr.sources[0]*4):x}"
+        elif instr.opcode == "addi":
+            s2 = instr.sources[1]
+            if isinstance(s2, str): s2 = f"{int(s2, 16)} # {s2}"
+            return f"{instr.opcode} {instr.dests[0]}, {instr.sources[0]}, {s2}"
         else:
             return str(instr)
         
@@ -596,7 +602,7 @@ class RISCV32(Backend):
             elif i.opcode == "fdiv.s":     out = (0b0001100 << 25) | (rs2(i) << 20) | (rs1(i) << 15) | (0b000 << 12) | (rd(i) << 7) | 0b1010011
             elif i.opcode == "fsqrt.s":    out = (0b0101100 << 25) | (0 << 20) | (rs1(i) << 15) | (0b000 << 12) | (rd(i) << 7) | 0b1010011
             elif i.opcode == "wfi":        out = (0x105 << 20) | (0 << 15) | (0 << 12) | (0 << 7) | 0x73
-            elif i.opcode == "j":          out = encode_jal(imm(i, 0)*4, pc*4, rd(i))
+            elif i.opcode == "jal":        out = encode_jal(imm(i, 0)*4, pc*4, rd(i))
             else: raise Exception(f"unsupported instruction: {i.opcode}")
             encoded_instructions.append(out)
             
@@ -605,7 +611,35 @@ class RISCV32(Backend):
                 log(f"{i*4:03x}:    {instruction:08x}    {self.show_instruction(self.out_block.instructions[i])}")
                 f.write(struct.pack("<I", instruction))
                       
-
+    def check_disassembly(self):
+        log("----------------------------------------------")
+        log("riscv32 disassembly check:\n")
+        # gobjdump -D -b binary -m riscv:rv32 -M no-aliases,numeric --start-address=0x0 test.bin > test.asm
+        bin_path = self.path.replace(".*", ".bin")
+        asm_path = self.path.replace(".*", ".asm")
+        process = subprocess.run(["gobjdump", "-D", "-b", "binary", "-m", "riscv:rv32", "-M", "no-aliases,numeric", "--start-address=0x0", bin_path], capture_output=True, text=True)
+        with open(asm_path, "w") as f:
+            f.write(process.stdout)
+        lines = read_file(asm_path).split("\n")
+        lines = lines[next(i for i, line in enumerate(lines) if line.startswith("   0:")):]
+        out = ""
+        for i, line in enumerate(lines):
+            parts = line.split("\t")
+            if len(parts) < 3: continue
+            opcode = parts[2].strip()
+            operands = parts[3].strip() if len(parts) > 3 else ""
+            operands = re.sub(r"#.*", "", operands).strip()
+            operands = operands.replace(",rne", "")
+            operands = operands.replace(",", ", ").replace("  ", " ")
+            check = f"{opcode} {operands}".strip()
+            ours = self.show_instruction(self.out_block.instructions[i]).strip()
+            ours = re.sub(f"#.*", "", ours).strip()
+            if check != ours:
+                out += f"{i*4:03x}: {check} <=> {ours}" + "\n"
+        if out != "":
+            log(log_red("disassembly check failed:\n") + out)
+        else:
+            log(log_green("disassembly check passed"))
 
 
     #----------------------------------------------------------------------------------------------
