@@ -371,7 +371,7 @@ class Register:
     def __repr__(self): return str(self)
 
 class RegisterSet:
-    def __init__(self, prefix: str, n_registers: int):
+    def __init__(self, prefix: str, type: str, n_registers: int):
         self.type = type
         self.n_registers = n_registers
         self.registers = [Register(f"{prefix}{i}", type, i) for i in range(n_registers)]
@@ -416,8 +416,8 @@ class RISCV32(Backend):
         self.path = path
         self.block = InstructionBlock()
         self.dbg = dbg
-        self.int_registers = RegisterSet("x", 32)
-        self.fp_registers = RegisterSet("f", 32)
+        self.int_registers = RegisterSet("x", "u32", 32)
+        self.fp_registers = RegisterSet("f", "f32", 32)
         self.fp_registers.restrict(2)               # artificial limit to test spilling
         self.register_manager = RegisterManager( { "i" : self.int_registers, "u" : self.int_registers, "f" : self.fp_registers }, self)
         self.int_registers.registers[0].contents = Const("0", "u32")
@@ -470,8 +470,17 @@ class RISCV32(Backend):
 
     def shutdown(self):
         self.out_block.label("shutdown")
-        self.emit(Instruction("wfi", [], [], "wait for interrupt"))
-        self.emit(Instruction("jal", [], [self.out_block.labels["shutdown"]], "loop back if we awaken"))
+        # lui  a1, 0x100       # a1 = 0x100000
+        # lui  t0, 0x5         # t0 = 0x5000
+        # addi t0, t0, 0x555    # t0 = 0x5000 + 0x555 = 0x5555
+        # sw   t0, 0(a1)       # Store t0 to memory at address in a1
+        data = Var("data", "u32")
+        value = Var("value", "u32")
+        self.emit(Instruction("lui", [data], ["0x100"], "set data address to 0x100000 = shutdown"))
+        self.emit(Instruction("lui", [value], ["0x5"], "set value to x05000"))
+        self.emit(Instruction("addi", [value], [value, "0x555"], "set value to 0x5555"))
+        self.emit(Instruction("sw", [value], [data], "store value to data address => shutdown"))
+
 
     def prologue(self):
         self.out_block.label("prologue")
@@ -489,9 +498,6 @@ class RISCV32(Backend):
         self.instruction = self.in_block.instructions[i_instruction]
         self.instruction.comment = self.instruction.show()
         dest_var = self.instruction.dests[0]
-        self.handle_constants()
-        self.handle_registers()
-        self.handle_memory()
         self.emit(self.instruction)
         self.emit_dbg(dest_var)
 
@@ -593,7 +599,9 @@ class RISCV32(Backend):
         for pc, i in enumerate(self.out_block.instructions):
             out : int = 0
             if i.opcode == "auipc":        out = (imm(i, 0) << 12) | (rd(i) << 7) | 0b0010111
+            elif i.opcode == "lui":        out = (imm(i, 0) << 12) | (rd(i) << 7) | 0b0110111
             elif i.opcode == "addi":       out = ((imm(i, 1) & 0xfff) << 20) | (rs1(i) << 15) | (rd(i) << 7) | 0b0010011 
+            elif i.opcode == "sw":         out = ((imm(i, 1) >> 5) << 25) | (rd(i) << 20) | (rs1(i) << 15) | (0b010 << 12) | ((imm(i, 1) & 0x1f) << 7) | 0b0100111
             elif i.opcode == "flw":        out = (imm(i, 1) << 20) | (rs1(i) << 15) | (0b010 << 12) | (rd(i) << 7) | 0b000111 
             elif i.opcode == "fsw":        out = ((imm(i, 1) >> 5) << 25) | (rd(i) << 20) | (rs1(i) << 15) | (0b010 << 12) | ((imm(i, 1) & 0x1f) << 7) | 0b0100111
             elif i.opcode == "fadd.s":     out = (0b0000000 << 25) | (rs2(i) << 20) | (rs1(i) << 15) | (0b000 << 12) | (rd(i) << 7) | 0b1010011
@@ -644,8 +652,13 @@ class RISCV32(Backend):
 
     #----------------------------------------------------------------------------------------------
 
-    def handle_constants(self):
-        instr = self.instruction
+    def emit(self, instr):
+        self.handle_constants(instr)
+        self.handle_registers(instr)
+        self.handle_memory(instr)
+        self.out_block.instructions.append(instr)
+
+    def handle_constants(self, instr):
         if instr.opcode == "const":
             const_address = self.allocate_constant(instr.sources[0])
             instr.sources.append(const_address)
@@ -654,8 +667,7 @@ class RISCV32(Backend):
         else:
             instr.opcode = self.map_opcode(instr.opcode, instr.dests[0].type)
 
-    def handle_registers(self):
-        instr = self.instruction
+    def handle_registers(self, instr):
         source_registers = [self.get_register(source) for source in instr.sources]
         self.free_eol_vars(instr)
         dest_registers = [self.get_register(dest) for dest in instr.dests]
@@ -664,18 +676,16 @@ class RISCV32(Backend):
         for i, source in enumerate(instr.sources):
             if isinstance(source, Var): instr.sources[i] = source_registers[i]
 
-    def handle_memory(self):
-        for i, source in enumerate(self.instruction.sources):
+    def handle_memory(self, instr):
+        for i, source in enumerate(instr.sources):
             if isinstance(source, Data):
-                self.instruction.sources[i] = source.offset_bytes
+                instr.sources[i] = source.offset_bytes
 
     def emit_la(self, register: Register, name: str, comment: str):
         self.i_la_instructions.append(len(self.out_block.instructions))
         self.emit(Instruction("auipc", [register], [name], comment))
         self.emit(Instruction("addi", [register], [register, name], comment))
 
-    def emit(self, instr):
-        self.out_block.instructions.append(instr)
 
 
     #----------------------------------------------------------------------------------------------
@@ -721,10 +731,11 @@ class RISCV32(Backend):
                 if src.register is not None and src.live_range[1] <= self.i_instruction:
                     self.register_manager.free_register(src.register)
 
-    def get_register(self, var) -> Register:
-        if not isinstance(var, Var): return None
-        if var.register is not None: return var.register
-        return self.register_manager.allocate_register(var)
+    def get_register(self, operand: Var|Register) -> Register:
+        if isinstance(operand, Register): return operand
+        if not isinstance(operand, Var): return None
+        if operand.register is not None: return operand.register
+        return self.register_manager.allocate_register(operand)
     
     def allocate_constant(self, c: Const) -> Register:
         name = f"const_{c.type}_{c.value}"  

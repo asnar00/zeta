@@ -2,6 +2,18 @@
 # scribblez
 "slow is smooth, smooth is fast"
 
+Characteristics of a good blogging platform:
+1- small posts: "snippets"
+2- snippet => expand to a strand of snippets
+3- front page => latest snippet
+4- "catch-up" => to get to snippet x, just follow back up to the root
+5- add snippets to any "endpoint" (track them)
+
+somehow make this fit-into-your-headable
+
+
+---------------------------------------
+
 Now: we have a verified binary risc-v output.
 
 Next:

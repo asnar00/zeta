@@ -10,7 +10,7 @@ from grammar import *
 from entity import *
 from parser import *
 from symbols import *
-from codegen import *
+from vm import *
 import zero_classes as zc
 
 #--------------------------------------------------------------------------------------------------
@@ -68,8 +68,8 @@ class Compiler:
         self.modules : List[LanguageModule] = []
         self.grammar : Grammar= Grammar(import_module)
         self.cp = None
-        self.config = CodegenConfig()
-        self.codegen = CodeGenerator()
+        self.config = VMCodegenConfig()
+        self.codegen = VMCodeGenerator()
 
     def add_modules(self, modules: List[LanguageModule]): self.modules.extend(modules)
     def set_concrete_types(self, types: Dict[str, str]): self.config.concrete_types(types)

@@ -45,5 +45,4 @@ Disassembly of section .data:
   94:	58000053          	fsqrt.s	f0,f0,rne
   98:	0401a827          	fsw	f0,80(x3)
   9c:	00410113          	addi	x2,x2,4
-  a0:	10500073          	wfi
-  a4:	ffdff06f          	jal	x0,0xa0
+  a0:	001001b7          	lui	x3,0x100

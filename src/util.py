@@ -66,6 +66,11 @@ def log_flush():
     print(s_log)
     s_log = ""
 
+# return current log string
+def log_get() -> str:
+    global s_log
+    return s_log
+
 # log_suppress turns off logging for anything below this function
 def log_suppress(fn):
     function_name = fn.__name__

@@ -4,7 +4,8 @@
 # zero to anything
 
 from compiler import *
-from codegen import *
+from vm import *
+from backend import *
 from copy import deepcopy
 import zero_classes as zc
 import re
@@ -126,18 +127,35 @@ def test_zero():
     if not program.is_ok():
         log_exit("program is not ok")
     log("\n----------------------------------------------")
-    log("after optimisation:")
-    log(program.assembly)
+    #log("after optimisation:")
+    #log(program.assembly)
     #log_exit("")
     #backend = PythonBackend("test/test.py")
-    backend = RISCV32("test/test.*", dbg=True)
-    backend.generate(program.assembly)
-    results = backend.run()
-    log("\n----------------------------------------------")
-    log("results of run:")
-    log(results)
+    riscv_backend = CPUBackend("test/test.*", RISCV32(), dbg=True)
+    arm_backend = CPUBackend("test/test.*", ARM64(), dbg=True)
+    log_clear()
+    riscv_backend.generate(program.assembly)
+    riscv_log = log_get()
+    log_clear()
+    arm_backend.generate(program.assembly)
+    arm_log = log_get()
+    log_clear()
+    display_logs([riscv_log, arm_log])
+    riscv_results = riscv_backend.run()
+    arm_results = arm_backend.run()
 
-    
+def display_logs(logs: List[str]):
+    col_width = 64
+    lines = [l.split("\n") for l in logs]
+    max_len = max(len(l) for l in lines)
+    for i in range(max_len):
+        out = ""
+        for line_list in lines:
+            if i < len(line_list):
+                out += line_list[i]
+            out += (" " * (col_width - len(log_strip(out))))
+        log(out)
+
 #--------------------------------------------------------------------------------------------------
 # print ast as nicely formatted code
 
@@ -1353,9 +1371,9 @@ class module_Functions(LanguageModule):
                 for l, r in zip(lhs, rhs):
                     if l != r:
                         if "_" in r:
-                            codegen.output("mov", [l], [r])
+                            codegen.output("mov", l, [r])
                         else:
-                            codegen.output("const", [l], [r])
+                            codegen.output("const", l, [r])
 
         @Entity.method(zc.AssignmentLhs)   # AssignmentLhs.generate
         def generate(self, replace: Dict, source_loc: List[Lex]) -> List[str]:
@@ -1459,7 +1477,8 @@ class module_Functions(LanguageModule):
             log(f"  fn_name: {fn_name}")
             log(f"  result_vars: {result_vars}")
             log(f"  params: {params}")
-            codegen.output(fn_name, result_vars, params)
+            if len(result_vars) >= 2: raise Exception(f"multiple results not supported: {result_vars}")
+            codegen.output(fn_name, result_vars[0], params)
             return result_vars
 
         @Entity.method(zc.FunctionDef) # Function.emit_fn_name
