@@ -75,10 +75,11 @@ class PythonBackend(Backend):
 # CPUBackend generates code for register-based CPUs
 
 class CPUBackend(Backend):
-    def __init__(self, path: str, isa: 'ISA', debug: bool):
+    def __init__(self, path: str, isa: 'ISA', debug: bool, restrict: bool):
         self.path = path
         self.isa = isa
         self.debug = debug
+        self.restrict = restrict
         self.rm = self.isa.init_register_manager()
 
     def generate(self, vm_block: VMInstructionBlock):
@@ -118,7 +119,7 @@ class CPUBackend(Backend):
         self.out : List[Instruction] = []                   # output code
         self.spill_slots : List[VMVar] = []                 # spill slots
         self.reset_variables()
-        self.fill_registers()                               # artificially fill registers to test spill
+        if self.restrict: self.fill_registers()             # artificially fill registers to test spill
 
     def reset_variables(self):
         for vm_instr in self.vm_block.instructions:
@@ -194,16 +195,10 @@ class CPUBackend(Backend):
         self.instructions(self.isa.load_rel_address(register, address, self.pc*4), comment)
 
     def emit_load(self, register: Register, offset: int, comment: str):
-        type = register.type
-        if type[0] == "f":
-            self.instructions(self.isa.load_float(register, self.data_register, offset), comment)
-        else: raise Exception(f"load {type} not implemented")
+        self.instructions(self.isa.load(register, self.data_register, offset), comment)
 
     def emit_store(self, register: Register, data_register: Register, offset: int, comment: str):
-        type = register.type
-        if type[0] == "f":
-            self.instructions(self.isa.store_float(register, data_register, offset), comment)
-        else: raise Exception(f"store {type} not implemented")
+        self.instructions(self.isa.store(register, data_register, offset), comment)
 
     def emit_stack_alloc(self):
         pass
@@ -233,9 +228,9 @@ class CPUBackend(Backend):
     def instruction(self, instr: Instruction, comment: str):
         instr.comment = comment
         if self.pc == len(self.code):
-            self.code.append(instr)
+            self.code.append(deepcopy(instr))
         else: 
-            self.code[self.pc] = instr
+            self.code[self.pc] = deepcopy(instr)
         self.pc += 1
 
     def label(self, name: str):
@@ -404,15 +399,19 @@ class CPUBackend(Backend):
 
     def show_code(self):
         for i, instr in enumerate(self.code):
-            out = f"{(i*4):03x}: {instr}"
-            out += (" " * (30-len(out))) + log_grey("# " + instr.comment)
+            encoded = self.isa.encode_instruction(instr, i)
+            out = f"{(i*4):03x}: {encoded:08x} {instr}"
+            out += (" " * (35-len(out))) + log_grey("# " + instr.comment)
             log(out)
 
     #----------------------------------------------------------------------------------------------
     # binary / elf stuff
 
     def encode_all(self):
-        pass
+        encoded_code : bytes = b""
+        for i, instr in enumerate(self.code):
+            encoded_code += self.isa.encode_instruction(instr, i).to_bytes(4, "little")
+        self.elf_code = encoded_code
 
     def write_elf(self):
         pass

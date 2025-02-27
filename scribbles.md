@@ -2,14 +2,87 @@
 # scribblez
 "slow is smooth, smooth is fast"
 
+tomorrow: encode ARM instructions
+then: make elf, disassemble-check, then run-qemu.
+
+Policy decisions: develop both architectures simultaneously. Most important.
+
+
+then: 
+ - code should send the logo to prove it's working
+ - then:
+    code should send the final float (in binary) to the "output" channel;
+    we should be able to send it the two vectors (1,2,3) and (4,5,6)
+    we can also do debug-dump as final act (write the contents of memory to out)
+
+That's nicer, because then we don't need this QEMU thing, which anyway doesn't work for hardware.
+
+bed now.
+
+
+
+
+wrote up esc and one a bit, good thoughts in that direction.
+esc: https://docs.google.com/document/d/1zsPmPBISJ6LbzjUkUg1JLNgLBtr3oJMcif0AABhMio4/edit?tab=t.0
+one: https://docs.google.com/document/d/1pQRexcch66GReu1-h-T0kN0oJqbIELRscbp7aKazdnI/edit?tab=t.0
+
+Lots of fun!
+
+---------------------------------------
+
+Thoughts on the "build without dependencies" rationale.
+
+One has to be pragmatic about this; you always have the choice to "use existing product X" or "make a new product P".
+
+The great fallacy is that "use existing product X" is going to be quicker and cheaper then writing it yourself. This isn't always going to be true.
+
+If a product is elegant, simple, discoverable, flexible and customisable, with little effort, then it's obviously better to use. But lots of products are kludgey, super complete, poorly documented, designed around one task, and impossible to customise because of complex code or broken build systems. It may be that for your limited use case, it's faster to roll your own small, hyper-focused tool (a "microtool") that lets you get the job done.
+
+Once you have a microtool that works for you, the improvements to your workflow efficiency and adaptibilty should more than justify the cost of building it. Now, with AI democratising coding, the factors affecting that decision are changing fast.
+
+Examples from the zeta project:
+I looked outputting to MLIR, but MLIR is HUGE. There's just such a huge amount of it, and there's so much stuff to wade through. I decided to go for a small, homegrown multi-CPU-target-supporting compiler. And it was definitely the right decision.
+
+I started by outputting assembler and using clang to assemble and link; but then got rid of the clang dependency. Instruction encoding for the subset I'm using is super easy; 30 lines for RISCV on the first attempt. (yes, that will obviously grow, but I was up and running with it in no time).
+
+With QEMU, I'm going ahead with using it, even though it's impossible to customise (I have to fix the build script to make the build work, which is amazing to me). I could spend a bunch of time diving into the subtleties of build tools and so on, but that's a major learning effort dedicated to figuring out legacy software. For the moment, I'm ploughing ahead with QEMU, but it's a verification tool rather than in the pipeline; I don't need QEMU to deploy; so it's not such a big deal. 
+
+Same is true of using the llvm disassembler for verification. That's fine, because I'm using it as a tool to verify the compiler. So that's OK. 
+
+That seems like a decent rationale: if a tool is directly involved in the zero pipeline, it should be written by us (in python, then zero). Once we have correct zero code, we should be able to patch any running system, as well as examine it to understand what it does and how.
+
+I think once we can deliver an experience of programming using literate coding, on a remote device, that should tell us whether we have something. 
+
+
+------------
+
+thoughts on esc, the user interface
+rationale: well, we need VR to visualise and control the drone swarm, obviously
+and obviously that is true, right? Look out into the world and see where your drones are.
+what's the cheapest open-source VR headset we can find?
+
+
+---------------
+
+company name: "harmless"
+harmless industries
+harmless technology
+
+from the hippocratic oath: "first, do no harm"
+
+harmless.org seems blank but is owned 
+collides with harmless.org.uk - self-harm prevention charity in the uk
+
+but aside from that I like it. Logo still works, kind of...
+--------
 new architecture is much nicer!
 all ISA stuff in isa.py;
 vm stuff is now called vm stuff, and is in vm.py (previously codegen)
 backend is in its own file, works with any ISA.
 
 possible next steps:
-1- debug output
-2- code generation
+1- debug output DONE
+2- code generation DONE FOR RISCV
 3- disassembly check
 4- elf generator
 -----------------------------
