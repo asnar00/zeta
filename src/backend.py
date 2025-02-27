@@ -116,8 +116,9 @@ class CPUBackend(Backend):
         self.data_address = 0                               # will get updated later
         self.stack_address = 0                              # will get updated later
         self.out : List[Instruction] = []                   # output code
-        self.spill_slots : List[VMVar] = []                 # spill slots  
+        self.spill_slots : List[VMVar] = []                 # spill slots
         self.reset_variables()
+        self.fill_registers()                               # artificially fill registers to test spill   
 
     def reset_variables(self):
         for vm_instr in self.vm_block.instructions:
@@ -196,13 +197,25 @@ class CPUBackend(Backend):
         self.instructions(self.isa.load_rel_address(register, address, self.pc*4), comment)
 
     def emit_load_fp(self, register: Register, offset: int, comment: str):
-        self.instructions(self.isa.load_float_from_memory(register, self.data_register, offset), comment)
+        self.instructions(self.isa.load_float(register, self.data_register, offset), comment)
 
     def emit_stack_alloc(self):
         pass
 
     def emit_stack_dealloc(self):
         pass
+
+    def emit_spill(self, var: VMVar,register: Register, offset: int):
+        type = var.type
+        if type[0] == "f":
+            self.instructions(self.isa.store_float(register, self.stack_register, offset*4), f"spill {var}")
+        else: raise Exception(f"spill {var.type} not implemented")
+
+    def emit_unspill(self, var: VMVar, register: Register, offset: int):
+        type = var.type
+        if type[0] == "f":
+            self.instructions(self.isa.load_float(register, self.stack_register, offset*4), f"unspill {var}")
+        else: raise Exception(f"unspill {var.type} not implemented")
 
     #----------------------------------------------------------------------------------------------
     # business end
@@ -294,19 +307,23 @@ class CPUBackend(Backend):
     #----------------------------------------------------------------------------------------------
     # register management
 
+    # note that register stores variable
     def assign_register(self, register: Register, var: VMVar):
         register.name = self.isa.register_prefix(var.type) + register.defined_name[1:]
         register.var = var
         var.register = register
 
+    # return the register assigned to a variable; handles allocation and spills 
     def get_register(self, var: VMVar) -> Register:
         if var.register is not None:  return var.register
         register_set = self.register_manager.int_registers if var.type[0] in "iu" else self.register_manager.fp_registers
         register = next((r for r in register_set.registers if r.var is None), None)
-        if register is None: register = self.spill_register(register_set, var.type)
+        if register is None: register = self.spill(register_set, var)
         self.assign_register(register, var)
+        if var.spill_slot is not None: self.unspill(var)
         return register
     
+    # free any registers whose variables won't be needed again
     def free_eol_registers(self, registers: List[Register|None]):
         for register in registers:
             if register is None: continue
@@ -315,19 +332,23 @@ class CPUBackend(Backend):
             if var.live_range[1] <= self.i_instruction:
                 self.free_register(register)
 
-    def free_register(sef, register: Register):
+    # free a specific register
+    def free_register(self, register: Register):
         register.var.register = None
         register.var = None
 
-    def spill_register(self, register_set: RegisterSet, type: str) -> Register:
-        victim_var = self.find_spill_victim(register_set, type)
+    # find a victim var to spill, spill it, and unspill for_var; return the register
+    def spill(self, register_set: RegisterSet, for_var: VMVar) -> Register:
+        victim_var = self.find_spill_victim(register_set, for_var.type)
         spill_slot = self.find_spill_slot(victim_var)
         self.spill_slots[spill_slot] = victim_var
         victim_var.spill_slot = spill_slot
         register = victim_var.register
         self.free_register(register)
+        self.emit_spill(victim_var,register, spill_slot)
         return register
 
+    # find the variable with the latest next use
     def find_spill_victim(self, register_set: RegisterSet, type: str) -> VMVar:
         this_instr = self.code[self.i_instruction]
         latest_use = -1
@@ -343,11 +364,26 @@ class CPUBackend(Backend):
                 victim_var = var
         return victim_var
     
+    # find a vacant spill slot, or add a new one
     def find_spill_slot(self, var: VMVar) -> int:
-        for slot in self.spill_slots:
-            if self.spill_slots[slot] == None: return slot
+        for i, slot in enumerate(self.spill_slots):
+            if slot == None: return i
         self.spill_slots.append(None)
         return len(self.spill_slots) - 1
+    
+    def unspill(self, var: VMVar):
+        self.emit_unspill(var, var.register, var.spill_slot)
+        self.spill_slots[var.spill_slot] = None
+        var.spill_slot = None
+    
+    # to test spill, artificially fill registers
+    def fill_registers(self):
+        fp_registers = self.register_manager.fp_registers
+        dummy_var = VMVar("_dummy", "f32")
+        for i in range(2, 32):
+            self.assign_register(fp_registers.registers[i], dummy_var)
+        dummy_var.register = None # prevent reassignment
+
     
     #----------------------------------------------------------------------------------------------
     # show code
@@ -357,6 +393,7 @@ class CPUBackend(Backend):
             out = f"{(i*4):03x}: {instr}"
             out += (" " * (30-len(out))) + log_grey("# " + instr.comment)
             log(out)
+
     #----------------------------------------------------------------------------------------------
     # binary / elf stuff
 

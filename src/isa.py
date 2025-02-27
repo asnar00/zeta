@@ -86,7 +86,8 @@ class ISA:
     def stack_register(self, register_manager: RegisterManager) -> Register: override_me()
     def load_rel_address(self, register: Register, address: int, pc: int) -> List[Instruction]: override_me()
     def load_int_immediate(self, register: Register, constant: int) -> List[Instruction]: override_me()
-    def load_float_from_memory(self, register: Register, data_register: Register, offset: int) -> List[Instruction]: override_me()
+    def load_float(self, register: Register, data_register: Register, offset: int) -> List[Instruction]: override_me()
+    def store_float(self, register: Register, data_register: Register, offset: int) -> List[Instruction]: override_me()
     def get_opcode(self, opcode: str, type: str) -> str: override_me()
 
 #--------------------------------------------------------------------------------------------------
@@ -116,8 +117,10 @@ class RISCV32(ISA):
             lower = constant - (upper << 12)
             return [ Instruction("lui", register, [upper]),
                      Instruction("addi", register, [register, lower])]
-    def load_float_from_memory(self, register: Register, data_register: Register, offset: int) -> List[Instruction]:
+    def load_float(self, register: Register, data_register: Register, offset: int) -> List[Instruction]:
         return [Instruction("flw", register, [data_register, offset])]
+    def store_float(self, register: Register, data_register: Register, offset: int) -> List[Instruction]:
+        return [Instruction("fsw", register, [data_register, offset])]
     def get_opcode(self, opcode: str, type: str) -> str:
         if opcode in self.arithmetic_opcodes:
             n_bits = int(type[1:])
@@ -169,8 +172,10 @@ class ARM64(ISA):
         else:
             return [Instruction("movz", register, [lower16, 0])] + \
                 ([Instruction("movk", register, [upper16, 16])] if upper16 != 0 else [])
-    def load_float_from_memory(self, register: Register, data_register: Register, offset: int) -> List[Instruction]:
+    def load_float(self, register: Register, data_register: Register, offset: int) -> List[Instruction]:
         return [Instruction("ldr", register, [data_register, offset])]
+    def store_float(self, register: Register, data_register: Register, offset: int) -> List[Instruction]:
+        return [Instruction("str", register, [data_register, offset])]
     def get_opcode(self, opcode: str, type: str) -> str:
         if opcode in self.arithmetic_opcodes:
             return f"f{opcode}" if type[0] == "f" else f"{opcode}"
