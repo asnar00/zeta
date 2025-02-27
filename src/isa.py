@@ -14,7 +14,8 @@ class Register:
     def __init__(self, name: str, type: str):
         self.defined_name = name                # formal name at full size        
         self.defined_type = type                # type at full size
-        self.name = name                        # current name  
+        self.name = name                        # current name
+        self.type = type                        # current type  
         self.var = None                         # current variable or None if none
     def __str__(self): return self.name
     def __repr__(self): return str(self)

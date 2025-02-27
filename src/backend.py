@@ -75,10 +75,10 @@ class PythonBackend(Backend):
 # CPUBackend generates code for register-based CPUs
 
 class CPUBackend(Backend):
-    def __init__(self, path: str, isa: 'ISA', dbg: bool):
+    def __init__(self, path: str, isa: 'ISA', debug: bool):
         self.path = path
         self.isa = isa
-        self.dbg = dbg
+        self.debug = debug
         self.rm = self.isa.init_register_manager()
 
     def generate(self, vm_block: VMInstructionBlock):
@@ -118,7 +118,7 @@ class CPUBackend(Backend):
         self.out : List[Instruction] = []                   # output code
         self.spill_slots : List[VMVar] = []                 # spill slots
         self.reset_variables()
-        self.fill_registers()                               # artificially fill registers to test spill   
+        self.fill_registers()                               # artificially fill registers to test spill
 
     def reset_variables(self):
         for vm_instr in self.vm_block.instructions:
@@ -166,15 +166,12 @@ class CPUBackend(Backend):
 
     def generate_instruction(self, vm_instr: VMInstruction):
         if vm_instr.opcode == "const": return self.generate_const(vm_instr)
-        # assign a register to each source operand
         source_registers = [(self.get_register(s) if isinstance(s, VMVar) else s) for s in vm_instr.sources]
-        # free any source registers that won't be used again
         self.free_eol_registers(source_registers)
-        # assign a register to the destination
         dest_register = self.get_register(vm_instr.dest)
         opcode = self.isa.get_opcode(vm_instr.opcode, vm_instr.dest.type)
-        comment = vm_instr.show()
-        self.instruction(Instruction(opcode, dest_register, source_registers), comment)
+        self.instruction(Instruction(opcode, dest_register, source_registers), vm_instr.show())
+        if self.debug: self.emit_debug(vm_instr.dest, dest_register)
 
     def generate_const(self, vm_instr: VMInstruction):
         register = self.get_register(vm_instr.dest)
@@ -184,7 +181,7 @@ class CPUBackend(Backend):
             value_float = float(value_str)
             value_bytes = struct.pack("f", value_float)
             constant = self.constant(value_str, value_bytes, type)
-            self.defer(lambda: self.emit_load_fp(register, constant.offset, f"load {type} {value_float}"))
+            self.defer(lambda: self.emit_load(register, constant.offset, f"load {type} {value_float}"))
         else: # more efficient to construct immediate directly in register
             self.instructions(self.isa.load_int_immediate(register, int(vm_instr.sources[0].value)), f"load int {vm_instr.sources[0].value}")
     
@@ -196,8 +193,17 @@ class CPUBackend(Backend):
     def emit_rel_address(self, register: Register, address: int, comment: str):
         self.instructions(self.isa.load_rel_address(register, address, self.pc*4), comment)
 
-    def emit_load_fp(self, register: Register, offset: int, comment: str):
-        self.instructions(self.isa.load_float(register, self.data_register, offset), comment)
+    def emit_load(self, register: Register, offset: int, comment: str):
+        type = register.type
+        if type[0] == "f":
+            self.instructions(self.isa.load_float(register, self.data_register, offset), comment)
+        else: raise Exception(f"load {type} not implemented")
+
+    def emit_store(self, register: Register, data_register: Register, offset: int, comment: str):
+        type = register.type
+        if type[0] == "f":
+            self.instructions(self.isa.store_float(register, data_register, offset), comment)
+        else: raise Exception(f"store {type} not implemented")
 
     def emit_stack_alloc(self):
         pass
@@ -249,11 +255,18 @@ class CPUBackend(Backend):
         return self.variables[label]
 
     #----------------------------------------------------------------------------------------------
+    # debug
+
+    def emit_debug(self, var: VMVar, register: Register):
+        variable = self.variable(var.name, var.type)
+        self.defer(lambda: self.emit_store(register, self.data_register, variable.offset, f"debug store {register.var} to {variable.offset}"))
+
+    #----------------------------------------------------------------------------------------------
     # arrange constant and variable memory
 
     def arrange_memory(self):
         code_size = len(self.code) * 4
-        self.data_address = self.align(code_size, 16)
+        self.data_address = self.align(code_size, 4)
 
         # sort constants by size, largest first
         sorted_constants = sorted(self.constants.values(), key=lambda c: len(c.value), reverse=True)
@@ -310,6 +323,7 @@ class CPUBackend(Backend):
     # note that register stores variable
     def assign_register(self, register: Register, var: VMVar):
         register.name = self.isa.register_prefix(var.type) + register.defined_name[1:]
+        register.type = var.type
         register.var = var
         var.register = register
 

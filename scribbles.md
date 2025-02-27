@@ -2,6 +2,18 @@
 # scribblez
 "slow is smooth, smooth is fast"
 
+new architecture is much nicer!
+all ISA stuff in isa.py;
+vm stuff is now called vm stuff, and is in vm.py (previously codegen)
+backend is in its own file, works with any ISA.
+
+possible next steps:
+1- debug output
+2- code generation
+3- disassembly check
+4- elf generator
+-----------------------------
+
 Characteristics of a good blogging platform:
 1- small posts: "snippets"
 2- snippet => expand to a strand of snippets
