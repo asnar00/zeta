@@ -93,7 +93,7 @@ class ISA:
     def encode_instruction(self, instr: Instruction) -> int: override_me()
     def gobjdump_arch_name(self) -> str: override_me()
     def show_instruction(self, instr: Instruction, pc: int) -> str: override_me()
-
+    def shutdown(self) -> List[Instruction]: override_me()
 #--------------------------------------------------------------------------------------------------
 # RISCV ISA
 
@@ -130,8 +130,8 @@ class RISCV32(ISA):
         else:
             upper = (constant + 0x800) >> 12
             lower = constant - (upper << 12)
-            return [ Instruction("lui", register, [upper]),
-                     Instruction("addi", register, [register, lower])]
+            return [ Instruction("lui", register, [hex(upper)]),
+                     Instruction("addi", register, [register, hex(lower)])]
     def load(self, register: Register, data_register: Register, offset: int) -> List[Instruction]:
         return [Instruction(self.load_opcodes[register.type], register, [data_register, offset])]
     def store(self, register: Register, data_register: Register, offset: int) -> List[Instruction]:
@@ -160,7 +160,7 @@ class RISCV32(ISA):
         if i.opcode == "auipc":        return (imm(i, 0) << 12) | (rd(i) << 7) | 0b0010111
         elif i.opcode == "lui":        return (imm(i, 0) << 12) | (rd(i) << 7) | 0b0110111
         elif i.opcode == "addi":       return ((imm(i, 1) & 0xfff) << 20) | (rs1(i) << 15) | (rd(i) << 7) | 0b0010011 
-        elif i.opcode == "sw":         return ((imm(i, 1) >> 5) << 25) | (rd(i) << 20) | (rs1(i) << 15) | (0b010 << 12) | ((imm(i, 1) & 0x1f) << 7) | 0b0100111
+        elif i.opcode == "sw":         return ((imm(i, 1) >> 5) << 25) | (rd(i) << 20) | (rs1(i) << 15) | (0b010 << 12) | ((imm(i, 1) & 0x1f) << 7) | 0b0100011
         elif i.opcode in self.load_bits: return (imm(i, 1) << 20) | (rs1(i) << 15) | (rd(i) << 7) | self.load_bits[i.opcode]
         elif i.opcode in self.store_bits: return ((imm(i, 1) >> 5) << 25) | (rd(i) << 20) | (rs1(i) << 15) | ((imm(i, 1) & 0x1f) << 7) | self.store_bits[i.opcode]
         elif i.opcode == "fadd.s":     return (0b0000000 << 25) | (rs2(i) << 20) | (rs1(i) << 15) | (0b000 << 12) | (rd(i) << 7) | 0b1010011
@@ -187,6 +187,12 @@ class RISCV32(ISA):
             return f"{instr.opcode} {instr.dest}, 0x{(instr.sources[0]*4):x}"
         else:
             return str(instr)
+    def shutdown(self) -> List[Instruction]:
+        adr = Register("x1", "i32")
+        value = Register("x2", "i32")
+        return self.load_int_immediate(adr, 0x100000) + \
+               self.load_int_immediate(value, 0x5555) + \
+               self.store(value, adr, 0)
 
 #--------------------------------------------------------------------------------------------------
 # ARM64 ISA
@@ -278,6 +284,8 @@ class ARM64(ISA):
                 if imm == 0: return f"{instr.opcode} {instr.dest}, [{instr.sources[0]}]"
                 return f"{instr.opcode} {instr.dest}, [{instr.sources[0]}, #{instr.sources[1]*4}]"
         return str(instr)
+    def shutdown(self) -> List[Instruction]:
+        return []
 
 
 

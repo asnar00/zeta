@@ -20,7 +20,8 @@ Disassembly of section .data:
   30:	00100053          	fadd.s	f0,f0,f1,rne
   34:	0101a087          	flw	f1,16(x3)
   38:	0141a107          	flw	f2,20(x3)
-  3c:	082080d3          	fsub.s	f1,f1,f2,rne
-  40:	101080d3          	fmul.s	f1,f1,f1,rne
-  44:	00100053          	fadd.s	f0,f0,f1,rne
-  48:	58000053          	fsqrt.s	f0,f0,rne
+  3c:	001000b7          	lui	x1,0x100
+  40:	00008093          	addi	x1,x1,0 # 0x100000
+  44:	00005137          	lui	x2,0x5
+  48:	55510113          	addi	x2,x2,1365 # 0x5555
+  4c:	0020a023          	sw	x2,0(x1)

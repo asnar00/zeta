@@ -101,6 +101,8 @@ class CPUBackend(Backend):
         self.finalise()
 
     def run(self) -> str:
+        if self.isa.__class__.__name__ != "RISCV32":
+            return ""
         # start QEMU
         # grab the output and memory dump
         # check debug values
@@ -163,6 +165,7 @@ class CPUBackend(Backend):
 
     def generate_end(self):
         # generate shutdown instructions
+        self.instructions(self.isa.shutdown(), "shutdown")
         pass
 
     #----------------------------------------------------------------------------------------------
@@ -424,7 +427,6 @@ class CPUBackend(Backend):
         for i, instr in enumerate(self.code):
             encoded_code += self.isa.encode_instruction(instr, i).to_bytes(4, "little")
         self.elf_code = encoded_code
-
 
     def check_disassembly(self):
         log("----------------------------------------------")
