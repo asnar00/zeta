@@ -136,7 +136,7 @@ class CPUBackend(Backend):
         self.show_code()
         self.encode_all()
         self.check_disassembly()
-        self.write_elf(self.path.replace(".*", ".elf"), self.elf_code, self.rodata_bytes, self.rwdata_size_bytes)
+        self.write_elf(self.isa.__class__.__name__, self.path.replace(".*", ".elf"), self.elf_code, self.rodata_bytes, self.rwdata_size_bytes)
         pass
 
     def generate_start(self):
@@ -460,55 +460,66 @@ class CPUBackend(Backend):
         else:
             log(log_green("disassembly check passed"))
 
-    def write_elf(self, filename: str, code_bytes: bytes, rodata_bytes : bytes, rwdata_size_bytes : int):
+    def write_elf(self, machine: str,filename: str, code_bytes: bytes, rodata_bytes : bytes, rwdata_size_bytes : int):
+        # Normalize machine name.
+        machine = machine.upper()
         
-        # Constants for ELF32
-        ELFCLASS32   = 1
-        ELFDATA2LSB  = 1
-        EV_CURRENT   = 1
-        ET_EXEC      = 2
-        EM_RISCV     = 243  # RISC-V machine type
-        PT_LOAD      = 1
-        PF_X         = 1
-        PF_W         = 2
-        PF_R         = 4
-        PAGE_SIZE    = 0x1000
+        # Set machine-specific constants.
+        if machine == "RISCV32":
+            ELFCLASS      = 1
+            EM            = 243
+            header_size   = 52   # ELF header size for 32-bit
+            ph_entry_size = 32   # Program header entry size for 32-bit
+            elf_header_fmt = "<16sHHIIIIIHHHHHH"
+            ph_fmt        = "<IIIIIIII"
+        elif machine == "ARM64":
+            ELFCLASS      = 2
+            EM            = 183
+            header_size   = 64   # ELF header size for 64-bit
+            ph_entry_size = 56   # Program header entry size for 64-bit
+            elf_header_fmt = "<16sHHIQQQIHHHHHH"
+            ph_fmt        = "<IIQQQQQQ"
+        else:
+            raise ValueError("Unsupported machine type. Use 'RISCV32' or 'ARM64'.")
 
-        # Sizes for ELF32 structures
-        header_size   = 52  # ELF header size for 32-bit
-        ph_entry_size = 32  # Program header entry size for 32-bit
-        ph_num        = 3   # Three loadable segments: .text, .rodata, and .bss
+        # Common constants for both architectures.
+        ELFDATA2LSB = 1
+        EV_CURRENT  = 1
+        ET_EXEC     = 2
+        PT_LOAD     = 1
+        PF_X        = 1
+        PF_W        = 2
+        PF_R        = 4
+        PAGE_SIZE   = 0x1000
+        ph_num      = 3  # Three loadable segments: .text, .rodata, and .bss
 
-        # Calculate offsets.
-        ph_table_size = ph_entry_size * ph_num
-        # Place the header and program headers at the beginning;
-        # ensure the first loadable segment (code) starts at a page boundary.
+        # Calculate file offsets.
+        # Place header + program header table at the beginning;
+        # Force the code segment to start at a page boundary.
         first_segment_offset = PAGE_SIZE
-
-        # Compute file offsets.
         code_offset    = first_segment_offset
         code_size      = len(code_bytes)
         
-        # Place rodata immediately after code (contiguous layout).
+        # Place rodata immediately after code.
         rodata_offset  = code_offset + code_size
         rodata_size    = len(rodata_bytes)
         
         # Place BSS immediately after rodata.
         rwdata_offset  = rodata_offset + rodata_size
 
-        # Set virtual addresses contiguously, with code loading at 0x80000000.
+        # Set virtual addresses contiguously (entry point remains 0x80000000).
         code_vaddr   = 0x80000000
         rodata_vaddr = code_vaddr + code_size
         rwdata_vaddr = rodata_vaddr + rodata_size
 
         # Build the ELF header.
-        e_ident = b'\x7fELF' + bytes([ELFCLASS32, ELFDATA2LSB, EV_CURRENT, 0]) + bytes(8)
+        e_ident = b'\x7fELF' + bytes([ELFCLASS, ELFDATA2LSB, EV_CURRENT, 0]) + bytes(8)
         e_type    = ET_EXEC
-        e_machine = EM_RISCV
+        e_machine = EM
         e_version = EV_CURRENT
-        e_entry   = code_vaddr  # Entry point is at the beginning of the code segment.
-        e_phoff   = header_size  # Program header table follows immediately after ELF header.
-        e_shoff   = 0  # No section header table.
+        e_entry   = code_vaddr       # Entry point at the beginning of the code segment.
+        e_phoff   = header_size      # Program header table immediately follows the ELF header.
+        e_shoff   = 0                # No section header table.
         e_flags   = 0
         e_ehsize  = header_size
         e_phentsize = ph_entry_size
@@ -517,7 +528,7 @@ class CPUBackend(Backend):
         e_shnum   = 0
         e_shstrndx = 0
 
-        elf_header = struct.pack("<16sHHIIIIIHHHHHH",
+        elf_header = struct.pack(elf_header_fmt,
                                 e_ident,
                                 e_type,
                                 e_machine,
@@ -534,37 +545,37 @@ class CPUBackend(Backend):
                                 e_shstrndx)
 
         # Build program header for the code segment.
-        ph_code = struct.pack("<IIIIIIII",
+        ph_code = struct.pack(ph_fmt,
                             PT_LOAD,
-                            code_offset,   # file offset
-                            code_vaddr,    # virtual address
-                            code_vaddr,    # physical address
-                            code_size,     # file size
-                            code_size,     # memory size
-                            PF_R | PF_X,   # permissions: read and execute
-                            PAGE_SIZE)     # alignment
+                            PF_R | PF_X,  # Permissions: read and execute
+                            code_offset,  # File offset
+                            code_vaddr,   # Virtual address
+                            code_vaddr,   # Physical address (same here)
+                            code_size,    # File size
+                            code_size,    # Memory size
+                            PAGE_SIZE)    # Alignment
 
         # Build program header for the rodata segment.
-        ph_rodata = struct.pack("<IIIIIIII",
+        ph_rodata = struct.pack(ph_fmt,
                                 PT_LOAD,
-                                rodata_offset,  # file offset
-                                rodata_vaddr,   # virtual address
-                                rodata_vaddr,   # physical address
-                                rodata_size,    # file size
-                                rodata_size,    # memory size
-                                PF_R,           # permissions: read-only
+                                PF_R,         # Permissions: read-only
+                                rodata_offset,  # File offset
+                                rodata_vaddr,   # Virtual address
+                                rodata_vaddr,   # Physical address
+                                rodata_size,    # File size
+                                rodata_size,    # Memory size
                                 PAGE_SIZE)
 
         # Build program header for the BSS segment.
-        # Note: file size is zero so that this segment will be zero-initialized.
-        ph_rwdata = struct.pack("<IIIIIIII",
+        # Note: File size is zero so that this segment will be zero-initialized.
+        ph_rwdata = struct.pack(ph_fmt,
                                 PT_LOAD,
-                                rwdata_offset,      # file offset (points to where data would be)
-                                rwdata_vaddr,       # virtual address
-                                rwdata_vaddr,       # physical address
-                                0,                  # file size 0 (BSS)
-                                rwdata_size_bytes,  # memory size (BSS size)
-                                PF_R | PF_W,        # permissions: read and write
+                                PF_R | PF_W,  # Permissions: read and write
+                                rwdata_offset,      # File offset (points to where data would be)
+                                rwdata_vaddr,       # Virtual address
+                                rwdata_vaddr,       # Physical address
+                                0,                  # File size (BSS)
+                                rwdata_size_bytes,  # Memory size (BSS size)
                                 PAGE_SIZE)
 
         header_data = elf_header + ph_code + ph_rodata + ph_rwdata
@@ -577,13 +588,9 @@ class CPUBackend(Backend):
         pad_len = code_offset - len(file_image)
         file_image += b'\x00' * pad_len
 
-        # Insert the code blob.
+        # Insert code and rodata (BSS is zero-initialized).
         file_image += code_bytes
-
-        # Since we're laying out the segments contiguously, immediately insert rodata.
         file_image += rodata_bytes
-
-        # We do not write any bytes for BSS; it will be zero-initialized at runtime.
 
         # Write out the final ELF file.
         with open(filename, "wb") as f:
