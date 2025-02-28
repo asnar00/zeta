@@ -91,6 +91,8 @@ class ISA:
     def store(self, register: Register, data_register: Register, offset: int) -> List[Instruction]: override_me()
     def get_opcode(self, opcode: str, type: str) -> str: override_me()
     def encode_instruction(self, instr: Instruction) -> int: override_me()
+    def gobjdump_arch_name(self) -> str: override_me()
+    def show_instruction(self, instr: Instruction, pc: int) -> str: override_me()
 
 #--------------------------------------------------------------------------------------------------
 # RISCV ISA
@@ -149,10 +151,10 @@ class RISCV32(ISA):
             imm = target_address - pc
             if imm % 2 != 0: raise Exception("imm must be aligned to 2 bytes (even number)")
             if imm < 0: imm = ((1 << 21) + imm) & 0x1fffff
-            imm_20 = (imm & 0b100000000000000000000) >> 20
-            imm_10_1 = (imm & 0b000000000011111111110) >> 1
-            imm_11 = (imm & 0b000000000100000000000) >> 11
-            imm_19_12 = (imm & 0b011111111000000000000) >> 12
+            imm_20 = (imm & 0x80000) >> 20
+            imm_10_1 = (imm & 0x7fe) >> 1
+            imm_11 = (imm & 0x10000) >> 11
+            imm_19_12 = (imm & 0x7ff0) >> 12
             instr = (imm_20 << 31) | (imm_10_1 << 21) | (imm_11 << 20) | (imm_19_12 << 12) | (rd << 7) | 0x6f
             return instr
         if i.opcode == "auipc":        return (imm(i, 0) << 12) | (rd(i) << 7) | 0b0010111
@@ -169,7 +171,22 @@ class RISCV32(ISA):
         elif i.opcode == "wfi":        return (0x105 << 20) | (0 << 15) | (0 << 12) | (0 << 7) | 0x73
         elif i.opcode == "jal":        return encode_jal(imm(i, 0)*4, pc*4, rd(i))
         else: raise Exception(f"unsupported instruction: {i.opcode}")
-        
+    def gobjdump_arch_name(self) -> str: return "riscv:rv32"
+    def show_instruction(self, instr: Instruction, pc: int) -> str: 
+        is_load_store = (instr.opcode in self.load_bits or instr.opcode in self.store_bits)
+        if is_load_store and len(instr.sources) == 2 and isinstance(instr.sources[1], int):
+            return f"{instr.opcode} {instr.dest}, {instr.sources[1]}({instr.sources[0]})"
+        elif instr.opcode == "jal":
+            dest = instr.dest if instr.dest is not None else "x0"
+            return f"{instr.opcode} {dest}, 0x{(instr.sources[0]*4):x}"
+        elif instr.opcode == "addi":
+            s2 = instr.sources[1]
+            if isinstance(s2, str): s2 = f"{int(s2, 16)} # {s2}"
+            return f"{instr.opcode} {instr.dest}, {instr.sources[0]}, {s2}"
+        elif instr.opcode == "auipc":
+            return f"{instr.opcode} {instr.dest}, 0x{(instr.sources[0]*4):x}"
+        else:
+            return str(instr)
 
 #--------------------------------------------------------------------------------------------------
 # ARM64 ISA
@@ -205,9 +222,7 @@ class ARM64(ISA):
     def load_rel_address(self, register: Register, address: int, pc: int) -> List[Instruction]:
         offset = address - pc
         if -(1 << 20) <= offset < (1 << 20):                    # Use ADR if the offset is within ±1 MB (21-bit signed immediate)
-            immlo = offset & 0x3
-            immhi = (offset >> 2) & ((1 << 19) - 1)
-            return [Instruction("adr", register, [immhi, immlo])]
+            return [Instruction("adr", register, [hex(offset)])]
         else:                                                   # Use ADRP + ADD for addresses outside the ADR immediate range.
             pc_page = pc & ~0xfff        # PC page base (aligned to 4KB)
             target_page = address & ~0xfff  # Target page base
@@ -240,19 +255,29 @@ class ARM64(ISA):
         def rd(instr): return reg_num(instr.dest)
         def rn(instr): return reg_num(instr.sources[0])
         def rm(instr): return reg_num(instr.sources[1])
-        if i.opcode == "adr":               return (imm(i, 1) << 29) | (imm(i, 0) << 5) | (rd(i)) | 0x10000000
-        elif i.opcode == "adrp":            return (imm(i, 1) << 29) | (imm(i, 0) << 5) | (rd(i)) | 0x90000000
-        elif i.opcode == "add":             return ((imm(i, 1) & 0xfff) << 10) | (rn(i) << 5) | (rd(i)) | 0x11000000
-        elif i.opcode.startswith("ldr"):     return ((imm(i, 1) & 0xfff) << 10) | (rn(i) << 5) | (rd(i)) | self.ldr_bits[i.dest.type]
-        elif i.opcode.startswith("str"):     return ((imm(i, 1) & 0xfff) << 10) | (rn(i) << 5) | (rd(i)) | self.str_bits[i.dest.type]
-        elif i.opcode == "movz":            return (((imm(i, 1) // 16) & 0x3) << 21) | ((imm(i, 0) & 0xffff) << 5) | rd(i) | 0x52800000
-        elif i.opcode == "movk":            return (((imm(i, 1) // 16) & 0x3) << 21) | ((imm(i, 0) & 0xffff) << 5) | rd(i) | 0x72800000
-        elif i.opcode == "fadd":            return (rm(i) << 16) | (rn(i) << 5) | rd(i) | 0x1E201000  # for FADD
-        elif i.opcode == "fsub":            return (rm(i) << 16) | (rn(i) << 5) | rd(i) | 0x1E201400  # for FSUB
-        elif i.opcode == "fmul":            return (rm(i) << 16) | (rn(i) << 5) | rd(i) | 0x1E201800  # for FMUL
-        elif i.opcode == "fdiv":            return (rm(i) << 16) | (rn(i) << 5) | rd(i) | 0x1E201C00  # for FDIV
-        elif i.opcode == "fsqrt":           return (rn(i) << 5) | rd(i) | 0x1E202000
+        if i.opcode == "adr":       return ((imm(i,0) & 0x3) << 29) | (((imm(i,0) >> 2) & ((1 << 19) - 1)) << 5) | (rd(i)) | 0x10000000
+        elif i.opcode == "adrp":    return (imm(i, 1) << 29) | (imm(i, 0) << 5) | (rd(i)) | 0x90000000
+        elif i.opcode == "add":     return ((imm(i, 1) & 0xfff) << 10) | (rn(i) << 5) | (rd(i)) | 0x11000000
+        elif "ldr" in i.opcode:     return ((imm(i, 1) & 0xfff) << 10) | (rn(i) << 5) | (rd(i)) | self.ldr_bits[i.dest.type]
+        elif "str" in i.opcode:     return ((imm(i, 1) & 0xfff) << 10) | (rn(i) << 5) | (rd(i)) | self.str_bits[i.dest.type]
+        elif i.opcode == "movz":    return (((imm(i, 1) // 16) & 0x3) << 21) | ((imm(i, 0) & 0xffff) << 5) | rd(i) | 0x52800000
+        elif i.opcode == "movk":    return (((imm(i, 1) // 16) & 0x3) << 21) | ((imm(i, 0) & 0xffff) << 5) | rd(i) | 0x72800000
+        elif i.opcode == "fadd":    return (rm(i) << 16) | (rn(i) << 5) | rd(i) | 0b00011110001000000010100000000000                                               
+        elif i.opcode == "fsub":    return (rm(i) << 16) | (rn(i) << 5) | rd(i) | 0b00011110001000000011100000000000
+        elif i.opcode == "fmul":    return (rm(i) << 16) | (rn(i) << 5) | rd(i) | 0b00011110001000000000100000000000
+        elif i.opcode == "fdiv":    return (rm(i) << 16) | (rn(i) << 5) | rd(i) | 0b00011110001000000011100000000000
+        elif i.opcode == "fsqrt":   return (rn(i) << 5) | rd(i) | 0b00011110001000011100000000000000
         else: raise Exception(f"unsupported instruction: {i.opcode}")
+    def gobjdump_arch_name(self) -> str: return "aarch64"
+    def show_instruction(self, instr: Instruction, pc: int) -> str:
+        if instr.opcode == "adr":
+            return f"{instr.opcode} {instr.dest}, 0x{(pc + int(instr.sources[0], 16)):x}"
+        if instr.opcode in ["ldr", "str"]:
+            imm = instr.sources[1]
+            if isinstance(imm, int): # reg + offset
+                if imm == 0: return f"{instr.opcode} {instr.dest}, [{instr.sources[0]}]"
+                return f"{instr.opcode} {instr.dest}, [{instr.sources[0]}, #{instr.sources[1]*4}]"
+        return str(instr)
 
 
 
