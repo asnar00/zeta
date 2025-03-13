@@ -150,14 +150,14 @@ Concrete numeric types:
 
 We have the usual numeric types we'd expect, in the usual precisions:
 
-- `uint8`, `uint16`, `uint32`, `uint64` : unsigned integers
-- `int8`, `int16`, `int32`, `int64` : signed integers 
-- `float16`, `float32`, `float64` : floating-point numbers
+- `u8`, `u16`, `u32`, `u64` : unsigned integers
+- `i8`, `i16`, `i32`, `i64` : signed integers 
+- `f16`, `f32`, `f64` : floating-point numbers
 
 There's also a set of fixed-point number types suited to machine-learning workloads:
 
-- `ufix.8`, `ufix.7`, `ufix.8`, ... : unsigned fixed-point numbers
-- `fix.8`, `fix1.7`, `fix.8`,  ... : signed fixed-point numbers
+- `ufix.8`, `ufix1.7`, `ufix8.8`, ... : unsigned fixed-point numbers
+- `fix.8`, `fix1.7`, `fix8.8`,  ... : signed fixed-point numbers
 
 ## system
 
@@ -181,16 +181,20 @@ The core layer defines the concrete types using dependent types:
     type uint(N) =                                  # unsigned int
         bit value[N]
 
+    type u32 = uint(32)                             # concrete type as constant
+
     type int(N) =                                   # signed int
         bit value[N]
+
+    type i32 = int(32)                              # concrete type
 
     type float(E, F)                                # floating point
         bit sign
         uint(E) exponent
         uint(F) fraction
 
-    type float32 = float(8, 23)                     # convenient names
-    type float64 = float(11, 52)
+    type f32 = float(8, 23)                         # concrete types
+    type f64 = float(11, 52)
 
     type fixed(W, F)                                # fixed point
         int(W) whole

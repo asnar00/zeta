@@ -126,7 +126,7 @@ def test_zero():
     log_max_depth(12)
 
     compiler.setup()
-    context = Context("test_vector_math", ["Program", "Math", "VectorMath", "Backend"])
+    #context = Context("test_vector_math", ["Program", "Math", "VectorMath", "Backend"])
     context = Context("test_hello", ["Program", "Hello", "Backend"])
     program = compiler.compile(s_test_features, context)
     if not program.is_ok():
