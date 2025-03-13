@@ -13,23 +13,26 @@ import re
 #--------------------------------------------------------------------------------------------------
 # main
 
-s_test_program = """
+s_test_features = [
+"""
 feature Program
-    string out$
-
+    char out$
+""",
+"""
 feature Hello extends Program
-    on hello(string name)
-        string message = "hello, \\(name)!"
-        out$ << message
+    on hello()
+        out$ << "ᕦ(ツ)ᕤ\\n"
     replace run()
-        hello("world")
-
+        hello()
+""",
+"""
 feature Goodbye extends Hello
     on bye()
         out$ << "kthxbye."
-    after hello(string name)
+    after hello()
         bye()
-        
+""",
+"""
 feature Math extends Program
     type int > i8, i16, i32, i64
     type float > f32, f64
@@ -42,7 +45,8 @@ feature Math extends Program
         n = mul(a, b)
     on (number n) = (number a) / (number b)
         n = div(a, b)
-
+""",
+"""
 feature VectorMath extends Math
     type vector | vec = 
         number x, y, z = 0
@@ -66,13 +70,14 @@ feature VectorMath extends Math
         vec a = vec(1, 2, 3)
         vec b = vec(4, 5, 6)
         number d = distance between a and b
-
+""",
+"""
 feature Backend
     type u8, u16, u32, u64
     type i8, i16, i32, i64
     type f16, f32, f64
     type char > u8
-    type string | str = char$
+    type string = char$
     on (i32 r) = add(i32 a, b) emit
     on (i32 r) = sub(i32 a, b) emit
     on (i32 r) = mul(i32 a, b) emit
@@ -83,10 +88,8 @@ feature Backend
     on (f32 r) = mul(f32 a, b) emit
     on (f32 r) = div(f32 a, b) emit
     on (f32 r) = sqrt(f32 n) emit
+""",
 """
-
-# this is just scribble: but it's a nice way to define dependent types eg. i32, i64, etc
-s_test_concrete = """
 feature ConcreteMath extends Math
     type bit = 0 | 1
     type uint(n) = 
@@ -109,6 +112,7 @@ feature ConcreteMath extends Math
     type f32 = float(8, 23)
     type f64 = float(11, 52)
 """
+]
 
 @this_is_the_test
 def test_zero():
@@ -122,14 +126,14 @@ def test_zero():
     log_max_depth(12)
 
     compiler.setup()
-    code = s_test_program
-
-    program = compiler.compile(code)
-    #log_clear()
-    #log(program.show_report())
-    #for stage in program.reports:
-    #    log(visual_report_from_stage(stage, code))
+    context = Context("test_vector_math", ["Program", "Math", "VectorMath", "Backend"])
+    context = Context("test_hello", ["Program", "Hello", "Backend"])
+    program = compiler.compile(s_test_features, context)
     if not program.is_ok():
+        #log_clear()
+        #log(program.show_report())
+        for stage in program.reports[-1:]:
+            log(visual_report_from_stage(stage, program.code))
         log_exit("program is not ok")
     log("\n----------------------------------------------")
     #log("after optimisation:")
@@ -1290,7 +1294,7 @@ class module_Functions(LanguageModule):
             type_a = self.lhs._type if hasattr(self.lhs, "_type") else None
             type_b = self.rhs._type
             if not can_assign(type_a, type_b):
-                compiler.error(get_first_lex(self), f"cannot assign {type_a} to {type_b}")
+                compiler.error(get_first_lex(self), f"cannot assign {type_b} to {type_a}")
 
         def can_assign(type_a, type_b):
             if type_a == type_b: return True

@@ -1,444 +1,211 @@
 ᕦ(ツ)ᕤ
 # zero
-
-`zero` (always lowercase) is a feature-modular programming language designed for real-time distributed applications.
+A concise introduction
 
 ## design goals
 
-- small: simple definition, readable syntax, featherweight tools
-- fast: compiled, strongly typed, fast edit/build/test cycle
-- flexible: modular backends targeting multiple languages/frameworks
-- real-time: predictable throughput and latency
-- distributed: targets heterogenous clusters
+- approachable: small, readable, organised
+- efficient: small/fast code, fast build cycle
+- heterogenous target: multiple backends
+- distributed, concurrent, real-time
+- feature-modular
 
-## about this document
+## organisation
 
-Since zero is evolving rapidly, it doesn't make sense to try and specify the whole thing in one go. Instead, the specification is organised into "layers", with layer 1 (the "outermost" layer) being the simplest, and deeper layers adding detail. Language features marked 👀  are controversial, experimental, evolving, or poorly defined. I've omitted justification for language features in an attempt to keep things concise; they'll be covered in other documents.
+zero is organised like an onion, with three layers: surface, mid, and core.
 
-## literate code
+Broadly:
 
-Programs in zero are written as human-first markdown documents, like this one, containing text and code snippets. All 'meta-information', such as specification, explanation, tutorials and tests, is defined using markdown text, next to the code it describes. 
+- In the surface layer, we write code using abstract numeric types (eg. `number`, `int`, `float`);
+- In the concrete layer, we write code using concrete numeric types (eg. `i32`, `f32`)
+- In the core, we define the concrete numeric types using a dependent type system
 
-In the following document, all code examples are presented like this:
+The intention is that you can write useful programs purely using the surface layer, and you'll never have to dig into the depths.
 
-    > (some code)
-    => (expected result)
-
-# Layer 1
-
-## general
-
-Layer 1 is the simplest language layer; concepts at this level are the bare minimum of what you need to write zero programs.
+# surface layer
 
 ## types
 
-### installed types
+- `number` : any number
+- `int` : any negative or positive integer
+- `uint` : any positive integer
+- `string` : strings
+- `time` : time
 
-*Abstract numeric types* don't specify bit-depth; instead we let the compiler choose:
-
-    int     : signed integer
-    float   : floating-point number
-    number  : int or float
-
-zero also defines the following *utility* types:
-
-    char    : unicode character
-    string  : unicode string
-    time    : high-resolution time
-
-### enums
-
-*Enumerated types* are defined using the `type` keyword like this:
-
-    type evil = yes, no, maybe
-
-### structures
-
-*structure types* are defined using the `type` keyword like this:
+## structures
 
     type vec =
-        number x, y, z = 0
+        number x, y, z  = 0
 
-zero automatically defines a constructor that can be called in three ways:
-
-    > vec v                         : default constructor
-    => v: vec(x: 0, y: 0, z: 0)
-    
-    > vec v = (1, 2, 3)             : anonymous property constructor
-    => v: vec(x: 1, y: 2, z: 3)
-    
-    > vec v = (y: 1, x: 2)          : named property constructor
-    => v: vec(x: 2, y: 1, z: 0)
-
-Structure properties are accessed using the familiar `.` notation, as in
-
-```
-number x = v.x
-```
-
-or
-
-```
-v.x = 1
-```
+    vec v
+    vec v(1, 2, 3)
+    vec v = vec(1, 2, 3)
+    vec v = vec(z=3, y=2, x=1) 
 
 ## functions
 
-Functions in zero are defined using a *named result* pattern, like this:
+Functions are declared using a *named-result* convention, with a free syntax for function signatures:
 
-    on (number r) = min (number a, number b)
-        r = if (a < b) then a else b
-
-or like this:
+    on (number r) = min(number a, number b)
+        r = a if (a < b) else b
 
     on (vec r) = (vec a) + (vec b)
-        r = (a.x + b.x, a.y + b.y, a.z + b.z)
+        r = vec(a.x + b.x, a.y + b.y, a.z + b.z)
 
-Functions have *open syntax* : the signature can be any sequence of words, operators and bracketed parameter groups (there must be at least one parameter group). This allows us to concisely define and call conversion functions, operators (infix, prefix, postfix), and generally and write more readable, natural-sounding code.
+    on (number r) = (vec a) dot (vec b):
+        r = a.x * b.x + a.y * b.y + a.z * b.z
 
 ## streams
 
-A *stream* is a sequence of values.
+A *stream* is a value that evolves over time; it's like an array in other languages , except that we access it with a `number` index instead of an `int`. 
 
-Stream variables are denoted by suffixing the variable name with `$` (read as 'stream' or 'string'):
+    int i$                                          # empty integer stream
+    int i$ << 0 << 1 << 2 << 3                      # push items one at a time
 
-    > int i$                    : declares a stream of integers
-    => i$: []
+after this:
 
-The `<<` operator ('push') pushes a singular value onto the stream:
+        i[0] => 0
+        i[1] => 1
+        i[2] => 2
+        i[3] => 3
 
-    > int i$ << 1 << 2 << 3     : push individual ints to stream
-    => i$: [1, 2, 3]
+We can also do the same thing in other ways:
 
-The `[]` notation specifies a range of values more concisely:
+    int i$ << [0, 1, 2, 3]                          # array
+    int i$ << [0 .. 4]                              # range (exclusive)
+    int i$ << [0 ..= 3]                             # range (inclusive)
+    int i$ << 0 << (i$ + 1) until (i$ == 3)         # until loop
+    int i$ << 0 << (i$ + 1) while (i$ < 3)          # while loop
 
-    > int i$ << [1, 2, 3]       : push multiple values
-    => i$: [1, 2, 3]
+zero has simple syntax for mapping, filtering, reducing and sorting streams:
 
-The `[]` notation can also specify a range of values:
-    > int i$ << [0 to 5]
-    => i$: [0, 1, 2, 3, 4]
+    int j$ = i$ * 2                                 # map operation with singular value
+    int k$ = i$ + j$                                # map operation with array
+    int sum = i$ + _                                # reduce using '+'
+    int evens = i$ where (i$ % 2) == 0              # filter
+    int descending = i$[_ > _]                      # sort
 
-We can also use loops, like this:
+we can also perform linear transformations of the time dimension of the array:
 
-    > int i$ << 1 << (i$ * 2) until (i$ == 16)
-    => i$: [1, 2, 4, 8, 16]
+    int delayed = i$[_ + 1]                         # add 1 to all timestamps
+    int anticipated = i$[_ - 1]                     # subtract 1 from all timestamps
+    int expanded = i$[_ * 2.0]                      # multiply all timestamps by 2
+    int squashed = i$[_ * 0.5]                      # multiply all timestamps by 2
 
-or this:
+## tasks
 
-    > int i$ << 1 << (i$ * 2) while (i$ < 32)
-    => i$: [1, 2, 4, 8, 16]
+Tasks are like functions, except they generate and operate on streams.
 
-### map, reduce, filter, sort
+    on (int i$) << count down from (int start)      # named task
+        i$ << start << (i$ - 1) until i$ == 0
 
-Functions are defined to take singular values as parameters. This restriction lets zero give us a very concise syntax for mapping a function to a stream:
+We can launch tasks that execute at specific update rates:
 
-    > int i$ << [1 to 5 inclusive]
-    => i$: [1, 2, 3, 4, 5]
-    > int j$ = i$ + 1                   : maps '+ 1' to each element of i$
-    => j$: [2, 3, 4, 5, 6]
-
-We can also map a function to multiple streams, for example:
-
-    > int k$ = i$ + j$                  : element-by-element addition
-    => k$: [3, 4, 5, 6, 7]
-
-To reduce an array to a singular value, we use the following syntax:
-
-    > int sum = j$ + _                  : reduce j$ using '+'
-    => sum: 20
-
-The `_` here means something like "itself".
-
-To filter, we use the `where` reserved keyword:
-
-    > int e$ = j$ where (_ & 1 == 0)
-    => e$: [2, 4, 6]
-
-And finally, to sort, we use the `sort` keyword:
-
-    > int d$ = sort j$ > _              : descending order
-    => d$: [6, 5, 4, 3, 2]
+    i$ << count down from 10                        # [10, 9, 8, ... 0]
+    i$ << count down from 10, at 1 hz               # i$[0.0] = 10, i$[1.0] = 9, ...
+    i$ << count down from 10, at 10 hz              # i$[0.0] = 10, i$[0.1] = 9, ...
+    i$ << count down from 10, at 48 khz             # i$[0.0] = 10; i$[0.00002083] = 9; ...
+    i$ << count down from 10, at 1 per hour         # i$[0] = 10; i$[3600] = 9; ...
 
 ## features
 
-A `feature` is the fundamental unit of modularity in zero. A feature can define new types, variables, and functions; and it can modify existing types, variables, and functions.
+zero isn't object oriented (structure types can't have methods). Instead, code is organised into *feature clauses*:
 
-The canonical "hello world" looks like this:
-
-    feature Hello extends Run
-        string out$                 : feature-scope variable 👀 
-        on hello()                  : new or modified function
-            out$ << "hello world"
-        replace run()               : replace existing function
+    feature Hello
+        on hello()
+            out$ << "hello world!"
+        on main()
             hello()
-    
-    > run()
-    => out$: ["hello world"]
 
-We can then extend "hello world" to, for example, count down from 10 to 1 before printing hello:
-
-    feature Countdown extends Hello
-        on countdown()                          : new function
-            out$ << [10 to 0] every (1 sec)
-        before hello()                          : modify 'hello'
+    feature Intro extends Hello
+        before hello()
             countdown()
-    
-    > run()
-    => out$: ["10" at 0s, "9" at 1s, ... "0" at 10s, 
-              "hello world" at 10s]
+        on countdown()
+            out$ << count down from (10), at 1 hz
 
-Or, for example, we could say "goodbye" before the program ends:
-
-    feature Goodbye extends Hello
-        on bye()
-            out$ << "kthxbye!"
+    feature Success extends Hello
         after hello()
-            bye()
-    
-    > run()
-    => out$: ["10" at 0s, "9" at 1s, ... "0" at 10s, 
-              "hello world" at 10s, "kthxbye!" at 10s]
+            success()
+        on success()
+            out$ << "ᕦ(ツ)ᕤ"
 
-## contexts 👀 
+we can then generate different programs by compiling different sets of features:
 
-A `context` is a group of enabled features. For instance:
+    context hello_minimal = Hello
+    context hello_with_intro = Hello, Intro
+    context hello_success = Hello, Success
+    context hello_all = Intro, Hello, Success
 
-    context SimpleHello = [Hello]
-    
-    context FullFatHello = [Hello, Countdown, Goodbye]
-    
-    context QuickPoliteHello = [Hello, Goodbye]
+and then create programs by compiling specific contexts:
 
-We can `select`  a context, pulling all its functions into the global scope:
+    minimal_program = compile(hello_minimal)
 
-```
-select FullFatHello
-```
+# concrete layer
 
-Which will automatically deactivate any other active overlapping contexts.
-
-Alternatively, we can use the `.` notation to selectively call functions defined in a context:
-
-```
-SimpleHello.run()
-FullFatHello.run()
-```
-
-# Layer 2
-
-## general
-
-### aliases 👀
-
-All names (variable names, type names, and functions) can be defined using a short *name* and a longer, more descriptive *alias*, using the `|` operator (read as "or"). For instance:
-
-```
-type col | colour =
-    number r | red, g | green, b | blue = 0
-```
-
-So we can write a function using either the short names:
-
-```
-on (col r) = (col a) + (col b)
-    r = col(a.r + b.r, a.g + b.g, a.b + b.b)
-```
-
-or the longer aliases:
-
-```
-on (colour r) = (colour a) + (colour b)
-    r = colour(a.red + b.red, a.green + b.green, a.blue + b.blue)
-```
-
-This allows code editors to present unfamiliar code using the more descriptive aliases, and then switch to the more efficient short form for more familiar code.
-
-### layout agnosticism 👀
-
-To better cater for programmers coming to zero from other programming languages (specifically typescript, python and C/C++), zero is agnostic about code layout. The following code snippets are all correct zero.
-
-Typescript layout: `{}` for indents, `name : type` for variables, optional `;` line terminators
-
-```
-type vec = {
-    x, y, z : number = 0;
-}
-
-on (r: vec) = (a: vec) + (b: vec) {
-    r = vec(a.x + b.x, a.y + b.z, a.z + b.z);
-}
-```
-
-Python layout: significant whitespace with `:`, `name:type` for variables, no `;`
-
-```
-type vec:
-    x, y, z : number = 0
-
-on (r: vec) = (a: vec) + (b: vec) :
-    r = vec(a.x + b.x, a.y + b.z, a.z + b.z)
-```
-
-C/C++ layout: `{}` for indents, `type name` for variables, optional `;` terminators
-
-```
-type vec {
-    number x, y, z = 0;
-}
-
-on (vec r) = (vec a) + (vec b) {
-    r = vec(a.x + b.x, a.y + b.z, a.z + b.z);
-}
-```
-
-Canonical zero layout (significant whitespace for indents, no `:` or `;` required, `type name` for variables) is chosen because it's the "cleanest" and most compact form, with minimal decoration:
-
-```
-type vec =
-    number x, y, z  = 0
-
-on (vec v) = (vec a) + (vec b)
-    r = vec(a.x + b.x, a.y + b.z, a.z + b.z)
-```
-
-The intention is that any code can be viewed in the form that the programmer finds easiest to deal with.
+The concrete layer defines a set of *concrete numeric types* that include implementation details such as bit-depth and memory layout. The compiler chooses which concrete types to substitute for abstract ones.
 
 ## types
 
-### concrete numeric types
+Concrete numeric types:
 
-We use abstract numeric types (`int`, `float`, and `number`) when we "don't care" about bit-depth or precision. During compilation, these types are replaced by some combination concrete numeric types with fixed bit-depth, precision, and layout:
+We have the usual numeric types we'd expect, in the usual precisions:
 
-```
-u8, u16, u32, u64			: fixed-size unsigned integers
-i8, i16, i32, i64			: fixed-size signed integers
-f32, f64						  : fixed-precision IEEE floating-point
-```
+- `uint8`, `uint16`, `uint32`, `uint64` : unsigned integers
+- `int8`, `int16`, `int32`, `int64` : signed integers 
+- `float16`, `float32`, `float64` : floating-point numbers
 
-We can also define arbitrary-sized unsigned integers using `u[n]` where `n` is any positive integer, for example:
+There's also a set of fixed-point number types suited to machine-learning workloads:
 
-```
-u1										: 1-bit unsigned integer
-u3										: 3-bit unsigned integer
-etc.
-```
+- `ufix.8`, `ufix.7`, `ufix.8`, ... : unsigned fixed-point numbers
+- `fix.8`, `fix1.7`, `fix.8`,  ... : signed fixed-point numbers
 
-### type relations
+## system
 
-We can define a type to be a *supertype* of one or more types; for example, `int` might be defined thus:
+The concrete layer lets us define system devices as output streams or input streams:
 
-```
-type int > i8, i16, i32, i64
-```
+    output char uart$
 
-This asserts, for each type `T` on the right-hand-side of the statement, that every `T` is an `int`, but not every `int` is a `T`.  Any function or structure defined using `int` can be rewritten by the compiler to use any of `i8`...`i64`, but not every function or structure defined using (say) `i32` can be rewritten to use `int`. 
+    on uart$ << (char c)                            # serial output
+        write(c, 0x10000000)
 
-We can also define a new type to be a *subtype* of existing types. For instance, we might wish to define a new floating-point format `f16` to be a 16-bit floating-point number:
+    input char keyboard$                            # keyboard input
 
-```
-type f16 =
-	u1 sign = 0
-	u5 exponent = 0
-	u10 fraction = 0
-```
+    [... more here]
 
-We'd like every existing function and structure defined using `float` to be rewritable to use our new `f16` type, and we can achieve this using the subtyping declaration thus:
+# Layer 2 : core layer
 
-```
-type f16 < float
-```
+The core layer defines the concrete types using dependent types:
 
-### printing 👀 
+    type bit = 0, 1                                 # single bit (0 or 1)
 
-zero defines the concrete installed type `string` to be the same as a stream of `char`, i.e.
+    type uint(N) =                                  # unsigned int
+        bit value[N]
 
-```
-type string = char$
-```
+    type int(N) =                                   # signed int
+        bit value[N]
 
-We can print any type by defining a conversion function like this:
+    type float(E, F)                                # floating point
+        bit sign
+        uint(E) exponent
+        uint(F) fraction
 
-```
-on (string s) = (vec v)
-    s = "vec(\(v.x), \(v.y), \(v.z))"
-```
+    type float32 = float(8, 23)                     # convenient names
+    type float64 = float(11, 52)
 
-### slices, pushing 👀 
+    type fixed(W, F)                                # fixed point
+        int(W) whole
+        uint(F) fraction
 
-The `[]` notation can also be used to take a slice of an array, for instance:
+This is also where we define fixed-length strings:
 
-    > int i$ << [1, 2, 4, 8, 16]
-    > j$ = i$[0 to 3]
-    => j$: [1, 2, 4]
+    type string(N) =
+        char chars[N]
 
-The `<<` operator with a stream as a right-hand-side argument empties that stream out into the receiver on the left:
 
-    > int i$ << [1, 2, 3]
-    > int j$ << [4, 5, 6]
-    > i$ << j$
-    => i$: [1, 2, 3, 4, 5, 6]
-       j$: []
 
-The `<<` operator combined with a slice operation can be used to transfer part of the right-hand stream into the receiver on the left:
 
-    > int i$ << [1, 2, 3]
-    > int j$ << [4, 5, 6]
-    > i$ << j$[0 to 1]
-    => i$: [1, 2, 3, 4]
-       j$: [5, 6]
 
-### time
 
-The `at` keyword specifies a 'sample rate' that adds a time-stamp to each value of a stream, for example:
-
-    > int i$ << [10 to 0] at (1 hz)
-    => i$: [10 at 0s, 9 at 1s, 7 at 2s, ... 1 at 9s]
-
-This counts down from 10 to 1 at the rate of 1 step per second. The postfix function `hz` (hertz, or cycles per second) takes a number and returns a frequency.
-
-We could also express the same thing using the `every` keyword:
-
-    > int i$ << [10 to 0] every (1 sec)
-    => i$: [10 at 0s, 9 at 1s, 7 at 2s, ... 1 at 9s]
-
-Here, the postfix function `sec` takes a number and returns a duration.
-
-The reserved keyword `t` 👀 refers to the "current time", and is available as a global read-only variable in every expression. So, for example, we can do things like: 
-
-    > float f$ << sin(t) at (48 khz) forever
-    => f$: [0 at 0s, ...]
-
-Here `forever` is a keyword that just means `while true` or `until false`.
-
-### narrowed types
-
-We can use subtype relations to achieve better code correctness, by creating *narrowed* versions of existing types. Recall our previous example structure type
-
-```
-type vec =
-    number x, y, z = 0
-```
-
-We can create three subtypes of `vec` to represent absolute positions in space, offsets between absolute positions, and normalised directions (which always have a length of 1) thus:
-
-```
-type position < vec					: positions in space
-type offset < vec						: offset from one position to another
-type direction < vec				: normalised direction vectors
-```
-
-Here, the statement "every X is a Y but not every Y is an X" applies for X = {`pos`, `offset`, `dir`} and Y= `vec`. We can now go on to define special-case functions like this:
-
-```
-on (offset r) = (position a) - (position b) ...
-on (position r) = (position a) + (offset b) ...
-on (direction r) = normalise (offset o) ...
-```
-
-Under this scheme, we can still call addition and subtraction on `vec` instances, but when we specifically use `position`, `offset`or `direction`, we gain the benefit of stricter type checking.
-
-### structure extension
 
 
 

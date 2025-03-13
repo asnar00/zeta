@@ -40,6 +40,14 @@ class LanguageModule:
         self.test_parser(compiler)
 
 #--------------------------------------------------------------------------------------------------
+# Context is a set of Feature names that we're going to compile
+
+class Context:
+    def __init__(self, name: str, features: List[str]):
+        self.name = name
+        self.features : Set[str] = set(features)
+
+#--------------------------------------------------------------------------------------------------
 # CompiledProgram holds ast, st, all the other artefacts
 
 class CompiledProgram:
@@ -79,13 +87,27 @@ class Compiler:
         self.grammar.build_classes()
         for module in self.modules: module.setup(self)
 
-    def compile(self, code: str) -> CompiledProgram:
-        code = code.strip()
+    def compile(self, features: List[str], context: Context|None=None) -> CompiledProgram:
+        code = self.select_features(features, context)
         self.cp = CompiledProgram(code)
         if not self.parse(code): return self.cp
         success = self.run_stages()
         for report in self.cp.reports: report.process()
         return self.cp
+    
+    def select_features(self, features: List[str], context: Context|None) -> str:
+        code = ""
+        for f in features:
+            f = f.strip()
+            if not f.startswith("feature"):
+                log(f"feature {f.split("\n")[0]} does not start with 'feature'")
+                continue
+            i_space = f.find(" ", 8)
+            feature_name = f[8:i_space].strip()
+            if context is None or feature_name not in context.features:
+                continue
+            code += f"{f}\n"
+        return code.strip()
     
     def parse(self, code: str) -> bool: # returns True if ok
         self.stage("parse")
@@ -277,18 +299,22 @@ def highlight_line(line: str, i_line: int, reports: List[Tuple[List[ReportItem],
             unique.append((item, i_col, j_col, colour))
             n_chars_add = i_col - len(preamble)
             preamble += (" " * (n_chars_add-1)) + "⏐"
-        else: 
-            log("removed overlapping", item.lex.val, i_col, j_col, colour.__name__)
+        else:
+            if colour.__name__ == "log_red":
+                unique.append((item, i_col, j_col, None))
+            else:
+                log("removed overlapping", item.lex.val, i_col, j_col, colour.__name__)
     unique.sort(key=lambda x: x[1], reverse=True)
     if len(unique) == 0: return line
 
     tags = []
     start = " "*(n_digits+2)
     for i, (item, i_col, j_col, colour) in enumerate(unique):
-        log(item.lex.val, i_col, j_col, colour.__name__)
-        line = line[:i_col] + colour(line[i_col:j_col]) + line[j_col:]
+        log(item.lex.val, i_col, j_col, colour.__name__ if colour is not None else "None")
+        if colour is not None:
+            line = line[:i_col] + colour(line[i_col:j_col]) + line[j_col:]
         msg = item.msg
-        if colour.__name__ == "log_red": msg = log_red(msg) 
+        if colour is None or colour.__name__ == "log_red": msg = log_red(msg) 
         else: msg = log_grey(msg)
         tags.append(start + log_grey(preamble[0:i_col-1] + "+- ") + msg)
     if len(tags) > 0: line = line + "\n" + "\n".join(tags) + "\n"
