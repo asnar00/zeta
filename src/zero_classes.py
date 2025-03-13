@@ -24,17 +24,10 @@ class Component(Entity):
     def __init__(self, ):
         super().__init__()
 
-class ContextDef(Entity):
-    def __init__(self, name: 'str' =None, alias: 'str' =None, feature: 'List[FeatureDef]' =None):
-        super().__init__()
-        self.name: str = name
-        self.alias: str = alias
-        self.feature: List[FeatureDef] = feature        # ref
-
 class Program(Entity):
-    def __init__(self, components: 'List[FeatureDef|ContextDef]' =None):
+    def __init__(self, components: 'List[Program_]' =None):
         super().__init__()
-        self.components: List[FeatureDef|ContextDef] = components
+        self.components: List[Program_] = components
 
 class Expression(Entity):
     def __init__(self, ):

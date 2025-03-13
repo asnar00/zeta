@@ -293,9 +293,6 @@ class Visitor:
 
         if hasattr(e, "get_scope"):
             scope = e.get_scope() or scope
-            if not isinstance(scope, Entity):
-                log(log_red(f"{e}.get_scope returned {scope} ({type(scope).__name__})"))
-                return
             
         for attr in vars(e):
             val = getattr(e, attr)

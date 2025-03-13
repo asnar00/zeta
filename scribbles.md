@@ -2,6 +2,35 @@
 # scribblez
 "slow is smooth, smooth is fast"
 
+Contexts.
+The conundrum is: add_symbols stage works with all features and contexts without checking whether a feature is enabled or not.
+Ideally, we would only parse contexts first, rather than diving down into them; that way we can save a bunch of time parsing things we're not using, AND IN FACT THIS IS ESSENTIAL, otherwise we're going to waste a ton of time.
+So we actually need to be going into this with a list of allowed feature names, and just not traversing a feature if it's not in the allowed list. That's pretty easy, actually.
+But I think that also means that Contexts aren't normal program objects; they're actually build system structures.
+So let's treat them that way.
+
+So let's think about this: how would we do it?
+=> we need the ability to skip a feature based entirely on its name, at the parsing stage.
+then the AST will reflect only the context.
+So let's look at how to do this.
+
+First, remove ContextDef from the parsing stuff.
+
+
+-------------------------
+
+TOMORROW: make context feature-switch-on-and-off work properly again
+then make hello world work
+
+Where we are today:
+1- disassembly verification is done for R+A
+2- elf file generation is done for R+A
+3- next: run quemu
+
+or is that in fact the right thing to do? Well, yeah, why wouldn't it be? Just write a single result to memory, which we have to do *anyway* if we're going to see it. So I think it's like :INPUTS and :OUTPUTS => just areas in memory where you're reading and writing from
+------
+
+
 tomorrow: encode ARM instructions
 then: make elf, disassemble-check, then run-qemu.
 

@@ -83,26 +83,31 @@ feature Backend
     on (f32 r) = mul(f32 a, b) emit
     on (f32 r) = div(f32 a, b) emit
     on (f32 r) = sqrt(f32 n) emit
-
-
-context MyContext = Program, Hello, Goodbye, Math, VectorMath, Backend
 """
 
 # this is just scribble: but it's a nice way to define dependent types eg. i32, i64, etc
 s_test_concrete = """
 feature ConcreteMath extends Math
-    concrete type bit = 0 | 1
-    concrete type u(n) = bit[n]
-    concrete type i(n) =
-        bit sign
-        u(n-1) val
-    concrete type ieee(e, m) =
+    type bit = 0 | 1
+    type uint(n) = 
+        bit[n] value
+    u8 = uint(8)
+    u16 = uint(16)
+    u32 = uint(32)
+    u64 = uint(64)
+    type int(n) =
+        bit[n] value
+    i8 = int(8)
+    i16 = int(16)
+    i32 = int(32)
+    i64 = int(64)
+    type float(e, m) =
         bit sign
         u(e) exponent | exp
         u(m) mantissa | man
-    concrete type f16 = ieee(5, 10)
-    concrete type f32 = ieee(8, 23)
-    concrete type f64 = ieee(11, 52)
+    type f16 = float(5, 10)
+    type f32 = float(8, 23)
+    type f64 = float(11, 52)
 """
 
 @this_is_the_test
@@ -131,18 +136,19 @@ def test_zero():
     #log(program.assembly)
     #log_exit("")
     #backend = PythonBackend("test/test.py")
-    riscv_backend = CPUBackend("test/riscv/test.*", RISCV32(), debug=False, restrict=False)
-    arm_backend = CPUBackend("test/arm/test.*", ARM64(), debug=False, restrict=False)
-    log_clear()
+    riscv_backend = CPUBackend("test/riscv/test.*", RISCV32(), debug=False, restrict=True)
+    arm_backend = CPUBackend("test/arm/test.*", ARM64(), debug=True, restrict=True)
+    #log_clear()
     riscv_backend.generate(program.assembly)
     riscv_log = log_get()
-    log_clear()
-    arm_backend.generate(program.assembly)
-    arm_log = log_get()
-    log_clear()
-    display_logs([riscv_log, arm_log])
+    #log_clear()
+    #arm_backend.generate(program.assembly)
+    #arm_log = log_get()
+   # log_clear()
+    #display_logs([riscv_log, arm_log])
+    log_flush()
     riscv_results = riscv_backend.run()
-    arm_results = arm_backend.run()
+    #arm_results = arm_backend.run()
 
 def display_logs(logs: List[str]):
     col_width = 64
@@ -189,8 +195,7 @@ class module_Features(LanguageModule):
             NameDef := name:<identifier> ("|" alias:<identifier>)?
             FeatureDef := "feature" NameDef ("extends" parent:FeatureDef&)? "{" components:Component*; "}"
             Component :=
-            ContextDef := "context" NameDef "=" feature:FeatureDef&*,
-            Program := components:(FeatureDef | ContextDef)+;
+            Program := components:(FeatureDef)+;
             """)
         
     def setup_scope(self, compiler: Compiler):
@@ -217,10 +222,6 @@ class module_Features(LanguageModule):
 
     def setup_symbols(self, compiler: Compiler):
         @Entity.method(zc.FeatureDef) # FeatureDef.add_symbols
-        def add_symbols(self, scope):
-            compiler.add_symbol(self.name, self, scope, alias=self.alias)
-            
-        @Entity.method(zc.ContextDef) # ContextDef.add_symbols
         def add_symbols(self, scope):
             compiler.add_symbol(self.name, self, scope, alias=self.alias)
 
@@ -302,12 +303,6 @@ class module_Features(LanguageModule):
                 parent: FeatureDef => Another
                 components: List[Component] = []
             """)
-        test("context_0", parse_code("context MyContext = Hello, Goodbye, Countdown", "ContextDef", grammar), """
-            ContextDef
-                name: str = MyContext
-                alias: str = None
-                feature => [Hello, Goodbye, Countdown]
-            """)
 
 
 #--------------------------------------------------------------------------------------------------
@@ -376,7 +371,7 @@ class module_Expressions(LanguageModule):
                     compiler.report(var, f"{resolved_var} in {scope}")
                     resolved_vars.append(resolved_var)
                     scope = resolved_var.type
-                    if isinstance(scope, Lex): compiler.error(f"scope is Lex: {scope}")
+                    if isinstance(scope, Lex): compiler.error(var, f"scope is Lex: {scope}")
             return resolved_vars
 
         @Entity.method(zc.FunctionCall) #FunctionCall.resolve

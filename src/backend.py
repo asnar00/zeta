@@ -5,6 +5,7 @@
 
 from vm import *
 from isa import *
+from qemu import *
 
 #--------------------------------------------------------------------------------------------------
 # Backend generates actual code for a platform
@@ -89,21 +90,30 @@ class CPUBackend(Backend):
         log("------------------------------------------------------")
         self.vm_block = vm_block
         self.initialise()
+
         self.generate_start()
         self.generate_prologue()
         self.generate_instructions()
+        self.generate_epilogue()
+        self.generate_end()
 
         self.arrange_memory()
         self.handle_deferred()
 
-        self.generate_epilogue()
-        self.generate_end()
         self.finalise()
 
     def run(self) -> str:
         if self.isa.__class__.__name__ != "RISCV32":
             return ""
         # start QEMU
+        log("running " + self.path.replace(".*", ".elf"))
+        log_flush()
+        if not run_qemu(self.path.replace(".*", ".elf")):
+            log(log_red("qemu_run failed"))
+            log_exit()
+        else:
+            log(log_green("qemu_run passed"))
+        log_flush()
         # grab the output and memory dump
         # check debug values
         pass
@@ -138,7 +148,8 @@ class CPUBackend(Backend):
         self.show_code()
         self.encode_all()
         self.check_disassembly()
-        self.write_elf(self.isa.__class__.__name__, self.path.replace(".*", ".elf"), self.elf_code, self.rodata_bytes, self.rwdata_size_bytes)
+        write_elf(self.isa.__class__.__name__, self.path.replace(".*", ".elf"), self.elf_code, self.rodata_bytes, self.rwdata_size_bytes)
+        log("wrote " + self.path.replace(".*", ".elf"))
         pass
 
     def generate_start(self):
@@ -157,7 +168,7 @@ class CPUBackend(Backend):
         for i, vm_instr in enumerate(self.vm_block.instructions):
             self.i_instruction = i
             self.generate_instruction(vm_instr)
-    
+ 
     def generate_epilogue(self):
         # deallocate spill space on the stack
         self.defer(lambda: self.emit_stack_dealloc())
@@ -169,6 +180,9 @@ class CPUBackend(Backend):
         pass
 
     #----------------------------------------------------------------------------------------------
+
+    def generate_test_instruction(self):
+        self.emit_load(Register("x8", "i32"), 0, "test load")
 
     def generate_instruction(self, vm_instr: VMInstruction):
         if vm_instr.opcode == "const": return self.generate_const(vm_instr)
@@ -185,7 +199,7 @@ class CPUBackend(Backend):
         if type[0] == "f": # more efficient to load from read-only memory
             value_str = vm_instr.sources[0].value
             value_float = float(value_str)
-            value_bytes = struct.pack("f", value_float)
+            value_bytes = struct.pack("<f", value_float)
             constant = self.constant(value_str, value_bytes, type)
             self.defer(lambda: self.emit_load(register, constant.offset, f"load {type} {value_float}"))
         else: # more efficient to construct immediate directly in register
@@ -213,15 +227,11 @@ class CPUBackend(Backend):
 
     def emit_spill(self, var: VMVar,register: Register, offset: int):
         type = var.type
-        if type[0] == "f":
-            self.instructions(self.isa.store_float(register, self.stack_register, offset*4), f"spill {var}")
-        else: raise Exception(f"spill {var.type} not implemented")
+        self.instructions(self.isa.store(register, self.stack_register, offset*4), f"spill {var}")
 
     def emit_unspill(self, var: VMVar, register: Register, offset: int):
         type = var.type
-        if type[0] == "f":
-            self.instructions(self.isa.load_float(register, self.stack_register, offset*4), f"unspill {var}")
-        else: raise Exception(f"unspill {var.type} not implemented")
+        self.instructions(self.isa.load(register, self.stack_register, offset*4), f"unspill {var}")
 
     #----------------------------------------------------------------------------------------------
     # business end
@@ -284,6 +294,7 @@ class CPUBackend(Backend):
         for c in sorted_constants:
             for i in range(len(c.value)):
                 self.rodata_bytes[c.offset + i] = c.value[i]
+
 
         # sort variables by size, largest first
         start_offset = offset
@@ -430,7 +441,6 @@ class CPUBackend(Backend):
 
     def check_disassembly(self):
         log("----------------------------------------------")
-        log("disassembly check:\n")
         bin_path = self.path.replace(".*", ".bin")
         # Write the encoded binary code to the bin file
         with open(bin_path, "wb") as f:
@@ -459,141 +469,6 @@ class CPUBackend(Backend):
                 out += f"{i*4:03x}: {check} <=> {ours}" + "\n"
         if out != "":
             log(log_red("disassembly check failed:\n") + out)
+            log_exit()
         else:
             log(log_green("disassembly check passed"))
-
-    def write_elf(self, machine: str,filename: str, code_bytes: bytes, rodata_bytes : bytes, rwdata_size_bytes : int):
-        # Normalize machine name.
-        machine = machine.upper()
-        
-        # Set machine-specific constants.
-        if machine == "RISCV32":
-            ELFCLASS      = 1
-            EM            = 243
-            header_size   = 52   # ELF header size for 32-bit
-            ph_entry_size = 32   # Program header entry size for 32-bit
-            elf_header_fmt = "<16sHHIIIIIHHHHHH"
-            ph_fmt        = "<IIIIIIII"
-        elif machine == "ARM64":
-            ELFCLASS      = 2
-            EM            = 183
-            header_size   = 64   # ELF header size for 64-bit
-            ph_entry_size = 56   # Program header entry size for 64-bit
-            elf_header_fmt = "<16sHHIQQQIHHHHHH"
-            ph_fmt        = "<IIQQQQQQ"
-        else:
-            raise ValueError("Unsupported machine type. Use 'RISCV32' or 'ARM64'.")
-
-        # Common constants for both architectures.
-        ELFDATA2LSB = 1
-        EV_CURRENT  = 1
-        ET_EXEC     = 2
-        PT_LOAD     = 1
-        PF_X        = 1
-        PF_W        = 2
-        PF_R        = 4
-        PAGE_SIZE   = 0x1000
-        ph_num      = 3  # Three loadable segments: .text, .rodata, and .bss
-
-        # Calculate file offsets.
-        # Place header + program header table at the beginning;
-        # Force the code segment to start at a page boundary.
-        first_segment_offset = PAGE_SIZE
-        code_offset    = first_segment_offset
-        code_size      = len(code_bytes)
-        
-        # Place rodata immediately after code.
-        rodata_offset  = code_offset + code_size
-        rodata_size    = len(rodata_bytes)
-        
-        # Place BSS immediately after rodata.
-        rwdata_offset  = rodata_offset + rodata_size
-
-        # Set virtual addresses contiguously (entry point remains 0x80000000).
-        code_vaddr   = 0x80000000
-        rodata_vaddr = code_vaddr + code_size
-        rwdata_vaddr = rodata_vaddr + rodata_size
-
-        # Build the ELF header.
-        e_ident = b'\x7fELF' + bytes([ELFCLASS, ELFDATA2LSB, EV_CURRENT, 0]) + bytes(8)
-        e_type    = ET_EXEC
-        e_machine = EM
-        e_version = EV_CURRENT
-        e_entry   = code_vaddr       # Entry point at the beginning of the code segment.
-        e_phoff   = header_size      # Program header table immediately follows the ELF header.
-        e_shoff   = 0                # No section header table.
-        e_flags   = 0
-        e_ehsize  = header_size
-        e_phentsize = ph_entry_size
-        e_phnum   = ph_num
-        e_shentsize = 0
-        e_shnum   = 0
-        e_shstrndx = 0
-
-        elf_header = struct.pack(elf_header_fmt,
-                                e_ident,
-                                e_type,
-                                e_machine,
-                                e_version,
-                                e_entry,
-                                e_phoff,
-                                e_shoff,
-                                e_flags,
-                                e_ehsize,
-                                e_phentsize,
-                                e_phnum,
-                                e_shentsize,
-                                e_shnum,
-                                e_shstrndx)
-
-        # Build program header for the code segment.
-        ph_code = struct.pack(ph_fmt,
-                            PT_LOAD,
-                            PF_R | PF_X,  # Permissions: read and execute
-                            code_offset,  # File offset
-                            code_vaddr,   # Virtual address
-                            code_vaddr,   # Physical address (same here)
-                            code_size,    # File size
-                            code_size,    # Memory size
-                            PAGE_SIZE)    # Alignment
-
-        # Build program header for the rodata segment.
-        ph_rodata = struct.pack(ph_fmt,
-                                PT_LOAD,
-                                PF_R,         # Permissions: read-only
-                                rodata_offset,  # File offset
-                                rodata_vaddr,   # Virtual address
-                                rodata_vaddr,   # Physical address
-                                rodata_size,    # File size
-                                rodata_size,    # Memory size
-                                PAGE_SIZE)
-
-        # Build program header for the BSS segment.
-        # Note: File size is zero so that this segment will be zero-initialized.
-        ph_rwdata = struct.pack(ph_fmt,
-                                PT_LOAD,
-                                PF_R | PF_W,  # Permissions: read and write
-                                rwdata_offset,      # File offset (points to where data would be)
-                                rwdata_vaddr,       # Virtual address
-                                rwdata_vaddr,       # Physical address
-                                0,                  # File size (BSS)
-                                rwdata_size_bytes,  # Memory size (BSS size)
-                                PAGE_SIZE)
-
-        header_data = elf_header + ph_code + ph_rodata + ph_rwdata
-
-        # Build the complete file image.
-        file_image = bytearray()
-        file_image += header_data
-
-        # Pad from end of header to code_offset.
-        pad_len = code_offset - len(file_image)
-        file_image += b'\x00' * pad_len
-
-        # Insert code and rodata (BSS is zero-initialized).
-        file_image += code_bytes
-        file_image += rodata_bytes
-
-        # Write out the final ELF file.
-        with open(filename, "wb") as f:
-            f.write(file_image)

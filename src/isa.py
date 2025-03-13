@@ -130,8 +130,8 @@ class RISCV32(ISA):
         else:
             upper = (constant + 0x800) >> 12
             lower = constant - (upper << 12)
-            return [ Instruction("lui", register, [hex(upper)]),
-                     Instruction("addi", register, [register, hex(lower)])]
+            return [Instruction("lui", register, [hex(upper)])] + \
+                   ([Instruction("addi", register, [register, hex(lower)])] if lower != 0 else [])
     def load(self, register: Register, data_register: Register, offset: int) -> List[Instruction]:
         return [Instruction(self.load_opcodes[register.type], register, [data_register, offset])]
     def store(self, register: Register, data_register: Register, offset: int) -> List[Instruction]:
@@ -188,8 +188,8 @@ class RISCV32(ISA):
         else:
             return str(instr)
     def shutdown(self) -> List[Instruction]:
-        adr = Register("x1", "i32")
-        value = Register("x2", "i32")
+        adr = Register("x11", "i32")
+        value = Register("x5", "i32")
         return self.load_int_immediate(adr, 0x100000) + \
                self.load_int_immediate(value, 0x5555) + \
                self.store(value, adr, 0)
