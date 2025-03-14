@@ -12,12 +12,12 @@ A concise introduction
 
 ## organisation
 
-zero is organised like an onion, with three layers: surface, mid, and core.
+zero is organised like an onion, with three layers: surface, middle, and core.
 
 Broadly:
 
 - In the surface layer, we write code using abstract numeric types (eg. `number`, `int`, `float`);
-- In the concrete layer, we write code using concrete numeric types (eg. `i32`, `f32`)
+- In the middle layer, we write code using concrete numeric types (eg. `i32`, `f32`)
 - In the core, we define the concrete numeric types using a dependent type system
 
 The intention is that you can write useful programs purely using the surface layer, and you'll never have to dig into the depths.
@@ -140,9 +140,9 @@ and then create programs by compiling specific contexts:
 
     minimal_program = compile(hello_minimal)
 
-# concrete layer
+# middle layer
 
-The concrete layer defines a set of *concrete numeric types* that include implementation details such as bit-depth and memory layout. The compiler chooses which concrete types to substitute for abstract ones.
+The middle layer defines a set of *concrete numeric types* that include implementation details such as bit-depth and memory layout. The compiler chooses which concrete types to substitute for abstract ones.
 
 ## types
 
@@ -161,7 +161,7 @@ There's also a set of fixed-point number types suited to machine-learning worklo
 
 ## system
 
-The concrete layer lets us define system devices as output streams or input streams:
+The middle layer lets us define system devices as output streams or input streams:
 
     output char uart$
 
@@ -172,7 +172,7 @@ The concrete layer lets us define system devices as output streams or input stre
 
     [... more here]
 
-# Layer 2 : core layer
+# core layer
 
 The core layer defines the concrete types using dependent types:
 
