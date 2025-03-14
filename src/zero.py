@@ -955,6 +955,8 @@ class module_Types(LanguageModule):
                     if isinstance(self.rhs, zc.StructDef):
                         type_object.properties = self.rhs.properties
                         compiler.add_symbol(name.name, self._constructor, scope, alias=name.alias)
+                    elif isinstance(self.rhs, zc.TypeAlias):
+                        type_object.alias = f"{self.rhs.type}{self.rhs.rank}"
                 elif len(existing_type_objects) == 1:
                     self._resolved_types.append(existing_type_objects[0].element)
                     if isinstance(self.rhs, zc.StructDef):
@@ -1297,6 +1299,8 @@ class module_Functions(LanguageModule):
                 compiler.error(get_first_lex(self), f"cannot assign {type_b} to {type_a}")
 
         def can_assign(type_a, type_b):
+            if type_a is not None: type_a = type_a.get_alias()
+            if type_b is not None: type_b = type_b.get_alias()
             if type_a == type_b: return True
             if isinstance(type_a, zc.Type) and isinstance(type_b, zc.MaybeTypes):
                 distances = [type_a.find_relationship(t) for t in type_b.types]
@@ -1305,6 +1309,18 @@ class module_Functions(LanguageModule):
                 log_exit("not implemented: can_assign " + str(type_a) + " = " + str(type_b))
                 return True
             return False
+        
+        @Entity.method(zc.Type) # Type.get_alias
+        def get_alias(self) -> zc.Type:
+            if self.alias is None: return self
+            alias = self.alias
+            rank = 0
+            if alias.endswith("$"):
+                rank = alias[-1]
+                alias = alias[:-1]
+            alias_type = compiler.find_symbol(alias, zc.Type, None, raise_errors=True, read_only=True)
+            if alias_type is None: compiler.error(get_first_lex(self), f"alias {self.alias} not found")
+            return alias_type
 
         # -ve means type_b is a child of self, +ve type_b is a parent of self, None means no relationship
         # reminder: type_a > type_b means "every type_a is a type_b, but not every type_b is a type_a"
@@ -1457,8 +1473,6 @@ class module_Functions(LanguageModule):
             result_vars = []
             results = self.get_results()
             types = self.get_result_types()
-            log(f"  results: {results}")
-            log(f"  types: {types}")
             temp_results = []
             for r, t in zip(results, types):
                 temp_var = t.add_var(r)
