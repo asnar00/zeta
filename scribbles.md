@@ -2,6 +2,54 @@
 # scribblez
 "slow is smooth, smooth is fast"
 
+general idea for the lab: 
+
+- play with toys
+- make better ones
+
+"playing is learning"
+"learning is building"
+
+"LEARNING" is a cool way to proceed, because you can ask anyone to come and teach you. It's the nicest relationship - you're inviting them here, they're staying in this space, and we do a lesson in the daytime, rest of the time is theirs.
+
+I really like this idea, because I can invite anyone I like.
+
+---------------------------------
+
+status: 
+- fixed type-checker to check aliases
+- now, out$ << "ᕦ(ツ)ᕤ" is getting to VM level
+- but we need to modify the VM to handle this assign somehow
+- hmmm.. a VM that deals with arrays as first-class citizens? Why not?
+
+=> that's kind of fucking awesome, right?
+----------------------------------
+below the line: random thoughts on an AR/AI interface, based on walking around the studio with the headset on.
+
+- learn and recognise each object, collect a 3D mesh
+   - label everything
+   - ask "what is that?" if you don't know
+   - build a 3D mesh of the object
+   - whenever you recognise it, note its position/orientation and state (eg. book open)
+   - capture lighting context and so on
+   - be able to re-render any configuration of objects realistically
+   - room rewinder: just rewind to previous scenes (object/pos pairs)
+
+- add instructional layers to each object:
+    - teach me how to use X
+    - understand what state X is in relative to a task
+    - figure out how to improve X
+
+So for example, with the guitar or keyboard, it knows what it is and it can teach you how to use it.
+With any "appliance", it can show you how to use it, or answer questions about it.
+Eg. "how to make a good espresso".
+
+Scenes "contained" within other scenes; for instance, there's a "scene" based on sitting on the sofa (whole room / coffee table), one for the electronics bench, one for the music area, one for the coffee machine area, but those are all "children" of the main scene. When you're in the parent scene, the child scenes are "semi-opaque", i.e. they appear as a blob or box, without much detail (just the status information you need, if any).
+
+So if I'm sitting on the sofa, I see the desk as a box; 
+
+----------------------------------
+
 Contexts.
 The conundrum is: add_symbols stage works with all features and contexts without checking whether a feature is enabled or not.
 Ideally, we would only parse contexts first, rather than diving down into them; that way we can save a bunch of time parsing things we're not using, AND IN FACT THIS IS ESSENTIAL, otherwise we're going to waste a ton of time.

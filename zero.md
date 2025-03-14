@@ -82,15 +82,15 @@ zero has simple syntax for mapping, filtering, reducing and sorting streams:
     int j$ = i$ * 2                                 # map operation with singular value
     int k$ = i$ + j$                                # map operation with array
     int sum = i$ + _                                # reduce using '+'
-    int evens = i$ where (i$ % 2) == 0              # filter
-    int descending = i$[_ > _]                      # sort
+    int even$ = i$ where (i$ % 2) == 0              # filter
+    int descending$ = i$[_ > _]                     # sort
 
 we can also perform linear transformations of the time dimension of the array:
 
-    int delayed = i$[_ + 1]                         # add 1 to all timestamps
-    int anticipated = i$[_ - 1]                     # subtract 1 from all timestamps
-    int expanded = i$[_ * 2.0]                      # multiply all timestamps by 2
-    int squashed = i$[_ * 0.5]                      # multiply all timestamps by 2
+    int delayed$ = i$[_ + 1]                        # add 1 to all timestamps
+    int anticipated$ = i$[_ - 1]                    # subtract 1 from all timestamps
+    int expanded$ = i$[_ * 2.0]                     # multiply all timestamps by 2
+    int squashed$ = i$[_ * 0.5]                     # multiply all timestamps by 2
 
 ## tasks
 
@@ -156,8 +156,10 @@ We have the usual numeric types we'd expect, in the usual precisions:
 
 There's also a set of fixed-point number types suited to machine-learning workloads:
 
-- `ufix.8`, `ufix1.7`, `ufix8.8`, ... : unsigned fixed-point numbers
-- `fix.8`, `fix1.7`, `fix8.8`,  ... : signed fixed-point numbers
+- `ufx.8`, `ufx1.7`, `ufx8.8`, ... : unsigned fixed-point numbers
+- `fx.8`, `fx1.7`, `fx8.8`,  ... : signed fixed-point numbers
+
+`string` is defined as an alias of `char$`, so you can pass it to functions but also use stream operations on it.
 
 ## system
 
@@ -196,18 +198,12 @@ The core layer defines the concrete types using dependent types:
     type f32 = float(8, 23)                         # concrete types
     type f64 = float(11, 52)
 
-    type fixed(W, F)                                # fixed point
+    type fixed(W, F)                                # signed fixed point
         int(W) whole
         uint(F) fraction
 
-This is also where we define fixed-length strings:
-
-    type string(N) =
-        char chars[N]
-
-
-
-
+    type fx1.3 = fixed(1, 3)                        # and so on
+    type fx8.8 = fixed(8, 8)
 
 
 
