@@ -2,6 +2,17 @@
 # scribblez
 "slow is smooth, smooth is fast"
 
+ok: 
+
+    out$ << "ᕦ(ツ)ᕤ"
+
+so let's think about how to do this.
+
+1) we don't want to just punch it down to VM level, that's not right.
+   so let's find the code that does that, and do something else.
+
+
+--------------------------------
 general idea for the lab: 
 
 - play with toys

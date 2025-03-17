@@ -515,26 +515,24 @@ def split_terms(rhs: str) -> List[str]:
     return terms
 
 def analyse_decorators(term_str: str) -> Tuple[str, str, str, str]:
-    decs = "&?*+,.;|"
-    i_char = len(term_str)-1
-    decorators = ""
-    while i_char >= 0 and term_str[i_char] in decs:
-        decorators = term_str[i_char] + decorators
-        i_char -= 1
-    term_str = term_str[:i_char+1]
-    list_decs = "?*+"
+    term_str = term_str.strip()
+    ref = ""
     dec = ""
     sep = ""
-    ref = ""
-    for ld in list_decs: 
-        if ld in decorators: 
-            dec = ld
-    seps = ",;|."
+    seps = [",", ";", "|", ".", "<<"]
     for s in seps:
-        if s in decorators:
+        if term_str.endswith(s):
             sep = s
-    if "&" in decorators:
-        ref = term_str
+            term_str = term_str[:-len(s)].strip()
+            break
+    decs = ["*", "+", "?"]
+    for d in decs:
+        if term_str.endswith(d):
+            dec = d
+            term_str = term_str[:-len(d)]
+            break
+    if term_str.endswith("&"):
+        ref = term_str[:-1]
         term_str = "<identifier>"
     return term_str, dec, sep, ref
 

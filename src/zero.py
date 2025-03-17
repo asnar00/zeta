@@ -1106,10 +1106,16 @@ class module_Functions(LanguageModule):
             FunctionStatements < FunctionBody := "{" statements:Statement*; "}"
             EmitFunctionBody < FunctionBody := "emit"
             Statement := 
-            Assignment < Statement := (lhs:AssignmentLhs)? rhs:Expression
-            AssignmentLhs := results:ResultVariable+, assign_op:("=" | "<<") 
+            Assignment < Statement := lhs:AssignmentLhs rhs:Expression
+            AssignmentLhs := results:ResultVariable+, "=" 
             ResultVariable :=
             ResultVariableDef < ResultVariable := ((type:Type& names:NameDef+,) | (names:NameDef+, ":" type:Type&))
+            StreamAssignment < Statement := lhs:StreamAssignmentLhs rhs:StreamAssignmentRhs
+            StreamAssignmentLhs := results:ResultVariable+, "<<"
+            StreamAssignmentRhs := expressions:Expression+<< terminator:StreamTerminator? rate:StreamRate?
+            StreamTerminator := op:("while" | "until") condition:Expression
+            StreamRate := "," "at" rate:Expression
+            VoidFunctionStatement < Statement := function_call:FunctionCall
             ResultVariableRef < ResultVariable := variable:VariableRef
             CompositeFunction < Statement:=
             SingleFunctionDef < CompositeFunction := func_def:FunctionDef&
@@ -1376,19 +1382,40 @@ class module_Functions(LanguageModule):
         @Entity.method(zc.FunctionStatements)   # FunctionStatements.generate
         def generate(self, replace: Dict, source_loc: List[Lex]) -> List[str]:
             for s in self.statements:
-                if not isinstance(s, zc.Assignment): continue
-                lhs = s.lhs.generate(replace, source_loc) if s.lhs else []
-                fn_replace = replace.copy()
-                if len(lhs) > 0: fn_replace["_results"] = lhs
-                rhs = s.rhs.generate(fn_replace, source_loc)
-                if len(lhs) != len(rhs):
-                    compiler.error(f"FunctionStatements.generate: {codegen.show(self)}, {lhs} != {rhs}")
-                for l, r in zip(lhs, rhs):
-                    if l != r:
-                        if "_" in r:
-                            codegen.output("mov", l, [r])
-                        else:
-                            codegen.output("const", l, [r])
+                s.generate(replace, source_loc)
+
+        @Entity.method(zc.Assignment)   # Assignment.generate
+        def generate(self, replace: Dict, source_loc: List[Lex]):
+            lhs = self.lhs.generate(replace, source_loc) if self.lhs else []
+            fn_replace = replace.copy()
+            if len(lhs) > 0: fn_replace["_results"] = lhs
+            rhs = self.rhs.generate(fn_replace, source_loc)
+            if len(lhs) != len(rhs):
+                compiler.error(f"FunctionStatements.generate: {codegen.show(self)}, {lhs} != {rhs}")
+            for l, r in zip(lhs, rhs):
+                if l != r:
+                    if "_" in r:
+                        codegen.output("mov", l, [r])
+                    else:
+                        codegen.output("const", l, [r])
+
+        @Entity.method(zc.StreamAssignment)   # StreamAssignment.generate
+        def generate(self, replace: Dict, source_loc: List[Lex]):
+            # TODO: generate a stream-push loop here
+            log("StreamAssignment.generate")
+            log(f"  lhs: {codegen.show(self.lhs)}")
+            log(f"  rhs: {codegen.show(self.rhs)}")
+            log(f"  replace: {replace}")
+            log(f"  source_loc: {source_loc}")
+
+            log_exit("StreamAssignment.generate")
+
+        @Entity.method(zc.VoidFunctionStatement) # VoidFunctionStatement.generate
+        def generate(self, replace: Dict, source_loc: List[Lex]):
+            self.function_call.generate(replace, source_loc)
+            
+            
+            
 
         @Entity.method(zc.AssignmentLhs)   # AssignmentLhs.generate
         def generate(self, replace: Dict, source_loc: List[Lex]) -> List[str]:
@@ -1644,7 +1671,6 @@ class module_Functions(LanguageModule):
                                     VariableRef
                                         variables: List[str]
                                             r
-                        assign_op: str = =
                 rhs: Expression
                     FunctionCall
                         items: List[FunctionCallItem]
@@ -1698,7 +1724,6 @@ class module_Functions(LanguageModule):
                                                     VariableRef
                                                         variables: List[str]
                                                             r
-                                        assign_op: str = =
                                 rhs: Expression
                                     FunctionCall
                                         items: List[FunctionCallItem]

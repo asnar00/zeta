@@ -242,10 +242,9 @@ class Assignment(Statement):
         self.rhs: Expression = rhs
 
 class AssignmentLhs(Entity):
-    def __init__(self, results: 'List[ResultVariable]' =None, assign_op: 'str' =None):
+    def __init__(self, results: 'List[ResultVariable]' =None):
         super().__init__()
         self.results: List[ResultVariable] = results
-        self.assign_op: str = assign_op
 
 class ResultVariable(Entity):
     def __init__(self, ):
@@ -256,6 +255,40 @@ class ResultVariableDef(ResultVariable):
         super().__init__()
         self.type: Type = type        # ref
         self.names: List[NameDef] = names
+
+class StreamAssignment(Statement):
+    def __init__(self, lhs: 'StreamAssignmentLhs' =None, rhs: 'StreamAssignmentRhs' =None):
+        super().__init__()
+        self.lhs: StreamAssignmentLhs = lhs
+        self.rhs: StreamAssignmentRhs = rhs
+
+class StreamAssignmentLhs(Entity):
+    def __init__(self, results: 'List[ResultVariable]' =None):
+        super().__init__()
+        self.results: List[ResultVariable] = results
+
+class StreamAssignmentRhs(Entity):
+    def __init__(self, expressions: 'List[Expression]' =None, terminator: 'StreamTerminator' =None, rate: 'StreamRate' =None):
+        super().__init__()
+        self.expressions: List[Expression] = expressions
+        self.terminator: StreamTerminator = terminator
+        self.rate: StreamRate = rate
+
+class StreamTerminator(Entity):
+    def __init__(self, op: 'str' =None, condition: 'Expression' =None):
+        super().__init__()
+        self.op: str = op
+        self.condition: Expression = condition
+
+class StreamRate(Entity):
+    def __init__(self, rate: 'Expression' =None):
+        super().__init__()
+        self.rate: Expression = rate
+
+class VoidFunctionStatement(Statement):
+    def __init__(self, function_call: 'FunctionCall' =None):
+        super().__init__()
+        self.function_call: FunctionCall = function_call
 
 class ResultVariableRef(ResultVariable):
     def __init__(self, variable: 'VariableRef' =None):
