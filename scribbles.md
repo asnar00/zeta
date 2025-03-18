@@ -11,6 +11,13 @@ so let's think about how to do this.
 1) we don't want to just punch it down to VM level, that's not right.
    so let's find the code that does that, and do something else.
 
+having done that, we now have this thing called StreamAssignment.
+How do we print it out?
+
+OK: so firstly we have to create the array constant for the string.
+If there's no "rate" then we have a simple thing.
+
+
 
 --------------------------------
 general idea for the lab: 

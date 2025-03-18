@@ -586,6 +586,12 @@ class module_Expressions(LanguageModule):
         
         @Entity.method(zc.Constant) # Constant.generate
         def generate(self, replace: Dict, source_loc: List[Lex]) -> List[str]:
+            log(f"{dbg_entity(self)}")
+            log(f" type: {self._type}")
+            if str(self._type.name) == "string":
+                codegen.add_string_constant(self.value)
+            log_exit(f"Constant.generate: {self}")
+            
             return [str(self.value)]
         
         @Entity.method(zc.FunctionCallVariable) # FunctionCallVariable.generate
@@ -1280,6 +1286,11 @@ class module_Functions(LanguageModule):
                     existing.body.statements = [sm]
 
     def setup_check_types(self, compiler: Compiler):
+        @Entity.method(zc.StreamAssignmentLhs) # StreamAssignmentLhs.check_types
+        def check_type(self, scope):
+            self._type = self.results[0]._type
+            compiler.report(get_first_lex(self), f"{self._type}")
+
         @Entity.method(zc.ResultVariableRef) # ResultVariableRef.check_types
         def check_type(self, scope): 
             self._type = self.variable._type
@@ -1303,6 +1314,20 @@ class module_Functions(LanguageModule):
             type_b = self.rhs._type
             if not can_assign(type_a, type_b):
                 compiler.error(get_first_lex(self), f"cannot assign {type_b} to {type_a}")
+
+        @Entity.method(zc.StreamAssignment) # StreamAssignment.check_types
+        def check_type(self, scope):
+            type_a = self.lhs._type if hasattr(self.lhs, "_type") else None
+            for i, type_b in enumerate(self.rhs._types):
+                if not can_assign(type_a, type_b):
+                    compiler.error(get_first_lex(self.rhs.expressions[i]), f"cannot assign {type_b} to {type_a}")
+
+        @Entity.method(zc.StreamAssignmentRhs) # StreamAssignmentRhs.check_types
+        def check_type(self, scope):
+            self._types = []
+            for e in self.expressions:
+                e.check_type(scope)
+                self._types.append(e._type)
 
         def can_assign(type_a, type_b):
             if type_a is not None: type_a = type_a.get_alias()
@@ -1407,8 +1432,16 @@ class module_Functions(LanguageModule):
             log(f"  rhs: {codegen.show(self.rhs)}")
             log(f"  replace: {replace}")
             log(f"  source_loc: {source_loc}")
-
+            var = self.lhs.results[0].variable._resolved_vars[0]
+            log(f"  var: {var}")
+            log(f"  rhs: {dbg_entity(self.rhs)}")
+            self.rhs.generate(replace, source_loc)
             log_exit("StreamAssignment.generate")
+
+        @Entity.method(zc.StreamAssignmentRhs) # StreamAssignmentRhs.generate
+        def generate(self, replace: Dict, source_loc: List[Lex]):
+            for e in self.expressions:
+                e.generate(replace, source_loc)
 
         @Entity.method(zc.VoidFunctionStatement) # VoidFunctionStatement.generate
         def generate(self, replace: Dict, source_loc: List[Lex]):

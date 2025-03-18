@@ -14,14 +14,14 @@ class Backend:
     def __init__(self, path: str): 
         self.path = path
         os.makedirs(os.path.dirname(path), exist_ok=True)
-    def generate(self, block: VMInstructionBlock) -> str: override_me()
+    def generate(self, block: VMBlock) -> str: override_me()
     def run(self) -> str: return ""
 
 #--------------------------------------------------------------------------------------------------
 # Python backend runs numpy
 
 class PythonBackend(Backend):
-    def generate(self, block: VMInstructionBlock):
+    def generate(self, block: VMBlock):
         out = self.header()
         op_map = { "add" : "+", "sub" : "-", "mul" : "*", "div" : "/", "sqrt" : "np.sqrt" }
         type_map = { "f32" : "np.float32", "i32" : "np.int32" }
@@ -85,7 +85,7 @@ class CPUBackend(Backend):
         self.restrict = restrict
         self.rm = self.isa.init_register_manager()
 
-    def generate(self, vm_block: VMInstructionBlock):
+    def generate(self, vm_block: VMBlock):
         log(self.isa.__class__.__name__)
         log("------------------------------------------------------")
         self.vm_block = vm_block

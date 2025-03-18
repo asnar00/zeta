@@ -30,6 +30,14 @@ class VMConst:
     def __str__(self): return f"{self.value}"
     def __repr__(self): return str(self)
 
+# VMConstArray is a fixed-size array of some type (u8, i32, etc)
+class VMConstArray:
+    def __init__(self, values: List[str], type: str):
+        self.values = values
+        self.type = type
+    def __str__(self): return f"{self.values}"
+    def __repr__(self): return str(self)
+
 # instruction: can be either VM or processor specific
 class VMInstruction:
     def __init__(self, opcode: str, dest, sources: List[VMVar|VMConst], comment: str = ""):
@@ -47,12 +55,10 @@ class VMInstruction:
         return f"{self.dest.name} <= {self.opcode} {', '.join([str(var) for var in self.sources])}"
        
 # instruction block : just a list of instructions
-class VMInstructionBlock:
+class VMBlock:
     def __init__(self):
         self.instructions = []
         self.vars = {}              # str => VMVar
-        self.constants = {}         # str => VMConst
-        self.labels = {}            # str => instruction index
         self.max_live = 0           # maximum number of live variables at any point
         self.dbg = False            # set to True to generate debug code
         
@@ -96,10 +102,13 @@ class VMInstructionBlock:
             if var in self.instructions[i].sources:
                 return i
         return -1
+
+# VMProgram is a collection of VMBlocks
+class VMProgram:
+    def __init__(self):
+        self.blocks = []            # basic blocks
+        self.constants = {}         # str => VMConst|VMConstArray
     
-    # add a label at the current index
-    def label(self, name: str):
-        self.labels[name] = len(self.instructions)
 
 #--------------------------------------------------------------------------------------------------
 # configuration options for code production
@@ -127,7 +136,9 @@ class VMCodeGenerator:
         self.grammar = None
         self.indent = 0
         self.i_var = 0
-        self.block = VMInstructionBlock()
+        self.program = VMProgram()
+        self.block = VMBlock()
+        self.program.blocks.append(self.block)
 
     def setup(self, config: VMCodegenConfig, st: SymbolTable, grammar: Grammar):
         self.config = config
@@ -141,7 +152,7 @@ class VMCodeGenerator:
 
     # clear everything out
     def reset(self):
-        self.block = VMInstructionBlock()
+        self.block = VMBlock()
         self.i_var = 0
         self.indent = 0
     
@@ -170,6 +181,10 @@ class VMCodeGenerator:
         if var_name in self.block.vars: raise Exception(f"variable {var_name} already exists")
         self.block.vars[var_name] = VMVar(var_name, concrete_type_name)
 
+    # add a string constant
+    def add_string_constant(self, value: str): pass
+
+
     # given a name of format a.b.c, try to replace the first part with a value from the replace map
     def try_replace(self, var, replace):
         if "." in var:
@@ -188,7 +203,7 @@ class VMCodeGenerator:
 # optimiser - works at VM level before backend does its thing
 
 class Optimiser:
-    def __init__(self, block: VMInstructionBlock):
+    def __init__(self, block: VMBlock):
         self.block = block
     
     # apply various optimisations (this will grow over time)
