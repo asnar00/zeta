@@ -64,6 +64,12 @@ class CompiledProgram:
             out += self.reports[i].show(self.code)
         return out
     
+    def visual_report(self) -> str:
+        out = ""
+        for i, report in enumerate(self.reports):
+            out += visual_report_from_stage(report, self.code)
+        return out
+    
     def is_ok(self) -> bool:
         return len(self.reports) > 0 and len(self.reports[-1].errors) == 0
 
@@ -76,11 +82,10 @@ class Compiler:
         self.modules : List[LanguageModule] = []
         self.grammar : Grammar= Grammar(import_module)
         self.cp = None
-        self.config = VMCodegenConfig()
-        self.codegen = VMCodeGenerator()
+        self.concrete_types : Dict[str, str] = {}       # abstract => concrete type names
 
     def add_modules(self, modules: List[LanguageModule]): self.modules.extend(modules)
-    def set_concrete_types(self, types: Dict[str, str]): self.config.concrete_types(types)
+    def set_concrete_types(self, types: Dict[str, str]): self.concrete_types = types
 
     def setup(self):
         for module in self.modules: module.setup_grammar(self)
@@ -167,16 +172,10 @@ class Compiler:
         return self.cp.is_ok()
     
     def generate(self) -> bool:
-        self.stage("codegen")
-        self.codegen.setup(self.config, self.cp.st, self.grammar)
-        ast = self.cp.ast
-        if hasattr(ast, "generate"): ast.generate()
-        else: log_exit("no generate method in ast")
-        optimiser = Optimiser(self.codegen.block)
-        optimiser.optimise()
-        self.cp.assembly = self.codegen.block
+        self.stage("generate")
+        visitor = Visitor("generate", is_ref=False, children_first=True)
+        visitor.apply(self.cp.ast, lambda e, scope, type_name: e.generate(scope))
         return self.cp.is_ok()
-
 
     #--------------------------------------------------------------------
     # below the line
@@ -189,7 +188,11 @@ class Compiler:
         self.cp.reports[-1].items.append(ReportItem(lex, msg))
 
     def error(self, lex: Lex, msg: str):
-        if not isinstance(lex, Lex): raise ValueError(f"lex is not a Lex: {lex}")
+        if not isinstance(lex, Lex): 
+            if isinstance(lex, Entity):
+                lex = get_first_lex(lex)
+            else:
+                raise ValueError(f"lex '{lex}' is not a Lex; it's a {type(lex).__name__}")
         self.cp.reports[-1].errors.append(ReportItem(lex, msg))
 
     #--------------------------------------------------------------------

@@ -17,8 +17,6 @@ s_test_features = [
 """
 feature Program
     char out$
-    on run()
-        shutdown()
 """,
 """
 feature Hello extends Program
@@ -36,6 +34,9 @@ feature Goodbye extends Hello
 """,
 """
 feature Math extends Program
+    type int > i8, i16, i32, i64
+    type float > f32, f64
+    type number > int, float
     on (number n) = (number a) + (number b)
         n = add(a, b)
     on (number n) = (number a) - (number b)
@@ -75,10 +76,6 @@ feature Backend
     type u8, u16, u32, u64
     type i8, i16, i32, i64
     type f16, f32, f64
-    type int > i8, i16, i32, i64
-    type uint > u8, u16, u32, u64
-    type float > f32, f64
-    type number > uint, int, float
     type char > u8
     type string = char$
     on (i32 r) = add(i32 a, b) emit
@@ -91,9 +88,6 @@ feature Backend
     on (f32 r) = mul(f32 a, b) emit
     on (f32 r) = div(f32 a, b) emit
     on (f32 r) = sqrt(f32 n) emit
-    on shutdown()
-        write(0x5555, 0x100000)
-    on write(u32 value, address) emit
 """,
 """
 feature ConcreteMath extends Math
@@ -132,14 +126,33 @@ def test_zero():
     log_max_depth(12)
 
     compiler.setup()
-    #context = Context("test_vector_math", ["Program", "Math", "VectorMath", "Backend"])
-    test_context(compiler, Context("test_hello", ["Program", "Hello", "Backend"]))
-    
-    
-
-def test_context(compiler: Compiler,context: Context):
+    context = Context("test_vector_math", ["Program", "Math", "VectorMath", "Backend"])
+    #context = Context("test_hello", ["Program", "Hello", "Backend"])
     program = compiler.compile(s_test_features, context)
-    log(program.visual_report())
+    if not program.is_ok():
+        #log_clear()
+        #log(program.show_report())
+        for stage in program.reports[-1:]:
+            log(visual_report_from_stage(stage, program.code))
+        log_exit("program is not ok")
+    log("\n----------------------------------------------")
+    #log("after optimisation:")
+    #log(program.assembly)
+    #log_exit("")
+    #backend = PythonBackend("test/test.py")
+    riscv_backend = CPUBackend("test/riscv/test.*", RISCV32(), debug=False, restrict=True)
+    arm_backend = CPUBackend("test/arm/test.*", ARM64(), debug=True, restrict=True)
+    #log_clear()
+    riscv_backend.generate(program.assembly)
+    riscv_log = log_get()
+    #log_clear()
+    #arm_backend.generate(program.assembly)
+    #arm_log = log_get()
+   # log_clear()
+    #display_logs([riscv_log, arm_log])
+    log_flush()
+    riscv_results = riscv_backend.run()
+    #arm_results = arm_backend.run()
 
 def display_logs(logs: List[str]):
     col_width = 64
@@ -222,7 +235,15 @@ class module_Features(LanguageModule):
             return compiler.find_symbol(self, cls, scope, raise_errors=True, read_only=True)
 
     def setup_generate(self, compiler: Compiler):
-        pass
+        codegen = compiler.codegen
+        @Entity.method(zc.Program) # Program.generate
+        def generate(self):
+            run_func = codegen.find_entity("run", zc.Function)
+            if run_func == None:
+                compiler.error(self, "no run function found")
+                return
+            codegen.reset()
+            run_func.generate({}, [])
 
     def test_parser(self, compiler: Compiler):
         grammar = compiler.grammar
@@ -461,6 +482,7 @@ class module_Expressions(LanguageModule):
             for i, dist_list in enumerate(distances):
                 if None not in dist_list: filtered_functions.append(functions[i])
             if len(filtered_functions) == 0:
+                compiler.error(fc, f"no function found for {log_strip(print_code_formatted(fc, compiler.grammar))} in {scope}")
                 return []
             fc._constraints = fn_types # dunno what this is really for, but we'll find out later
             return filtered_functions
@@ -525,7 +547,62 @@ class module_Expressions(LanguageModule):
             return i_best
 
     def setup_generate(self, compiler: Compiler):
-        pass
+        codegen = compiler.codegen
+
+        @Entity.method(zc.FunctionCall)  # FunctionCall.generate
+        def generate(self, replace: Dict, source_loc: List[Lex]):
+            log(f"-------------------------------- FunctionCall.generate")
+            log(f"replace: {replace}")
+            function = self._resolved_functions[0]
+            result_vars = replace["_results"] if "_results" in replace else []
+            replace.pop("_results", None)
+            if len(result_vars) == 0:
+                result_vars = function.make_temp_vars()
+            args = []
+            first_lex = None
+            for item in self.items:
+                if not hasattr(item, "name"):
+                    args += item.generate(replace, source_loc)
+                elif first_lex is None:
+                    first_lex = item
+            function = self._resolved_functions[0]
+            params = function.get_params()
+            fn_replace = {}
+            for p, a in zip(params, args):
+                log(f"p: {p}, a: {a}")
+                a = codegen.try_replace(a, replace)
+                fn_replace[p] = a
+            fn_replace["_results"] = result_vars
+            results = function.generate(fn_replace, source_loc + [first_lex])
+            return result_vars
+        
+        @Entity.method(zc.FunctionCallArguments) # FunctionCallArguments.generate
+        def generate(self, replace: Dict, source_loc: List[Lex]):
+            args = []
+            for item in self.arguments:
+                args += item.generate(replace, source_loc)
+            return args
+        
+        @Entity.method(zc.FunctionCallArgument) # FunctionCallArgument.generate
+        def generate(self, replace: Dict, source_loc: List[Lex]):
+            return self.value.generate(replace, source_loc)
+        
+        @Entity.method(zc.Constant) # Constant.generate
+        def generate(self, replace: Dict, source_loc: List[Lex]) -> List[str]:
+            log(f"{dbg_entity(self)}")
+            log(f" type: {self._type}")
+            if str(self._type.name) == "string":
+                codegen.add_string_constant(self.value)
+            return [str(self.value)]
+        
+        @Entity.method(zc.FunctionCallVariable) # FunctionCallVariable.generate
+        def generate(self, replace: Dict, source_loc: List[Lex]) -> List[str]:
+            return self.variable.generate(replace, source_loc)
+        
+        @Entity.method(zc.VariableRef)   # VariableRef.generate
+        def generate(self, replace: Dict, source_loc: List[Lex]) -> List[str]:
+            full = ".".join(str(v) for v in self.variables)
+            return [codegen.try_replace(full, replace)]
 
     def test_parser(self, compiler: Compiler):
         grammar = compiler.grammar
@@ -1106,14 +1183,12 @@ class module_Functions(LanguageModule):
         @Entity.method(zc.FunctionDef) # FunctionDef.add_symbols
         def add_symbols(self, scope):
             long_handle = typed_handle(self)
-            first_lex = get_first_name(self.signature)
-            compiler.cp.st.add(long_handle, self, scope)
-            compiler.report(first_lex, f"\"{long_handle}\" => {self} in {scope}")
-            
             short_handle = untyped_handle(self)
-            if short_handle != long_handle:
-                compiler.cp.st.add(short_handle, self, scope)
-                compiler.report(first_lex, f"\"{short_handle}\" => {self} in {scope}")
+            compiler.cp.st.add(long_handle, self, scope)
+            compiler.cp.st.add(short_handle, self, scope)
+            first_lex = get_first_name(self.signature)
+            compiler.report(first_lex, f"\"{long_handle}\" => {self} in {scope}")
+            compiler.report(first_lex, f"\"{short_handle}\" => {self} in {scope}")
             self._owner = scope
             function = compiler.find_symbol(long_handle, zc.Function, None, raise_errors=False, read_only=False)
             if function == None:
@@ -1300,36 +1375,209 @@ class module_Functions(LanguageModule):
             return None
         
     def setup_generate(self, compiler: Compiler):
-        @Entity.method(zc.FunctionDef) # Function.generate
-        def generate(self, scope) -> VmBlock:
-            if not isinstance(self.body, zc.EmitFunctionBody):
-                return
-            log(f"FunctionDef.emit: {self}")
-            inputs = get_inputs(self.signature)
-            outputs = get_outputs(self.results)
-            if len(outputs) > 1: raise Exception(f"FunctionDef.emit: {self} has {len(outputs)} outputs")
-            output = outputs[0] if len(outputs) == 1 else None
-            instruction = VmInstruction(opcode=self.signature.elements[0].name, dest=outputs, sources=inputs)
-            self._vm = VmBlock(inputs, [instruction], outputs)
-            log(self._vm)
-            return self._vm
+        codegen = compiler.codegen
+                
+        @Entity.method(zc.Function)     # Function.generate
+        def generate(self, replace: Dict, source_loc: List[Lex]):
+            for s in self.body.statements:
+                s.generate(replace, source_loc)
 
-        def get_inputs(signature: zc.FunctionSignature) -> List[VmVar]:
-            inputs = []
-            for e in signature.elements:
-                if isinstance(e, zc.FunctionSignatureParams):
-                    for p in e.params:
-                        for n in p.names:
-                            inputs.append(VmVar(str(n.name), str(p.type.name)))
-            return inputs
+        @Entity.method(zc.SingleFunctionDef)
+        def generate(self, replace: Dict, source_loc: List[Lex]):
+            self.func_def.generate(replace, source_loc)
 
+        @Entity.method(zc.SequenceFunctionDef)
+        def generate(self, replace: Dict, source_loc: List[Lex]):
+            for comp in self.comps:
+                comp.generate(replace, source_loc)
 
-        def get_outputs(results: zc.FunctionResults):
-            outputs = []
-            if results is None: return outputs
-            for r in results.results:
-                outputs.append(VmVar(str(r.names[0].name), str(r.type.name)))
-            return outputs
+        @Entity.method(zc.ParallelFunctionDef)
+        def generate(self, replace: Dict, source_loc: List[Lex]):
+            for comp in self.comps:
+                comp.generate(replace, source_loc)
+
+        @Entity.method(zc.FunctionDef)     # FunctionDef.generate
+        def generate(self, replace: Dict, source_loc: List[Lex]):
+            if "_results" in replace:
+                results = self.get_results()
+                for r, v in zip(results, replace["_results"]):
+                    replace[r] = v
+            if isinstance(self.body, zc.EmitFunctionBody):
+                return self.emit(replace)
+            return self.body.generate(replace, source_loc)
+        
+        @Entity.method(zc.FunctionStatements)   # FunctionStatements.generate
+        def generate(self, replace: Dict, source_loc: List[Lex]) -> List[str]:
+            for s in self.statements:
+                s.generate(replace, source_loc)
+
+        @Entity.method(zc.Assignment)   # Assignment.generate
+        def generate(self, replace: Dict, source_loc: List[Lex]):
+            lhs = self.lhs.generate(replace, source_loc) if self.lhs else []
+            fn_replace = replace.copy()
+            if len(lhs) > 0: fn_replace["_results"] = lhs
+            rhs = self.rhs.generate(fn_replace, source_loc)
+            if len(lhs) != len(rhs):
+                compiler.error(f"FunctionStatements.generate: {codegen.show(self)}, {lhs} != {rhs}")
+            for l, r in zip(lhs, rhs):
+                if l != r:
+                    if "_" in r:
+                        codegen.output("mov", l, [r])
+                    else:
+                        codegen.output("const", l, [r])
+
+        @Entity.method(zc.StreamAssignment)   # StreamAssignment.generate
+        def generate(self, replace: Dict, source_loc: List[Lex]):
+            # TODO: generate a stream-push loop here
+            log("StreamAssignment.generate")
+            log(f"  lhs: {codegen.show(self.lhs)}")
+            log(f"  rhs: {codegen.show(self.rhs)}")
+            log(f"  replace: {replace}")
+            log(f"  source_loc: {source_loc}")
+            var = self.lhs.results[0].variable._resolved_vars[0]
+            log(f"  var: {var}")
+            log(f"  rhs: {dbg_entity(self.rhs)}")
+            self.rhs.generate(replace, source_loc)
+            log_exit("StreamAssignment.generate")
+
+        @Entity.method(zc.StreamAssignmentRhs) # StreamAssignmentRhs.generate
+        def generate(self, replace: Dict, source_loc: List[Lex]):
+            for e in self.expressions:
+                e.generate(replace, source_loc)
+
+        @Entity.method(zc.VoidFunctionStatement) # VoidFunctionStatement.generate
+        def generate(self, replace: Dict, source_loc: List[Lex]):
+            self.function_call.generate(replace, source_loc)
+            
+            
+            
+
+        @Entity.method(zc.AssignmentLhs)   # AssignmentLhs.generate
+        def generate(self, replace: Dict, source_loc: List[Lex]) -> List[str]:
+            results = []
+            for r in self.results:
+                results += r.generate(replace, source_loc)
+            return results
+        
+        @Entity.method(zc.ResultVariableRef)   # ResultVariableRef.generate
+        def generate(self, replace: Dict, source_loc: List[Lex]):
+            return self.variable.generate(replace, source_loc)
+
+        @Entity.method(zc.ResultVariableDef)   # ResultVariableDef.generate
+        def generate(self, replace: Dict, source_loc: List[Lex]):
+            result_names = [ str(name.name) for name in self.names]
+            actual_names = [self.type.add_var(r) for r in result_names]
+            for r, a in zip(result_names, actual_names):
+                replace[r] = a
+            return actual_names
+        
+        @Entity.method(zc.Type) # Type.add_var
+        def add_var(self, name: str) -> str:
+            i_var = codegen.alloc_var_index()
+            var_name = f"{name}_{i_var}"
+            if self.properties:
+                for p in self.properties:
+                    for n in p.names:
+                        codegen.add_var(f"{var_name}.{n.name}", p.type.name)
+            else:
+                codegen.add_var(var_name, self.name)
+            return var_name
+        
+        @Entity.method(zc.Function) # Function.get_params
+        def get_params(self) -> List[str]:
+            vars = []
+            for item in self.signature.elements:
+                if isinstance(item, zc.FunctionSignatureParams):
+                    for param in item.params:
+                        for name in param.names:
+                            vars.append(str(name.name))
+            return vars
+        
+        @Entity.method(zc.FunctionDef) # FunctionDef.get_params
+        def get_params(self) -> List[str]:
+            vars = []
+            for item in self.signature.elements:
+                if isinstance(item, zc.FunctionSignatureParams):
+                    for param in item.params:
+                        for name in param.names:
+                            vars.append(str(name.name))
+            return vars
+        
+        @Entity.method(zc.FunctionDef) # FunctionDef.get_results
+        def get_results(self) -> List[str]:
+            vars = []
+            if self.results is not None:
+                for r in self.results.results:
+                    for name in r.names:
+                        vars.append(str(name.name))
+            return vars
+        
+        @Entity.method(zc.Function) # Function.get_results
+        def get_results(self) -> List[str]:
+            vars = []
+            if self.results is not None:
+                for r in self.results.results:
+                    for name in r.names:
+                        vars.append(str(name.name))
+            return vars
+        
+        @Entity.method(zc.Function) # Function.get_result_types
+        def get_result_types(self) -> List[zc.Type]:
+            types = []
+            if self.results is not None:
+                for r in self.results.results:
+                    for name in r.names:
+                        types.append(r.type)
+            return types
+        
+        @Entity.method(zc.Function) # Function.make_temp_vars
+        def make_temp_vars(self) -> List[str]:
+            result_vars = []
+            results = self.get_results()
+            types = self.get_result_types()
+            temp_results = []
+            for r, t in zip(results, types):
+                temp_var = t.add_var(r)
+                result_vars.append(temp_var)
+            return result_vars
+        
+        @Entity.method(zc.FunctionDef) # FunctionDef.emit
+        def emit(self, replace):
+            log(f"emit: {codegen.show(self)}, {replace}")
+            fn_name = self.emit_fn_name()
+            result_vars = self.get_results()
+            result_vars = [codegen.try_replace(r, replace) for r in result_vars]
+            params = self.get_params() 
+            params = [codegen.try_replace(p, replace) for p in params]
+            log(f"  fn_name: {fn_name}")
+            log(f"  result_vars: {result_vars}")
+            log(f"  params: {params}")
+            if len(result_vars) >= 2: raise Exception(f"multiple results not supported: {result_vars}")
+            codegen.output(fn_name, result_vars[0], params)
+            return result_vars
+
+        @Entity.method(zc.FunctionDef) # Function.emit_fn_name
+        def emit_fn_name(self):
+            out = ""
+            for element in self.signature.elements:
+                if hasattr(element, "name"): out += f"{element.name}_"
+            if out.endswith("_"): out = out[:-1]
+            return out
+        
+        @Entity.method(zc.Function) # Function.typed_emit_fn
+        def typed_emit_fn(self):
+            out = ""
+            for element in self.signature.elements:
+                if hasattr(element, "name"): out += f"{element.name}_"
+                elif isinstance(element, zc.FunctionSignatureParams):
+                    for param in element.params:
+                        type = str(param.type.name)
+                        for name in param.names:
+                            out += f"{type}_"
+            result_types = self.get_result_types()
+            for t in result_types: out += f"_{str(t)}"
+            return out
+
 
     def test_parser(self, compiler: Compiler):
         grammar = compiler.grammar

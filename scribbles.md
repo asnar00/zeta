@@ -2,6 +2,33 @@
 # scribblez
 "slow is smooth, smooth is fast"
 
+"let's completely rewrite vm.py" - wheres and whyfores
+
+1- vm was written purely to handle a single basic block so is confused in many ways
+2- touching the 'generate' stuff shows that it was totally confused and needs improvement
+
+So here's the new architecture:
+
+    class VmBlock:
+        def __init__(self)
+            self.params: List[Var|Const] = []
+            self.instructions: List[VmInstruction] = []
+            self.results: List[Var|Const] = []
+
+A VmBlock is a list of instructions, and if you run() it from the start, it will always end up at the end, with a list of result variables or constants you can read from it. Internally, there can be jumps (loops and if/thens) but execution always ends up with the PC at the end.
+
+We can combine blocks together to make bigger blocks. For example, we can implement if/then/else using this function:
+
+    def if_then_else(cond: VmBlock, then: VmBlock, else: VmBlock):
+        return VmBlock([...])
+
+    def for_loop(var: VmVar, init: VmBlock, inc: VmBlock, test: VmBlock):
+        return VmBlock([...])
+
+Finally, the generate() method is implemented as a standard pass (children first); each node's generate computes a ._vm property by combining the completed ._vms of each of its child nodes.
+
+-----------------------------
+
 ok: 
 
     out$ << "ᕦ(ツ)ᕤ"
@@ -17,7 +44,10 @@ How do we print it out?
 OK: so firstly we have to create the array constant for the string.
 If there's no "rate" then we have a simple thing.
 
-
+Thoughts: x.generate() is returning the symbol set for its results;
+but actually, we should find a different way to do this.
+x.generate() should return a VMEntity.
+and the VMEntity should have a method results() which returns a list of names.
 
 --------------------------------
 general idea for the lab: 

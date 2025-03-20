@@ -140,6 +140,7 @@ next
 """)), lexer_result)
     ls = lexer(Source(code="(a + b) * c"))
     test("lexer_jump", ls[0].jump, 4)
+    test("lexer_number", lexer(Source(code="1 0x1a2b")))
 
 # lexeme: stores value and type, and also position within the source
 # we're loading quite a bit of computed stuff onto it, but that speeds up parsing later
@@ -179,8 +180,8 @@ def lexer(source: Source) -> List[Lex]:
 # naive lexer just does a straight lex
 def naive_lexer(source: Source) -> List[Lex]:
     ls = []
-    specs = [ ('number', r'\d+(\.\d*)?'),                           # integer or decimal number
-                ('identifier', r'[A-Za-z_][A-Za-z0-9_$]*'),     # identifiers
+    specs = [ ('number', r'(?:0x[0-9a-fA-F]+|\d+(?:\.\d*)?)'),                           # integer or decimal number
+                ('identifier', r'[A-Za-z_][A-Za-z0-9_$]*'),         # identifiers
                 ('string', r'"(?:\\.|[^"\\])*"'),                   # string literals with support for escaped quotes
                 ('operator', r'[-+=%^<>*/?!|&#\\]{1,2}'),           # operators, and double-operators
                 ('punctuation', r'[(){}\[\].,;:]'),                 # punctuation
