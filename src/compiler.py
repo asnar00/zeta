@@ -55,7 +55,7 @@ class CompiledProgram:
         self.code = code
         self.ast : Entity = None                            # abstract syntax tree: a tree of Entity objects
         self.st : SymbolTable = None                        # symbol table; maps name => {object, scope, tag}
-        self.assembly = None                                # assembly code (in our own vm isa)
+        self.vm_block = None                                # assembly code (in our own vm isa)
         self.reports : List[Report] = []                    # all reports from all stages
 
     def show_report(self) -> str:
@@ -64,9 +64,10 @@ class CompiledProgram:
             out += self.reports[i].show(self.code)
         return out
     
-    def visual_report(self) -> str:
+    def visual_report(self, last_n: int=None) -> str:
         out = ""
         for i, report in enumerate(self.reports):
+            if last_n is not None and i < len(self.reports) - last_n: continue
             out += visual_report_from_stage(report, self.code)
         return out
     
@@ -173,8 +174,8 @@ class Compiler:
     
     def generate(self) -> bool:
         self.stage("generate")
-        visitor = Visitor("generate", is_ref=False, children_first=True)
-        visitor.apply(self.cp.ast, lambda e, scope, type_name: e.generate(scope))
+        self.functions_to_generate = []
+        self.cp.vm_block = self.cp.ast.generate()
         return self.cp.is_ok()
 
     #--------------------------------------------------------------------
@@ -217,6 +218,11 @@ class Compiler:
         else:
             if raise_errors: self.error(name, f"no {of_type.__name__} in {scope}, {caller()}")
         return None
+    
+    # we're calling a function, so we need to generate it later
+    def enqueue_generate(self, fn: zc.Function):
+        if not fn in self.functions_to_generate:
+            self.functions_to_generate.append(fn)
     
     
 #--------------------------------------------------------------------------------------------------

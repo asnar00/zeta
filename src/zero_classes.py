@@ -194,9 +194,9 @@ class FunctionModifier(Entity):
         self.modifier: str = modifier
 
 class FunctionResults(Entity):
-    def __init__(self, results: 'List[ResultVariableDef]' =None, assign_op: 'str' =None):
+    def __init__(self, results: 'List[ResultVariable]' =None, assign_op: 'str' =None):
         super().__init__()
-        self.results: List[ResultVariableDef] = results
+        self.results: List[ResultVariable] = results
         self.assign_op: str = assign_op
 
 class FunctionSignature(Entity):

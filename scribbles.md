@@ -2,6 +2,19 @@
 # scribblez
 "slow is smooth, smooth is fast"
 
+conversion:
+
+    on (char out$) << (int x)
+        ...
+
+the point is, how do we find the function? Our signature's typed-handle doesn't give us anything.
+so when we come to actually do the function, what is going to happen?
+
+
+
+----------
+
+
 "let's completely rewrite vm.py" - wheres and whyfores
 
 1- vm was written purely to handle a single basic block so is confused in many ways

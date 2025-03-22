@@ -101,7 +101,10 @@ class Entity:
             # Convert standalone function to method
             @wraps(func)
             def method(self, *args, **kwargs):
-                return func(self, *args, **kwargs)
+                log_indent_silent()
+                result= func(self, *args, **kwargs)
+                log_undent_silent()
+                return result
             # Add the method to the class
             setattr(cls, func.__name__, method)
             # Important: return the original function or method
@@ -283,6 +286,7 @@ class Visitor:
 
     def call_fn(self, e: Entity, scope: Entity, entity_type_name: str, parent: Entity, parent_attr: str, parent_index: int, indent: int):
         start = " " * indent
+        if self.vb: log(log_green(f"{start}call_fn: {e} {entity_type_name}"))
         new_node = self.fn(e, scope, entity_type_name)
         if new_node: 
             if self.vb: log(log_green(f"{start}set {parent}.{parent_attr} ==> {new_node}"))

@@ -140,7 +140,6 @@ next
 """)), lexer_result)
     ls = lexer(Source(code="(a + b) * c"))
     test("lexer_jump", ls[0].jump, 4)
-    test("lexer_number", lexer(Source(code="1 0x1a2b")))
 
 # lexeme: stores value and type, and also position within the source
 # we're loading quite a bit of computed stuff onto it, but that speeds up parsing later

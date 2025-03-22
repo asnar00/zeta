@@ -46,11 +46,13 @@ def log(*args):
         n_tabs = s_log_indent // 2
         n_rem = s_log_indent % 2
         s = log_grey(" ⏐") * n_tabs + " " * n_rem
+        out = ""
         for a in args:
-            s += str(a) + " "
-        # add it to the global s_log string
+            out += str(a) + " "
+        lines = out.split("\n")
         global s_log
-        s_log += s + "\n"
+        for line in lines:
+            s_log += s + line + "\n"
     if s_n_log_calls > 100000:
         print("------------------- stopping: too many log calls ---------------------")
         log_exit()
@@ -123,6 +125,14 @@ def log_indent(fn):
         s_log_indent -= 1
         return result
     return wrapper
+
+def log_indent_silent():
+    global s_log_indent
+    s_log_indent += 1
+
+def log_undent_silent():
+    global s_log_indent
+    s_log_indent -= 1
 
 # log_enable is a decorator that turns on logging within a function
 def log_enable(fn):
