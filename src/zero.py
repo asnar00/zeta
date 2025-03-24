@@ -139,7 +139,7 @@ def test_zero():
 
     compiler.setup()
     #context = Context("test_vector_math", ["Program", "Math", "VectorMath", "Backend"])
-    context = Context("test_hello", ["Program", "Backend"])
+    context = Context("test_hello", ["Program", "Hello","Backend"])
     test_context(compiler, context)
     
 def test_context(compiler: Compiler,context: Context):
@@ -578,6 +578,14 @@ class module_Expressions(LanguageModule):
             instructions = [VmInstruction(opcode="const", dests=outputs, sources=[self.value])]
             result = VmBlock([], outputs, instructions)
             return result
+        
+        @Entity.method(zc.VariableRef) # VariableRef.generate
+        def generate(self) -> VmBlock:
+            log(dbg_entity(self))
+            var = self._resolved_vars[0]
+            log(f"var: {var}")
+            outputs = [VmVar(VmVar.tag("var"), var.type)]
+            return VmBlock([], outputs, [VmInstruction(opcode="mov", dests=outputs, sources=[var])])
 
     def test_parser(self, compiler: Compiler):
         grammar = compiler.grammar
@@ -1218,8 +1226,7 @@ class module_Functions(LanguageModule):
                     for param in item.params:
                         for param_name in param.names:
                             name += "◦"
-            return name    
-
+            return name
         def make_function(func_def, st):
             refToFunc = zc.SingleFunctionDef(func_def=func_def)
             statements = zc.FunctionStatements(statements=[refToFunc])
@@ -1296,6 +1303,9 @@ class module_Functions(LanguageModule):
             type_b = self.rhs._type
             if not can_assign(type_a, type_b):
                 compiler.error(get_first_lex(self), f"cannot assign {type_b} to {type_a}")
+            fn_call = find_anonymous_function_call(self.lhs, self.rhs)
+            if fn_call is not None:
+                self.rhs = fn_call
 
         @Entity.method(zc.StreamAssignment) # StreamAssignment.check_types
         def check_type(self, scope):
@@ -1303,7 +1313,46 @@ class module_Functions(LanguageModule):
             for i, type_b in enumerate(self.rhs._types):
                 if not can_assign(type_a, type_b):
                     compiler.error(get_first_lex(self.rhs.expressions[i]), f"cannot assign {type_b} to {type_a}")
+            for i, e in enumerate(self.rhs.expressions):
+                fn_call = find_anonymous_function_call(self.lhs, e)
+                if fn_call is not None:
+                    self.rhs.expressions[i] = fn_call
 
+        def find_anonymous_function_call(lhs, rhs):
+            if isinstance(rhs, zc.FunctionCall): return None
+            lhs_var = lhs.results[0].variable._resolved_vars[0]
+            #log(f"lhs_var: {lhs_var}")
+            lhs_type, lhs_rank = lhs.get_alias()
+            rhs_type, rhs_rank = rhs._type.get_alias()
+            #log(f"lhs_type/rank: {lhs_type}/{lhs_rank}")
+            #log(f"rhs_type/rank: {rhs_type}/{rhs_rank}")
+            fns = [f.element for f in compiler.cp.st.find("("+str(rhs_type.name)+")", zc.Function, None, read_only=True)]
+            best_fn = None
+            for fn in fns:
+                #log(f"fn: {fn}")
+                result = fn.results.results[0]
+                #log(result)
+                if isinstance(result, zc.ResultVariableRef):
+                    result_var = result.variable._resolved_vars[0]
+                    #log(result_var)
+                    if result_var is lhs_var: # strong match
+                        best_fn = fn
+                        break
+                    elif result_var.type is lhs._type: # weaker match
+                        best_fn = fn
+            if best_fn is None: return None
+            fn_call = zc.FunctionCall(items=[zc.FunctionCallArguments(arguments=[rhs])])
+            #log(f"found anonymous function call: {fn_call}")
+            #log(dbg_entity(best_fn, 0, True))
+            fn_call._resolved_functions = [best_fn]
+            return fn_call
+        
+        @Entity.method(zc.StreamAssignmentLhs) # StreamAssignmentLhs.get_alias
+        def get_alias(self) -> Tuple[zc.Type, int]:
+            var = self.results[0].variable._resolved_vars[0]
+            rank = str(var).count('$')
+            return var.type, rank
+            
         @Entity.method(zc.StreamAssignmentRhs) # StreamAssignmentRhs.check_types
         def check_type(self, scope):
             self._types = []
@@ -1312,8 +1361,8 @@ class module_Functions(LanguageModule):
                 self._types.append(e._type)
 
         def can_assign(type_a, type_b):
-            if type_a is not None: type_a = type_a.get_alias()
-            if type_b is not None: type_b = type_b.get_alias()
+            if type_a is not None: type_a, _ = type_a.get_alias()
+            if type_b is not None: type_b, _ = type_b.get_alias()
             if type_a == type_b: return True
             if isinstance(type_a, zc.Type) and isinstance(type_b, zc.MaybeTypes):
                 distances = [type_a.find_relationship(t) for t in type_b.types]
@@ -1324,17 +1373,17 @@ class module_Functions(LanguageModule):
             return False
         
         @Entity.method(zc.Type) # Type.get_alias
-        def get_alias(self) -> zc.Type:
-            if self.alias is None: return self
+        def get_alias(self) -> Tuple[zc.Type, int]:
+            if self.alias is None: return self, 0
             alias = self.alias
             rank = 0
             alias = str(alias)
             if alias.endswith("$"):
-                rank = alias[-1]
-                alias = alias[:-1]
+                rank = alias.count('$')
+                alias = alias[:-rank]
             alias_type = compiler.find_symbol(alias, zc.Type, None, raise_errors=True, read_only=True)
             if alias_type is None: compiler.error(get_first_lex(self), f"alias {self.alias} not found")
-            return alias_type
+            return alias_type, rank
 
         # -ve means type_b is a child of self, +ve type_b is a parent of self, None means no relationship
         # reminder: type_a > type_b means "every type_a is a type_b, but not every type_b is a type_a"
@@ -1390,6 +1439,18 @@ class module_Functions(LanguageModule):
                     
         @Entity.method(zc.StreamAssignment) # StreamAssignment.generate
         def generate(self) -> VmBlock:
+            log(self)
+            log(dbg_entity(self, 0, True))
+            lhs_var = self.lhs.results[0].variable._resolved_vars[0]
+            log(f"lhs_var: {lhs_var}")
+            lhs_rank = str(lhs_var).count('$')
+            lhs_type = self.lhs._type
+            log(f"lhs_type: {lhs_type}")
+            log(f"lhs_rank: {lhs_rank}")
+            for e in self.rhs.expressions:
+                vm = e.generate()
+                log(vm)
+                log_exit("StreamAssignment.generate")
             log_exit(f"StreamAssignment.generate: {self}")
             #log(f"{dbg_entity(self)}")
             return VmBlock([], [], [])
@@ -1447,7 +1508,11 @@ class module_Functions(LanguageModule):
             outputs = []
             if results is None: return outputs
             for r in results.results:
-                outputs.append(VmVar(str(r.names[0].name), str(r.type.name)))
+                if isinstance(r, zc.ResultVariableDef):
+                    outputs.append(VmVar(str(r.names[0].name), str(r.type.name)))
+                elif isinstance(r, zc.ResultVariableRef):
+                    out_var = r.variable._resolved_vars[0]
+                    outputs.append(VmVar(str(out_var.name), str(out_var.type)))
             return outputs
 
     def test_parser(self, compiler: Compiler):

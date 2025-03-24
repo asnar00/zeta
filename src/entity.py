@@ -120,7 +120,7 @@ class Entity:
 # debugging 
 
 # detailed printout of every property of an entity
-def dbg_entity(e: Entity|List[Entity], indent: int=0) ->str:
+def dbg_entity(e: Entity|List[Entity], indent: int=0, show_private: bool=False) ->str:
     out = ""
     start = "    " * indent
     if isinstance(e, Error): 
@@ -132,7 +132,7 @@ def dbg_entity(e: Entity|List[Entity], indent: int=0) ->str:
                 if e._error != None:
                     out += f"{start}    {log_red(e._error)}\n"
                 continue
-            if attr.startswith("_"): continue
+            if attr.startswith("_") and not show_private: continue
             type_name = Entity.get_attribute_type(e.__class__, attr)
             val = getattr(e, attr)
             if val == None or (isinstance(val, Lex) or isinstance(val, str)) or (isinstance(val, List) and len(val)==0):

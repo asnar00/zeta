@@ -85,6 +85,10 @@ class VmBlock:
 
     @staticmethod
     def replace_vars(self, old_vars: List[VmVar], new_vars: List[VmVar]) -> List[VmInstruction]:
+        if len(old_vars) != len(new_vars):
+            log(f"old_vars: {old_vars}")
+            log(f"new_vars: {new_vars}")
+            log_exit("replace_vars")
         new_instructions = []
         for instruction in self.instructions:
             new_dests = [new_vars[old_vars.index(dest)] if dest in old_vars else dest for dest in instruction.dests]
