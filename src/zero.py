@@ -18,13 +18,15 @@ s_test_features = [
 feature Program
     char out$
     on run()
+        main()
         shutdown()
+    on main() pass
 """,
 """
 feature Hello extends Program
     on hello()
         out$ << "ᕦ(ツ)ᕤ\\n"
-    before run()
+    replace main()
         hello()
 """,
 """
@@ -1085,6 +1087,7 @@ class module_Functions(LanguageModule):
             FunctionBody := 
             FunctionStatements < FunctionBody := "{" statements:Statement*; "}"
             EmitFunctionBody < FunctionBody := "emit"
+            PassFunctionBody < FunctionBody := "pass"
             Statement := 
             Assignment < Statement := lhs:AssignmentLhs rhs:Expression
             AssignmentLhs := results:ResultVariable+, "=" 
@@ -1380,6 +1383,8 @@ class module_Functions(LanguageModule):
                 log(f"EmitFunctionBody")
                 name = self.signature.get_first_name()
                 return VmBlock(inputs, outputs, [VmInstruction(name, outputs, inputs)])
+            elif isinstance(self.body, zc.PassFunctionBody):
+                return VmBlock(inputs, outputs, [])
             else:
                 return VmBlock.combine([s.generate() for s in self.body.statements])
                     

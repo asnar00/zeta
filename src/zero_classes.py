@@ -231,6 +231,10 @@ class EmitFunctionBody(FunctionBody):
     def __init__(self, ):
         super().__init__()
 
+class PassFunctionBody(FunctionBody):
+    def __init__(self, ):
+        super().__init__()
+
 class Statement(Entity):
     def __init__(self, ):
         super().__init__()
