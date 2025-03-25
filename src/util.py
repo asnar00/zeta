@@ -127,13 +127,15 @@ def log_indent(fn):
     return wrapper
 
 def log_indent_silent():
-    global s_log_indent
+    global s_log_indent, s_log_max_depth, s_log_enabled
     s_log_indent += 1
+    s_log_enabled = (s_log_indent <= s_log_max_depth)
 
 def log_undent_silent():
-    global s_log_indent
+    global s_log_indent, s_log_max_depth, s_log_enabled
     s_log_indent -= 1
-
+    s_log_enabled = (s_log_indent <= s_log_max_depth)
+    
 # log_enable is a decorator that turns on logging within a function
 def log_enable(fn):
     def wrapper(*args, **kwargs):

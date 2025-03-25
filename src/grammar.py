@@ -73,7 +73,6 @@ class Rule:
 
 #--------------------------------------------------------------------------------------------------
 # Grammar
-
 class Grammar:
     def __init__(self, import_module):
         self.import_module = import_module
@@ -468,9 +467,7 @@ class Grammar:
 
     # returns a type string for a term
     def get_attribute_type(self, term) -> str:
-        vb = term.var == "modifier"
         type_name = ""
-        if vb: log(term.vals)
         if term.is_keyword() and len(term.vals) > 1:
             type_name = "str"
         elif term.is_type():

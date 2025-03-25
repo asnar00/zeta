@@ -196,6 +196,9 @@ class Compiler:
                 raise ValueError(f"lex '{lex}' is not a Lex; it's a {type(lex).__name__}")
         self.cp.reports[-1].errors.append(ReportItem(lex, msg))
 
+    def code(self, e: Entity) -> str: 
+        return as_code(e, self.grammar)
+
     #--------------------------------------------------------------------
     # called by Entity methods in add_symbols, resolve, type
     
@@ -218,12 +221,6 @@ class Compiler:
         else:
             if raise_errors: self.error(name, f"no {of_type.__name__} in {scope}, {caller()}")
         return None
-    
-    # we're calling a function, so we need to generate it later
-    def enqueue_generate(self, fn: zc.Function):
-        if not fn in self.functions_to_generate:
-            self.functions_to_generate.append(fn)
-    
     
 #--------------------------------------------------------------------------------------------------
 # Report holds log of everything that happened in a compilation stage

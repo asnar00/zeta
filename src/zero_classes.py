@@ -25,9 +25,9 @@ class Component(Entity):
         super().__init__()
 
 class Program(Entity):
-    def __init__(self, components: 'List[Program_]' =None):
+    def __init__(self, components: 'List[FeatureDef]' =None):
         super().__init__()
-        self.components: List[Program_] = components
+        self.components: List[FeatureDef] = components
 
 class Expression(Entity):
     def __init__(self, ):

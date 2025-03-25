@@ -45,8 +45,8 @@ class VmInstruction(VmValue):
         out = ""
         if self.label is not None: out += f"{self.label}:\n"
         comment = f"\t# {self.comment}" if self.comment is not None else ""
-        dest = f"{self.dests}" if len(self.dests) > 0 else "\t"
-        out += f"    {self.opcode}\t{dest}\t{self.sources}{comment}"
+        dest = f"{self.dests}" if len(self.dests) > 0 else "[]"
+        out += f"    {self.opcode} {dest} {self.sources}{comment}"
         return out
     def __repr__(self): return str(self)
 
@@ -58,44 +58,30 @@ class VmBlock:
         self.outputs : List[VmValue] = outputs or []
         self.instructions : List[VmInstruction] = instructions or []
     def __str__(self):
-        if len(self.instructions) == 0: return "()"
-        out = "("
-        for result in self.outputs: out += f"{result}, "
-        if len(self.outputs) > 0: out = out[:-2]
-        out += " <- "
-        for param in self.inputs: out += f"{param}, "
-        if len(self.inputs) > 0: out = out[:-2]
-        out += ")\n"
+        out = ""
+        if len(self.inputs) > 0:
+            out += "in: ["
+            for param in self.inputs: out += f"{param}, "
+            out = out[:-2] + "]\n"
         for instruction in self.instructions: out += f"{instruction}\n"
+        if len(self.outputs) > 0:
+            out += "out:["
+            for result in self.outputs: out += f"{result}, "
+            out = out[:-2] + "]"
         return out
     def __repr__(self): return str(self)
 
-    @staticmethod
-    # this is gonna need a lot of work
-    def combine(blocks: List['VmBlock']) -> 'VmBlock':
-        all_inputs = []
-        all_instructions = []
-        all_outputs = []
-        for block in blocks:
-            all_inputs.extend(block.inputs)
-            all_instructions.extend(block.instructions)
-            all_outputs.extend(block.outputs)
-        
-        return VmBlock(all_inputs, all_outputs, all_instructions)
-
-    @staticmethod
-    def replace_vars(self, old_vars: List[VmVar], new_vars: List[VmVar]) -> List[VmInstruction]:
-        if len(old_vars) != len(new_vars):
-            log(f"old_vars: {old_vars}")
-            log(f"new_vars: {new_vars}")
-            log_exit("replace_vars")
-        new_instructions = []
+    def replace_inputs(self, new_inputs: List[VmVar]) -> List[VmInstruction]:
+        result = []
         for instruction in self.instructions:
-            new_dests = [new_vars[old_vars.index(dest)] if dest in old_vars else dest for dest in instruction.dests]
-            new_sources = [new_vars[old_vars.index(source)] if source in old_vars else source for source in instruction.sources]
-            new_instructions.append(VmInstruction(instruction.opcode, new_dests, new_sources, instruction.comment, instruction.label))
-        return new_instructions
-
-
+            new_sources = []
+            for i, source in enumerate(instruction.sources):
+                if source in self.inputs:
+                    index = self.inputs.index(source)
+                    new_sources.append(new_inputs[index])
+                else:
+                    new_sources.append(source)
+            result.append(VmInstruction(instruction.opcode, instruction.dests, new_sources, instruction.comment))
+        return result
 
 #--------------------------------------------------------------------------------------------------

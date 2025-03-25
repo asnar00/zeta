@@ -73,7 +73,7 @@ feature VectorMath extends Math
         number d = distance between a and b
 """,
 """
-feature Backend
+feature Backend extends Program
     type u8, u16, u32, u64
     type i8, i16, i32, i64
     type f16, f32, f64
@@ -135,7 +135,7 @@ def test_zero():
     compiler.set_concrete_types({ "number": "f32", "int": "i32"})
     
     test_verbose(False)
-    log_max_depth(12)
+    log_max_depth(6)
 
     compiler.setup()
     #context = Context("test_vector_math", ["Program", "Math", "VectorMath", "Backend"])
@@ -167,7 +167,7 @@ def display_logs(logs: List[str]):
 def test_print_code(ast):
     log_clear()
     
-    test("print_formatted", print_code_formatted(ast), """
+    test("print_formatted", as_code(ast), """
         feature Program
             type string | str = char$
             string out$
@@ -194,7 +194,7 @@ class module_Features(LanguageModule):
             NameDef := name:<identifier> ("|" alias:<identifier>)?
             FeatureDef := "feature" NameDef ("extends" parent:FeatureDef&)? "{" components:Component*; "}"
             Component :=
-            Program := components:(FeatureDef)+;
+            Program := components:FeatureDef+;
             """)
         
     def setup_scope(self, compiler: Compiler):
@@ -233,10 +233,12 @@ class module_Features(LanguageModule):
         @Entity.method(zc.Program) # Program.generate
         def generate(self):
             log(f"Program.generate: {self}")
-            function = compiler.find_symbol("run", zc.Function, self, raise_errors=True, read_only=True)
+            function_name = "shutdown()" #"write(uint, uint)"
+            function = compiler.find_symbol(function_name, zc.Function, self, raise_errors=True, read_only=True)
             if not function:
-                compiler.error(self.name, f"function not found: run()")
+                compiler.error(self.name, f"function not found: {function_name}")
             result= function.generate()
+            log(f"----------------------------------------------")
             log(result)
             return result
 
@@ -349,7 +351,7 @@ class module_Expressions(LanguageModule):
             return ""
         @Entity.method(zc.FunctionCall) # FunctionCall.get_name
         def get_name(self) -> str:
-            return log_strip(print_code_formatted(self, compiler.grammar))
+            return log_strip(as_code(self, compiler.grammar))
             
     def setup_symbols(self, compiler: Compiler):
         @Entity.method(zc.VariableRef) # VariableRef.resolve
@@ -363,7 +365,11 @@ class module_Expressions(LanguageModule):
             for var in self.variables: # all Lex at this point
                 resolved_var = compiler.find_symbol(var, zc.Variable, scope, raise_errors=False, read_only=read_only)
                 if resolved_var == None:
-                    compiler.error(var, f"variable not found: {var}")
+                    read_only_var = compiler.find_symbol(var, zc.Variable, scope, raise_errors=False, read_only=True)
+                    if read_only == False and read_only_var is not None:
+                        compiler.error(var, f"can't write to {var} ({read_only_var._owner}) from {scope}")
+                    else:
+                        compiler.error(var, f"variable not found in {scope}: {var}")
                     resolved_vars.append(var)
                     return self
                 else:
@@ -392,7 +398,7 @@ class module_Expressions(LanguageModule):
             if len(before) > 1: before = [zc.FunctionCall(items=before)]
             after = self.items[i_operator+1:]
             if len(after) > 1: after = [zc.FunctionCall(items=after)]
-            compiler.report(self.items[i_operator].name, f"split: left = \"{log_strip(print_code_formatted(before[0], compiler.grammar))}\", right = \"{log_strip(print_code_formatted(after[0], compiler.grammar))}\"")
+            compiler.report(self.items[i_operator].name, f"split: left = \"{log_strip(as_code(before[0], compiler.grammar))}\", right = \"{log_strip(as_code(after[0], compiler.grammar))}\"")
             self.items = before + [self.items[i_operator]] + after
             return self
     
@@ -431,7 +437,7 @@ class module_Expressions(LanguageModule):
             
         @Entity.method(zc.FunctionCall) # FunctionCall.check_type
         def check_type(self, scope):
-            cf= log_strip(print_code_formatted(self, compiler.grammar))
+            cf= log_strip(as_code(self, compiler.grammar))
             self._resolved_functions = []
             functions = find_functions(self, scope)
             self._resolved_functions = functions
@@ -550,15 +556,9 @@ class module_Expressions(LanguageModule):
         def generate(self) -> VmBlock:
             log(self)
             return VmBlock.combine([arg.generate() for arg in self.arguments])
-        
-        @Entity.method(zc.FunctionCallArgument) # FunctionCallArgument.generate
-        def generate(self) -> VmBlock:
-            log(self)
-            return self.value.generate()
 
         @Entity.method(zc.Constant) # Constant.generate
         def generate(self) -> VmBlock:
-            log(self)
             inputs = []
             val = str(self.value)
             type_name = "error"
@@ -567,24 +567,21 @@ class module_Expressions(LanguageModule):
             else:
                 val = int(val, 16) if val.startswith("0x") else int(val)
                 n_bits = val.bit_length()
-                log(f"n_bits: {n_bits}")
                 sizes = [8, 16, 32, 64]
                 for s in sizes:
                     if n_bits <= s:
                         type_name = "u" + str(s)
                         break
-            log(f"type_name: {type_name}")
-            outputs = [VmVar(VmVar.tag("const"), type_name)]
+            outputs = [VmVar(VmVar.tag("var"), str(type_name))]
             instructions = [VmInstruction(opcode="const", dests=outputs, sources=[self.value])]
             result = VmBlock([], outputs, instructions)
             return result
         
         @Entity.method(zc.VariableRef) # VariableRef.generate
         def generate(self) -> VmBlock:
-            log(dbg_entity(self))
             var = self._resolved_vars[0]
             log(f"var: {var}")
-            outputs = [VmVar(VmVar.tag("var"), var.type)]
+            outputs = [VmVar(VmVar.tag("var"), str(var.type.name))]
             return VmBlock([], outputs, [VmInstruction(opcode="mov", dests=outputs, sources=[var])])
 
     def test_parser(self, compiler: Compiler):
@@ -771,6 +768,7 @@ class module_Variables(LanguageModule):
             self._defined_vars = []
             for name in self.names:
                 var = zc.Variable(type=self.type, name=name.name, alias=name.alias, value=self.value)
+                var._owner = scope
                 compiler.add_symbol(name.name, var, scope, alias=name.alias)
                 self._defined_vars.append(var)
 
@@ -920,7 +918,7 @@ class module_Types(LanguageModule):
                 code += f"{prop.type} "
                 for var in prop.names: code += f"{var.name}, "
                 if code.endswith(", "): code = code[:-2]
-                if prop.value: code += f" = {print_code_formatted(prop.value, compiler.grammar)}"
+                if prop.value: code += f" = {as_code(prop.value, compiler.grammar)}"
             code += ") {"
             for prop in self.rhs.properties:
                 for var in prop.names:
@@ -1408,18 +1406,17 @@ class module_Functions(LanguageModule):
         @Entity.method(zc.Function) # Function.generate
         def generate(self) -> VmBlock:
             log(f"{self}")
-            return VmBlock.combine([s.generate() for s in self.body.statements])
+            if len(self.body.statements) != 1: raise Exception(f"Function.generate: {self}")
+            return self.body.statements[0].generate()
         
-
         @Entity.method(zc.SingleFunctionDef) # SingleFunctionDef.generate
         def generate(self) -> VmBlock:
-            log(f"{self}")
             result = self.func_def.generate()
             return result
         
         @Entity.method(zc.SequenceFunctionDef) # SequenceFunctionDef.generate
         def generate(self) -> VmBlock:
-            log(f"{self}")
+            #log(f"{self}")
             result= VmBlock.combine([s.generate() for s in self.comps])
             return result
 
@@ -1429,13 +1426,18 @@ class module_Functions(LanguageModule):
             inputs = get_inputs(self.signature)
             outputs = get_outputs(self.results)
             if isinstance(self.body, zc.EmitFunctionBody):
-                log(f"EmitFunctionBody")
                 name = self.signature.get_first_name()
                 return VmBlock(inputs, outputs, [VmInstruction(name, outputs, inputs)])
             elif isinstance(self.body, zc.PassFunctionBody):
                 return VmBlock(inputs, outputs, [])
             else:
-                return VmBlock.combine([s.generate() for s in self.body.statements])
+                instructions = []
+                for s in self.body.statements:
+                    log(f"{compiler.code(s)}")
+                    b = s.generate()
+                    log(f"b:\n{b}")
+                    instructions += b.instructions
+                return VmBlock(inputs, outputs, instructions)
                     
         @Entity.method(zc.StreamAssignment) # StreamAssignment.generate
         def generate(self) -> VmBlock:
@@ -1461,37 +1463,36 @@ class module_Functions(LanguageModule):
         
         @Entity.method(zc.FunctionCall) # FunctionCall.generate
         def generate(self) -> VmBlock:
-            log(f"{self}")
-            fns = self._resolved_functions
-            if len(fns) == 0: 
-                compiler.error(get_first_lex(self), f"function not found")
-                return VmBlock()
-            fn = choose_best_function(fns)
-            if not hasattr(fn, "._vm"):
+            #log(self)
+            #log(compiler.code(self))
+            args = get_arguments(self)
+            blocks = [a.generate() for a in args]
+            instructions = [i for b in blocks for i in b.instructions]
+            #for a, b in zip(args, blocks):
+            #    log(f"{compiler.code(a)}:\n{b}")
+            fn = choose_best_function(self._resolved_functions)
+            #log(f"fn: {fn}")
+            if not hasattr(fn, "_vm"):
                 fn._vm = fn.generate()
-            should_inline = (isinstance(fn.body, zc.EmitFunctionBody) or len(fn.body.statements) < 3)
-            if should_inline: 
-                log("inline")
-                args = get_arguments(self)
-                block = VmBlock.combine([arg.generate() for arg in args])
-                log(block)
-                fn_instructions = VmBlock.replace_vars(fn._vm, fn._vm.inputs, block.outputs)
-                block.instructions += fn_instructions
-                log(block)
-                return block
-            else:
-                log_exit("non-inline not implemented")
-            log_exit("FunctionCall.generate")
+            vm = fn._vm
+            #log(f"vm: {vm}")
+            arg_outputs = [output for block in blocks for output in block.outputs]
+            #log(f"arg_outputs: {arg_outputs}")
+            if len(arg_outputs) != len(vm.inputs): raise Exception(f"FunctionCall.generate: {self}")
+            instructions += vm.replace_inputs(arg_outputs)
+            vm = VmBlock([], vm.outputs, instructions)
+            log(f"returning:\n{vm}")
+            return vm
         
         def choose_best_function(fns: List[zc.Function]):
             return fns[0]
         
-        def get_arguments(function_call: zc.FunctionCall) -> List[zc.FunctionCallArgument]:
+        def get_arguments(function_call: zc.FunctionCall) -> List[zc.Expression]:
             args = []
             for item in function_call.items:
                 if not isinstance(item, zc.FunctionCallArguments): continue
                 for arg in item.arguments:
-                    args.append(arg)
+                    args.append(arg.value)
             return args
 
         def get_inputs(signature: zc.FunctionSignature) -> List[VmVar]:

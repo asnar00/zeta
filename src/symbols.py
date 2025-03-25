@@ -6,7 +6,7 @@
 from typing import Type, Dict, Any, List, Set
 from grammar import Entity, Grammar
 from entity import dbg_entity
-from parser import print_code_formatted
+from parser import as_code
 from util import *
 from lexer import Lex
 

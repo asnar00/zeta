@@ -1040,7 +1040,7 @@ that notes down that this is a constraint that has to spread upwards.
 
 When we come to build the substitution policy, we'll propagate the substitution upwards.
 
-Type Substitution Policy (TSP) is generated from the program according to some kind of logic, and we can examine the results. That's super nice, because then we can just output the resulting program via the backend grammar (using print_code_formatted).
+Type Substitution Policy (TSP) is generated from the program according to some kind of logic, and we can examine the results. That's super nice, because then we can just output the resulting program via the backend grammar (using as_code).
 
 Once you have a parser/printer, you can use it *errywhere*. I think we do have to start passing in the grammar to the printer and parser functions (or make them ... methods?) So you'd just make everything a method of Language and access self.grammar => hmmm dunno.
 
@@ -1068,7 +1068,7 @@ to (eg)
 
     mlir.Function
 
-and then run the parser backwards ("print_code_formatted") to output in the target language. That's rather nice, isn't it?
+and then run the parser backwards ("as_code") to output in the target language. That's rather nice, isn't it?
 
 => and we've just done import mlir_classes as mlir
 and the backend is just mlir_backend.py

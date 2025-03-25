@@ -335,7 +335,7 @@ def parse_simple(code: str, rule_name: str, grammar: Grammar) -> Entity:
 #--------------------------------------------------------------------------------------------------
 # print routines : the inverse of parse
 
-def print_code_formatted(e: Entity, grammar: Grammar, use_aliases: bool = False) -> str:
+def as_code(e: Entity, grammar: Grammar, use_aliases: bool = False) -> str:
     def cleanup(out: str) -> str:
         return out.replace("•", " ").strip()
     out = print_code(e, False, grammar, use_aliases)
