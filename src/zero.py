@@ -18,7 +18,7 @@ s_test_features = [
 feature Program
     char out$
     on run()
-        uart(0x0a)
+        out$ << 0x0a
     on main() pass
 """,
 """
@@ -415,7 +415,20 @@ class module_Expressions(LanguageModule):
     def setup_check_types(self, compiler: Compiler):
         @Entity.method(zc.Constant) # Constant.check_type
         def check_type(self, scope):
-            type_name = "number" if self.value.type=="number" else "string"
+            val = str(self.value)
+            type_name = "error"
+            if val.startswith('"'):
+                type_name = "string"
+            elif "." in val:
+                type_name = "number"
+            else:
+                val = int(val, 16) if val.startswith("0x") else int(val)
+                n_bits = val.bit_length()
+                sizes = [8, 16, 32, 64]
+                for s in sizes:
+                    if n_bits <= s:
+                        type_name = "u" + str(s)
+                        break
             self._type = compiler.find_symbol(type_name, zc.Type, scope, raise_errors=True, read_only=True)
             compiler.report(self.value, f"{self._type}")
         
@@ -559,18 +572,7 @@ class module_Expressions(LanguageModule):
         @Entity.method(zc.Constant) # Constant.generate
         def generate(self, replace: Dict[Variable, VmVar]) -> VmBlock:
             inputs = []
-            val = str(self.value)
-            type_name = "error"
-            if val.startswith('"'):
-                type_name = "string"
-            else:
-                val = int(val, 16) if val.startswith("0x") else int(val)
-                n_bits = val.bit_length()
-                sizes = [8, 16, 32, 64]
-                for s in sizes:
-                    if n_bits <= s:
-                        type_name = "u" + str(s)
-                        break
+            type_name = self._type.name
             outputs = [VmVar(VmVar.tag("var"), str(type_name))]
             instructions = [VmInstruction(opcode="const", dests=outputs, sources=[self.value])]
             result = VmBlock([], outputs, instructions)
@@ -1169,7 +1171,6 @@ class module_Functions(LanguageModule):
             first_lex = self.signature.get_first_name()
             compiler.cp.st.add(long_handle, self, scope)
             compiler.report(first_lex, f"\"{long_handle}\" => {self} in {scope}")
-            
             short_handle = self.signature.untyped_handle()
             if short_handle != long_handle:
                 compiler.cp.st.add(short_handle, self, scope)
@@ -1318,15 +1319,22 @@ class module_Functions(LanguageModule):
                     self.rhs.expressions[i] = fn_call
 
         def find_anonymous_function_call(lhs, rhs):
+            log(f" find_anonymous_function_call: {lhs} = {rhs}")
             if isinstance(rhs, zc.FunctionCall): return None
             lhs_var = lhs.results[0].variable._resolved_vars[0]
-            #log(f"lhs_var: {lhs_var}")
+            log(f" lhs_var: {lhs_var}")
             lhs_type, lhs_rank = lhs.get_alias()
             rhs_type, rhs_rank = rhs._type.get_alias()
-            #log(f"lhs_type/rank: {lhs_type}/{lhs_rank}")
-            #log(f"rhs_type/rank: {rhs_type}/{rhs_rank}")
+            log(f" lhs_type/rank: {lhs_type}/{lhs_rank}")
+            log(f" rhs_type/rank: {rhs_type}/{rhs_rank}")
             fns = [f.element for f in compiler.cp.st.find("("+str(rhs_type.name)+")", zc.Function, None, read_only=True)]
+            log(f" fns: {fns}")
+            if len(fns) == 0:
+                log(" doing broader search for conversion")
+                fns = [f.element for f in compiler.cp.st.find("◦", zc.Function, None, read_only=True)]
+                log(f"  fns: {fns}")
             best_fn = None
+            best_distance = None
             for fn in fns:
                 #log(f"fn: {fn}")
                 result = fn.results.results[0]
@@ -1335,14 +1343,19 @@ class module_Functions(LanguageModule):
                     result_var = result.variable._resolved_vars[0]
                     #log(result_var)
                     if result_var is lhs_var: # strong match
+                        log(f" strong match: {fn}")
                         best_fn = fn
                         break
-                    elif result_var.type is lhs._type: # weaker match
-                        best_fn = fn
+                    else:
+                        distance = result_var.type.find_relationship(lhs_type)
+                        log(f" distance: {distance}")
+                        if distance is not None and (best_distance is None or distance < best_distance):
+                            best_distance = distance
+                            best_fn = fn
+            log(f" best_fn: {best_fn}")
             if best_fn is None: return None
             fn_call = zc.FunctionCall(items=[zc.FunctionCallArguments(arguments=[rhs])])
-            #log(f"found anonymous function call: {fn_call}")
-            #log(dbg_entity(best_fn, 0, True))
+            log(f" found anonymous function call: {fn_call}")
             fn_call._resolved_functions = [best_fn]
             return fn_call
         
@@ -1359,15 +1372,17 @@ class module_Functions(LanguageModule):
                 e.check_type(scope)
                 self._types.append(e._type)
 
-        def can_assign(type_a, type_b):
-            if type_a is not None: type_a, _ = type_a.get_alias()
-            if type_b is not None: type_b, _ = type_b.get_alias()
-            if type_a == type_b: return True
-            if isinstance(type_a, zc.Type) and isinstance(type_b, zc.MaybeTypes):
-                distances = [type_a.find_relationship(t) for t in type_b.types]
+        def can_assign(to_type, from_type):
+            if to_type is not None: to_type, _ = to_type.get_alias()
+            if from_type is not None: from_type, _ = from_type.get_alias()
+            if to_type == from_type: return True
+            distance = to_type.find_relationship(from_type)
+            if distance is not None and distance <= 0: return True
+            if isinstance(to_type, zc.Type) and isinstance(from_type, zc.MaybeTypes):
+                distances = [to_type.find_relationship(t) for t in from_type.types]
                 if any(d is None for d in distances): return False
                 if all(isinstance(d, int) and d <= 0 for d in distances): return True
-                log_exit("not implemented: can_assign " + str(type_a) + " = " + str(type_b))
+                log_exit("not implemented: can_assign " + str(to_type) + " = " + str(from_type))
                 return True
             return False
         
@@ -1467,7 +1482,8 @@ class module_Functions(LanguageModule):
             for item in function_call.items:
                 if not isinstance(item, zc.FunctionCallArguments): continue
                 for arg in item.arguments:
-                    args.append(arg.value)
+                    if isinstance(arg, zc.Constant): args.append(arg)
+                    else: args.append(arg.value)
             return args
 
         def get_param_vars(signature: zc.FunctionSignature) -> List[Variable]:
@@ -1488,26 +1504,24 @@ class module_Functions(LanguageModule):
                 elif isinstance(r, zc.ResultVariableRef):
                     outputs += r._resolved_vars
             return outputs
-        
-
                     
         @Entity.method(zc.StreamAssignment) # StreamAssignment.generate
         def generate(self, replace: Dict[Variable, VmVar]) -> VmBlock:
-            log(self)
-            log(dbg_entity(self, 0, True))
+            log(compiler.code(self))
             lhs_var = self.lhs.results[0].variable._resolved_vars[0]
             log(f"lhs_var: {lhs_var}")
             lhs_rank = str(lhs_var).count('$')
             lhs_type = self.lhs._type
             log(f"lhs_type: {lhs_type}")
             log(f"lhs_rank: {lhs_rank}")
+            log("expressions:")
+            instructions = []
             for e in self.rhs.expressions:
+                log(dbg_entity(e))
                 vm = e.generate(replace)
                 log(vm)
-                log_exit("StreamAssignment.generate")
-            log_exit(f"StreamAssignment.generate: {self}")
-            #log(f"{dbg_entity(self)}")
-            return VmBlock([], [], [])
+                instructions += vm.instructions
+            return VmBlock([], [], instructions)
 
         @Entity.method(zc.VoidFunctionStatement) # VoidFunctionStatement.generate
         def generate(self, replace: Dict[Variable, VmVar]) -> VmBlock:
