@@ -175,7 +175,7 @@ class Compiler:
     def generate(self) -> bool:
         self.stage("generate")
         self.functions_to_generate = []
-        self.cp.vm_block = self.cp.ast.generate()
+        self.cp.vm_block = self.cp.ast.generate({})
         return self.cp.is_ok()
 
     #--------------------------------------------------------------------

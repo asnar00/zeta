@@ -2,6 +2,30 @@
 # scribblez
 "slow is smooth, smooth is fast"
 
+how to get variables in.
+
+    on uart(c)
+        write(c, 0x100000)
+
+    the "c" should resolve to
+
+        out: [whatever variable holds c]
+
+but to do this, we have to know what the arg-variables are, otherwise it doesn't work.
+so there has to be something which maps that program-level variable to the vmvar.
+
+So in fact, that needs to be a property of the VmVar object; it needs to know which variable it's holding,
+and we need to have access to all VmVars in the current scope.
+
+So we need to pass down something that maps Variable => VmVar somehow.
+uart(c) => I'm passing in "c=>var0"
+
+So there's a context that we pass in; that's the replacement dictionary.
+And we have to do that.
+
+
+------------
+
 conversion:
 
     on (char out$) << (int x)

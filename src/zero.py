@@ -18,8 +18,7 @@ s_test_features = [
 feature Program
     char out$
     on run()
-        main()
-        shutdown()
+        uart(0x0a)
     on main() pass
 """,
 """
@@ -135,7 +134,7 @@ def test_zero():
     compiler.set_concrete_types({ "number": "f32", "int": "i32"})
     
     test_verbose(False)
-    log_max_depth(6)
+    log_max_depth(200)
 
     compiler.setup()
     #context = Context("test_vector_math", ["Program", "Math", "VectorMath", "Backend"])
@@ -231,13 +230,13 @@ class module_Features(LanguageModule):
 
     def setup_generate(self, compiler: Compiler):
         @Entity.method(zc.Program) # Program.generate
-        def generate(self):
+        def generate(self, replace: Dict[Variable, VmVar]) -> VmBlock:
             log(f"Program.generate: {self}")
-            function_name = "shutdown()" #"write(uint, uint)"
+            function_name = "run()"
             function = compiler.find_symbol(function_name, zc.Function, self, raise_errors=True, read_only=True)
             if not function:
                 compiler.error(self.name, f"function not found: {function_name}")
-            result= function.generate()
+            result= function.generate({})
             log(f"----------------------------------------------")
             log(result)
             return result
@@ -553,12 +552,12 @@ class module_Expressions(LanguageModule):
 
     def setup_generate(self, compiler: Compiler):
         @Entity.method(zc.FunctionCallArguments) # FunctionCallArguments.generate
-        def generate(self) -> VmBlock:
+        def generate(self, replace: Dict[Variable, VmVar]) -> VmBlock:
             log(self)
-            return VmBlock.combine([arg.generate() for arg in self.arguments])
+            return VmBlock.combine([arg.generate(replace) for arg in self.arguments])
 
         @Entity.method(zc.Constant) # Constant.generate
-        def generate(self) -> VmBlock:
+        def generate(self, replace: Dict[Variable, VmVar]) -> VmBlock:
             inputs = []
             val = str(self.value)
             type_name = "error"
@@ -578,11 +577,13 @@ class module_Expressions(LanguageModule):
             return result
         
         @Entity.method(zc.VariableRef) # VariableRef.generate
-        def generate(self) -> VmBlock:
+        def generate(self, replace: Dict[Variable, VmVar]) -> VmBlock:
             var = self._resolved_vars[0]
-            log(f"var: {var}")
-            outputs = [VmVar(VmVar.tag("var"), str(var.type.name))]
-            return VmBlock([], outputs, [VmInstruction(opcode="mov", dests=outputs, sources=[var])])
+            log(f"var: {var}, type: {var.type}")
+            if var in replace:
+                return VmBlock([], [replace[var]], [])
+            else:
+                raise Exception(f"{self} not in (replace)")
 
     def test_parser(self, compiler: Compiler):
         grammar = compiler.grammar
@@ -1404,88 +1405,62 @@ class module_Functions(LanguageModule):
         
     def setup_generate(self, compiler: Compiler):        
         @Entity.method(zc.Function) # Function.generate
-        def generate(self) -> VmBlock:
+        def generate(self, replace: Dict[Variable, VmVar]) -> VmBlock:
             log(f"{self}")
             if len(self.body.statements) != 1: raise Exception(f"Function.generate: {self}")
-            return self.body.statements[0].generate()
+            return self.body.statements[0].generate(replace)
         
         @Entity.method(zc.SingleFunctionDef) # SingleFunctionDef.generate
-        def generate(self) -> VmBlock:
-            result = self.func_def.generate()
+        def generate(self, replace: Dict[Variable, VmVar]) -> VmBlock:
+            result = self.func_def.generate(replace)
             return result
         
         @Entity.method(zc.SequenceFunctionDef) # SequenceFunctionDef.generate
-        def generate(self) -> VmBlock:
+        def generate(self, replace: Dict[Variable, VmVar]) -> VmBlock:
             #log(f"{self}")
-            result= VmBlock.combine([s.generate() for s in self.comps])
+            result= VmBlock.combine([s.generate(replace) for s in self.comps])
             return result
 
         @Entity.method(zc.FunctionDef) # FunctionDef.generate
-        def generate(self) -> VmBlock:
-            log(f"{self}")
-            inputs = get_inputs(self.signature)
-            outputs = get_outputs(self.results)
-            if isinstance(self.body, zc.EmitFunctionBody):
-                name = self.signature.get_first_name()
-                return VmBlock(inputs, outputs, [VmInstruction(name, outputs, inputs)])
-            elif isinstance(self.body, zc.PassFunctionBody):
-                return VmBlock(inputs, outputs, [])
-            else:
-                instructions = []
-                for s in self.body.statements:
-                    log(f"{compiler.code(s)}")
-                    b = s.generate()
-                    log(f"b:\n{b}")
-                    instructions += b.instructions
-                return VmBlock(inputs, outputs, instructions)
-                    
-        @Entity.method(zc.StreamAssignment) # StreamAssignment.generate
-        def generate(self) -> VmBlock:
+        def generate(self, replace: Dict[Variable, VmVar]) -> VmBlock:
             log(self)
-            log(dbg_entity(self, 0, True))
-            lhs_var = self.lhs.results[0].variable._resolved_vars[0]
-            log(f"lhs_var: {lhs_var}")
-            lhs_rank = str(lhs_var).count('$')
-            lhs_type = self.lhs._type
-            log(f"lhs_type: {lhs_type}")
-            log(f"lhs_rank: {lhs_rank}")
-            for e in self.rhs.expressions:
-                vm = e.generate()
-                log(vm)
-                log_exit("StreamAssignment.generate")
-            log_exit(f"StreamAssignment.generate: {self}")
-            #log(f"{dbg_entity(self)}")
-            return VmBlock([], [], [])
-
-        @Entity.method(zc.VoidFunctionStatement) # VoidFunctionStatement.generate
-        def generate(self) -> VmBlock:
-            return self.function_call.generate()
+            log("replace:", replace)
+            if isinstance(self.body, zc.PassFunctionBody):
+                return VmBlock()
+            elif isinstance(self.body, zc.EmitFunctionBody):
+                inputs = [replace[p] for p in get_param_vars(self.signature)]
+                outputs = [replace[p] for p in get_output_vars(self.results)]
+                instruction = VmInstruction(emit_fn_name(self), outputs, inputs)
+                return VmBlock([], [], [instruction])
+            if len(self.body.statements) != 1: raise Exception(f">1 statement not supported yet")
+            s = self.body.statements[0]
+            return s.generate(replace)
         
         @Entity.method(zc.FunctionCall) # FunctionCall.generate
-        def generate(self) -> VmBlock:
-            #log(self)
-            #log(compiler.code(self))
+        def generate(self, replace: Dict[Variable, VmVar]) -> VmBlock:
+            log(self)
+            log("replace:", replace)
             args = get_arguments(self)
-            blocks = [a.generate() for a in args]
-            instructions = [i for b in blocks for i in b.instructions]
-            #for a, b in zip(args, blocks):
-            #    log(f"{compiler.code(a)}:\n{b}")
-            fn = choose_best_function(self._resolved_functions)
-            #log(f"fn: {fn}")
-            if not hasattr(fn, "_vm"):
-                fn._vm = fn.generate()
-            vm = fn._vm
-            #log(f"vm: {vm}")
-            arg_outputs = [output for block in blocks for output in block.outputs]
-            #log(f"arg_outputs: {arg_outputs}")
-            if len(arg_outputs) != len(vm.inputs): raise Exception(f"FunctionCall.generate: {self}")
-            instructions += vm.replace_inputs(arg_outputs)
-            vm = VmBlock([], vm.outputs, instructions)
-            log(f"returning:\n{vm}")
-            return vm
+            arg_vms = [arg.generate(replace) for arg in args]
+            arg_instructions = [instr for i in arg_vms for instr in i.instructions]
+            arg_outputs = [output for vm in arg_vms for output in vm.outputs]
+            log(f"arg_outputs = {arg_outputs}")
+            # this is assuming inline for now
+            new_replace = {}
+            fn = self._resolved_functions[0]
+            inputs = get_param_vars(fn.signature)
+            new_replace = { i: o for i, o in zip(inputs, arg_outputs) }
+            log("new_replace:", new_replace)
+            fn_vm = fn.generate(new_replace)
+            fn_vm.instructions = arg_instructions + fn_vm.instructions
+            log(fn_vm)
+            return fn_vm
         
         def choose_best_function(fns: List[zc.Function]):
             return fns[0]
+        
+        def emit_fn_name(fd: zc.FunctionDef) -> str:
+            return fd.signature.get_first_name()
         
         def get_arguments(function_call: zc.FunctionCall) -> List[zc.Expression]:
             args = []
@@ -1495,26 +1470,48 @@ class module_Functions(LanguageModule):
                     args.append(arg.value)
             return args
 
-        def get_inputs(signature: zc.FunctionSignature) -> List[VmVar]:
-            inputs = []
+        def get_param_vars(signature: zc.FunctionSignature) -> List[Variable]:
+            vars = []
             for e in signature.elements:
                 if isinstance(e, zc.FunctionSignatureParams):
                     for p in e.params:
-                        for n in p.names:
-                            inputs.append(VmVar(str(n.name), str(p.type.name)))
-            return inputs
+                        if hasattr(p, "_defined_vars"):
+                            vars += p._defined_vars
+            return vars
 
-
-        def get_outputs(results: zc.FunctionResults):
+        def get_output_vars(results: zc.FunctionResults):
             outputs = []
             if results is None: return outputs
             for r in results.results:
                 if isinstance(r, zc.ResultVariableDef):
-                    outputs.append(VmVar(str(r.names[0].name), str(r.type.name)))
+                    outputs += r._defined_vars
                 elif isinstance(r, zc.ResultVariableRef):
-                    out_var = r.variable._resolved_vars[0]
-                    outputs.append(VmVar(str(out_var.name), str(out_var.type)))
+                    outputs += r._resolved_vars
             return outputs
+        
+
+                    
+        @Entity.method(zc.StreamAssignment) # StreamAssignment.generate
+        def generate(self, replace: Dict[Variable, VmVar]) -> VmBlock:
+            log(self)
+            log(dbg_entity(self, 0, True))
+            lhs_var = self.lhs.results[0].variable._resolved_vars[0]
+            log(f"lhs_var: {lhs_var}")
+            lhs_rank = str(lhs_var).count('$')
+            lhs_type = self.lhs._type
+            log(f"lhs_type: {lhs_type}")
+            log(f"lhs_rank: {lhs_rank}")
+            for e in self.rhs.expressions:
+                vm = e.generate(replace)
+                log(vm)
+                log_exit("StreamAssignment.generate")
+            log_exit(f"StreamAssignment.generate: {self}")
+            #log(f"{dbg_entity(self)}")
+            return VmBlock([], [], [])
+
+        @Entity.method(zc.VoidFunctionStatement) # VoidFunctionStatement.generate
+        def generate(self, replace: Dict[Variable, VmVar]) -> VmBlock:
+            return self.function_call.generate(replace)
 
     def test_parser(self, compiler: Compiler):
         grammar = compiler.grammar
