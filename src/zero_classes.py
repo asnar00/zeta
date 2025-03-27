@@ -173,6 +173,12 @@ class MultipleTypes(Type):
         super().__init__()
         self.types: List[Type] = types        # ref
 
+class TypeRef(Entity):
+    def __init__(self, type: 'Type' =None, rank: 'str' =None):
+        super().__init__()
+        self.type: Type = type        # ref
+        self.rank: str = rank
+
 class Function(Entity):
     def __init__(self, results: 'FunctionResults' =None, signature: 'FunctionSignature' =None, body: 'FunctionBody' =None):
         super().__init__()

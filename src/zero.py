@@ -18,13 +18,14 @@ s_test_features = [
 feature Program
     char out$
     on run()
-        out$ << 0x0a
+        main()
+        shutdown()
     on main() pass
 """,
 """
 feature Hello extends Program
     on hello()
-        out$ << "ᕦ(ツ)ᕤ\\n"
+        out$ << "ᕦ(ツ)ᕤ"
     replace main()
         hello()
 """,
@@ -95,10 +96,10 @@ feature Backend extends Program
     on (out$) << (char c)
         uart(c)
     on shutdown()
-        write(0x5555, 0x100000)
+        store(0x5555, 0x100000)
     on uart(u8 c)
-        write(c, 0x10000000)
-    on write(uint value, address) emit
+        store(c, 0x10000000)
+    on store(uint value, address) emit
 """,
 """
 feature ConcreteMath extends Math
@@ -138,7 +139,7 @@ def test_zero():
 
     compiler.setup()
     #context = Context("test_vector_math", ["Program", "Math", "VectorMath", "Backend"])
-    context = Context("test_hello", ["Program", "Hello","Backend"])
+    context = Context("test_hello", ["Program", "Hello", "Backend"])
     test_context(compiler, context)
     
 def test_context(compiler: Compiler,context: Context):
@@ -429,23 +430,30 @@ class module_Expressions(LanguageModule):
                     if n_bits <= s:
                         type_name = "u" + str(s)
                         break
-            self._type = compiler.find_symbol(type_name, zc.Type, scope, raise_errors=True, read_only=True)
-            compiler.report(self.value, f"{self._type}")
+            type = compiler.find_symbol(type_name, zc.Type, scope, raise_errors=True, read_only=True)
+            self._type_ref = type.type_ref()
+            compiler.report(self.value, f"{self._type_ref}")
         
         @Entity.method(zc.VariableRef) # VariableRef.check_type
         def check_type(self, scope):
             if not hasattr(self, "_resolved_vars"):
-                self._type = None
+                self._type_ref = None
                 compiler.error(self.variables[0], f"variable not resolved")
             else:
-                for i, var in enumerate(self._resolved_vars):
+                for i, var in enumerate(self._resolved_vars[:-1]):
                     compiler.report(self.variables[i], f"{var.type}")
-                self._type = self._resolved_vars[-1].type
+                var = self._resolved_vars[-1]
+                type = var.type
+                self._type_ref = type.type_ref()
+                rank = str(var.name).count('$')
+                self._type_ref.rank = rank
+                compiler.report(self.variables[-1], f"{self._type_ref}")
         
         @Entity.method(zc.FunctionCallVariable) # FunctionCallVariable.check_type
         def check_type(self, scope):
-            self._type = self.variable._type
-            if self._type: compiler.report(get_first_lex(self.variable), f"{self._type}")
+            self._type_ref = self.variable._type_ref
+            
+            if self._type_ref: compiler.report(get_first_lex(self.variable), f"{self._type_ref}")
             
         @Entity.method(zc.FunctionCall) # FunctionCall.check_type
         def check_type(self, scope):
@@ -454,30 +462,30 @@ class module_Expressions(LanguageModule):
             functions = find_functions(self, scope)
             self._resolved_functions = functions
             for f in functions:
-                if not hasattr(f, "_type"): f.check_type(scope)
+                if not hasattr(f, "_type_ref"): f.check_type(scope)
             if len(functions) == 0:
                 compiler.error(self, f"no functions found for {cf} in {scope}")
-                self._type = None
+                self._type_rank = None
             elif len(functions) > 1:
-                self._type = zc.MaybeTypes([f._type for f in functions])
+                self._type_ref = zc.MaybeTypes([f._type_ref.type for f in functions]).type_ref()
             else:
-                self._type = functions[0]._type
+                self._type_ref = functions[0]._type_ref
             first_item = next((item for item in self.items if hasattr(item, "name")), None)
-            compiler.report(first_item.name, f"{self._type}")
+            compiler.report(first_item.name, f"{self._type_ref}")
 
         @Entity.method(zc.Function) # Function.check_type
         def check_type(self, scope):
-            result_types = []
+            result_type_refs = []
             if self.results != None:
                 for frv in self.results.results:
-                    result_types.append(get_type(frv))
-            if len(result_types) == 0: self._type = None
-            elif len(result_types) == 1: self._type = result_types[0]
-            else: self._type = zc.MultipleTypes(result_types)
+                    result_type_refs.append(get_type(frv))
+            if len(result_type_refs) == 0: self._type_ref = None
+            elif len(result_type_refs) == 1: self._type_ref = result_type_refs[0]
+            else: self._type_ref = zc.MultipleTypes([r.type for r in result_type_refs]).type_ref()
 
-        def get_type(frv: zc.ResultVariable) -> zc.Type:
-            if isinstance(frv, zc.ResultVariableDef): return frv.type
-            elif isinstance(frv, zc.ResultVariableRef): return frv.variable._type
+        def get_type(frv: zc.ResultVariable) -> zc.TypeRef:
+            if isinstance(frv, zc.ResultVariableDef): return frv._type_ref
+            elif isinstance(frv, zc.ResultVariableRef): return frv.variable._type_ref
             else: raise Exception(f"unknown ResultVariable: {frv}")
 
         @log_suppress
@@ -504,15 +512,15 @@ class module_Expressions(LanguageModule):
             fc._constraints = fn_types # dunno what this is really for, but we'll find out later
             return filtered_functions
         
-        def get_param_types(fc: zc.FunctionCall) -> List[zc.Type]:
+        def get_param_types(fc: zc.FunctionCall) -> List[zc.TypeRef]:
             out = []
             for item in fc.items:
-                if hasattr(item, "_type"):
-                    out.append(item._type)
+                if hasattr(item, "_type_ref"):
+                    out.append(item._type_ref)
                 elif isinstance(item, zc.FunctionCallArguments):
                     for arg in item.arguments:
                         if arg.value:
-                            out.append(arg.value._type)
+                            out.append(arg.value._type_ref)
             return out
         
         def get_sig_param_types(signature: zc.FunctionSignature) -> List[zc.Type]:
@@ -547,7 +555,7 @@ class module_Expressions(LanguageModule):
         def get_distances(sig_types, fc_types):
             distances = []
             for i, t in enumerate(sig_types):
-                distance = t.find_relationship(fc_types[i])
+                distance = t.type.find_relationship(fc_types[i])
                 distances.append(distance)
             return distances
 
@@ -572,11 +580,21 @@ class module_Expressions(LanguageModule):
         @Entity.method(zc.Constant) # Constant.generate
         def generate(self, replace: Dict[Variable, VmVar]) -> VmBlock:
             inputs = []
-            type_name = self._type.name
-            outputs = [VmVar(VmVar.tag("var"), str(type_name))]
-            instructions = [VmInstruction(opcode="const", dests=outputs, sources=[self.value])]
-            result = VmBlock([], outputs, instructions)
-            return result
+            type_name = str(self._type_ref.type.name)
+            if self._type_ref.rank == 0:
+                outputs = [VmVar(VmVar.tag("var"), type_name)]
+                instructions = [VmInstruction(opcode="const", dests=outputs, sources=[self.value])]
+                result = VmBlock([], outputs, instructions)
+                return result
+            else:
+                address = VmVar(VmVar.tag("address"), "u32")
+                count = VmVar(VmVar.tag("count"), "u32")
+                instructions = [
+                    VmInstruction(opcode="const", dests=[address], sources=["0xdeadbeef"], comment="load address of array"),
+                    VmInstruction(opcode="const", dests=[count], sources=[len(str(self.value))], comment="load length of array")
+                ]
+                return VmBlock([], [address, count], instructions)
+                log_exit("zc.Constant array-gen")
         
         @Entity.method(zc.VariableRef) # VariableRef.generate
         def generate(self, replace: Dict[Variable, VmVar]) -> VmBlock:
@@ -873,6 +891,7 @@ class module_Types(LanguageModule):
             EnumOptionNumber < EnumOption := val:<number>
             MaybeTypes < Type := types:Type&*
             MultipleTypes < Type := types:Type&*
+            TypeRef := type:Type& rank:<number>
         """)
 
     def setup_validate(self, compiler: Compiler):
@@ -1193,6 +1212,18 @@ class module_Functions(LanguageModule):
         def resolve(self, scope, type_name):
             self.variable._resolved_vars = self.variable.resolve_names(scope, read_only=False)
 
+        @Entity.method(zc.FunctionDef) # FunctionDef.resolve
+        def resolve(self, scope, type_name):
+            short_handle = self.signature.untyped_handle()
+            if short_handle == "◦" and str(self.results.assign_op) == "<<":
+                result = self.results.results[0]
+                if isinstance(result, zc.ResultVariableRef): # hook to var
+                    var = result.variable._resolved_vars[0]
+                    var._override_push_fn = self._function
+                elif isinstance(result, zc.ResultVariableDef): # hook to type
+                    type = result.type
+                    type.override_push_fn = self._function
+
         @Entity.method(zc.FunctionSignature) # FunctionSignature.get_first_name
         def get_first_name(self) -> str:
             for e in self.elements:
@@ -1277,18 +1308,19 @@ class module_Functions(LanguageModule):
     def setup_check_types(self, compiler: Compiler):
         @Entity.method(zc.StreamAssignmentLhs) # StreamAssignmentLhs.check_types
         def check_type(self, scope):
-            self._type = self.results[0]._type
-            compiler.report(get_first_lex(self), f"{self._type}")
+            self._type_ref = self.results[0]._type_ref
+            compiler.report(get_first_lex(self), f"{self._type_ref}")
 
         @Entity.method(zc.ResultVariableRef) # ResultVariableRef.check_types
         def check_type(self, scope): 
-            self._type = self.variable._type
-            compiler.report(get_first_lex(self), f"{self._type}")
+            self._type_ref = self.variable._type_ref
+            compiler.report(get_first_lex(self), f"{self._type_ref}")
 
         @Entity.method(zc.ResultVariableDef) # ResultVariableDef.check_types
         def check_type(self, scope): 
-            self._type = self.type
-            compiler.report(get_first_lex(self), f"{self._type}")
+            rank = str(self.names[0].name).count('$')
+            self._type_ref = zc.TypeRef(self.type, rank)
+            compiler.report(get_first_lex(self), f"{self._type_ref}")
 
         @Entity.method(zc.AssignmentLhs) # AssignmentLhs.check_types
         def check_type(self, scope):
@@ -1303,79 +1335,26 @@ class module_Functions(LanguageModule):
             type_b = self.rhs._type
             if not can_assign(type_a, type_b):
                 compiler.error(get_first_lex(self), f"cannot assign {type_b} to {type_a}")
-            fn_call = find_anonymous_function_call(self.lhs, self.rhs)
-            if fn_call is not None:
-                self.rhs = fn_call
 
         @Entity.method(zc.StreamAssignment) # StreamAssignment.check_types
         def check_type(self, scope):
-            type_a = self.lhs._type if hasattr(self.lhs, "_type") else None
-            for i, type_b in enumerate(self.rhs._types):
-                if not can_assign(type_a, type_b):
-                    compiler.error(get_first_lex(self.rhs.expressions[i]), f"cannot assign {type_b} to {type_a}")
-            for i, e in enumerate(self.rhs.expressions):
-                fn_call = find_anonymous_function_call(self.lhs, e)
-                if fn_call is not None:
-                    self.rhs.expressions[i] = fn_call
-
-        def find_anonymous_function_call(lhs, rhs):
-            log(f" find_anonymous_function_call: {lhs} = {rhs}")
-            if isinstance(rhs, zc.FunctionCall): return None
-            lhs_var = lhs.results[0].variable._resolved_vars[0]
-            log(f" lhs_var: {lhs_var}")
-            lhs_type, lhs_rank = lhs.get_alias()
-            rhs_type, rhs_rank = rhs._type.get_alias()
-            log(f" lhs_type/rank: {lhs_type}/{lhs_rank}")
-            log(f" rhs_type/rank: {rhs_type}/{rhs_rank}")
-            fns = [f.element for f in compiler.cp.st.find("("+str(rhs_type.name)+")", zc.Function, None, read_only=True)]
-            log(f" fns: {fns}")
-            if len(fns) == 0:
-                log(" doing broader search for conversion")
-                fns = [f.element for f in compiler.cp.st.find("◦", zc.Function, None, read_only=True)]
-                log(f"  fns: {fns}")
-            best_fn = None
-            best_distance = None
-            for fn in fns:
-                #log(f"fn: {fn}")
-                result = fn.results.results[0]
-                #log(result)
-                if isinstance(result, zc.ResultVariableRef):
-                    result_var = result.variable._resolved_vars[0]
-                    #log(result_var)
-                    if result_var is lhs_var: # strong match
-                        log(f" strong match: {fn}")
-                        best_fn = fn
-                        break
-                    else:
-                        distance = result_var.type.find_relationship(lhs_type)
-                        log(f" distance: {distance}")
-                        if distance is not None and (best_distance is None or distance < best_distance):
-                            best_distance = distance
-                            best_fn = fn
-            log(f" best_fn: {best_fn}")
-            if best_fn is None: return None
-            fn_call = zc.FunctionCall(items=[zc.FunctionCallArguments(arguments=[rhs])])
-            log(f" found anonymous function call: {fn_call}")
-            fn_call._resolved_functions = [best_fn]
-            return fn_call
-        
-        @Entity.method(zc.StreamAssignmentLhs) # StreamAssignmentLhs.get_alias
-        def get_alias(self) -> Tuple[zc.Type, int]:
-            var = self.results[0].variable._resolved_vars[0]
-            rank = str(var).count('$')
-            return var.type, rank
+            type_ref_a = self.lhs._type_ref if hasattr(self.lhs, "_type_ref") else None
+            for i, type_ref_b in enumerate(self.rhs._type_refs):
+                if not can_assign(type_ref_a, type_ref_b):
+                    compiler.error(get_first_lex(self.rhs.expressions[i]), f"cannot assign {type_ref_b} to {type_ref_a}")
             
         @Entity.method(zc.StreamAssignmentRhs) # StreamAssignmentRhs.check_types
         def check_type(self, scope):
-            self._types = []
+            self._type_refs = []
             for e in self.expressions:
                 e.check_type(scope)
-                self._types.append(e._type)
+                self._type_refs.append(e._type_ref)
 
-        def can_assign(to_type, from_type):
-            if to_type is not None: to_type, _ = to_type.get_alias()
-            if from_type is not None: from_type, _ = from_type.get_alias()
-            if to_type == from_type: return True
+        def can_assign(to_type_ref: zc.TypeRef, from_type_ref: zc.TypeRef):
+            to_type_ref = to_type_ref.type.type_ref()
+            from_type_ref = from_type_ref.type.type_ref()
+            to_type = to_type_ref.type
+            from_type = from_type_ref.type
             distance = to_type.find_relationship(from_type)
             if distance is not None and distance <= 0: return True
             if isinstance(to_type, zc.Type) and isinstance(from_type, zc.MaybeTypes):
@@ -1386,9 +1365,9 @@ class module_Functions(LanguageModule):
                 return True
             return False
         
-        @Entity.method(zc.Type) # Type.get_alias
-        def get_alias(self) -> Tuple[zc.Type, int]:
-            if self.alias is None: return self, 0
+        @Entity.method(zc.Type) # Type.type_ref
+        def type_ref(self) -> zc.TypeRef:
+            if self.alias is None: return zc.TypeRef(self, 0)
             alias = self.alias
             rank = 0
             alias = str(alias)
@@ -1397,7 +1376,7 @@ class module_Functions(LanguageModule):
                 alias = alias[:-rank]
             alias_type = compiler.find_symbol(alias, zc.Type, None, raise_errors=True, read_only=True)
             if alias_type is None: compiler.error(get_first_lex(self), f"alias {self.alias} not found")
-            return alias_type, rank
+            return zc.TypeRef(alias_type, rank)
 
         # -ve means type_b is a child of self, +ve type_b is a parent of self, None means no relationship
         # reminder: type_a > type_b means "every type_a is a type_b, but not every type_b is a type_a"
@@ -1439,17 +1418,20 @@ class module_Functions(LanguageModule):
         @Entity.method(zc.FunctionDef) # FunctionDef.generate
         def generate(self, replace: Dict[Variable, VmVar]) -> VmBlock:
             log(self)
-            log("replace:", replace)
             if isinstance(self.body, zc.PassFunctionBody):
                 return VmBlock()
-            elif isinstance(self.body, zc.EmitFunctionBody):
+            if isinstance(self.body, zc.EmitFunctionBody):
                 inputs = [replace[p] for p in get_param_vars(self.signature)]
                 outputs = [replace[p] for p in get_output_vars(self.results)]
                 instruction = VmInstruction(emit_fn_name(self), outputs, inputs)
                 return VmBlock([], [], [instruction])
-            if len(self.body.statements) != 1: raise Exception(f">1 statement not supported yet")
-            s = self.body.statements[0]
-            return s.generate(replace)
+            instructions = []
+            for s in self.body.statements:
+                s_vm = s.generate(replace)
+                instructions += s_vm.instructions
+            inputs = [replace[p] for p in get_param_vars(self.signature)]
+            outputs = [replace[p] for p in get_output_vars(self.results) if p in replace]
+            return VmBlock(inputs, outputs, instructions)
         
         @Entity.method(zc.FunctionCall) # FunctionCall.generate
         def generate(self, replace: Dict[Variable, VmVar]) -> VmBlock:
@@ -1457,19 +1439,22 @@ class module_Functions(LanguageModule):
             log("replace:", replace)
             args = get_arguments(self)
             arg_vms = [arg.generate(replace) for arg in args]
+            fn = self._resolved_functions[0]
             arg_instructions = [instr for i in arg_vms for instr in i.instructions]
             arg_outputs = [output for vm in arg_vms for output in vm.outputs]
-            log(f"arg_outputs = {arg_outputs}")
-            # this is assuming inline for now
-            new_replace = {}
-            fn = self._resolved_functions[0]
-            inputs = get_param_vars(fn.signature)
-            new_replace = { i: o for i, o in zip(inputs, arg_outputs) }
-            log("new_replace:", new_replace)
-            fn_vm = fn.generate(new_replace)
+            fn_vm = generate_from_arg_vars(fn, arg_outputs)
             fn_vm.instructions = arg_instructions + fn_vm.instructions
             log(fn_vm)
             return fn_vm
+
+        def generate_from_arg_vars(fn: zc.Function, arg_outputs: List[VmVar]) -> VmBlock:
+            for o in arg_outputs:
+                if isinstance(o, VmBlock): raise Exception("AAAAAAA")
+            # this is assuming inline for now
+            new_replace = {}
+            inputs = get_param_vars(fn.signature)
+            new_replace = { i: o for i, o in zip(inputs, arg_outputs) }
+            return fn.generate(new_replace)
         
         def choose_best_function(fns: List[zc.Function]):
             return fns[0]
@@ -1502,26 +1487,74 @@ class module_Functions(LanguageModule):
                 if isinstance(r, zc.ResultVariableDef):
                     outputs += r._defined_vars
                 elif isinstance(r, zc.ResultVariableRef):
-                    outputs += r._resolved_vars
+                    log(dbg_entity(r))
+                    outputs += r.variable._resolved_vars
             return outputs
                     
         @Entity.method(zc.StreamAssignment) # StreamAssignment.generate
         def generate(self, replace: Dict[Variable, VmVar]) -> VmBlock:
-            log(compiler.code(self))
-            lhs_var = self.lhs.results[0].variable._resolved_vars[0]
-            log(f"lhs_var: {lhs_var}")
-            lhs_rank = str(lhs_var).count('$')
-            lhs_type = self.lhs._type
-            log(f"lhs_type: {lhs_type}")
-            log(f"lhs_rank: {lhs_rank}")
-            log("expressions:")
+            log("StreamAssignment.generate:", compiler.code(self))
             instructions = []
+            if len(self.rhs.expressions) > 1: raise Exception("for now, only one << supported")
+            push_fn = get_override_fn(self.lhs)
+            if push_fn is None: raise Exception("need to implement standard push fn!!")
+            log("push_fn:", push_fn)
+            log("rhs expressions:")
             for e in self.rhs.expressions:
-                log(dbg_entity(e))
-                vm = e.generate(replace)
-                log(vm)
-                instructions += vm.instructions
-            return VmBlock([], [], instructions)
+                if e._type_ref.rank == 0:
+                    e_vm = e.generate(replace)
+                    vm = generate_from_arg_vars(push_fn, e_vm.outputs, replace)
+                    instructions += vm.instructions
+                else:
+                    e_vm = e.generate(replace)
+                    address_var = e_vm.outputs[0]
+                    count_var = e_vm.outputs[1]
+                    index_var = VmVar(VmVar.tag("index"), "u32")
+                    item_var = VmVar(VmVar.tag("item"), e._type_ref.type.name)
+                    instructions = [
+                        VmInstruction("var", [index_var], ["0"], comment="initialise loop index var"),
+                        VmLabel("loop_start"),
+                        VmInstruction("cmp", [index_var], [count_var], comment="check loop index against count"),
+                        VmInstruction("bge", [], ["loop_end"]), # uh
+                        VmInstruction("load", [item_var], [address_var, index_var])
+                    ]
+                    fn_params = get_param_vars(push_fn.signature)
+                    log("params:", fn_params)
+                    fn_replace = { fn_params[0] : item_var }
+                    fn_vm = generate_from_arg_vars(push_fn, [item_var])
+                    instructions += fn_vm.instructions
+                    instructions += [
+                        VmInstruction("addi", [index_var], [index_var, 1]),
+                        VmInstruction("bra", [], ["loop_start"]),
+                        VmLabel("loop_end")
+                    ]
+                    log("-------------- loop ----------------")
+                    instructions = e_vm.instructions + instructions
+                    for i in instructions: log(i)
+            result = VmBlock([], [], instructions)
+            return result
+
+        def get_override_fn(lhs: zc.StreamAssignmentLhs) -> zc.Function:
+            result = lhs.results[0]
+            if isinstance(result, zc.ResultVariableRef):
+                var = result.variable._resolved_vars[0]
+                if hasattr(var, "_override_push_fn"):
+                    return var._override_push_fn
+                elif hasattr(var.type, "_override_push_fn"):
+                    return var.type._override_push_fn
+            return None
+
+        @Entity.method(zc.TypeRef) # TypeRef.__str__
+        def __str__(self):
+            return f"{self.type.name}/{self.rank}"
+
+        def generate_single(e: zc.Expression, replace: Dict[Variable, VmVar]) -> VmBlock:
+            return e.generate(replace)
+        
+        def generate_loop(e: zc.Expression, replace: Dict[Variable, VmVar]) -> VmBlock:
+            log("generate_loop")
+            log(f"e = {compiler.code(e)}")
+            log_exit("generate_loop")
 
         @Entity.method(zc.VoidFunctionStatement) # VoidFunctionStatement.generate
         def generate(self, replace: Dict[Variable, VmVar]) -> VmBlock:

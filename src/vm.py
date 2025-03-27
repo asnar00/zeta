@@ -35,26 +35,35 @@ class VmConst(VmValue):
     def __repr__(self): return str(self)
 
 class VmInstruction(VmValue):
-    def __init__(self, opcode: str, dests: List[VmVar], sources: List[VmValue], comment: str = None, label: str = None):
+    def __init__(self, opcode: str, dests: List[VmVar], sources: List[VmValue], comment: str = None):
         self.opcode : str = opcode
         self.dests : List[VmVar] = dests
         self.sources : List[VmValue] = sources
-        self.label: str = None
         self.comment: str = None
     def __str__(self):
         out = ""
-        if self.label is not None: out += f"{self.label}:\n"
         comment = f"\t# {self.comment}" if self.comment is not None else ""
-        dest = f"{self.dests}" if len(self.dests) > 0 else "[]"
-        sources = "["
+        dest = f"{self.dests}" if len(self.dests) > 0 else ""
+        if dest.startswith("["): dest = dest[1:-1]
+        dest += " "*(10-len(dest))
+        sources = ""
         for s in self.sources:
             if isinstance(s, VmInstruction): sources += s.label
             else: sources += str(s)
             sources += ", "
         if len(sources) > 0: sources = sources[:-2]
-        sources += "]"
-        out += f"    {self.opcode} {dest} {sources}{comment}"
+        sources += ""
+        opcode = str(self.opcode)
+        opcode += " "*(5-len(opcode))
+        out += f"    {opcode}\t{dest}\t{sources}\t{comment}"
         return out
+    def __repr__(self): return str(self)
+
+class VmLabel(VmInstruction):
+    def __init__(self, name: str):
+        self.name = name
+    def __str__(self):
+        return f"{self.name}:"
     def __repr__(self): return str(self)
 
 #--------------------------------------------------------------------------------------------------
