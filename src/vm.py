@@ -46,7 +46,14 @@ class VmInstruction(VmValue):
         if self.label is not None: out += f"{self.label}:\n"
         comment = f"\t# {self.comment}" if self.comment is not None else ""
         dest = f"{self.dests}" if len(self.dests) > 0 else "[]"
-        out += f"    {self.opcode} {dest} {self.sources}{comment}"
+        sources = "["
+        for s in self.sources:
+            if isinstance(s, VmInstruction): sources += s.label
+            else: sources += str(s)
+            sources += ", "
+        if len(sources) > 0: sources = sources[:-2]
+        sources += "]"
+        out += f"    {self.opcode} {dest} {sources}{comment}"
         return out
     def __repr__(self): return str(self)
 
