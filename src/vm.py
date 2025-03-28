@@ -14,18 +14,19 @@ import subprocess
 class VmValue: pass
 
 class VmVar(VmValue):
-    i_var : int = 0
+    i_var : Dict[str, int] = {}
     def __init__(self, name: str, type: str):
-        self.name : str = name
+        suffix = ""
+        if name in VmVar.i_var:
+            suffix = f"_{VmVar.i_var[name]}"
+            VmVar.i_var[name] += 1
+        else:
+            VmVar.i_var[name] = 0
+        self.name : str = name + suffix
         self.type : str = type.name if isinstance(type, Type) else type
     def __str__(self): return f"{self.name}:{self.type}"
     def __repr__(self): return str(self)
-    @staticmethod
-    def tag(name: str) -> str:
-        result = f"{name}_{VmVar.i_var}"
-        VmVar.i_var += 1
-        return result
-
+    
 class VmConst(VmValue):
     def __init__(self, type: str, count: int, values: List[str]):
         self.type : str = type
@@ -49,7 +50,7 @@ class VmInstruction(VmValue):
         sources = ""
         for s in self.sources:
             if isinstance(s, VmInstruction): sources += s.label
-            else: sources += str(s)
+            else: sources += str(s).split(":")[0]
             sources += ", "
         if len(sources) > 0: sources = sources[:-2]
         sources += ""

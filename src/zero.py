@@ -132,7 +132,7 @@ def test_zero():
 
     compiler = Compiler(zc)
     compiler.add_modules([module_Features(), module_Expressions(), module_Variables(), module_Types(), module_Functions(), module_Tests()])
-    compiler.set_concrete_types({ "number": "f32", "int": "i32"})
+    compiler.set_concrete_types({ "number": "f32", "int": "i32", "char": "u8"})
     
     test_verbose(False)
     log_max_depth(200)
@@ -582,13 +582,13 @@ class module_Expressions(LanguageModule):
             inputs = []
             type_name = str(self._type_ref.type.name)
             if self._type_ref.rank == 0:
-                outputs = [VmVar(VmVar.tag("var"), type_name)]
+                outputs = [VmVar("const", type_name)]
                 instructions = [VmInstruction(opcode="const", dests=outputs, sources=[self.value])]
                 result = VmBlock([], outputs, instructions)
                 return result
             else:
-                address = VmVar(VmVar.tag("address"), "u32")
-                count = VmVar(VmVar.tag("count"), "u32")
+                address = VmVar("address", "u32")
+                count = VmVar("count", "u32")
                 instructions = [
                     VmInstruction(opcode="const", dests=[address], sources=["0xdeadbeef"], comment="load address of array"),
                     VmInstruction(opcode="const", dests=[count], sources=[len(str(self.value))], comment="load length of array")
@@ -1509,8 +1509,8 @@ class module_Functions(LanguageModule):
                     e_vm = e.generate(replace)
                     address_var = e_vm.outputs[0]
                     count_var = e_vm.outputs[1]
-                    index_var = VmVar(VmVar.tag("index"), "u32")
-                    item_var = VmVar(VmVar.tag("item"), e._type_ref.type.name)
+                    index_var = VmVar("index", "u32")
+                    item_var = VmVar("item", compiler.get_concrete_type(str(e._type_ref.type.name)))
                     instructions = [
                         VmInstruction("var", [index_var], ["0"], comment="initialise loop index var"),
                         VmLabel("loop_start"),

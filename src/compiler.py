@@ -87,6 +87,7 @@ class Compiler:
 
     def add_modules(self, modules: List[LanguageModule]): self.modules.extend(modules)
     def set_concrete_types(self, types: Dict[str, str]): self.concrete_types = types
+    def get_concrete_type(self, name: str) -> str: return self.concrete_types.get(name, name)
 
     def setup(self):
         for module in self.modules: module.setup_grammar(self)
