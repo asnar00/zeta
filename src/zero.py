@@ -587,10 +587,12 @@ class module_Expressions(LanguageModule):
                 result = VmBlock([], outputs, instructions)
                 return result
             else:
+                type_name = compiler.get_concrete_type(str(self._type_ref.type.name))
+                constant = VmConst(type_name, len(str(self.value)), [str(self.value)])
                 address = VmVar("address", "u32")
                 count = VmVar("count", "u32")
                 instructions = [
-                    VmInstruction(opcode="const", dests=[address], sources=["0xdeadbeef"], comment="load address of array"),
+                    VmInstruction(opcode="const", dests=[address], sources=[hex(constant.address)], comment="load address of array"),
                     VmInstruction(opcode="const", dests=[count], sources=[len(str(self.value))], comment="load length of array")
                 ]
                 return VmBlock([], [address, count], instructions)
@@ -1431,6 +1433,10 @@ class module_Functions(LanguageModule):
                 instructions += s_vm.instructions
             inputs = [replace[p] for p in get_param_vars(self.signature)]
             outputs = [replace[p] for p in get_output_vars(self.results) if p in replace]
+            for i in instructions: 
+                if isinstance(i, VmInstruction):
+                    if i.comment is None:
+                        i.comment = str(emit_fn_name(self))
             return VmBlock(inputs, outputs, instructions)
         
         @Entity.method(zc.FunctionCall) # FunctionCall.generate
@@ -1512,20 +1518,21 @@ class module_Functions(LanguageModule):
                     index_var = VmVar("index", "u32")
                     item_var = VmVar("item", compiler.get_concrete_type(str(e._type_ref.type.name)))
                     instructions = [
-                        VmInstruction("var", [index_var], ["0"], comment="initialise loop index var"),
+                        VmInstruction("var", [index_var], ["0"], "initialise loop index var"),
                         VmLabel("loop_start"),
-                        VmInstruction("cmp", [index_var], [count_var], comment="check loop index against count"),
-                        VmInstruction("bge", [], ["loop_end"]), # uh
-                        VmInstruction("load", [item_var], [address_var, index_var])
+                        VmInstruction("cmp", [], [index_var, count_var], "check loop index against count"),
+                        VmInstruction("bge", [], ["loop_end"], "jump to loop end if we're done"),
+                        VmInstruction("load", [item_var], [address_var, index_var], "load item from array"),
                     ]
                     fn_params = get_param_vars(push_fn.signature)
                     log("params:", fn_params)
-                    fn_replace = { fn_params[0] : item_var }
                     fn_vm = generate_from_arg_vars(push_fn, [item_var])
-                    instructions += fn_vm.instructions
+                    const_instructions = [ i for i in fn_vm.instructions if isinstance(i, VmInstruction) and i.opcode == "const" ]
+                    non_const_instructions = [ i for i in fn_vm.instructions if not isinstance(i, VmInstruction) or i.opcode != "const" ]
+                    instructions = const_instructions + instructions + non_const_instructions
                     instructions += [
-                        VmInstruction("addi", [index_var], [index_var, 1]),
-                        VmInstruction("bra", [], ["loop_start"]),
+                        VmInstruction("addi", [index_var], [index_var, 1], "increment loop index"),
+                        VmInstruction("bra", [], ["loop_start"], "jump back to start of loop"),
                         VmLabel("loop_end")
                     ]
                     log("-------------- loop ----------------")

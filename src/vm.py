@@ -13,6 +13,9 @@ import subprocess
 
 class VmValue: pass
 
+def sizeof(type: str) -> int: return int(type[1:]) // 8
+def align(adr: int, align: int) -> int: return (adr + align - 1) & ~(align - 1)
+
 class VmVar(VmValue):
     i_var : Dict[str, int] = {}
     def __init__(self, name: str, type: str):
@@ -28,10 +31,14 @@ class VmVar(VmValue):
     def __repr__(self): return str(self)
     
 class VmConst(VmValue):
+    address : int = 0
     def __init__(self, type: str, count: int, values: List[str]):
         self.type : str = type
         self.count : int = count
         self.values : List[str] = values
+        self.address : int = VmConst.address
+        VmConst.address = align(VmConst.address, sizeof(type))
+        VmConst.address += count * sizeof(type)
     def __str__(self): return f"{self.type}[{self.count}]"
     def __repr__(self): return str(self)
 
@@ -40,10 +47,9 @@ class VmInstruction(VmValue):
         self.opcode : str = opcode
         self.dests : List[VmVar] = dests
         self.sources : List[VmValue] = sources
-        self.comment: str = None
+        self.comment: str = comment
     def __str__(self):
         out = ""
-        comment = f"\t# {self.comment}" if self.comment is not None else ""
         dest = f"{self.dests}" if len(self.dests) > 0 else ""
         if dest.startswith("["): dest = dest[1:-1]
         dest += " "*(10-len(dest))
@@ -56,13 +62,16 @@ class VmInstruction(VmValue):
         sources += ""
         opcode = str(self.opcode)
         opcode += " "*(5-len(opcode))
-        out += f"    {opcode}\t{dest}\t{sources}\t{comment}"
+        comment = f"\t# {self.comment}" if self.comment is not None else ""
+        out += f"    {opcode}\t{dest}\t{sources}"
+        out += (" "*(40-len(out))) + log_grey(comment)
         return out
     def __repr__(self): return str(self)
 
 class VmLabel(VmInstruction):
     def __init__(self, name: str):
         self.name = name
+        self.comment = None
     def __str__(self):
         return f"{self.name}:"
     def __repr__(self): return str(self)
