@@ -582,8 +582,8 @@ class module_Expressions(LanguageModule):
             inputs = []
             type_name = str(self._type_ref.type.name)
             if self._type_ref.rank == 0:
-                outputs = [VmVar("const", type_name)]
-                instructions = [VmInstruction(opcode="const", dests=outputs, sources=[self.value])]
+                outputs = [VmVar("imm", type_name)]
+                instructions = [VmInstruction(opcode="imm", dests=outputs, sources=[self.value])]
                 result = VmBlock([], outputs, instructions)
                 return result
             else:
@@ -592,8 +592,8 @@ class module_Expressions(LanguageModule):
                 address = VmVar("address", "u32")
                 count = VmVar("count", "u32")
                 instructions = [
-                    VmInstruction(opcode="const", dests=[address], sources=[hex(constant.address)], comment="load address of array"),
-                    VmInstruction(opcode="const", dests=[count], sources=[len(str(self.value))], comment="load length of array")
+                    VmInstruction(opcode="imm", dests=[address], sources=[hex(constant.address)], comment="load address of array"),
+                    VmInstruction(opcode="imm", dests=[count], sources=[len(str(self.value))], comment="load length of array")
                 ]
                 return VmBlock([], [address, count], instructions)
                 log_exit("zc.Constant array-gen")
@@ -1527,11 +1527,11 @@ class module_Functions(LanguageModule):
                     fn_params = get_param_vars(push_fn.signature)
                     log("params:", fn_params)
                     fn_vm = generate_from_arg_vars(push_fn, [item_var])
-                    const_instructions = [ i for i in fn_vm.instructions if isinstance(i, VmInstruction) and i.opcode == "const" ]
-                    non_const_instructions = [ i for i in fn_vm.instructions if not isinstance(i, VmInstruction) or i.opcode != "const" ]
+                    const_instructions = [ i for i in fn_vm.instructions if isinstance(i, VmInstruction) and i.opcode == "imm" ]
+                    non_const_instructions = [ i for i in fn_vm.instructions if not isinstance(i, VmInstruction) or i.opcode != "imm" ]
                     instructions = const_instructions + instructions + non_const_instructions
                     instructions += [
-                        VmInstruction("addi", [index_var], [index_var, 1], "increment loop index"),
+                        VmInstruction("add", [index_var], [index_var, 1], "increment loop index"),
                         VmInstruction("bra", [], ["loop_start"], "jump back to start of loop"),
                         VmLabel("loop_end")
                     ]

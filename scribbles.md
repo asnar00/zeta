@@ -2,6 +2,169 @@
 # scribblez
 "slow is smooth, smooth is fast"
 
+ok: we're going to press on with the guts of the compiler. Let's press forward to risc-v code execution of hello world on qemu.
+What we're doing is:
+1- getting rid of EmitFunctionBody
+2- new "emit" keyword followed by a sequence of either literals or vars.
+3- emit will directly emit assembler for the target output
+
+Features are done properly in the test code.
+
+=> is that what we want?
+=> I think that's fine. We'll figure out efficiency in the next big pass.
+--------------
+
+
+going forward.
+=> the need of the hour is to firm up the lower levels of the compiler, particularly bit-stuff.
+Let's do an exercise to think how we could express this all properly in feature-modular zero.
+
+    feature Numbers         # number types
+    feature Backend         # what the code 'above' expects: the interface to the CPU and devices
+    feature Shutdown        # the ability to shut down the damn machine
+    feature Uart            # the ability to send and receive serial
+    feature Timers          # time events and so on
+
+    feature CPU             # CPUs in general
+    feature ARM             # the ARM CPU
+    feature RISCV           # the RiscV CPU
+
+So we are programming here in "core" zero: where we define the concrete types. To recap, there's three layers:
+
+    surface: we use abstract types eg. int, float, number
+    concrete: we use concrete types i32, f32, q4, fx16.16, and so on
+    core: we define the concrete types' layouts in memory
+
+OK so what's nice about this is this:
+
+In CPU, we could do:
+
+    feature CPU
+        on (number r) = add (number a, number b) emit
+        on (number r) = sub (number a, number b) emit
+
+But in ARM, we could do:
+
+    feature ARM extends CPU
+        on (u32 r) = add (u32 a, u32 b) emit
+            add register(r), register(a), register(b)
+        on (u32 r) = sub (u32 a, u32 b) emit
+            sub register(r), register(a), register(b)
+
+And the understanding here is that this stuff is happening at compile time now, and we're calling register(x) at compile time, so we're operating in some kind of "compile time macro" land (that exists beneath the emit). So
+
+    on (reg r) = register(var v)
+        r = var.register                    # or whatever
+
+we, like, did this already. it's cool. => so we need to think about a thing which specifies the interpeter in the same space as the rest of the language. How would we structure it?
+
+OK cool, so we need to think again about how we're organising the grammar.
+
+So the first thing would be:
+Typedef.
+
+enum with two numeric values:
+
+    type bit = 0, 1
+
+Then 
+
+    type uint(N) = 
+        bit bits[N]
+
+Then
+
+    type u32 = uint(32)
+
+Also of course:
+
+    type int(N) =
+        bit sign
+        uint(N-1) val
+
+Then
+
+    type float(E, S)
+        bit sign
+        uint(E) exp
+        uint(S) sig
+
+    type f32 = float(8, 23)
+
+Getting this working is a really cool thing, because it lets us specify things like instruction formats in zero.
+Do we really care right now, though? Or do we just want to press forward and get some code running?
+
+I think this rewrite of the entire language is the next step, I do think we need to get to hello world though.
+So let's press on tomorrow. WORK!
+
+----
+
+So let's think about how we'd like to actually specify this... Well, obviously, the first thing is the micro-test:
+This in python: something like this anyway:
+
+    @language_feature("numeric enum")
+    def specify(compiler: Compiler):
+        test("type_bit", """
+            type bit = 0, 1
+            bit b
+            > b: bit = 0
+        """)
+        grammar("""
+            TypeDef := "type" Name "=" TypeDefRhs
+            TypeDefRhs :=
+            TypeDefNumericEnum := integers:<number>+,
+
+        @method(TypeDef) def add_symbols(self): blah
+        @method(TypeDef) def find_symbols(self): blah
+        @method(TypeDef) def check_types(self): blah
+        @method(TypeDef) def generate(self): blah
+
+        """)
+
+    @language_feature("array")
+    def specify(compiler: Compiler)
+        test("bit[], """
+            type uint(N) =
+                bit value[N]
+        """)
+        grammar("""
+            TypeDefStruct
+        """)
+
+
+    
+
+
+-----------------------------------
+
+
+(that friday feeling, but on a tuesday)
+I think we need to jam around generating machine code purely from zero.
+That's a good task.
+Also a lot of fun to play around with the proper type system.
+Should we start from scratch with a clean design?
+No, I like where the language is at. Keep that.
+Maybe look at reorganising it somewhat; making it more free-form.
+There's no reason that we need to actuall organise the code that way.
+We could just as easily just call those Entity methods from "pure code", and have them in any order.
+I mean that's not the worst idea is it.
+
+Make everything properly incremental in the grammar. We've not tried that.
+If we WERE to do over, it's just reformatting and reordering, not actually changing function.
+Although extensible grammar would be a cool experiment.
+
+Let's think about how we could express a CPU's architecture in zero code.
+Could we somehow say: optimise at >this< level?
+
+I'm also quite interested in the uint(x) stuff.
+
+------------------
+
+what's next?
+Answer: risc-v pathway, quick as. Get that code running on QEMU and show hello world.
+
+---------------
+
 how to get variables in.
 
     on uart(c)
