@@ -380,6 +380,73 @@ def test_emit_task_filter(report):
            lambda out: _assert_in("even_arr = [...fn_only_evens_from__int(all_arr)]", out))
 
 
+# --- type composition ---
+
+def test_emit_subtype_flattened(report):
+    source = """\
+    type animal
+        string name = ""
+    type dog = animal +
+        string breed = "unknown" """
+    _check(report, "ts: subtype flattens parent fields",
+           source,
+           lambda out: _assert_in("readonly name: string;", out),
+           lambda out: _assert_in("readonly breed: string;", out))
+
+
+# --- where ---
+
+def test_emit_where(report):
+    source = """\
+    int i$ = [1, 2, 3, 4, 5, 6]
+    int evens$ = [i$] where (_ % 2 == 0)"""
+    _check(report, "ts: where filter",
+           source,
+           lambda out: _assert_in("i_arr.filter(x => x % 2 == 0)", out))
+
+def test_emit_first_of_where(report):
+    source = """\
+    int i$ = [1, 2, 3, 4, 5, 6]
+    int first_even = first of [i$] where (_ % 2 == 0)"""
+    _check(report, "ts: first of where",
+           source,
+           lambda out: _assert_in("i_arr.find(x => x % 2 == 0)", out))
+
+
+# --- sort ---
+
+def test_emit_sort_simple(report):
+    source = """\
+    int i$ = [3, 1, 4]
+    int sorted$ = sort [i$]"""
+    _check(report, "ts: sort simple",
+           source,
+           lambda out: _assert_in("[...i_arr].sort()", out))
+
+def test_emit_sort_by(report):
+    source = """\
+    type person =
+        int age = 0
+    person people$ = [...]
+    person sorted$ = sort [people$] by (_.age)"""
+    _check(report, "ts: sort by key",
+           source,
+           lambda out: _assert_in("[...people_arr].sort((a, b) => a.age - b.age)", out))
+
+
+# --- array function calls ---
+
+def test_emit_array_fn_call(report):
+    source = """\
+    on (int n) = count of [items$]
+        n = length of [items$]
+    int i$ = [1, 2, 3]
+    int c = count of [i$]"""
+    _check(report, "ts: array function call",
+           source,
+           lambda out: _assert_in("fn_count_of(i_arr)", out))
+
+
 # --- multiple dispatch ---
 
 def test_emit_multiple_dispatch(report):

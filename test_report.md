@@ -1955,6 +1955,134 @@ function* fn_only_evens_from__int(numbers_arr: int[]): Generator<int> {
 }
 ```
 
+## ts: subtype flattens parent fields
+
+### zero
+
+```zero
+type animal
+        string name = ""
+    type dog = animal +
+        string breed = "unknown"
+```
+
+### python
+
+```python
+interface animal {
+    readonly name: string;
+}
+
+function animal(args: Partial<animal> = {}): animal {
+    return { name: args.name ?? "" };
+}
+
+interface dog {
+    readonly breed: string;
+}
+
+function dog(args: Partial<dog> = {}): dog {
+    return { breed: args.breed ?? "unknown" };
+}
+```
+
+## ts: where filter
+
+### zero
+
+```zero
+int i$ = [1, 2, 3, 4, 5, 6]
+    int evens$ = [i$] where (_ % 2 == 0)
+```
+
+### python
+
+```python
+const i_arr: readonly int[] = [1, 2, 3, 4, 5, 6];
+evens_arr = i_arr.filter(x => x % 2 == 0);
+```
+
+## ts: first of where
+
+### zero
+
+```zero
+int i$ = [1, 2, 3, 4, 5, 6]
+    int first_even = first of [i$] where (_ % 2 == 0)
+```
+
+### python
+
+```python
+const i_arr: readonly int[] = [1, 2, 3, 4, 5, 6];
+const first_even: int = i_arr.find(x => x % 2 == 0);
+```
+
+## ts: sort simple
+
+### zero
+
+```zero
+int i$ = [3, 1, 4]
+    int sorted$ = sort [i$]
+```
+
+### python
+
+```python
+const i_arr: readonly int[] = [3, 1, 4];
+sorted_arr = [...i_arr].sort();
+```
+
+## ts: sort by key
+
+### zero
+
+```zero
+type person =
+        int age = 0
+    person people$ = [...]
+    person sorted$ = sort [people$] by (_.age)
+```
+
+### python
+
+```python
+interface person {
+    readonly age: int;
+}
+
+function person(args: Partial<person> = {}): person {
+    return { age: args.age ?? 0 };
+}
+
+const people_arr: readonly person[] = [...];
+sorted_arr = [...people_arr].sort((a, b) => a.age - b.age);
+```
+
+## ts: array function call
+
+### zero
+
+```zero
+on (int n) = count of [items$]
+        n = length of [items$]
+    int i$ = [1, 2, 3]
+    int c = count of [i$]
+```
+
+### python
+
+```python
+const i_arr: readonly int[] = [1, 2, 3];
+const c: int = fn_count_of(i_arr);
+
+function fn_count_of(items_arr): int {
+    const n: int = items_arr.length;
+    return n;
+}
+```
+
 ## ts: multiple dispatch
 
 ### zero

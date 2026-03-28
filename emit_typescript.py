@@ -269,6 +269,8 @@ def _emit_array_variable(name: str, type_ann: str, var: dict, structs: dict = No
         return _emit_stream_ts(name, type_ann, val, structs)
     elif isinstance(val, dict) and val.get("kind") == "task_call":
         return _emit_task_call_ts(name, type_ann, val)
+    elif isinstance(val, dict) and val.get("kind") in ("where", "sort"):
+        return f"{name} = {_emit_expr(val, structs or {})};"
     elif isinstance(val, dict) and "kind" in val:
         # mapped expression over arrays
         return f"const {name}: readonly {type_ann}[] = {_emit_array_map_expr(val, structs)};"
@@ -392,7 +394,7 @@ def _emit_value(value, zero_type: str, structs: dict) -> str:
         return _emit_reduce(value, zero_type)
     if isinstance(value, dict) and value.get("kind") == "call":
         return _emit_call_value(value, structs)
-    if isinstance(value, dict) and value.get("kind") == "fn_call":
+    if isinstance(value, dict) and "kind" in value:
         return _emit_expr(value, structs)
     return str(value)
 
@@ -583,9 +585,14 @@ def _emit_function(fn: dict, structs: dict, async_fns: set[str] = None) -> str:
     """Emit a function definition."""
     async_fns = async_fns or set()
     name = _make_function_name(fn["signature_parts"])
-    params = ", ".join(
-        f"{p['name']}: {p['type']}" for p in fn["params"]
-    )
+    param_strs = []
+    for p in fn["params"]:
+        pname = p["name"].replace("$", "_arr")
+        if p["type"] is not None:
+            param_strs.append(f"{pname}: {p['type']}")
+        else:
+            param_strs.append(pname)
+    params = ", ".join(param_strs)
     is_async = name in async_fns
     prefix = "async function" if is_async else "function"
 
@@ -609,8 +616,11 @@ def _make_function_name(signature_parts: list[str]) -> str:
     result = "fn"
     for part in signature_parts:
         param_match = re.match(r"\((\w+)(?:\s+\w+)?\)", part)
+        array_param_match = re.match(r"\[(\w+\$?)\]", part)
         if param_match:
             result += f"__{param_match.group(1)}"
+        elif array_param_match:
+            pass  # generic array params omitted from name
         elif part in _SYMBOL_WORDS:
             if result and not result.endswith("_"):
                 result += "_"
@@ -663,6 +673,25 @@ def _emit_concurrently_ts(node: dict, structs: dict) -> str:
     return f"await _concurrently({args});"
 
 
+def _replace_underscore_ts(node: dict, replacement: str) -> dict:
+    """Replace _ references with a replacement name in an AST."""
+    if not isinstance(node, dict):
+        return node
+    if node.get("kind") == "name" and node.get("value") == "_":
+        return {"kind": "name", "value": replacement}
+    if node.get("kind") == "member" and node.get("object") == "_":
+        return {"kind": "member", "object": replacement, "field": node["field"]}
+    result = {}
+    for key, val in node.items():
+        if isinstance(val, dict):
+            result[key] = _replace_underscore_ts(val, replacement)
+        elif isinstance(val, list):
+            result[key] = [_replace_underscore_ts(v, replacement) if isinstance(v, dict) else v for v in val]
+        else:
+            result[key] = val
+    return result
+
+
 def _emit_expr(node: dict, structs: dict) -> str:
     """Emit a TypeScript expression from an AST node."""
     kind = node["kind"]
@@ -678,7 +707,7 @@ def _emit_expr(node: dict, structs: dict) -> str:
         args = ", ".join(_emit_expr(a, structs) for a in node["args"])
         return f"{name}({args})"
 
-    elif kind == "fn_call":
+    elif kind in ("fn_call", "array_fn_call"):
         fn_name = _make_function_name(node["signature_parts"])
         args = ", ".join(_emit_expr(a, structs) for a in node["args"])
         return f"{fn_name}({args})"
@@ -692,6 +721,28 @@ def _emit_expr(node: dict, structs: dict) -> str:
         if node["name"] == "length_of":
             arg = _emit_expr(node["args"][0], structs)
             return f"{arg}.length"
+
+    elif kind == "where":
+        arr = _emit_expr(node["array"], structs)
+        cond = _emit_expr(_replace_underscore_ts(node["condition"], "x"), structs)
+        return f"{arr}.filter(x => {cond})"
+
+    elif kind == "first_where":
+        arr = _emit_expr(node["array"], structs)
+        cond = _emit_expr(_replace_underscore_ts(node["condition"], "x"), structs)
+        return f"{arr}.find(x => {cond})"
+
+    elif kind == "sort":
+        arr = _emit_expr(node["array"], structs)
+        if node["key"] is None:
+            result = f"[...{arr}].sort()"
+        else:
+            key = _emit_expr(_replace_underscore_ts(node["key"], "a"), structs)
+            key_b = _emit_expr(_replace_underscore_ts(node["key"], "b"), structs)
+            result = f"[...{arr}].sort((a, b) => {key} - {key_b})"
+        if node.get("descending"):
+            result += ".reverse()"
+        return result
 
     elif kind == "index":
         arr = _emit_expr(node["array"], structs)
