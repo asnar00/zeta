@@ -1104,12 +1104,13 @@ def test_reduce_in_body():
 
 # --- empty function body ---
 
-def test_error_empty_function_body():
-    """A function with no body should be an error."""
+def test_abstract_function_no_body():
+    """A function with no body is abstract (platform declaration)."""
     source = "    on (int r) = nothing (int a)"
-    with pytest.raises(ZeroParseError) as exc_info:
-        process(source)
-    assert "expected function body" in str(exc_info.value)
+    ir = process(source)
+    fn = ir["functions"][0]
+    assert fn.get("abstract") is True
+    assert fn["body"] == []
 
 
 # --- error reporting ---
@@ -1137,11 +1138,11 @@ def test_void_function_is_valid():
     ir = process(source)
     assert ir["functions"][0]["result"] is None
 
-def test_error_function_empty_body_void():
-    """A void function with no body should be an error."""
-    with pytest.raises(ZeroParseError) as exc_info:
-        process("    on hello()")
-    assert "expected function body" in str(exc_info.value)
+def test_abstract_void_function_no_body():
+    """A void function with no body is abstract."""
+    ir = process("    on hello()")
+    fn = ir["functions"][0]
+    assert fn.get("abstract") is True
 
 def test_error_struct_no_fields():
     with pytest.raises(ZeroParseError) as exc_info:

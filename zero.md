@@ -89,7 +89,7 @@ Structure types are initialised using C-style constructors, but these don't have
 
 ## functions
 
-Functions have *open syntax* - a function prototype can be any sequence of words or symbols, with typed parameters in brackets anywhere in the sequence.
+Functions have *open syntax* - a function prototype can be any sequence of words or symbols, with typed parameters in brackets (at least one set, even if there are no parameters) anywhere in the sequence.
 
 Also, functions use a *named result* pattern - instead of a `return` keyword, we specify the result as a named variable, and return a value by assigning it.
 
@@ -351,3 +351,4 @@ yielding the following behaviour:
     bye!
 
 This code gives us four features: `Hello`, and three extensions `Countdown`, `Goodbye` and `Beep`, which can be enabled or disabled separately.
+

@@ -198,11 +198,10 @@ def generate_probes() -> list[tuple]:
 
     # --- edge cases ---
     probes.append((
-        "empty function body",
-        "Should reject a function with no body",
+        "abstract function (no body)",
+        "A function with no body is abstract (platform declaration)",
         """\
-    on (int r) = nothing (int a)""",
-        "expected function body"
+    on (int r) = nothing (int a)"""
     ))
 
     probes.append((

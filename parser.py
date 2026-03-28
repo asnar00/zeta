@@ -20,9 +20,46 @@ class ZeroParseError(Exception):
         return f"line {self.line_num}: {self.message}\n    {self.line_text}\n    {pointer}"
 
 
+def _is_markdown(source: str) -> bool:
+    """Detect if source is markdown (has # headers or ``` fences)."""
+    for line in source.split("\n"):
+        stripped = line.strip()
+        if stripped.startswith("# ") or stripped.startswith("## ") or stripped.startswith("```"):
+            return True
+        if stripped.startswith("*") and stripped.endswith("*") and len(stripped) > 2:
+            return True
+    return False
+
+
+def _extract_code(source: str) -> str:
+    """Extract code from markdown source.
+    Collects indented lines (removing 4-space indent) and fenced code blocks."""
+    lines = source.split("\n")
+    code_lines = []
+    in_fence = False
+    for line in lines:
+        # fenced code block
+        if line.strip().startswith("```"):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            code_lines.append(line)
+            continue
+        # indented line (4 spaces or tab)
+        if line.startswith("    ") or line.startswith("\t"):
+            code_lines.append(line)
+        elif line.strip() == "":
+            code_lines.append("")
+        # non-indented non-empty lines are prose — skip
+    return "\n".join(code_lines)
+
+
 def process(source: str) -> dict:
     """Parse zero source text and return an IR dict."""
     ir = {"version": IR_VERSION, "features": set(), "types": [], "variables": [], "functions": [], "tasks": []}
+    # extract code from markdown if source looks like markdown
+    if _is_markdown(source):
+        source = _extract_code(source)
     lines = source.split("\n")
 
     # first pass: collect function and task signatures for call resolution
@@ -45,6 +82,13 @@ def process(source: str) -> dict:
             ir["functions"].append(fn)
             i += consumed
         elif line and not line.startswith("#"):
+            # try as a bare function call statement (has parens, no '=')
+            if "(" in line and "=" not in line:
+                fn_call = _try_parse_fn_call(line, fn_signatures)
+                if fn_call:
+                    ir.setdefault("statements", []).append(fn_call)
+                    i += 1
+                    continue
             var = _parse_variable(line, fn_signatures, task_signatures)
             if var:
                 ir["variables"].append(var)
@@ -722,7 +766,14 @@ def _parse_function(lines: list[str], start: int, fn_signatures: list = None) ->
     body_lines = [l.strip() for l in raw_body_lines]
 
     if not body_lines:
-        raise ZeroParseError("expected function body", line_num, line, column=len(line))
+        # platform/abstract function — no body, just a signature
+        return {
+            "result": result,
+            "params": params,
+            "signature_parts": signature_parts,
+            "body": [],
+            "abstract": True,
+        }, i - start
 
     # group multi-line constructs (concurrently, if/else), then parse
     grouped = _group_blocks(body_lines, raw_body_lines, fn_signatures)

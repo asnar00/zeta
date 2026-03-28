@@ -25,7 +25,7 @@
 | 16 | reduce struct array | PASS |
 | 17 | map two arrays of different types | PASS |
 | 18 | chained array operations | PASS |
-| 19 | empty function body | PASS |
+| 19 | abstract function (no body) | PASS |
 | 20 | struct with no defaults | PASS |
 | 21 | struct with mixed defaults | PASS |
 | 22 | multiple return assignments | PASS |
@@ -730,16 +730,26 @@ const doubled_arr: readonly int[] = i_arr.map(x => x * 2);
 const sum: int = doubled_arr.reduce((a, b) => a + b);
 ```
 
-### empty function body
+### abstract function (no body)
 
-**Question:** Should reject a function with no body
+**Question:** A function with no body is abstract (platform declaration)
 
 **zero input:**
 ```zero
 on (int r) = nothing (int a)
 ```
 
-**correctly rejected:** line 1: expected function body
+**python output:**
+```python
+
+```
+
+**typescript output:**
+```typescript
+function fn_nothing__int(a: int): int {
+    return r;
+}
+```
 
 ### struct with no defaults
 

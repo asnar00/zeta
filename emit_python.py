@@ -75,15 +75,20 @@ def emit(ir: dict) -> str:
         sections.append(_emit_task(task))
 
     for fn in ir["functions"]:
-        sections.append(_emit_function(fn))
+        if not fn.get("abstract"):
+            sections.append(_emit_function(fn))
 
     # generate dispatch functions for multiple dispatch groups
-    dispatch_sections = _generate_dispatchers(ir["functions"], ir.get("types", []))
+    concrete_fns = [fn for fn in ir["functions"] if not fn.get("abstract")]
+    dispatch_sections = _generate_dispatchers(concrete_fns, ir.get("types", []))
 
     # variables last — they may reference functions and tasks
     var_lines = []
     for var in ir["variables"]:
         var_lines.append(_emit_variable(var))
+    # bare function call statements
+    for stmt in ir.get("statements", []):
+        var_lines.append(_emit_expr(stmt))
     if var_lines:
         sections.append("\n".join(var_lines))
     sections.extend(dispatch_sections)
