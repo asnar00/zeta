@@ -395,7 +395,12 @@ def _parse_scalar_variable(type_name: str, var_name: str, rest: str, fn_sigs: li
         elif fn_sigs and _try_parse_fn_call(rhs, fn_sigs):
             value = _try_parse_fn_call(rhs, fn_sigs)
         else:
-            value = _parse_literal(rhs)
+            # try as expression (handles indexing, slicing, binops, etc.)
+            parsed = _parse_expr(rhs, fn_sigs)
+            if parsed.get("kind") == "literal":
+                value = parsed["value"]  # keep raw value for simple literals
+            else:
+                value = parsed
     return {"name": var_name, "type": type_name, "array": False, "value": value}
 
 
@@ -1144,12 +1149,7 @@ def _parse_expr(s: str, fn_sigs: list = None) -> dict:
         index_expr = _parse_expr(inner, fn_sigs)
         return {"kind": "index", "array": array_expr, "index": index_expr}
 
-    # member access: obj.field
-    if "." in s and re.match(r"(\w+)\.(\w+)$", s):
-        m = re.match(r"(\w+)\.(\w+)$", s)
-        return {"kind": "member", "object": m.group(1), "field": m.group(2)}
-
-    # numeric literal
+    # numeric literal (must check before member access so 1.5 isn't parsed as member)
     try:
         return {"kind": "literal", "value": int(s)}
     except ValueError:
@@ -1158,6 +1158,15 @@ def _parse_expr(s: str, fn_sigs: list = None) -> dict:
         return {"kind": "literal", "value": float(s)}
     except ValueError:
         pass
+
+    # string literal
+    if (s.startswith('"') and s.endswith('"')) or (s.startswith("'") and s.endswith("'")):
+        return {"kind": "literal", "value": s}
+
+    # member access: obj.field
+    if "." in s and re.match(r"(\w+)\.(\w+)$", s):
+        m = re.match(r"(\w+)\.(\w+)$", s)
+        return {"kind": "member", "object": m.group(1), "field": m.group(2)}
 
     # name (including array names with $ suffix)
     if re.match(r"\w+\$?$", s):

@@ -71,12 +71,6 @@ def emit(ir: dict) -> str:
         if code:
             sections.append(code)
 
-    var_lines = []
-    for var in ir["variables"]:
-        var_lines.append(_emit_variable(var))
-    if var_lines:
-        sections.append("\n".join(var_lines))
-
     for task in ir.get("tasks", []):
         sections.append(_emit_task(task))
 
@@ -85,6 +79,13 @@ def emit(ir: dict) -> str:
 
     # generate dispatch functions for multiple dispatch groups
     dispatch_sections = _generate_dispatchers(ir["functions"], ir.get("types", []))
+
+    # variables last — they may reference functions and tasks
+    var_lines = []
+    for var in ir["variables"]:
+        var_lines.append(_emit_variable(var))
+    if var_lines:
+        sections.append("\n".join(var_lines))
     sections.extend(dispatch_sections)
 
     return "\n\n".join(sections) + "\n" if sections else ""
@@ -169,8 +170,12 @@ def _collect_imports(ir: dict) -> list[str]:
     imports = []
     has_enum = any(t["kind"] == "enum" for t in ir["types"])
     has_struct = any(t["kind"] == "struct" for t in ir["types"])
-    has_reduce = any(isinstance(v.get("value"), dict) and v["value"].get("kind") == "reduce"
-                     for v in ir["variables"])
+    has_reduce = (any(isinstance(v.get("value"), dict) and v["value"].get("kind") == "reduce"
+                      for v in ir["variables"])
+                  or any(any(isinstance(s, dict) and s.get("kind") == "assign"
+                             and isinstance(s.get("value"), dict) and s["value"].get("kind") == "reduce"
+                             for s in fn.get("body", []))
+                         for fn in ir["functions"]))
     has_zip_longest = any(isinstance(v.get("value"), dict) and v["value"].get("kind") == "binop"
                           and v.get("array") and len(_collect_array_refs(v["value"])) > 1
                           for v in ir["variables"])
@@ -437,11 +442,9 @@ def _emit_value(value, zero_type: str) -> str:
     """Emit a value expression."""
     if isinstance(value, dict) and value.get("kind") == "reduce":
         return _emit_reduce(value, zero_type)
-    if isinstance(value, dict) and value.get("kind") in ("first_where",):
-        return _emit_expr(value)
     if isinstance(value, dict) and value.get("kind") == "call":
         return _emit_call_value(value)
-    if isinstance(value, dict) and value.get("kind") in ("fn_call", "array_fn_call"):
+    if isinstance(value, dict) and "kind" in value:
         return _emit_expr(value)
     return str(value)
 
@@ -615,13 +618,18 @@ def _emit_function(fn: dict) -> str:
         result_var = fn["result"]["name"]
         lines = [f"def {name}({params}) -> {ret_type}:"]
         for stmt in fn["body"]:
-            lines.append(f"    {_emit_expr(stmt)}")
+            lines.extend(_indent(_emit_expr(stmt), "    "))
         lines.append(f"    return {result_var}")
     else:
         lines = [f"def {name}({params}):"]
         for stmt in fn["body"]:
-            lines.append(f"    {_emit_expr(stmt)}")
+            lines.extend(_indent(_emit_expr(stmt), "    "))
     return "\n".join(lines)
+
+
+def _indent(text: str, prefix: str) -> list[str]:
+    """Indent each line of a multi-line string."""
+    return [prefix + line for line in text.split("\n")]
 
 
 def _make_function_name(signature_parts: list[str]) -> str:
