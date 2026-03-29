@@ -649,6 +649,40 @@ def _emit_expr(node: dict, structs: dict) -> str:
         false = _emit_expr(node["false"], structs)
         return f"({cond}) ? ({true}) : ({false})"
 
+    elif kind == "reduce":
+        arr = node["array"].replace("$", "_arr")
+        if "op" in node:
+            return f"{arr}.reduce((a, b) => a {node['op']} b)"
+        fn_name = _make_function_name_from_reduce(node["fn_parts"], "int")
+        return f"{arr}.reduce({fn_name})"
+
+    elif kind == "var_decl":
+        name = node["name"] + "_arr" if node.get("array") else node["name"]
+        if node.get("array"):
+            val = node["value"]
+            if isinstance(val, list):
+                items = ", ".join(_emit_expr(v, structs) if isinstance(v, dict) else str(v) for v in val)
+                return f"const {name} = [{items}]"
+            elif isinstance(val, dict) and "range" in val:
+                r = val
+                if r["range"] == "through":
+                    length = r["end"] - r["start"] + 1 if isinstance(r["end"], int) else f"{r['end']} - {r['start']} + 1"
+                else:
+                    length = r["end"] - r["start"] if isinstance(r["end"], int) else f"{r['end']} - {r['start']}"
+                start = r["start"]
+                if isinstance(length, int):
+                    if start == 0:
+                        return f"const {name} = Array.from({{ length: {length} }}, (_, i) => i)"
+                    return f"const {name} = Array.from({{ length: {length} }}, (_, i) => i + {start})"
+                return f"const {name} = Array.from({{ length: {length} }}, (_, i) => i + {start})"
+            elif isinstance(val, dict) and "kind" in val:
+                return f"const {name} = {_emit_array_map_expr(val, structs)}"
+            return f"const {name} = {val}"
+        return f"const {name} = {_emit_expr(node['value'], structs)}"
+
+    elif kind == "assign":
+        return f"{node['target']} = {_emit_expr(node['value'], structs)}"
+
     elif kind == "raw":
         return node["value"]
 

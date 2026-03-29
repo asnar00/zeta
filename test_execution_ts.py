@@ -259,3 +259,28 @@ def test_ts_exec_map_then_reduce():
     int doubled$ = double (i$)
     int sum = doubled$ + _"""
     assert _run(source, "sum") == 20
+
+
+# --- var_decl and reduce in function body ---
+
+def test_ts_exec_reduce_in_function_body():
+    source = """\
+    on (int r) = sum squares of (int a) and (int b) and (int c)
+        int vals$ = [a, b, c]
+        int sq$ = vals$ * vals$
+        r = sq$ + _"""
+    assert _run(source, "fn_sum_squares_of__int_and__int_and__int(3, 4, 5)") == 50
+
+def test_ts_exec_var_decl_in_body():
+    source = """\
+    on (int r) = compute (int x)
+        int doubled = x * 2
+        r = doubled + 1"""
+    assert _run(source, "fn_compute__int(5)") == 11
+
+def test_ts_exec_array_decl_in_body():
+    source = """\
+    on (int r) = sum three (int a) and (int b) and (int c)
+        int vals$ = [a, b, c]
+        r = vals$ + _"""
+    assert _run(source, "fn_sum_three__int_and__int_and__int(3, 4, 5)") == 12

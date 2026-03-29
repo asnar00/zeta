@@ -35,3 +35,17 @@ Each entry records: what I chose to do, why, what changed, and the outcome.
 
 ---
 
+## 3. fix TS emitter: var_decl, reduce, assign in expressions (2026-03-29)
+
+**What:** Added handling for `var_decl`, `reduce`, and `assign` AST nodes in the TypeScript emitter's `_emit_expr`. These were falling through to `return str(node)`, emitting raw Python dicts as code.
+
+**Why:** Found while investigating what other bugs the TS execution tests would catch. Any function body with local variable declarations, array operations, or reduce expressions would emit garbage TS.
+
+**Fix:** Added `var_decl` (with array and scalar variants), `reduce` (operator and function forms), and `assign` handlers to `_emit_expr` in `emit_typescript.py`.
+
+**Tests added:** 3 new TS execution tests — reduce in function body, scalar var_decl in body, array var_decl in body.
+
+**Outcome:** 326 tests pass.
+
+---
+
