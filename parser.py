@@ -97,7 +97,7 @@ def process(source: str, recover: bool = False, source_file: str = None) -> dict
                 ir["tasks"].append(task)
                 i += consumed
             elif line.startswith("on "):
-                fn, consumed = _parse_function(lines, i, fn_signatures, _src_line)
+                fn, consumed = _parse_function(lines, i, fn_signatures, _src_line, task_signatures)
                 ir["functions"].append(fn)
                 i += consumed
             elif line and not line.startswith("#"):
@@ -780,7 +780,7 @@ def _parse_literal(s: str):
 
 # --- functions ---
 
-def _parse_function(lines: list[str], start: int, fn_signatures: list = None, src_line=None) -> tuple[dict, int]:
+def _parse_function(lines: list[str], start: int, fn_signatures: list = None, src_line=None, task_signatures: list = None) -> tuple[dict, int]:
     """Parse a function definition starting with 'on'."""
     line = lines[start].strip()
     line_num = src_line(start) if src_line else start + 1
@@ -838,7 +838,7 @@ def _parse_function(lines: list[str], start: int, fn_signatures: list = None, sr
         if isinstance(item, dict) and item.get("kind") in ("concurrently", "if_block"):
             body.append(item)
             continue
-        stmt = _parse_expression(item, fn_signatures)
+        stmt = _parse_expression(item, fn_signatures, task_signatures)
         if stmt["kind"] == "assign":
             if stmt["target"] in assigned:
                 body_line_num = src_line(start + 1 + idx) if src_line else start + 2 + idx
@@ -1133,8 +1133,17 @@ def _parse_signature(rhs: str) -> tuple[list[dict], list[str]]:
 
 # --- expression parser ---
 
-def _parse_expression(line: str, fn_signatures: list = None) -> dict:
+def _parse_expression(line: str, fn_signatures: list = None, task_signatures: list = None) -> dict:
     """Parse a zero expression line into an AST node."""
+    # array variable declaration with task call: type name$ <- task call
+    task_decl = re.match(r"(\w+)\s+(\w+)\$\s*(<-\s*.+)", line)
+    if task_decl and _looks_like_type(task_decl.group(1)):
+        type_name = task_decl.group(1)
+        var_name = task_decl.group(2)
+        rest = task_decl.group(3)
+        arr_var = _parse_array_variable(type_name, var_name, rest, fn_signatures, task_signatures)
+        return {"kind": "var_decl", **arr_var}
+
     # variable declaration: type name[$] = value
     var_decl = re.match(r"(\w+)\s+(\w+)(\$)?\s*=\s*(.*)", line)
     if var_decl and _looks_like_type(var_decl.group(1)):
@@ -1143,7 +1152,7 @@ def _parse_expression(line: str, fn_signatures: list = None) -> dict:
         is_array = var_decl.group(3) is not None
         rhs = var_decl.group(4).strip()
         if is_array:
-            arr_var = _parse_array_variable(type_name, var_name, "= " + rhs, fn_signatures)
+            arr_var = _parse_array_variable(type_name, var_name, "= " + rhs, fn_signatures, task_signatures)
             return {"kind": "var_decl", **arr_var}
         else:
             value = _parse_expr(rhs, fn_signatures)

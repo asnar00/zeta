@@ -43,7 +43,7 @@ def make_function_name(signature_parts: list[str]) -> str:
     """
     result = "fn"
     for part in signature_parts:
-        param_match = re.match(r"\((\w+)(?:\s+\w+)?\)", part)
+        param_match = re.match(r"\((\w+)(?:\s+\w+\$?)?\)", part)
         array_param_match = re.match(r"\[(\w+\$?)\]", part)
         if param_match:
             result += f"__{param_match.group(1)}"
