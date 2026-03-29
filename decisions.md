@@ -49,3 +49,17 @@ Each entry records: what I chose to do, why, what changed, and the outcome.
 
 ---
 
+## 4. fix TS emitter: type composition missing parent fields (2026-03-29)
+
+**What:** TS emitter wasn't including inherited parent fields in struct interfaces and factory functions. `dog = animal + ...` would only emit `dog`'s own fields, losing `animal`'s fields.
+
+**Why:** Found by the new TS execution tests. The Python emitter already had `_collect_all_fields` but the TS emitter used `typ["fields"]` directly.
+
+**Fix:** Moved `_collect_all_fields` to `emit_base.py` (shared), updated both emitters to import it. TS `_emit_type` now uses all inherited fields.
+
+**Tests added:** 2 new TS execution tests — task filter, type composition.
+
+**Outcome:** 328 tests pass.
+
+---
+

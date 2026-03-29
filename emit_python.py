@@ -12,6 +12,7 @@ from emit_base import (
     collect_array_refs as _collect_array_refs,
     rewrite_array_ref as _rewrite_array_ref,
     replace_underscore as _replace_underscore,
+    collect_all_fields as _collect_all_fields,
     compute_dispatch_groups,
     make_task_fn_name,
     make_task_call_fn_name,
@@ -187,16 +188,6 @@ def _emit_type(typ: dict, enums: dict = None, all_types: dict = None) -> str | N
             lines.append("    pass")
         return "\n".join(lines)
 
-
-def _collect_all_fields(typ: dict, all_types: dict) -> list[dict]:
-    """Collect all fields including inherited parent fields."""
-    fields = []
-    for parent_name in typ.get("parents", []):
-        parent = all_types.get(parent_name)
-        if parent and parent["kind"] == "struct":
-            fields.extend(_collect_all_fields(parent, all_types))
-    fields.extend(typ["fields"])
-    return fields
 
 
 def _qualify_default(field: dict, enums: dict) -> str:

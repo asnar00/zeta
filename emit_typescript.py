@@ -12,6 +12,7 @@ from emit_base import (
     collect_array_refs as _collect_array_refs,
     rewrite_array_ref as _rewrite_array_ref,
     replace_underscore as _replace_underscore,
+    collect_all_fields as _collect_all_fields,
     compute_dispatch_groups,
     make_task_call_fn_name,
 )
@@ -141,14 +142,16 @@ def _emit_type(typ: dict, enums: dict = None, structs: dict = None) -> str | Non
 
     elif typ["kind"] == "struct":
         name = _ts_name(typ["name"])
+        # collect all fields including inherited parent fields
+        all_fields = _collect_all_fields(typ, structs)
         # interface
         iface_lines = [f"interface {name} {{"]
-        for field in typ["fields"]:
+        for field in all_fields:
             iface_lines.append(f"    readonly {field['name']}: {field['type']};")
         iface_lines.append("}")
         # factory function
         factory_args = []
-        for field in typ["fields"]:
+        for field in all_fields:
             default = _qualify_default_ts(field, enums, structs)
             factory_args.append(f"{field['name']}: args.{field['name']} ?? {default}")
         factory_body = "{ " + ", ".join(factory_args) + " }"

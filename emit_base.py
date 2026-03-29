@@ -183,6 +183,17 @@ def make_task_fn_name(task: dict) -> str:
     return fn_name
 
 
+def collect_all_fields(typ: dict, all_types: dict) -> list[dict]:
+    """Collect all fields including inherited parent fields."""
+    fields = []
+    for parent_name in typ.get("parents", []):
+        parent = all_types.get(parent_name)
+        if parent and parent["kind"] == "struct":
+            fields.extend(collect_all_fields(parent, all_types))
+    fields.extend(typ["fields"])
+    return fields
+
+
 def make_task_call_fn_name(call: dict) -> str:
     """Build the function name for a task call."""
     sig_parts = call["signature_parts"]

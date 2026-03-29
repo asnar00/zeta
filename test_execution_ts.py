@@ -284,3 +284,29 @@ def test_ts_exec_array_decl_in_body():
         int vals$ = [a, b, c]
         r = vals$ + _"""
     assert _run(source, "fn_sum_three__int_and__int_and__int(3, 4, 5)") == 12
+
+
+# --- tasks ---
+
+def test_ts_exec_task_filter():
+    source = """\
+    on (int even$) <- only evens from (int numbers$)
+        int n <- numbers$
+        if (n % 2 == 0)
+            even$ <- n
+    int all$ = [1, 2, 3, 4, 5, 6]
+    int even$ <- only evens from (all$)"""
+    assert _run(source, "even_arr") == [2, 4, 6]
+
+
+# --- type composition ---
+
+def test_ts_exec_type_composition():
+    source = """\
+    type animal
+        string name = ""
+    type dog = animal +
+        string breed = "unknown"
+    dog d = dog(name="Rex", breed="labrador")"""
+    assert _run(source, "d.name") == "Rex"
+    assert _run(source, "d.breed") == "labrador"
