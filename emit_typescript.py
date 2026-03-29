@@ -404,7 +404,7 @@ def _calls_any_of(stmt, fn_names: set[str]) -> bool:
     return False
 
 
-def _emit_if_block_ts(node: dict, structs: dict) -> str:
+def _emit_if_block_ts(node: dict, structs: dict, result_type: str = "void", async_fns: set = None, result_var: str = None) -> str:
     """Emit an if/else if/else block in TypeScript."""
     lines = []
     for i, branch in enumerate(node["branches"]):
@@ -417,7 +417,7 @@ def _emit_if_block_ts(node: dict, structs: dict) -> str:
         else:
             lines.append("} else {")
         for stmt in branch["body"]:
-            lines.append(f"    {_emit_expr(stmt, structs)};")
+            lines.append(f"    {_emit_stmt(stmt, result_type, structs, async_fns, result_var=result_var)}")
     lines.append("}")
     return "\n".join(lines)
 
@@ -497,9 +497,13 @@ def _emit_function(fn: dict, structs: dict, async_fns: set[str] = None) -> str:
     if fn["result"] is not None:
         ret_type = fn["result"]["type"]
         result_var = fn["result"]["name"]
+        # if body has if_blocks, declare result var with let at top
+        has_if = any(isinstance(s, dict) and s.get("kind") == "if_block" for s in fn["body"])
         lines = [f"{prefix} {name}({params}): {ret_type} {{"]
+        if has_if:
+            lines.append(f"    let {result_var}: {ret_type};")
         for stmt in fn["body"]:
-            lines.append(f"    {_emit_stmt(stmt, ret_type, structs, async_fns)}")
+            lines.append(f"    {_emit_stmt(stmt, ret_type, structs, async_fns, result_var=result_var if has_if else None)}")
         lines.append(f"    return {result_var};")
     else:
         lines = [f"{prefix} {name}({params}): void {{"]
@@ -512,15 +516,17 @@ def _emit_function(fn: dict, structs: dict, async_fns: set[str] = None) -> str:
 
 # --- expression emitter ---
 
-def _emit_stmt(node: dict, result_type: str, structs: dict, async_fns: set[str] = None) -> str:
+def _emit_stmt(node: dict, result_type: str, structs: dict, async_fns: set[str] = None, result_var: str = None) -> str:
     """Emit a TypeScript statement from an AST node."""
     async_fns = async_fns or set()
     if node["kind"] == "if_block":
-        return _emit_if_block_ts(node, structs)
+        return _emit_if_block_ts(node, structs, result_type, async_fns, result_var)
     if node["kind"] == "concurrently":
         return _emit_concurrently_ts(node, structs)
     if node["kind"] == "assign":
         value = _emit_expr(node["value"], structs)
+        if result_var and node["target"] == result_var:
+            return f"{node['target']} = {value};"
         return f"const {node['target']}: {result_type} = {value};"
     # check if this is a call to an async function — add await
     if node["kind"] == "call" and f"fn_{node['name']}" in async_fns:

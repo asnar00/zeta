@@ -19,3 +19,19 @@ Each entry records: what I chose to do, why, what changed, and the outcome.
 
 ---
 
+## 2. add TypeScript execution tests, fix 2 TS emitter bugs (2026-03-29)
+
+**What:** Created `test_execution_ts.py` with 30 tests that compile zero to TypeScript and run the output with `npx tsx`. This mirrors the Python execution tests. Found and fixed 2 bugs.
+
+**Why:** The existing TS emitter tests only checked string output, never that the generated code actually *runs*. Running it immediately found two real bugs.
+
+**Bug 1 — if/else blocks emitted raw AST dicts:** `_emit_if_block_ts` used `_emit_expr` for branch body statements, which doesn't handle `assign` nodes. Fix: use `_emit_stmt` instead, threading `result_type` and `async_fns` through.
+
+**Bug 2 — result variable scoping in if/else:** TS uses `const` for all assignments, but if/else branches need the result var declared as `let` at function scope. Fix: detect functions with if_blocks, emit `let result: type;` at the top, and use bare assignment inside branches.
+
+**Tests added:** 30 TS execution tests covering: variables, structs, functions, ternary, recursion, arrays, map, reduce, streaming, 3-step streaming, if/else, slicing, indexing, where, sort, enums, named fn map, bitwise, length, self-map, chained ops.
+
+**Outcome:** 323 tests pass (293 prior + 30 new).
+
+---
+
