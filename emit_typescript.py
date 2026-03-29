@@ -15,6 +15,7 @@ from emit_base import (
     collect_all_fields as _collect_all_fields,
     compute_dispatch_groups,
     make_task_call_fn_name,
+    source_comment,
 )
 
 # TypeScript builtin that needs no alias
@@ -68,15 +69,17 @@ def emit(ir: dict) -> str:
     if var_lines:
         sections.append("\n".join(var_lines))
 
+    src = ir.get("source_file")
+
     for task in ir.get("tasks", []):
-        sections.append(_emit_task_ts(task))
+        sections.append(source_comment(task, src, "//") + "\n" + _emit_task_ts(task))
 
     # compute which functions are async (contain concurrently or call async fns)
     async_fns = _compute_async_fns(ir["functions"])
 
     for fn in ir["functions"]:
         if not fn.get("abstract"):
-            sections.append(_emit_function(fn, structs, async_fns))
+            sections.append(source_comment(fn, src, "//") + "\n" + _emit_function(fn, structs, async_fns))
 
     # generate dispatch functions for multiple dispatch groups
     concrete_fns = [fn for fn in ir["functions"] if not fn.get("abstract")]

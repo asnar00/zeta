@@ -500,11 +500,13 @@ function vector(args: Partial<vector> = {}): vector {
     return { x: args.x ?? 0, y: args.y ?? 0, z: args.z ?? 0 };
 }
 
+// @zero on (vector v) = (vector a) + (vector b)
 function fn__vector_plus__vector(a: vector, b: vector): vector {
     const v: vector = vector({ x: a.x + b.x, y: a.y + b.y, z: a.z + b.z });
     return v;
 }
 
+// @zero on (number n) = smaller of (number a) and (number b)
 function fn_smaller_of__number_and__number(a: number, b: number): number {
     const n: number = (a < b) ? (a) : (b);
     return n;

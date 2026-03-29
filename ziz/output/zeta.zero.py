@@ -17,3 +17,21 @@ def fn_write_file__string__string(path: str, content: str):
 # @zero on print (string message)
 def fn_print__string(message: str):
     print(message)
+
+
+# @zero on (string out$) <- main (string args$); ziz/zeta.zero.md:37
+def fn_main__string(args_arr: str):
+    yield logo
+
+logo: str = "ᕦ(ツ)ᕤ"
+
+
+# Runtime harness: bridges OS to zero's main task
+import sys
+
+if __name__ == "__main__" or True:
+    try:
+        for line in fn_main__string(sys.argv[1:]):
+            print(line)
+    except NameError:
+        pass  # no main task defined

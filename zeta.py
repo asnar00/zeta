@@ -60,7 +60,7 @@ def main():
                         source = pf.read() + "\n" + source
 
     with log.section("parse"):
-        ir = process(source)
+        ir = process(source, source_file=input_path)
         log.log(f"{len(ir['types'])} types, {len(ir['functions'])} functions, "
                 f"{len(ir.get('tasks', []))} tasks, {len(ir['variables'])} variables")
         log.log(f"features: {', '.join(sorted(ir['features']))}")

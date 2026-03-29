@@ -17,3 +17,21 @@ function fn_write_file__string__string(path: string, content: string): void {
 function fn_print__string(message: string): void {
     console.log(message);
 }
+
+
+const logo: string = "ᕦ(ツ)ᕤ";
+
+// @zero on (string out$) <- main (string args$); ziz/zeta.zero.md:37
+function* fn_main__string(args_arr: readonly string[]): Generator<string> {
+    yield logo;
+}
+
+
+// Runtime harness: bridges OS to zero's main task
+try {
+    for (const line of fn_main__string(process.argv.slice(2))) {
+        console.log(line);
+    }
+} catch (e) {
+    // no main task defined
+}

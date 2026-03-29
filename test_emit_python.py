@@ -653,10 +653,12 @@ class vector(NamedTuple):
     y: number = 0
     z: number = 0
 
+# @zero on (vector v) = (vector a) + (vector b)
 def fn__vector_plus__vector(a: vector, b: vector) -> vector:
     v = vector(a.x + b.x, a.y + b.y, a.z + b.z)
     return v
 
+# @zero on (number n) = smaller of (number a) and (number b)
 def fn_smaller_of__number_and__number(a: number, b: number) -> number:
     n = (a) if (a < b) else (b)
     return n

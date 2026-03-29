@@ -194,6 +194,43 @@ def collect_all_fields(typ: dict, all_types: dict) -> list[dict]:
     return fields
 
 
+def zero_prototype(fn: dict) -> str:
+    """Reconstruct the zero declaration prototype from a function IR dict."""
+    sig = " ".join(fn["signature_parts"])
+    if fn.get("result"):
+        return f"on ({fn['result']['type']} {fn['result']['name']}) = {sig}"
+    return f"on {sig}"
+
+
+def zero_task_prototype(task: dict) -> str:
+    """Reconstruct the zero declaration prototype from a task IR dict."""
+    out = task["output"]
+    parts = []
+    for p in task.get("input_streams", []):
+        parts.append(f"({p['type']} {p['name']}$)")
+    for p in task.get("params", []):
+        parts.append(f"({p['type']} {p['name']})")
+    name = " ".join(task["name_parts"])
+    # interleave name parts and params
+    sig = " ".join(task["name_parts"])
+    for p in task.get("input_streams", []) + task.get("params", []):
+        pname = p["name"] + "$" if p in task.get("input_streams", []) else p["name"]
+        sig += f" ({p['type']} {pname})"
+    return f"on ({out['type']} {out['name']}$) <- {sig}"
+
+
+def source_comment(fn_or_task: dict, source_file: str = None, comment_char: str = "#") -> str:
+    """Build a @zero source comment for a function or task."""
+    if "name_parts" in fn_or_task:
+        proto = zero_task_prototype(fn_or_task)
+    else:
+        proto = zero_prototype(fn_or_task)
+    loc = ""
+    if source_file and fn_or_task.get("source_line"):
+        loc = f"; {source_file}:{fn_or_task['source_line']}"
+    return f"{comment_char} @zero {proto}{loc}"
+
+
 def make_task_call_fn_name(call: dict) -> str:
     """Build the function name for a task call."""
     sig_parts = call["signature_parts"]

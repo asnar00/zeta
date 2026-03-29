@@ -61,10 +61,12 @@ def _extract_code(source: str) -> tuple[str, list[int]]:
     return "\n".join(code_lines), line_map
 
 
-def process(source: str, recover: bool = False) -> dict:
+def process(source: str, recover: bool = False, source_file: str = None) -> dict:
     """Parse zero source text and return an IR dict.
     If recover=True, collects errors and continues instead of raising on first error."""
     ir = {"version": IR_VERSION, "features": set(), "types": [], "variables": [], "functions": [], "tasks": []}
+    if source_file:
+        ir["source_file"] = source_file
     # extract code from markdown if source looks like markdown
     line_map = None
     if _is_markdown(source):
@@ -809,6 +811,7 @@ def _parse_function(lines: list[str], start: int, fn_signatures: list = None, sr
             "signature_parts": signature_parts,
             "body": [],
             "abstract": True,
+            "source_line": line_num,
         }, i - start
 
     # group multi-line constructs (concurrently, if/else), then parse
@@ -836,6 +839,7 @@ def _parse_function(lines: list[str], start: int, fn_signatures: list = None, sr
         "params": params,
         "signature_parts": signature_parts,
         "body": body,
+        "source_line": line_num,
     }, i - start
 
 
@@ -1014,6 +1018,7 @@ def _parse_task(lines: list[str], start: int, src_line=None) -> tuple[dict, int]
         "input_streams": input_streams,
         "params": scalar_params,
         "body": body_lines,  # keep as raw strings for now
+        "source_line": line_num,
     }, i - start
 
 

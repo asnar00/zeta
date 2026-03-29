@@ -16,6 +16,7 @@ from emit_base import (
     compute_dispatch_groups,
     make_task_fn_name,
     make_task_call_fn_name,
+    source_comment,
 )
 
 # Python builtins that don't need type aliases
@@ -61,12 +62,14 @@ def emit(ir: dict) -> str:
         if code:
             sections.append(code)
 
+    src = ir.get("source_file")
+
     for task in ir.get("tasks", []):
-        sections.append(_emit_task(task))
+        sections.append(source_comment(task, src, "#") + "\n" + _emit_task(task))
 
     for fn in ir["functions"]:
         if not fn.get("abstract"):
-            sections.append(_emit_function(fn))
+            sections.append(source_comment(fn, src, "#") + "\n" + _emit_function(fn))
 
     # generate dispatch functions for multiple dispatch groups
     concrete_fns = [fn for fn in ir["functions"] if not fn.get("abstract")]
