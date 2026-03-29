@@ -72,7 +72,7 @@ def emit(ir: dict) -> str:
     src = ir.get("source_file")
 
     for task in ir.get("tasks", []):
-        sections.append(source_comment(task, src, "//") + "\n" + _emit_task_ts(task))
+        sections.append(source_comment(task, src, "//") + "\n" + _emit_task_ts(task, structs))
 
     # compute which functions are async (contain concurrently or call async fns)
     async_fns = _compute_async_fns(ir["functions"])
@@ -441,7 +441,7 @@ def _emit_if_block_ts(node: dict, structs: dict, result_type: str = "void", asyn
     return "\n".join(lines)
 
 
-def _emit_task_ts(task: dict) -> str:
+def _emit_task_ts(task: dict, structs: dict = None) -> str:
     """Emit a task as a TypeScript generator function."""
     name_parts = task["name_parts"]
     all_params = task.get("input_streams", []) + task.get("params", [])
@@ -464,36 +464,42 @@ def _emit_task_ts(task: dict) -> str:
     base_indent = "    "
     extra_indent = ""
 
-    for body_line in task["body"]:
-        consume_match = re.match(r"\w+\s+(\w+)\s*<-\s*(\w+\$)", body_line)
-        if consume_match:
-            var_name = consume_match.group(1)
-            stream_name = consume_match.group(2).replace("$", "_arr")
-            lines.append(f"{base_indent}for (const {var_name} of {stream_name}) {{")
+    for node in task["body"]:
+        if isinstance(node, str):
+            lines.append(f"{base_indent}{extra_indent}{node}")
+            continue
+
+        kind = node.get("kind")
+
+        if kind == "consume":
+            stream_name = node["stream"].replace("$", "_arr")
+            lines.append(f"{base_indent}for (const {node['name']} of {stream_name}) {{")
             extra_indent = "    "
-            continue
 
-        emit_match = re.match(r"(\w+\$)\s*<-\s*(.*)", body_line.strip())
-        if emit_match and emit_match.group(1) == output_stream_name:
-            expr = emit_match.group(2).strip()
-            lines.append(f"{base_indent}{extra_indent}yield {expr};")
-            continue
+        elif kind == "consume_call":
+            call = node["call"]
+            if call.get("kind") == "task_call":
+                call_fn = make_task_call_fn_name(call)
+                args = ", ".join(a.replace("$", "_arr") for a in call["args"])
+                lines.append(f"{base_indent}for (const {node['name']} of {call_fn}({args})) {{")
+            else:
+                lines.append(f"{base_indent}for (const {node['name']} of {_emit_expr(call, structs)}) {{")
+            extra_indent = "    "
 
-        if_match = re.match(r"if\s+\((.+)\)", body_line.strip())
-        if if_match:
-            cond = if_match.group(1)
-            lines.append(f"{base_indent}{extra_indent}if ({cond}) {{")
-            extra_indent += "    "
-            continue
+        elif kind == "emit":
+            lines.append(f"{base_indent}{extra_indent}yield {_emit_expr(node['value'], structs)};")
 
-        lines.append(f"{base_indent}{extra_indent}{body_line}")
+        elif kind == "if_block":
+            block_code = _emit_if_block_ts(node, structs)
+            for bl in block_code.split("\n"):
+                lines.append(f"{base_indent}{extra_indent}{bl}")
 
-    # close braces
+        else:
+            lines.append(f"{base_indent}{extra_indent}{_emit_expr(node, structs)};")
+
+    # close braces for consume loops
     if extra_indent:
-        indent = base_indent
-        while extra_indent:
-            extra_indent = extra_indent[4:]
-            lines.append(f"{indent}{'    ' * (len(extra_indent) // 4)}}}")
+        lines.append(f"{base_indent}}}")
     lines.append("}")
 
     return "\n".join(lines)
@@ -582,7 +588,10 @@ def _emit_expr(node: dict, structs: dict) -> str:
     """Emit a TypeScript expression from an AST node."""
     kind = node["kind"]
 
-    if kind == "call":
+    if kind == "emit":
+        return f"yield {_emit_expr(node['value'], structs)}"
+
+    elif kind == "call":
         name = node["name"]
         if name in structs:
             # struct constructor -> object literal via factory

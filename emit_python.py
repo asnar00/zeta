@@ -23,7 +23,7 @@ from emit_base import (
 _BUILTINS = {"int", "float", "string"}
 
 # Zero type names to Python type names
-_PY_TYPE_MAP = {"string": "str"}
+_PY_TYPE_MAP = {"string": "str", "char": "str"}
 
 
 _enum_values = {}  # populated by emit(), maps value -> "type.value"
@@ -441,32 +441,40 @@ def _emit_task(task: dict) -> str:
     base_indent = "    "
     extra_indent = ""
 
-    for body_line in task["body"]:
-        # consume: type name <- stream$
-        consume_match = re.match(r"\w+\s+(\w+)\s*<-\s*(\w+\$)", body_line)
-        if consume_match:
-            var_name = consume_match.group(1)
-            stream_name = consume_match.group(2).replace("$", "_arr")
-            lines.append(f"{base_indent}for {var_name} in {stream_name}:")
+    for node in task["body"]:
+        if isinstance(node, str):
+            # legacy: raw string (shouldn't happen with new parser)
+            lines.append(f"{base_indent}{extra_indent}{node}")
+            continue
+
+        kind = node.get("kind")
+
+        if kind == "consume":
+            stream_name = node["stream"].replace("$", "_arr")
+            lines.append(f"{base_indent}for {node['name']} in {stream_name}:")
             extra_indent = "    "
-            continue
 
-        # emit: output$ <- expr
-        emit_match = re.match(r"(\w+\$)\s*<-\s*(.*)", body_line.strip())
-        if emit_match and emit_match.group(1) == output_stream_name:
-            expr = emit_match.group(2).strip()
-            lines.append(f"{base_indent}{extra_indent}yield {expr}")
-            continue
+        elif kind == "consume_call":
+            call = node["call"]
+            if call.get("kind") == "task_call":
+                call_fn = make_task_call_fn_name(call)
+                args = ", ".join(a.replace("$", "_arr") for a in call["args"])
+                lines.append(f"{base_indent}for {node['name']} in {call_fn}({args}):")
+            else:
+                lines.append(f"{base_indent}for {node['name']} in {_emit_expr(call)}:")
+            extra_indent = "    "
 
-        # if block
-        if_match = re.match(r"if\s+\((.+)\)", body_line.strip())
-        if if_match:
-            cond = if_match.group(1)
-            lines.append(f"{base_indent}{extra_indent}if {cond}:")
-            extra_indent += "    "
-            continue
+        elif kind == "emit":
+            lines.append(f"{base_indent}{extra_indent}yield {_emit_expr(node['value'])}")
 
-        lines.append(f"{base_indent}{extra_indent}{body_line}")
+        elif kind == "if_block":
+            block_code = _emit_if_block(node)
+            for bl in block_code.split("\n"):
+                lines.append(f"{base_indent}{extra_indent}{bl}")
+
+        else:
+            # parsed expression node (var_decl, assign, fn_call, etc.)
+            lines.append(f"{base_indent}{extra_indent}{_emit_expr(node)}")
 
     return "\n".join(lines)
 
@@ -511,6 +519,9 @@ def _emit_expr(node: dict) -> str:
 
     if kind == "if_block":
         return _emit_if_block(node)
+
+    elif kind == "emit":
+        return f"yield {_emit_expr(node['value'])}"
 
     elif kind == "concurrently":
         block_calls = []

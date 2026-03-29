@@ -93,7 +93,7 @@ def process(source: str, recover: bool = False, source_file: str = None) -> dict
                 ir["types"].append(typ)
                 i += consumed
             elif _is_task_def(line):
-                task, consumed = _parse_task(lines, i, _src_line)
+                task, consumed = _parse_task(lines, i, _src_line, fn_signatures, task_signatures)
                 ir["tasks"].append(task)
                 i += consumed
             elif line.startswith("on "):
@@ -977,7 +977,7 @@ def _collect_task_signatures(lines: list[str]) -> list[dict]:
     return signatures
 
 
-def _parse_task(lines: list[str], start: int, src_line=None) -> tuple[dict, int]:
+def _parse_task(lines: list[str], start: int, src_line=None, fn_signatures: list = None, task_signatures: list = None) -> tuple[dict, int]:
     """Parse a task definition: on (type name$) <- signature"""
     line = lines[start].strip()
     line_num = src_line(start) if src_line else start + 1
@@ -1012,6 +1012,7 @@ def _parse_task(lines: list[str], start: int, src_line=None) -> tuple[dict, int]
     # collect body
     fn_indent = len(lines[start]) - len(lines[start].lstrip())
     body_lines = []
+    raw_body_lines = []
     i = start + 1
     while i < len(lines):
         body_line = lines[i]
@@ -1021,19 +1022,122 @@ def _parse_task(lines: list[str], start: int, src_line=None) -> tuple[dict, int]
         if line_indent <= fn_indent:
             break
         body_lines.append(body_line.strip())
+        raw_body_lines.append(body_line)
         i += 1
 
     if not body_lines:
         raise ZeroParseError("expected task body", line_num, line, column=len(line))
+
+    # parse body lines into structured nodes, using raw lines for indentation
+    output_stream = output_name + "$"
+    parsed_body = _parse_task_body(body_lines, raw_body_lines, output_stream, fn_signatures, task_signatures)
 
     return {
         "name_parts": name_parts,
         "output": {"name": output_name, "type": output_type},
         "input_streams": input_streams,
         "params": scalar_params,
-        "body": body_lines,  # keep as raw strings for now
+        "body": parsed_body,
         "source_line": line_num,
     }, i - start
+
+
+def _parse_task_body(body_lines: list[str], raw_body_lines: list[str], output_stream: str, fn_sigs: list = None, task_sigs: list = None) -> list:
+    """Parse task body lines into structured AST nodes, grouping if/elif/else blocks."""
+    # first, parse each line into a node with its indentation level
+    nodes_with_indent = []
+    for line, raw_line in zip(body_lines, raw_body_lines):
+        stripped = line.strip()
+        indent = len(raw_line) - len(raw_line.lstrip())
+
+        # consume: type name <- stream$ OR type name <- task call
+        consume_match = re.match(r"(\w+)\s+(\w+)\s*<-\s*(.*)", stripped)
+        if consume_match and not re.match(r"(\w+\$)\s*<-", stripped):
+            consume_type = consume_match.group(1)
+            consume_name = consume_match.group(2)
+            consume_rhs = consume_match.group(3).strip()
+            if re.match(r"\w+\$$", consume_rhs):
+                nodes_with_indent.append((indent, {
+                    "kind": "consume",
+                    "type": consume_type,
+                    "name": consume_name,
+                    "stream": consume_rhs,
+                }))
+            else:
+                rhs_stripped = re.sub(r"\(\)\s*$", "", consume_rhs).strip()
+                task_call = _try_parse_task_call(rhs_stripped, task_sigs) if task_sigs else None
+                if not task_call:
+                    task_call = _try_parse_task_call(consume_rhs, task_sigs) if task_sigs else None
+                fn_call = _try_parse_fn_call(consume_rhs, fn_sigs) if not task_call and fn_sigs else None
+                nodes_with_indent.append((indent, {
+                    "kind": "consume_call",
+                    "type": consume_type,
+                    "name": consume_name,
+                    "call": task_call or fn_call or {"kind": "raw", "value": consume_rhs},
+                }))
+            continue
+
+        # emit: output$ <- expr
+        emit_match = re.match(r"(\w+\$)\s*<-\s*(.*)", stripped)
+        if emit_match and emit_match.group(1) == output_stream:
+            expr_str = emit_match.group(2).strip()
+            nodes_with_indent.append((indent, {
+                "kind": "emit",
+                "value": _parse_expr(expr_str, fn_sigs),
+            }))
+            continue
+
+        # if / else if / else
+        if_match = re.match(r"if\s+\((.+)\)$", stripped)
+        elif_match = re.match(r"else if\s+\((.+)\)$", stripped)
+        if if_match:
+            nodes_with_indent.append((indent, {"kind": "task_if", "condition": _parse_expr(if_match.group(1), fn_sigs)}))
+            continue
+        if elif_match:
+            nodes_with_indent.append((indent, {"kind": "task_elif", "condition": _parse_expr(elif_match.group(1), fn_sigs)}))
+            continue
+        if stripped == "else":
+            nodes_with_indent.append((indent, {"kind": "task_else"}))
+            continue
+
+        # everything else: parse as expression
+        nodes_with_indent.append((indent, _parse_expression(stripped, fn_sigs, task_sigs)))
+
+    # now group if/elif/else blocks using indentation
+    result = []
+    i = 0
+    while i < len(nodes_with_indent):
+        indent, node = nodes_with_indent[i]
+        if node["kind"] == "task_if":
+            # collect the if block: branches with their indented body lines
+            branches = []
+            cond = node["condition"]
+            body = []
+            i += 1
+            while i < len(nodes_with_indent):
+                ni, nn = nodes_with_indent[i]
+                if ni > indent:
+                    body.append(nn)
+                    i += 1
+                elif ni == indent and nn.get("kind") == "task_elif":
+                    branches.append({"condition": cond, "body": body})
+                    cond = nn["condition"]
+                    body = []
+                    i += 1
+                elif ni == indent and nn.get("kind") == "task_else":
+                    branches.append({"condition": cond, "body": body})
+                    cond = None
+                    body = []
+                    i += 1
+                else:
+                    break
+            branches.append({"condition": cond, "body": body})
+            result.append({"kind": "if_block", "branches": branches})
+        else:
+            result.append(node)
+            i += 1
+
+    return result
 
 
 def _try_parse_task_call(rhs: str, task_sigs: list) -> dict | None:
@@ -1166,7 +1270,8 @@ def _parse_expression(line: str, fn_signatures: list = None, task_signatures: li
             target = line[:idx].strip()
             value_str = line[idx + 1:].strip()
             # check for reduce expression (contains _ as reduce marker)
-            if _is_reduce_expr(value_str):
+            # but not if it contains 'index of first' or 'where' (those use _ differently)
+            if _is_reduce_expr(value_str) and "index of first" not in value_str and "where" not in value_str:
                 return {"kind": "assign", "target": target, "value": _parse_reduce(value_str)}
             return {"kind": "assign", "target": target, "value": _parse_expr(value_str, fn_signatures)}
 
@@ -1207,6 +1312,11 @@ def _parse_expr(s: str, fn_sigs: list = None) -> dict:
     ternary = _try_parse_ternary(s, fn_sigs)
     if ternary:
         return ternary
+
+    # index of first in [...] where (...) — check before binop (contains _ which looks like reduce)
+    index_first = _try_parse_index_of_first_where(s, fn_sigs)
+    if index_first:
+        return index_first
 
     # try binary operation at top level
     binop = _try_parse_binop(s, fn_sigs)
