@@ -273,10 +273,32 @@ def _build_features(features_path: str, output_dir: str, flags: set):
                 break
         ir_by_feature[owner]["variables"].append(var)
 
+    # build module map: emitted_function_name → feature_name
+    from emit_base import make_function_name, make_task_fn_name as _make_task_fn_name
+    module_map = {}
+    for feat_name, feat_ir_data in ir_by_feature.items():
+        for fn in feat_ir_data["functions"]:
+            emitted_name = make_function_name(fn["signature_parts"])
+            module_map[emitted_name] = feat_name
+        for task in feat_ir_data["tasks"]:
+            emitted_name = _make_task_fn_name(task)
+            module_map[emitted_name] = feat_name
+
+    # figure out dependency order
+    feature_deps = {}
+    for f in features:
+        feature_deps[f["name"]] = f["extends"]
+    dep_order = []
+    for f in features:
+        if f["extends"] is None:
+            continue
+        if f["name"] not in dep_order:
+            dep_order.append(f["name"])
+
     # emit per-feature output for each target
     for ext in _EMITTERS:
-        module = __import__(_EMITTERS[ext])
-        emit = module.emit
+        emitter_module = __import__(_EMITTERS[ext])
+        emit = emitter_module.emit
         pext = _PLATFORM_EXT[ext]
 
         with log.section(f"emit {ext}"):
@@ -286,17 +308,34 @@ def _build_features(features_path: str, output_dir: str, flags: set):
                 feat_ir["tasks"] = ir_by_feature[feat_name]["tasks"]
                 feat_ir["variables"] = ir_by_feature[feat_name]["variables"]
                 feat_ir["source_file"] = f"ziz/{feat_name}.zero.md"
+                # pass module_map so emitter can prefix cross-module calls
+                feat_ir["module_map"] = module_map
+                feat_ir["current_module"] = feat_name
 
                 code = emit(feat_ir)
 
-                # root feature gets platform code and harness
+                # non-root TS features need 'export' on functions
+                if feat_name != root_name and ext == ".ts":
+                    code = code.replace("function ", "export function ")
+                    code = code.replace("function* ", "export function* ")
+
+                # root feature gets platform code, imports, and harness
                 if feat_name == root_name:
+                    # add imports for other features
+                    imports = []
+                    for dep in dep_order:
+                        if ext == ".py":
+                            imports.append(f"import {dep}")
+                        elif ext == ".ts":
+                            imports.append(f"import * as {dep} from './{dep}.js';")
+                    if imports:
+                        code = "\n".join(imports) + "\n\n" + code
                     if platform_prepend[ext]:
                         code = "\n\n".join(platform_prepend[ext]) + "\n\n" + code
                     if platform_append[ext]:
                         code = code + "\n\n" + "\n\n".join(platform_append[ext])
 
-                out_path = os.path.join(output_dir, f"{feat_name}.zero{pext}")
+                out_path = os.path.join(output_dir, f"{feat_name}{pext}")
                 with open(out_path, "w") as f:
                     f.write(code)
                 log.log(f"{feat_name} -> {out_path}")

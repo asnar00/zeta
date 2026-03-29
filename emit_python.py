@@ -86,7 +86,17 @@ def emit(ir: dict) -> str:
         sections.append("\n".join(var_lines))
     sections.extend(dispatch_sections)
 
-    return "\n\n".join(sections) + "\n" if sections else ""
+    result = "\n\n".join(sections) + "\n" if sections else ""
+
+    # prefix cross-module function calls if module_map is provided
+    module_map = ir.get("module_map")
+    current_module = ir.get("current_module")
+    if module_map and current_module:
+        for fn_name, mod_name in module_map.items():
+            if mod_name != current_module:
+                result = result.replace(f"{fn_name}(", f"{mod_name}.{fn_name}(")
+
+    return result
 
 
 def _generate_dispatchers(functions: list[dict], types: list[dict]) -> list[str]:
