@@ -14,3 +14,7 @@ Read the contents of a text file:
 Write a string to a text file:
 
     on write file (string path) (string content)
+
+Print a string to standard output:
+
+    on print (string message)

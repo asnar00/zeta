@@ -62,6 +62,9 @@ def emit(ir: dict) -> str:
     var_lines = []
     for var in ir["variables"]:
         var_lines.append(_emit_variable(var, structs))
+    # bare function call statements
+    for stmt in ir.get("statements", []):
+        var_lines.append(_emit_expr(stmt, structs) + ";")
     if var_lines:
         sections.append("\n".join(var_lines))
 
@@ -72,10 +75,12 @@ def emit(ir: dict) -> str:
     async_fns = _compute_async_fns(ir["functions"])
 
     for fn in ir["functions"]:
-        sections.append(_emit_function(fn, structs, async_fns))
+        if not fn.get("abstract"):
+            sections.append(_emit_function(fn, structs, async_fns))
 
     # generate dispatch functions for multiple dispatch groups
-    dispatch_sections = _generate_dispatchers_ts(ir["functions"], ir.get("types", []))
+    concrete_fns = [fn for fn in ir["functions"] if not fn.get("abstract")]
+    dispatch_sections = _generate_dispatchers_ts(concrete_fns, ir.get("types", []))
     sections.extend(dispatch_sections)
 
     return "\n\n".join(sections) + "\n" if sections else ""

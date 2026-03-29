@@ -10,3 +10,7 @@ function fn_read_file__string(path: string): string {
 function fn_write_file__string__string(path: string, content: string): void {
     writeFileSync(path, content, 'utf8');
 }
+
+function fn_print__string(message: string): void {
+    console.log(message);
+}
