@@ -310,3 +310,38 @@ def test_ts_exec_type_composition():
     dog d = dog(name="Rex", breed="labrador")"""
     assert _run(source, "d.name") == "Rex"
     assert _run(source, "d.breed") == "labrador"
+
+
+# --- string operations ---
+
+def test_ts_exec_string_concat():
+    source = """\
+    on (string r) = greet (string name)
+        r = "hello " + name"""
+    assert _run(source, 'fn_greet__string("world")') == "hello world"
+
+def test_ts_exec_string_equality():
+    source = """\
+    on (string r) = check (string s)
+        r = ("yes") if (s == "ok") else ("no")"""
+    assert _run(source, 'fn_check__string("ok")') == "yes"
+    assert _run(source, 'fn_check__string("nope")') == "no"
+
+
+# --- stream doubling ---
+
+def test_ts_exec_stream_doubling():
+    source = """\
+    int dbl$ <- 1 <- (dbl$ * 2) until (dbl$ > 100)"""
+    assert _run(source, "dbl_arr") == [1, 2, 4, 8, 16, 32, 64, 128]
+
+
+# --- named fn reduce ---
+
+def test_ts_exec_named_fn_reduce():
+    source = """\
+    on (int n) = smaller of (int a) and (int b)
+        n = (a) if (a < b) else (b)
+    int i$ = [3, 1, 4, 1, 5]
+    int min = smaller of (i$) and (_)"""
+    assert _run(source, "min") == 1
