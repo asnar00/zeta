@@ -245,20 +245,24 @@ def _emit_stream_ts(name: str, type_ann: str, stream: dict, structs: dict = None
     lines = [f"const {name}: {type_ann}[] = [{_emit_ts_stream_expr(steps[0])}];"]
 
     if len(steps) > 1:
-        repeat_expr = _emit_ts_stream_expr(steps[1])
         if terminate is None:
             for step in steps[1:]:
                 lines.append(f"{name}.push({_emit_ts_stream_expr(step)});")
-        elif terminate["kind"] == "until":
-            cond = _emit_ts_stream_expr(terminate["condition"])
-            lines.append(f"while (!({cond})) {{")
-            lines.append(f"    {name}.push({repeat_expr});")
-            lines.append("}")
-        elif terminate["kind"] == "while":
-            cond = _emit_ts_stream_expr(terminate["condition"])
-            lines.append(f"while ({cond}) {{")
-            lines.append(f"    {name}.push({repeat_expr});")
-            lines.append("}")
+        else:
+            # with a terminator: steps[1:-1] are extra seeds, steps[-1] is repeat
+            for step in steps[1:-1]:
+                lines.append(f"{name}.push({_emit_ts_stream_expr(step)});")
+            repeat_expr = _emit_ts_stream_expr(steps[-1])
+            if terminate["kind"] == "until":
+                cond = _emit_ts_stream_expr(terminate["condition"])
+                lines.append(f"while (!({cond})) {{")
+                lines.append(f"    {name}.push({repeat_expr});")
+                lines.append("}")
+            elif terminate["kind"] == "while":
+                cond = _emit_ts_stream_expr(terminate["condition"])
+                lines.append(f"while ({cond}) {{")
+                lines.append(f"    {name}.push({repeat_expr});")
+                lines.append("}")
 
     return "\n".join(lines)
 

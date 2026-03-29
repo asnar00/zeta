@@ -361,6 +361,33 @@ def test_exec_reduce_in_function_body():
         r = sq$ + _"""
     assert _run(source, "fn_sum_squares_of__int_and__int_and__int(3, 4, 5)") == 50
 
+# --- 3-step streaming ---
+
+def test_exec_3step_stream_no_terminator():
+    """3 literal steps with no loop: just three values."""
+    source = "    int i$ <- 10 <- 20 <- 30"
+    assert _run(source, "i_arr") == [10, 20, 30]
+
+def test_exec_3step_stream_with_until():
+    """Two seeds then a doubling repeat with terminator."""
+    source = "    int i$ <- 0 <- 1 <- (i$ + i$) until (i$ > 50)"
+    result = _run(source, "i_arr")
+    assert result[0] == 0
+    assert result[1] == 1
+    assert result == [0, 1, 2, 4, 8, 16, 32, 64]
+
+def test_exec_3step_stream_with_while():
+    """Two seeds then a repeat with while terminator."""
+    source = "    int i$ <- 5 <- 10 <- (i$ + 1) while (i$ < 14)"
+    result = _run(source, "i_arr")
+    assert result[:2] == [5, 10]
+    assert result == [5, 10, 11, 12, 13, 14]
+
+def test_exec_4step_stream_no_terminator():
+    """4 literal steps with no loop."""
+    source = "    int i$ <- 1 <- 2 <- 3 <- 4"
+    assert _run(source, "i_arr") == [1, 2, 3, 4]
+
 def test_exec_sort_descending():
     source = """\
     type person =

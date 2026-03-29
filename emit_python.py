@@ -280,19 +280,23 @@ def _emit_stream(name: str, stream: dict) -> str:
     lines = [f"{name} = [{_emit_stream_expr(steps[0])}]"]
 
     if len(steps) > 1:
-        repeat_expr = _emit_stream_expr(steps[1])
         if terminate is None:
             # no loop — just append each remaining step once
             for step in steps[1:]:
                 lines.append(f"{name}.append({_emit_stream_expr(step)})")
-        elif terminate["kind"] == "until":
-            cond = _emit_stream_expr(terminate["condition"])
-            lines.append(f"while not ({cond}):")
-            lines.append(f"    {name}.append({repeat_expr})")
-        elif terminate["kind"] == "while":
-            cond = _emit_stream_expr(terminate["condition"])
-            lines.append(f"while {cond}:")
-            lines.append(f"    {name}.append({repeat_expr})")
+        else:
+            # with a terminator: steps[1:-1] are extra seeds, steps[-1] is repeat
+            for step in steps[1:-1]:
+                lines.append(f"{name}.append({_emit_stream_expr(step)})")
+            repeat_expr = _emit_stream_expr(steps[-1])
+            if terminate["kind"] == "until":
+                cond = _emit_stream_expr(terminate["condition"])
+                lines.append(f"while not ({cond}):")
+                lines.append(f"    {name}.append({repeat_expr})")
+            elif terminate["kind"] == "while":
+                cond = _emit_stream_expr(terminate["condition"])
+                lines.append(f"while {cond}:")
+                lines.append(f"    {name}.append({repeat_expr})")
 
     return "\n".join(lines)
 
