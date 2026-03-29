@@ -75,18 +75,28 @@ def main():
         output = emit(ir)
         log.log(f"{len(output)} chars, {output.count(chr(10))} lines")
 
-    # prepend platform implementations if they exist
+    # prepend platform implementations, append platform entry points
     platform_ext = _PLATFORM_EXT.get(ext, "")
+    main_ext = ".main" + platform_ext  # e.g. ".main.py", ".main.ts"
     if os.path.isdir(platform_dir):
-        with log.section("prepend platform code"):
-            platform_code = []
+        with log.section("platform code"):
+            prepend = []
+            append = []
             for fname in sorted(os.listdir(platform_dir)):
-                if fname.endswith(platform_ext) and not fname.endswith(".zero.md"):
-                    log.log(fname)
+                if fname.endswith(".zero.md"):
+                    continue
+                if fname.endswith(main_ext):
+                    log.log(f"{fname} (append)")
                     with open(os.path.join(platform_dir, fname)) as pf:
-                        platform_code.append(pf.read())
-            if platform_code:
-                output = "\n\n".join(platform_code) + "\n\n" + output
+                        append.append(pf.read())
+                elif fname.endswith(platform_ext):
+                    log.log(f"{fname} (prepend)")
+                    with open(os.path.join(platform_dir, fname)) as pf:
+                        prepend.append(pf.read())
+            if prepend:
+                output = "\n\n".join(prepend) + "\n\n" + output
+            if append:
+                output = output + "\n\n" + "\n\n".join(append)
 
     with open(output_path, "w") as f:
         f.write(output)
