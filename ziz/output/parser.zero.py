@@ -19,7 +19,13 @@ def fn_print__string(message: str):
     print(message)
 
 
-# @zero on (int depth$) <- bracket depth of matching (char c$) (string pair); ziz/parser.zero.md:29
+# @zero on (string out$) <- main (string args$); ziz/zeta.zero.md + ziz/parser.zero.md:16
+def task_main__string(args_arr: str):
+    yield logo
+    for r in task_test_brackets():
+        yield r
+
+# @zero on (int depth$) <- bracket depth of matching (char c$) (string pair); ziz/zeta.zero.md + ziz/parser.zero.md:21
 def task_bracket_depth_of_matching__char__string(c_arr: str, pair: str):
     d = 0
     for c in c_arr:
@@ -29,7 +35,7 @@ def task_bracket_depth_of_matching__char__string(c_arr: str, pair: str):
             d = d - 1
         yield d
 
-# @zero on (string result$) <- test brackets; ziz/parser.zero.md:49
+# @zero on (string result$) <- test brackets; ziz/zeta.zero.md + ziz/parser.zero.md:35
 def task_test_brackets():
     logo = "ᕦ(ツ)ᕤ"
     pos = fn_matching__string_in__string_after__int("()", logo, 1)
@@ -38,17 +44,14 @@ def task_test_brackets():
     else:
         yield "FAIL brackets: expected 3"
 
-# @zero on (string out$) <- main (string args$); ziz/parser.zero.md:57
-def task_main__string(args_arr: str):
-    for r in task_test_brackets():
-        yield r
-
-# @zero on (int pos) = matching (string pair) in (string s) after (int start); ziz/parser.zero.md:40
+# @zero on (int pos) = matching (string pair) in (string s) after (int start); ziz/zeta.zero.md + ziz/parser.zero.md:30
 def fn_matching__string_in__string_after__int(pair: str, s: str, start: int) -> int:
     sub = s[start:]
     depth_arr = list(task_bracket_depth_of_matching__char__string(sub, pair))
     pos = start + next(i for i, x in enumerate(depth_arr) if x == 0)
     return pos
+
+logo: str = "ᕦ(ツ)ᕤ"
 
 
 # Runtime harness: bridges OS to zero's main task

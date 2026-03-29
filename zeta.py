@@ -1,11 +1,12 @@
 """zeta: translate zero programs to any target language.
 
-Usage: python3 zeta.py [--verbose] input.md output.py
+Usage: python3 zeta.py [--verbose] input.md [input2.md ...] output.py
 """
 
 import os
 import sys
 from parser import process
+from parser import _is_markdown, _extract_code
 import log
 
 _EMITTERS = {
@@ -26,13 +27,13 @@ def main():
     if "--verbose" in flags:
         log.enable()
 
-    if len(args) != 2:
-        print("Usage: python3 zeta.py [--verbose] input.md output.ext")
+    if len(args) < 2:
+        print("Usage: python3 zeta.py [--verbose] input.md [input2.md ...] output.ext")
         print("Supported extensions:", ", ".join(_EMITTERS))
         sys.exit(1)
 
-    input_path = args[0]
-    output_path = args[1]
+    input_paths = args[:-1]
+    output_path = args[-1]
 
     # determine emitter from output extension
     ext = "." + output_path.rsplit(".", 1)[-1] if "." in output_path else ""
@@ -45,9 +46,34 @@ def main():
     module = __import__(_EMITTERS[ext])
     emit = module.emit
 
+    # read all input files
     with log.section("read source"):
-        source = open(input_path).read()
-        log.log(f"{len(source)} chars from {input_path}")
+        sources = []
+        for path in input_paths:
+            src = open(path).read()
+            log.log(f"{len(src)} chars from {path}")
+            sources.append(src)
+
+    # if multiple inputs, use feature composition
+    if len(input_paths) > 1:
+        from feature_parser import parse_features
+        from composer import compose
+
+        with log.section("compose features"):
+            # extract code from markdown for each source
+            code_parts = []
+            for src in sources:
+                if _is_markdown(src):
+                    src, _ = _extract_code(src)
+                code_parts.append(src)
+            combined = "\n".join(code_parts)
+            features = parse_features(combined)
+            for f in features:
+                log.log(f"feature: {f['name']}" + (f" extends {f['extends']}" if f['extends'] else ""))
+            source = compose(features)
+            log.log(f"{len(source)} chars composed")
+    else:
+        source = sources[0]
 
     # collect platform signatures so the parser knows about them
     platform_dir = os.path.join(os.path.dirname(__file__), "platforms")
@@ -57,10 +83,15 @@ def main():
                 if fname.endswith(".zero.md"):
                     log.log(fname)
                     with open(os.path.join(platform_dir, fname)) as pf:
-                        source = pf.read() + "\n" + source
+                        plat_src = pf.read()
+                        # extract code from platform markdown
+                        if _is_markdown(plat_src):
+                            plat_src, _ = _extract_code(plat_src)
+                        source = plat_src + "\n" + source
 
     with log.section("parse"):
-        ir = process(source, source_file=input_path)
+        source_label = " + ".join(input_paths)
+        ir = process(source, source_file=source_label)
         log.log(f"{len(ir['types'])} types, {len(ir['functions'])} functions, "
                 f"{len(ir.get('tasks', []))} tasks, {len(ir['variables'])} variables")
         log.log(f"features: {', '.join(sorted(ir['features']))}")
@@ -101,7 +132,7 @@ def main():
     with open(output_path, "w") as f:
         f.write(output)
 
-    print(f"{input_path} -> {output_path}")
+    print(f"{' + '.join(input_paths)} -> {output_path}")
 
 
 if __name__ == "__main__":
