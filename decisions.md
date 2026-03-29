@@ -89,3 +89,20 @@ Each entry records: what I chose to do, why, what changed, and the outcome.
 
 ---
 
+## 7. tsc --strict validation + fix missing const/readonly (2026-03-29)
+
+**What:** Added 26 `tsc --strict --noEmit` tests that validate the generated TypeScript passes the real TypeScript compiler in strict mode. Fixed 3 issues found along the way.
+
+**Why:** The TS execution tests use `tsx` (esbuild) which strips types without checking them. Invalid type annotations, missing declarations, and readonly/mutable mismatches were invisible. `tsc --strict` catches all of these.
+
+**Bugs fixed:**
+- Task call results (`even_arr = [...]`) were missing `const` declaration and type annotation
+- Where/sort results (`sorted_arr = ...`) were missing `const` declaration and type annotation
+- Task input stream params used `number[]` but callers pass `readonly number[]` — changed to accept `readonly`
+
+**Tests added:** 26 tsc --strict tests covering all feature areas plus a comprehensive acid test combining everything.
+
+**Outcome:** 359 tests pass. All generated TypeScript is `tsc --strict` clean.
+
+---
+

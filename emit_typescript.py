@@ -230,7 +230,7 @@ def _emit_array_variable(name: str, type_ann: str, var: dict, structs: dict = No
     elif isinstance(val, dict) and val.get("kind") == "task_call":
         return _emit_task_call_ts(name, type_ann, val)
     elif isinstance(val, dict) and val.get("kind") in ("where", "sort"):
-        return f"{name} = {_emit_expr(val, structs or {})};"
+        return f"const {name}: {type_ann}[] = {_emit_expr(val, structs or {})};"
     elif isinstance(val, dict) and "kind" in val:
         # mapped expression over arrays
         return f"const {name}: readonly {type_ann}[] = {_emit_array_map_expr(val, structs)};"
@@ -282,7 +282,7 @@ def _emit_task_call_ts(name: str, type_ann: str, call: dict) -> str:
     """Emit a task call — spread generator into array."""
     fn_name = make_task_call_fn_name(call)
     args = ", ".join(a.replace("$", "_arr") for a in call["args"])
-    return f"{name} = [...{fn_name}({args})]"
+    return f"const {name}: {type_ann}[] = [...{fn_name}({args})];"
 
 
 def _emit_element(v, structs: dict = None) -> str:
@@ -441,7 +441,7 @@ def _emit_task_ts(task: dict) -> str:
     for p in all_params:
         pname = p["name"] + "_arr" if p in task.get("input_streams", []) else p["name"]
         ts_type = _ts_type(p["type"])
-        param_strs.append(f"{pname}: {ts_type}[]" if p in task.get("input_streams", []) else f"{pname}: {ts_type}")
+        param_strs.append(f"{pname}: readonly {ts_type}[]" if p in task.get("input_streams", []) else f"{pname}: {ts_type}")
     params_str = ", ".join(param_strs)
 
     fn_name = "fn_" + "_".join(name_parts)
