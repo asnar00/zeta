@@ -90,7 +90,7 @@ def _generate_dispatchers_ts(functions: list[dict], types: list[dict]) -> list[s
         param_names = [p["name"] for p in sorted_fns[0]["params"]]
         params_str = ", ".join(param_names)
 
-        ret_type = sorted_fns[0]["result"]["type"] if sorted_fns[0].get("result") else "void"
+        ret_type = _ts_type(sorted_fns[0]["result"]["type"]) if sorted_fns[0].get("result") else "void"
 
         lines = [f"function {dispatcher_name}({params_str}): {ret_type} {{"]
         for i, fn in enumerate(sorted_fns):
@@ -118,7 +118,15 @@ def _ts_name(name: str) -> str:
 
 def _ts_type(zero_type: str) -> str:
     """Map a zero type to its TS equivalent."""
-    return _TS_NUMERIC.get(zero_type, zero_type)
+    if zero_type in _TS_NUMERIC:
+        return _TS_NUMERIC[zero_type]
+    # concrete numeric types (int32, uint8, float64, etc.) map to number
+    if re.match(r"(int|uint|float)\d+$", zero_type):
+        return "number"
+    # abstract unsigned integers map to number
+    if zero_type == "uint":
+        return "number"
+    return zero_type
 
 
 def _emit_type(typ: dict, enums: dict = None, structs: dict = None) -> str | None:
@@ -147,7 +155,7 @@ def _emit_type(typ: dict, enums: dict = None, structs: dict = None) -> str | Non
         # interface
         iface_lines = [f"interface {name} {{"]
         for field in all_fields:
-            iface_lines.append(f"    readonly {field['name']}: {field['type']};")
+            iface_lines.append(f"    readonly {field['name']}: {_ts_type(field['type'])};")
         iface_lines.append("}")
         # factory function
         factory_args = []
@@ -183,7 +191,7 @@ def _qualify_default_ts(field: dict, enums: dict, structs: dict = None) -> str:
 def _emit_variable(var: dict, structs: dict) -> str:
     """Emit a variable declaration."""
     name = var["name"] + "_arr" if var["array"] else var["name"]
-    type_ann = var["type"]
+    type_ann = _ts_type(var["type"])
 
     if var["array"]:
         return _emit_array_variable(name, type_ann, var, structs)
@@ -432,14 +440,15 @@ def _emit_task_ts(task: dict) -> str:
     param_strs = []
     for p in all_params:
         pname = p["name"] + "_arr" if p in task.get("input_streams", []) else p["name"]
-        param_strs.append(f"{pname}: {p['type']}[]" if p in task.get("input_streams", []) else f"{pname}: {p['type']}")
+        ts_type = _ts_type(p["type"])
+        param_strs.append(f"{pname}: {ts_type}[]" if p in task.get("input_streams", []) else f"{pname}: {ts_type}")
     params_str = ", ".join(param_strs)
 
     fn_name = "fn_" + "_".join(name_parts)
     for p in all_params:
         fn_name += f"__{p['type']}"
 
-    output_type = task["output"]["type"]
+    output_type = _ts_type(task["output"]["type"])
     output_stream_name = task["output"]["name"] + "$"
 
     lines = [f"function* {fn_name}({params_str}): Generator<{output_type}> {{"]
@@ -490,7 +499,7 @@ def _emit_function(fn: dict, structs: dict, async_fns: set[str] = None) -> str:
     for p in fn["params"]:
         pname = p["name"].replace("$", "_arr")
         if p["type"] is not None:
-            param_strs.append(f"{pname}: {p['type']}")
+            param_strs.append(f"{pname}: {_ts_type(p['type'])}")
         else:
             param_strs.append(pname)
     params = ", ".join(param_strs)
@@ -498,7 +507,7 @@ def _emit_function(fn: dict, structs: dict, async_fns: set[str] = None) -> str:
     prefix = "async function" if is_async else "function"
 
     if fn["result"] is not None:
-        ret_type = fn["result"]["type"]
+        ret_type = _ts_type(fn["result"]["type"])
         result_var = fn["result"]["name"]
         # if body has if_blocks, declare result var with let at top
         has_if = any(isinstance(s, dict) and s.get("kind") == "if_block" for s in fn["body"])

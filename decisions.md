@@ -75,3 +75,17 @@ Each entry records: what I chose to do, why, what changed, and the outcome.
 
 ---
 
+## 6. fix TS type mapping: int/float/uint → number everywhere (2026-03-29)
+
+**What:** The TS emitter was using raw zero type names (`int`, `float`, `uint`, `int32`, etc.) as TypeScript type annotations. These aren't valid TS types — they should all map to `number`.
+
+**Why:** While `tsx` (esbuild) strips types and doesn't catch this, `tsc --strict` would reject the generated code. The Python emitter already mapped types correctly.
+
+**Fix:** Enhanced `_ts_type()` to handle concrete numeric types (`int32`, `uint8`, `float64`, etc.) and `uint`. Applied `_ts_type()` in all annotation sites: variables, function params, return types, task params/outputs, dispatcher return types, struct field interfaces. Updated 17 string-match tests that were asserting the old (incorrect) type names.
+
+**Tests added:** 1 new test for int→number mapping.
+
+**Outcome:** 333 tests pass.
+
+---
+

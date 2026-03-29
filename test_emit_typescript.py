@@ -24,6 +24,12 @@ def _assert_not_in(needle, haystack):
 
 # --- numeric types ---
 
+def test_emit_int_maps_to_number(report):
+    """int variables should use 'number' type in TypeScript."""
+    _check(report, "ts: int maps to number",
+           "    int i = 42",
+           lambda out: _assert_in("const i: number", out))
+
 def test_emit_concrete_int(report):
     _check(report, "ts: concrete int type",
            "    type int32 = ... 32-bit signed integer",
@@ -119,12 +125,12 @@ def test_emit_struct_enum_default(report):
 def test_emit_scalar_variable(report):
     _check(report, "ts: scalar int variable",
            "    int32 i = 10",
-           lambda out: _assert_in("const i: int32 = 10;", out))
+           lambda out: _assert_in("const i: number = 10;", out))
 
 def test_emit_float_variable(report):
     _check(report, "ts: scalar float variable",
            "    float f = 1.02",
-           lambda out: _assert_in("const f: float = 1.02;", out))
+           lambda out: _assert_in("const f: number = 1.02;", out))
 
 def test_emit_string_variable(report):
     _check(report, "ts: string variable",
@@ -147,32 +153,32 @@ def test_emit_struct_constructor_named(report):
 def test_emit_array_empty(report):
     _check(report, "ts: empty array",
            "    int i$",
-           lambda out: _assert_in("const i_arr: readonly int[] = [];", out))
+           lambda out: _assert_in("const i_arr: readonly number[] = [];", out))
 
 def test_emit_array_sized(report):
     _check(report, "ts: sized array",
            "    int i$[4]",
-           lambda out: _assert_in("const i_arr: readonly int[] = Array(4).fill(0);", out))
+           lambda out: _assert_in("const i_arr: readonly number[] = Array(4).fill(0);", out))
 
 def test_emit_array_sized_fill(report):
     _check(report, "ts: sized array with fill",
            "    int i$[4] = 1",
-           lambda out: _assert_in("const i_arr: readonly int[] = Array(4).fill(1);", out))
+           lambda out: _assert_in("const i_arr: readonly number[] = Array(4).fill(1);", out))
 
 def test_emit_array_literal(report):
     _check(report, "ts: array literal",
            "    int i$ = [1, 2, 3, 4]",
-           lambda out: _assert_in("const i_arr: readonly int[] = [1, 2, 3, 4];", out))
+           lambda out: _assert_in("const i_arr: readonly number[] = [1, 2, 3, 4];", out))
 
 def test_emit_array_through(report):
     _check(report, "ts: array with through range",
            "    int i$ = [1 through 4]",
-           lambda out: _assert_in("const i_arr: readonly int[] = Array.from({ length: 4 }, (_, i) => i + 1);", out))
+           lambda out: _assert_in("const i_arr: readonly number[] = Array.from({ length: 4 }, (_, i) => i + 1);", out))
 
 def test_emit_array_to(report):
     _check(report, "ts: array with to range",
            "    int i$ = [0 to 4]",
-           lambda out: _assert_in("const i_arr: readonly int[] = Array.from({ length: 4 }, (_, i) => i);", out))
+           lambda out: _assert_in("const i_arr: readonly number[] = Array.from({ length: 4 }, (_, i) => i);", out))
 
 
 # --- streaming ---
@@ -180,19 +186,19 @@ def test_emit_array_to(report):
 def test_emit_stream_simple(report):
     _check(report, "ts: simple stream",
            "    int i$ <- 1 <- 2 <- 3 <- 4",
-           lambda out: _assert_in("const i_arr: int[] = [1, 2, 3, 4];", out))
+           lambda out: _assert_in("const i_arr: number[] = [1, 2, 3, 4];", out))
 
 def test_emit_stream_until(report):
     _check(report, "ts: stream with until",
            "    int i$ <- 1 <- (i$ + 1) until (i$ == 4)",
-           lambda out: _assert_in("const i_arr: int[] = [1];", out),
+           lambda out: _assert_in("const i_arr: number[] = [1];", out),
            lambda out: _assert_in("while (!(i_arr[i_arr.length - 1] == 4))", out),
            lambda out: _assert_in("i_arr.push(i_arr[i_arr.length - 1] + 1)", out))
 
 def test_emit_stream_while(report):
     _check(report, "ts: stream with while",
            "    int i$ <- 0 <- (i$ + 1) while (i$ < 4)",
-           lambda out: _assert_in("const i_arr: int[] = [0];", out),
+           lambda out: _assert_in("const i_arr: number[] = [0];", out),
            lambda out: _assert_in("while (i_arr[i_arr.length - 1] < 4)", out),
            lambda out: _assert_in("i_arr.push(i_arr[i_arr.length - 1] + 1)", out))
 
@@ -205,7 +211,7 @@ def test_emit_array_map_scalar(report):
     int j$ = i$ * 2"""
     _check(report, "ts: array map with scalar",
            source,
-           lambda out: _assert_in("const j_arr: readonly int[] = i_arr.map(x => x * 2);", out))
+           lambda out: _assert_in("const j_arr: readonly number[] = i_arr.map(x => x * 2);", out))
 
 def test_emit_array_map_two_arrays(report):
     source = """\
@@ -214,7 +220,7 @@ def test_emit_array_map_two_arrays(report):
     int k$ = i$ + j$"""
     _check(report, "ts: array map with two arrays",
            source,
-           lambda out: _assert_in("const k_arr: readonly int[] = Array.from({ length: Math.max(i_arr.length, j_arr.length) }, (_, i) => (i_arr[i] ?? 0) + (j_arr[i] ?? 0));", out))
+           lambda out: _assert_in("const k_arr: readonly number[] = Array.from({ length: Math.max(i_arr.length, j_arr.length) }, (_, i) => (i_arr[i] ?? 0) + (j_arr[i] ?? 0));", out))
 
 
 # --- named function mapped over array ---
@@ -227,7 +233,7 @@ def test_emit_named_fn_map_single(report):
     int j$ = double (i$)"""
     _check(report, "ts: named function mapped over array",
            source,
-           lambda out: _assert_in("const j_arr: readonly int[] = i_arr.map(x => fn_double__number(x));", out))
+           lambda out: _assert_in("const j_arr: readonly number[] = i_arr.map(x => fn_double__number(x));", out))
 
 def test_emit_named_fn_map_with_scalar(report):
     source = """\
@@ -237,7 +243,7 @@ def test_emit_named_fn_map_with_scalar(report):
     int j$ = smaller of (i$) and (3)"""
     _check(report, "ts: named function map with scalar arg",
            source,
-           lambda out: _assert_in("const j_arr: readonly int[] = i_arr.map(x => fn_smaller_of__number_and__number(x, 3));", out))
+           lambda out: _assert_in("const j_arr: readonly number[] = i_arr.map(x => fn_smaller_of__number_and__number(x, 3));", out))
 
 
 # --- array reduction ---
@@ -248,7 +254,7 @@ def test_emit_reduce_operator(report):
     int sum = i$ + _"""
     _check(report, "ts: array reduce with operator",
            source,
-           lambda out: _assert_in("const sum: int = i_arr.reduce((a, b) => a + b);", out))
+           lambda out: _assert_in("const sum: number = i_arr.reduce((a, b) => a + b);", out))
 
 def test_emit_reduce_named_function(report):
     source = """\
@@ -256,7 +262,7 @@ def test_emit_reduce_named_function(report):
     int min = smaller of (i$) and (_)"""
     _check(report, "ts: array reduce with named function",
            source,
-           lambda out: _assert_in("const min: int = i_arr.reduce(fn_smaller_of__int_and__int);", out))
+           lambda out: _assert_in("const min: number = i_arr.reduce(fn_smaller_of__int_and__int);", out))
 
 
 # --- concurrently ---
