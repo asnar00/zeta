@@ -19,9 +19,11 @@ def fn_print__string(message: str):
     print(message)
 
 
-# @zero on (string out$) <- main (string args$); ziz/zeta.zero.md:37
-def fn_main__string(args_arr: str):
+# @zero on (string out$) <- main (string args$); ziz/zeta.zero.md:17
+def task_main__string(args_arr: str):
     yield logo
+    for r in task_test_brackets():
+        yield r
 
 logo: str = "ᕦ(ツ)ᕤ"
 
@@ -31,7 +33,7 @@ import sys
 
 if __name__ == "__main__" or True:
     try:
-        for line in fn_main__string(sys.argv[1:]):
+        for line in task_main__string(sys.argv[1:]):
             print(line)
     except NameError:
         pass  # no main task defined

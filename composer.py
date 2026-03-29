@@ -86,6 +86,63 @@ def compose(features: list[dict]) -> str:
     return "\n\n".join(output_parts) + "\n"
 
 
+def compose_per_feature(features: list[dict]) -> dict:
+    """Compose features and return a dict of {feature_name: zero_source}.
+
+    Each function goes in the output of the feature that first defined it,
+    with extensions from other features already applied to its body.
+    """
+    # track which feature owns each function
+    fn_owner = {}  # fn_name -> feature_name
+    all_functions = {}
+    for feature in features:
+        for fn_name, fn_def in feature.get("functions", {}).items():
+            all_functions[fn_name] = dict(fn_def)
+            fn_owner[fn_name] = feature["name"]
+
+    # apply extensions
+    all_extensions = []
+    for feature in features:
+        all_extensions.extend(feature.get("extensions", []))
+    for ext in all_extensions:
+        target_fn = ext["target_fn"]
+        if target_fn in all_functions:
+            all_functions[target_fn]["body"] = _apply_extension(
+                all_functions[target_fn]["body"], ext)
+
+    # collect types and variables per feature
+    feature_types = {}
+    feature_vars = {}
+    for feature in features:
+        name = feature["name"]
+        type_lines = []
+        for type_block in feature.get("types", []):
+            type_lines.append(type_block)
+        feature_types[name] = type_lines
+        feature_vars[name] = feature.get("variables", [])
+
+    # assemble per-feature output
+    result = {}
+    for feature in features:
+        name = feature["name"]
+        parts = []
+
+        if feature_types.get(name):
+            parts.append("\n".join(feature_types[name]))
+
+        if feature_vars.get(name):
+            parts.append("\n".join(feature_vars[name]))
+
+        # functions owned by this feature (with composed bodies)
+        for fn_name, fn_def in all_functions.items():
+            if fn_owner[fn_name] == name:
+                parts.append(fn_def["signature"] + "\n" + "\n".join(fn_def["body"]))
+
+        result[name] = "\n\n".join(parts) + "\n" if parts else ""
+
+    return result
+
+
 def _apply_extension(body: list[str], ext: dict) -> list[str]:
     """Apply a single extension to a function body.
 
