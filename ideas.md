@@ -22,7 +22,13 @@ These items have been completed and are tracked here for historical context:
 - **Strings** — type mapping, concat, equality, indexing, slicing.
 - **Markdown extraction** — parser strips prose, extracts code blocks.
 - **Abstract functions** — bodyless function declarations for platform interfaces.
-- **Execution tests** — 44 tests that compile zero to Python and run the output.
+- **Execution tests** — 48 Python + 39 TypeScript execution tests.
+- **3-step streaming** — fixed: multi-seed streams with terminators now work correctly.
+- **Error recovery** — parser supports `recover=True` mode, collects multiple errors.
+- **Source line mapping** — errors in markdown files report correct original line numbers.
+- **Shared emitter base** — `emit_base.py` with shared logic for function naming, dispatch, array ops.
+- **Structured logging** — `--verbose` flag on zeta.py with timed, hierarchical stage output.
+- **Parser warnings** — unrecognized lines reported instead of silently dropped.
 
 ## next: self-hosting
 
@@ -107,9 +113,9 @@ Can be written in zero now using existing primitives:
 - `join [a$$] with [sep$]` — task: emit with separator
 - `index of [b] in [a$]` — streaming with counter
 
-## 3-step streaming bug
+## 3-step streaming bug (RESOLVED)
 
-`a$ <- 1 <- 2 <- (expr) until (cond)` — the emitter only handles 2-step streams (seed + repeat). 3+ steps with a terminator generates wrong code. Currently worked around by simplifying to 2-step form.
+Fixed. With a terminator, steps[0..N-2] are initial seeds and steps[N-1] is the loop repeat expression. Both emitters updated.
 
 ## task examples to develop
 
@@ -127,8 +133,6 @@ The regex-based parser is fragile:
 - No formal grammar — adding features means more special cases
 - Consider: write a proper grammar-driven parser in zero as part of self-hosting
 
-## emitter deduplication
+## emitter deduplication (PARTIALLY RESOLVED)
 
-Python and TS emitters share ~60% logic. A third emitter would triple maintenance. Consider:
-- Shared base with target-specific overrides
-- Or: write the emitter in zero with multiple dispatch, emit to each target
+`emit_base.py` now contains shared logic: function naming, array refs, dispatch groups, underscore replacement, field collection. Both emitters import from it. Further deduplication possible but diminishing returns until a third emitter is added.
