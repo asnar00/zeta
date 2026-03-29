@@ -22,7 +22,7 @@ from emit_base import (
 _BUILTINS = {"number"}
 
 # Zero numeric base types to TS types
-_TS_NUMERIC = {"int": "number", "float": "number", "int | float": "number"}
+_TS_NUMERIC = {"int": "number", "float": "number", "int | float": "number", "char": "string"}
 
 _enum_values = {}  # populated by emit(), maps value -> "type.value"
 
@@ -441,6 +441,31 @@ def _emit_if_block_ts(node: dict, structs: dict, result_type: str = "void", asyn
     return "\n".join(lines)
 
 
+def _emit_task_if_block_ts(node: dict, structs: dict = None) -> str:
+    """Emit an if/else block in a task body — uses bare assignment, not const."""
+    structs = structs or {}
+    lines = []
+    for i, branch in enumerate(node["branches"]):
+        if i == 0:
+            cond = _emit_expr(branch["condition"], structs)
+            lines.append(f"if ({cond}) {{")
+        elif branch["condition"] is not None:
+            cond = _emit_expr(branch["condition"], structs)
+            lines.append(f"}} else if ({cond}) {{")
+        else:
+            lines.append("} else {")
+        for stmt in branch["body"]:
+            kind = stmt.get("kind", "")
+            if kind == "assign":
+                lines.append(f"    {stmt['target']} = {_emit_expr(stmt['value'], structs)};")
+            elif kind == "emit":
+                lines.append(f"    yield {_emit_expr(stmt['value'], structs)};")
+            else:
+                lines.append(f"    {_emit_expr(stmt, structs)};")
+    lines.append("}")
+    return "\n".join(lines)
+
+
 def _emit_task_ts(task: dict, structs: dict = None) -> str:
     """Emit a task as a TypeScript generator function."""
     name_parts = task["name_parts"]
@@ -490,9 +515,27 @@ def _emit_task_ts(task: dict, structs: dict = None) -> str:
             lines.append(f"{base_indent}{extra_indent}yield {_emit_expr(node['value'], structs)};")
 
         elif kind == "if_block":
-            block_code = _emit_if_block_ts(node, structs)
+            block_code = _emit_task_if_block_ts(node, structs)
             for bl in block_code.split("\n"):
                 lines.append(f"{base_indent}{extra_indent}{bl}")
+
+        elif kind == "var_decl":
+            name = node["name"] + "_arr" if node.get("array") else node["name"]
+            val = node.get("value")
+            if node.get("array") and isinstance(val, dict) and val.get("kind") == "task_call":
+                call_fn = make_task_call_fn_name(val)
+                args = ", ".join(a.replace("$", "_arr") for a in val["args"])
+                lines.append(f"{base_indent}{extra_indent}const {name} = [...{call_fn}({args})];")
+            elif node.get("array") and isinstance(val, list):
+                items = ", ".join(_emit_expr(v, structs) if isinstance(v, dict) else str(v) for v in val)
+                lines.append(f"{base_indent}{extra_indent}const {name} = [{items}];")
+            elif isinstance(val, dict):
+                lines.append(f"{base_indent}{extra_indent}let {name} = {_emit_expr(val, structs)};")
+            else:
+                lines.append(f"{base_indent}{extra_indent}let {name} = {val};")
+
+        elif kind == "assign":
+            lines.append(f"{base_indent}{extra_indent}{node['target']} = {_emit_expr(node['value'], structs)};")
 
         else:
             lines.append(f"{base_indent}{extra_indent}{_emit_expr(node, structs)};")
@@ -709,6 +752,10 @@ def _emit_expr(node: dict, structs: dict) -> str:
                         return f"const {name} = Array.from({{ length: {length} }}, (_, i) => i)"
                     return f"const {name} = Array.from({{ length: {length} }}, (_, i) => i + {start})"
                 return f"const {name} = Array.from({{ length: {length} }}, (_, i) => i + {start})"
+            elif isinstance(val, dict) and val.get("kind") == "task_call":
+                call_fn = make_task_call_fn_name(val)
+                args = ", ".join(a.replace("$", "_arr") for a in val["args"])
+                return f"const {name} = [...{call_fn}({args})]"
             elif isinstance(val, dict) and "kind" in val:
                 return f"const {name} = {_emit_array_map_expr(val, structs)}"
             return f"const {name} = {val}"
