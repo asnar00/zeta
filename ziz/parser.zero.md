@@ -1,7 +1,15 @@
 # parser
 *zero language processor — translated from parser.py*
 
-## bracket matching
+## specification
+
+Parser functions for the zero translator, starting with bracket matching.
+
+## definition
+
+    feature parser extends zeta
+
+### bracket matching
 
 A task that tracks bracket depth as it scans characters:
 
@@ -21,7 +29,7 @@ Find the position of the matching bracket:
         int depth$ <- bracket depth of (sub) matching (pair)
         pos = start + index of first in [depth$] where (_ == 0)
 
-## tests
+### tests
 
 Test bracket matching on the zeta logo:
 
@@ -33,6 +41,8 @@ Test bracket matching on the zeta logo:
         else
             result$ <- "FAIL brackets: expected 3"
 
-    on (string out$) <- main (string args$)
+Extend main to run parser tests:
+
+    after main (string args$)
         string r <- test brackets ()
         out$ <- r

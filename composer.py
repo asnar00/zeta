@@ -66,11 +66,19 @@ def compose(features: list[dict]) -> str:
     for name, lines in type_map.items():
         type_lines.extend(lines)
 
+    # collect variables
+    all_variables = []
+    for feature in features:
+        all_variables.extend(feature.get("variables", []))
+
     # assemble output
     output_parts = []
 
     if type_lines:
         output_parts.append("\n".join(type_lines))
+
+    if all_variables:
+        output_parts.append("\n".join(all_variables))
 
     for fn_name, fn_def in all_functions.items():
         output_parts.append(fn_def["signature"] + "\n" + "\n".join(fn_def["body"]))
@@ -81,11 +89,22 @@ def compose(features: list[dict]) -> str:
 def _apply_extension(body: list[str], ext: dict) -> list[str]:
     """Apply a single extension to a function body.
 
-    ext has: kind (before/after/on), target_step, insert (list of lines)
+    ext has: kind (before/after/on), target_step (str or None), insert (list of lines)
+    If target_step is None, before/after applies to the whole body.
     """
     target_step = ext["target_step"]
     insert_lines = ext["insert"]
     kind = ext["kind"]
+
+    # whole-body extension (no target step)
+    if target_step is None:
+        if kind == "before":
+            return insert_lines + body
+        elif kind == "after":
+            return body + insert_lines
+        elif kind == "replace":
+            return insert_lines
+        return body
 
     new_body = []
     for line in body:

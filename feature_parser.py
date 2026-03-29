@@ -32,6 +32,7 @@ def parse_features(source: str) -> list[dict]:
                 "extensions": [],
                 "type_extensions": [],
                 "types": [],
+                "variables": [],
             }
             features.append(current)
             i += 1
@@ -61,6 +62,32 @@ def parse_features(source: str) -> list[dict]:
             i += 1 + consumed
             continue
 
+        # function definition: on (type result) = signature  OR  on signature()  OR  on (type name$) <- ...
+        if stripped.startswith("on "):
+            fn_name = _extract_function_name(stripped)
+            body_lines, consumed = _collect_body(lines, i)
+            current["functions"][fn_name] = {
+                "signature": stripped,
+                "body": body_lines,
+            }
+            i += 1 + consumed
+            continue
+
+        # simple extension: before/after/replace fn_signature
+        simple_ext = re.match(r"(before|after|replace)\s+(.*)", stripped)
+        if simple_ext:
+            kind = simple_ext.group(1)
+            target_fn = _extract_function_name("on " + simple_ext.group(2).strip())
+            insert_lines, consumed = _collect_body(lines, i)
+            current["extensions"].append({
+                "kind": kind,
+                "target_fn": target_fn,
+                "target_step": None,
+                "insert": insert_lines,
+            })
+            i += 1 + consumed
+            continue
+
         # type extension: "type X +=" or "extend X"
         type_ext_match = re.match(r"type\s+(\S+)\s*\+=$", stripped) or re.match(r"extend\s+(\S+)$", stripped)
         if type_ext_match:
@@ -71,17 +98,6 @@ def parse_features(source: str) -> list[dict]:
                     "target_type": target_type,
                     "fields": fl.strip(),
                 })
-            i += 1 + consumed
-            continue
-
-        # function definition: on (type result) = signature  OR  on signature()
-        if stripped.startswith("on "):
-            fn_name = _extract_function_name(stripped)
-            body_lines, consumed = _collect_body(lines, i)
-            current["functions"][fn_name] = {
-                "signature": stripped,
-                "body": body_lines,
-            }
             i += 1 + consumed
             continue
 
@@ -98,6 +114,10 @@ def parse_features(source: str) -> list[dict]:
             current["types"].append("\n".join(type_lines))
             i = j
             continue
+
+        # anything else: collect as variable/raw code
+        if stripped and not stripped.startswith("#"):
+            current["variables"].append(stripped)
 
         i += 1
 
@@ -129,6 +149,17 @@ def _extract_function_name(line: str) -> str:
         on multi word name()              ->  multi word name
         on name (type param)              ->  name
     """
+    # task: on (type name$) <- signature
+    task_match = re.match(r"on\s+\(\w+\s+\w+\$\)\s*<-\s*(.*)", line)
+    if task_match:
+        rhs = task_match.group(1).strip()
+        parts = []
+        for token in re.findall(r"\([\w\s\$]+\)|\S+", rhs):
+            if token.startswith("("):
+                break
+            parts.append(token)
+        return " ".join(parts) if parts else rhs.split("(")[0].strip()
+
     # value-returning: on (type result) = ...
     match = re.match(r"on\s+\(\w+\s+\w+\)\s*=\s*(.*)", line)
     if match:

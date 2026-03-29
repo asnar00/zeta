@@ -7,6 +7,8 @@ Translates zero programs to any target language. This is the base feature of the
 
 ## definition
 
+    feature zeta
+
 The zeta logo:
 
     string logo = "ᕦ(ツ)ᕤ"
