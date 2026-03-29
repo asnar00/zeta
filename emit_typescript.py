@@ -3,38 +3,26 @@
 import re
 import sys
 from parser import process
+from emit_base import (
+    SYMBOL_WORDS as _SYMBOL_WORDS,
+    check_compatibility as _check_compatibility,
+    get_base_name as _get_base_name,
+    make_function_name as _make_function_name,
+    make_function_name_from_reduce as _make_function_name_from_reduce,
+    collect_array_refs as _collect_array_refs,
+    rewrite_array_ref as _rewrite_array_ref,
+    replace_underscore as _replace_underscore,
+    compute_dispatch_groups,
+    make_task_call_fn_name,
+)
 
 # TypeScript builtin that needs no alias
 _BUILTINS = {"number"}
-
-# Symbol-to-word mapping for function names
-_SYMBOL_WORDS = {
-    "+": "plus", "-": "minus", "*": "times", "/": "div", "%": "mod",
-    "==": "eq", "!=": "neq", "<": "lt", ">": "gt", "<=": "lte", ">=": "gte",
-    "&": "band", "|": "bor", "^": "bxor", "<<": "shl", ">>": "shr",
-}
 
 # Zero numeric base types to TS types
 _TS_NUMERIC = {"int": "number", "float": "number", "int | float": "number"}
 
 _enum_values = {}  # populated by emit(), maps value -> "type.value"
-
-_SUPPORTED_VERSION = 1
-_SUPPORTED_FEATURES = {
-    "numeric_types", "enums", "structs", "arrays", "functions",
-    "void_functions", "concurrently", "array_map", "array_reduce",
-    "fn_calls", "strings", "streaming", "tasks", "conditionals", "slicing", "array_fns", "indexing", "filtering", "sorting",
-}
-
-
-def _check_compatibility(ir: dict):
-    """Check that this emitter can handle the given IR."""
-    version = ir.get("version", 0)
-    if version > _SUPPORTED_VERSION:
-        raise ValueError(f"IR version {version} is not supported (max {_SUPPORTED_VERSION})")
-    unsupported = ir.get("features", set()) - _SUPPORTED_FEATURES
-    if unsupported:
-        raise ValueError(f"unsupported features: {', '.join(sorted(unsupported))}")
 
 
 _CONCURRENTLY_HELPER_TS = """\
@@ -92,50 +80,11 @@ def emit(ir: dict) -> str:
     return "\n\n".join(sections) + "\n" if sections else ""
 
 
-def _get_base_name(sig_parts: list[str]) -> str:
-    """Extract the base function name (words only, no type params)."""
-    words = []
-    for part in sig_parts:
-        if not part.startswith("(") and not part.startswith("["):
-            words.append(part)
-    return "_".join(words)
-
-
 def _generate_dispatchers_ts(functions: list[dict], types: list[dict]) -> list[str]:
     """Generate dispatch functions for function groups with multiple definitions."""
-    groups = {}
-    for fn in functions:
-        base = _get_base_name(fn["signature_parts"])
-        if base not in groups:
-            groups[base] = []
-        groups[base].append(fn)
-
-    type_parents = {}
-    for t in types:
-        if t["kind"] == "struct":
-            type_parents[t["name"]] = t.get("parents", [])
-
+    dispatch_groups = compute_dispatch_groups(functions, types)
     sections = []
-    for base, fns in groups.items():
-        if len(fns) <= 1:
-            continue
-
-        def _specificity(fn):
-            param_type = fn["params"][0]["type"] if fn["params"] else ""
-            parents = type_parents.get(param_type, [])
-            depth = 0
-            visited = set()
-            to_check = list(parents)
-            while to_check:
-                p = to_check.pop(0)
-                if p not in visited:
-                    visited.add(p)
-                    depth += 1
-                    to_check.extend(type_parents.get(p, []))
-            return -depth
-
-        sorted_fns = sorted(fns, key=_specificity)
-
+    for base, sorted_fns in dispatch_groups.items():
         dispatcher_name = "fn_" + base
         param_names = [p["name"] for p in sorted_fns[0]["params"]]
         params_str = ", ".join(param_names)
@@ -316,11 +265,7 @@ def _emit_stream_ts(name: str, type_ann: str, stream: dict, structs: dict = None
 
 def _emit_task_call_ts(name: str, type_ann: str, call: dict) -> str:
     """Emit a task call — spread generator into array."""
-    sig_parts = call["signature_parts"]
-    fn_name = "fn_" + "_".join(p for p in sig_parts if not p.startswith("("))
-    for p in sig_parts:
-        if p.startswith("("):
-            fn_name += f"__{p[1:-1]}"
+    fn_name = make_task_call_fn_name(call)
     args = ", ".join(a.replace("$", "_arr") for a in call["args"])
     return f"{name} = [...{fn_name}({args})]"
 
@@ -354,39 +299,6 @@ def _emit_array_map_expr(node: dict, structs: dict) -> str:
         return f"Array.from({{ length: Math.max({lengths}) }}, (_, i) => {expr})"
 
 
-def _collect_array_refs(node: dict) -> list[str]:
-    """Collect all array reference names (with $) from an expression AST."""
-    refs = []
-    if node["kind"] == "name" and node["value"].endswith("$"):
-        refs.append(node["value"])
-    elif node["kind"] == "binop":
-        refs.extend(_collect_array_refs(node["left"]))
-        refs.extend(_collect_array_refs(node["right"]))
-    elif node["kind"] == "fn_call":
-        for arg in node["args"]:
-            refs.extend(_collect_array_refs(arg))
-    return refs
-
-
-def _rewrite_array_ref(node: dict, array_name: str, replacement: str) -> dict:
-    """Replace an array reference with a replacement string in an AST."""
-    if node["kind"] == "name" and node["value"] == array_name:
-        return {"kind": "raw", "value": replacement}
-    elif node["kind"] == "binop":
-        return {
-            "kind": "binop",
-            "op": node["op"],
-            "left": _rewrite_array_ref(node["left"], array_name, replacement),
-            "right": _rewrite_array_ref(node["right"], array_name, replacement),
-        }
-    elif node["kind"] == "fn_call":
-        return {
-            "kind": "fn_call",
-            "signature_parts": node["signature_parts"],
-            "args": [_rewrite_array_ref(a, array_name, replacement) for a in node["args"]],
-        }
-    return node
-
 
 def _emit_value(value, zero_type: str, structs: dict) -> str:
     """Emit a value expression."""
@@ -408,24 +320,6 @@ def _emit_reduce(node: dict, zero_type: str) -> str:
         fn_name = _make_function_name_from_reduce(node["fn_parts"], zero_type)
         return f"{arr}.reduce({fn_name})"
 
-
-def _make_function_name_from_reduce(fn_parts: list[str], zero_type: str) -> str:
-    """Build a function name from reduce fn_parts."""
-    result = "fn"
-    for part in fn_parts:
-        if re.match(r"\(\w+\$\)", part):
-            result += f"__{zero_type}"
-        elif part in ("(..)", "(_)"):
-            result += f"__{zero_type}"
-        elif part in _SYMBOL_WORDS:
-            if not result.endswith("_"):
-                result += "_"
-            result += _SYMBOL_WORDS[part]
-        else:
-            if not result.endswith("_"):
-                result += "_"
-            result += part
-    return result
 
 
 def _emit_call_value(call: dict, structs: dict) -> str:
@@ -611,26 +505,6 @@ def _emit_function(fn: dict, structs: dict, async_fns: set[str] = None) -> str:
     return "\n".join(lines)
 
 
-def _make_function_name(signature_parts: list[str]) -> str:
-    """Generate a function name from signature parts."""
-    result = "fn"
-    for part in signature_parts:
-        param_match = re.match(r"\((\w+)(?:\s+\w+)?\)", part)
-        array_param_match = re.match(r"\[(\w+\$?)\]", part)
-        if param_match:
-            result += f"__{param_match.group(1)}"
-        elif array_param_match:
-            pass  # generic array params omitted from name
-        elif part in _SYMBOL_WORDS:
-            if result and not result.endswith("_"):
-                result += "_"
-            result += _SYMBOL_WORDS[part]
-        else:
-            if result and not result.endswith("_"):
-                result += "_"
-            result += part
-    return result
-
 
 # --- expression emitter ---
 
@@ -673,24 +547,6 @@ def _emit_concurrently_ts(node: dict, structs: dict) -> str:
     return f"await _concurrently({args});"
 
 
-def _replace_underscore_ts(node: dict, replacement: str) -> dict:
-    """Replace _ references with a replacement name in an AST."""
-    if not isinstance(node, dict):
-        return node
-    if node.get("kind") == "name" and node.get("value") == "_":
-        return {"kind": "name", "value": replacement}
-    if node.get("kind") == "member" and node.get("object") == "_":
-        return {"kind": "member", "object": replacement, "field": node["field"]}
-    result = {}
-    for key, val in node.items():
-        if isinstance(val, dict):
-            result[key] = _replace_underscore_ts(val, replacement)
-        elif isinstance(val, list):
-            result[key] = [_replace_underscore_ts(v, replacement) if isinstance(v, dict) else v for v in val]
-        else:
-            result[key] = val
-    return result
-
 
 def _emit_expr(node: dict, structs: dict) -> str:
     """Emit a TypeScript expression from an AST node."""
@@ -724,12 +580,12 @@ def _emit_expr(node: dict, structs: dict) -> str:
 
     elif kind == "where":
         arr = _emit_expr(node["array"], structs)
-        cond = _emit_expr(_replace_underscore_ts(node["condition"], "x"), structs)
+        cond = _emit_expr(_replace_underscore(node["condition"], "x"), structs)
         return f"{arr}.filter(x => {cond})"
 
     elif kind == "first_where":
         arr = _emit_expr(node["array"], structs)
-        cond = _emit_expr(_replace_underscore_ts(node["condition"], "x"), structs)
+        cond = _emit_expr(_replace_underscore(node["condition"], "x"), structs)
         return f"{arr}.find(x => {cond})"
 
     elif kind == "sort":
@@ -737,8 +593,8 @@ def _emit_expr(node: dict, structs: dict) -> str:
         if node["key"] is None:
             result = f"[...{arr}].sort()"
         else:
-            key = _emit_expr(_replace_underscore_ts(node["key"], "a"), structs)
-            key_b = _emit_expr(_replace_underscore_ts(node["key"], "b"), structs)
+            key = _emit_expr(_replace_underscore(node["key"], "a"), structs)
+            key_b = _emit_expr(_replace_underscore(node["key"], "b"), structs)
             result = f"[...{arr}].sort((a, b) => {key} - {key_b})"
         if node.get("descending"):
             result += ".reverse()"

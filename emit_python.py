@@ -3,6 +3,19 @@
 import re
 import sys
 from parser import process
+from emit_base import (
+    SYMBOL_WORDS as _SYMBOL_WORDS,
+    check_compatibility as _check_compatibility,
+    get_base_name as _get_base_name,
+    make_function_name as _make_function_name,
+    make_function_name_from_reduce as _make_function_name_from_reduce,
+    collect_array_refs as _collect_array_refs,
+    rewrite_array_ref as _rewrite_array_ref,
+    replace_underscore as _replace_underscore,
+    compute_dispatch_groups,
+    make_task_fn_name,
+    make_task_call_fn_name,
+)
 
 # Python builtins that don't need type aliases
 _BUILTINS = {"int", "float", "string"}
@@ -10,32 +23,8 @@ _BUILTINS = {"int", "float", "string"}
 # Zero type names to Python type names
 _PY_TYPE_MAP = {"string": "str"}
 
-# Symbol-to-word mapping for function names
-_SYMBOL_WORDS = {
-    "+": "plus", "-": "minus", "*": "times", "/": "div", "%": "mod",
-    "==": "eq", "!=": "neq", "<": "lt", ">": "gt", "<=": "lte", ">=": "gte",
-    "&": "band", "|": "bor", "^": "bxor", "<<": "shl", ">>": "shr",
-}
-
 
 _enum_values = {}  # populated by emit(), maps value -> "type.value"
-
-_SUPPORTED_VERSION = 1
-_SUPPORTED_FEATURES = {
-    "numeric_types", "enums", "structs", "arrays", "functions",
-    "void_functions", "concurrently", "array_map", "array_reduce",
-    "fn_calls", "strings", "streaming", "tasks", "conditionals", "slicing", "array_fns", "indexing", "filtering", "sorting",
-}
-
-
-def _check_compatibility(ir: dict):
-    """Check that this emitter can handle the given IR."""
-    version = ir.get("version", 0)
-    if version > _SUPPORTED_VERSION:
-        raise ValueError(f"IR version {version} is not supported (max {_SUPPORTED_VERSION})")
-    unsupported = ir.get("features", set()) - _SUPPORTED_FEATURES
-    if unsupported:
-        raise ValueError(f"unsupported features: {', '.join(sorted(unsupported))}")
 
 
 def emit(ir: dict) -> str:
@@ -96,57 +85,12 @@ def emit(ir: dict) -> str:
     return "\n\n".join(sections) + "\n" if sections else ""
 
 
-def _get_base_name(sig_parts: list[str]) -> str:
-    """Extract the base function name (words only, no type params)."""
-    words = []
-    for part in sig_parts:
-        if not part.startswith("(") and not part.startswith("["):
-            words.append(part)
-    return "_".join(words)
-
-
 def _generate_dispatchers(functions: list[dict], types: list[dict]) -> list[str]:
     """Generate dispatch functions for function groups with multiple definitions."""
-    # group functions by base name
-    groups = {}
-    for fn in functions:
-        base = _get_base_name(fn["signature_parts"])
-        if base not in groups:
-            groups[base] = []
-        groups[base].append(fn)
-
-    # build type hierarchy for specificity ordering
-    type_parents = {}
-    for t in types:
-        if t["kind"] == "struct":
-            type_parents[t["name"]] = t.get("parents", [])
-
+    dispatch_groups = compute_dispatch_groups(functions, types)
     sections = []
-    for base, fns in groups.items():
-        if len(fns) <= 1:
-            continue  # no dispatch needed
-
-        # sort by specificity: subtypes first (types with parents come before their parents)
-        def _specificity(fn):
-            param_type = fn["params"][0]["type"] if fn["params"] else ""
-            parents = type_parents.get(param_type, [])
-            # more parents = more specific (deeper in hierarchy)
-            depth = 0
-            visited = set()
-            to_check = list(parents)
-            while to_check:
-                p = to_check.pop(0)
-                if p not in visited:
-                    visited.add(p)
-                    depth += 1
-                    to_check.extend(type_parents.get(p, []))
-            return -depth  # negative so most specific sorts first
-
-        sorted_fns = sorted(fns, key=_specificity)
-
-        # build dispatcher
+    for base, sorted_fns in dispatch_groups.items():
         dispatcher_name = "fn_" + base
-        # use the first function's param names for the dispatcher signature
         param_names = [p["name"] for p in sorted_fns[0]["params"]]
         params_str = ", ".join(param_names)
 
@@ -161,7 +105,6 @@ def _generate_dispatchers(functions: list[dict], types: list[dict]) -> list[str]
                 keyword = "if" if i == 0 else "elif"
                 lines.append(f"    {keyword} isinstance({param_names[0]}, {param_type}):")
                 lines.append(f"        return {specific_name}({params_str})")
-        # fallback
         last_name = _make_function_name(sorted_fns[-1]["signature_parts"])
         lines.append(f"    return {last_name}({params_str})")
 
@@ -356,11 +299,7 @@ def _emit_stream(name: str, stream: dict) -> str:
 
 def _emit_task_call(name: str, type_ann: str, call: dict) -> str:
     """Emit a task call — materialise generator into a list."""
-    sig_parts = call["signature_parts"]
-    fn_name = "fn_" + "_".join(p for p in sig_parts if not p.startswith("("))
-    for p in sig_parts:
-        if p.startswith("("):
-            fn_name += f"__{p[1:-1]}"
+    fn_name = make_task_call_fn_name(call)
     args = ", ".join(a.replace("$", "_arr") for a in call["args"])
     return f"{name} = list({fn_name}({args}))"
 
@@ -409,39 +348,6 @@ def _emit_array_map_expr(node: dict) -> str:
         return f"[{expr} for {vars_str} in zip_longest({arrs_str}, fillvalue=0)]"
 
 
-def _collect_array_refs(node: dict) -> list[str]:
-    """Collect all array reference names (with $) from an expression AST."""
-    refs = []
-    if node["kind"] == "name" and node["value"].endswith("$"):
-        refs.append(node["value"])
-    elif node["kind"] == "binop":
-        refs.extend(_collect_array_refs(node["left"]))
-        refs.extend(_collect_array_refs(node["right"]))
-    elif node["kind"] == "fn_call":
-        for arg in node["args"]:
-            refs.extend(_collect_array_refs(arg))
-    return refs
-
-
-def _rewrite_array_ref(node: dict, array_name: str, loop_var: str) -> dict:
-    """Replace an array reference with a loop variable in an AST."""
-    if node["kind"] == "name" and node["value"] == array_name:
-        return {"kind": "name", "value": loop_var}
-    elif node["kind"] == "binop":
-        return {
-            "kind": "binop",
-            "op": node["op"],
-            "left": _rewrite_array_ref(node["left"], array_name, loop_var),
-            "right": _rewrite_array_ref(node["right"], array_name, loop_var),
-        }
-    elif node["kind"] == "fn_call":
-        return {
-            "kind": "fn_call",
-            "signature_parts": node["signature_parts"],
-            "args": [_rewrite_array_ref(a, array_name, loop_var) for a in node["args"]],
-        }
-    return node
-
 
 def _emit_value(value, zero_type: str) -> str:
     """Emit a value expression."""
@@ -464,27 +370,6 @@ def _emit_reduce(node: dict, zero_type: str) -> str:
         fn_name = _make_function_name_from_reduce(node["fn_parts"], zero_type)
         return f"functools.reduce({fn_name}, {arr})"
 
-
-def _make_function_name_from_reduce(fn_parts: list[str], zero_type: str) -> str:
-    """Build a function name from reduce fn_parts, replacing array/accumulator refs with types."""
-    import re as _re
-    result = "fn"
-    for part in fn_parts:
-        if _re.match(r"\(\w+\$\)", part):
-            # array param — use the variable's type
-            result += f"__{zero_type}"
-        elif part in ("(..)", "(_)"):
-            # accumulator — same type
-            result += f"__{zero_type}"
-        elif part in _SYMBOL_WORDS:
-            if not result.endswith("_"):
-                result += "_"
-            result += _SYMBOL_WORDS[part]
-        else:
-            if not result.endswith("_"):
-                result += "_"
-            result += part
-    return result
 
 
 def _emit_call_value(call: dict) -> str:
@@ -514,24 +399,6 @@ def _emit_sort(node: dict) -> str:
         result = result[:-1] + ", reverse=True)"
     return result
 
-
-def _replace_underscore(node: dict, replacement: str) -> dict:
-    """Replace _ references with a replacement name in an AST."""
-    if not isinstance(node, dict):
-        return node
-    if node.get("kind") == "name" and node.get("value") == "_":
-        return {"kind": "name", "value": replacement}
-    if node.get("kind") == "member" and node.get("object") == "_":
-        return {"kind": "member", "object": replacement, "field": node["field"]}
-    result = {}
-    for key, val in node.items():
-        if isinstance(val, dict):
-            result[key] = _replace_underscore(val, replacement)
-        elif isinstance(val, list):
-            result[key] = [_replace_underscore(v, replacement) if isinstance(v, dict) else v for v in val]
-        else:
-            result[key] = val
-    return result
 
 
 def _emit_if_block(node: dict) -> str:
@@ -636,33 +503,6 @@ def _indent(text: str, prefix: str) -> list[str]:
     """Indent each line of a multi-line string."""
     return [prefix + line for line in text.split("\n")]
 
-
-def _make_function_name(signature_parts: list[str]) -> str:
-    """Generate a Python function name from signature parts.
-    Words stay as-is, symbols become words, param types get double-underscore prefix.
-    """
-    import re
-    result = "fn"
-    for i, part in enumerate(signature_parts):
-        # match "(type name)" or "(type)" — both indicate a parameter
-        param_match = re.match(r"\((\w+)(?:\s+\w+)?\)", part)
-        # match "[name$]" — array parameter (generic, omit from name)
-        array_param_match = re.match(r"\[(\w+\$?)\]", part)
-        if param_match:
-            # double-underscore before type, no extra separator
-            result += f"__{param_match.group(1)}"
-        elif array_param_match:
-            # array params are generic, just mark with __arr
-            pass  # omit from name — generic functions don't encode the type
-        elif part in _SYMBOL_WORDS:
-            if result and not result.endswith("_"):
-                result += "_"
-            result += _SYMBOL_WORDS[part]
-        else:
-            if result and not result.endswith("_"):
-                result += "_"
-            result += part
-    return result
 
 
 # --- expression emitter ---

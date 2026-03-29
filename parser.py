@@ -31,70 +31,102 @@ def _is_markdown(source: str) -> bool:
     return False
 
 
-def _extract_code(source: str) -> str:
+def _extract_code(source: str) -> tuple[str, list[int]]:
     """Extract code from markdown source.
-    Collects indented lines (removing 4-space indent) and fenced code blocks."""
+    Collects indented lines (removing 4-space indent) and fenced code blocks.
+    Returns (code_string, line_map) where line_map[i] is the 1-based source line
+    number for code line i."""
     lines = source.split("\n")
     code_lines = []
+    line_map = []  # code line index -> original 1-based line number
     in_fence = False
-    for line in lines:
+    for idx, line in enumerate(lines):
+        orig_line = idx + 1
         # fenced code block
         if line.strip().startswith("```"):
             in_fence = not in_fence
             continue
         if in_fence:
             code_lines.append(line)
+            line_map.append(orig_line)
             continue
         # indented line (4 spaces or tab)
         if line.startswith("    ") or line.startswith("\t"):
             code_lines.append(line)
+            line_map.append(orig_line)
         elif line.strip() == "":
             code_lines.append("")
+            line_map.append(orig_line)
         # non-indented non-empty lines are prose — skip
-    return "\n".join(code_lines)
+    return "\n".join(code_lines), line_map
 
 
-def process(source: str) -> dict:
-    """Parse zero source text and return an IR dict."""
+def process(source: str, recover: bool = False) -> dict:
+    """Parse zero source text and return an IR dict.
+    If recover=True, collects errors and continues instead of raising on first error."""
     ir = {"version": IR_VERSION, "features": set(), "types": [], "variables": [], "functions": [], "tasks": []}
     # extract code from markdown if source looks like markdown
+    line_map = None
     if _is_markdown(source):
-        source = _extract_code(source)
+        source, line_map = _extract_code(source)
     lines = source.split("\n")
+
+    def _src_line(code_idx: int) -> int:
+        """Map a code line index to the original source line number."""
+        if line_map is not None and code_idx < len(line_map):
+            return line_map[code_idx]
+        return code_idx + 1
 
     # first pass: collect function and task signatures for call resolution
     fn_signatures = _collect_signatures(lines)
     task_signatures = _collect_task_signatures(lines)
 
+    errors = []
     i = 0
     while i < len(lines):
         line = lines[i].strip()
-        if line.startswith("type "):
-            typ, consumed = _parse_type(lines, i)
-            ir["types"].append(typ)
-            i += consumed
-        elif _is_task_def(line):
-            task, consumed = _parse_task(lines, i)
-            ir["tasks"].append(task)
-            i += consumed
-        elif line.startswith("on "):
-            fn, consumed = _parse_function(lines, i, fn_signatures)
-            ir["functions"].append(fn)
-            i += consumed
-        elif line and not line.startswith("#"):
-            # try as a bare function call statement (has parens, no '=')
-            if "(" in line and "=" not in line:
-                fn_call = _try_parse_fn_call(line, fn_signatures)
-                if fn_call:
-                    ir.setdefault("statements", []).append(fn_call)
-                    i += 1
-                    continue
-            var = _parse_variable(line, fn_signatures, task_signatures)
-            if var:
-                ir["variables"].append(var)
+        try:
+            if line.startswith("type "):
+                typ, consumed = _parse_type(lines, i, _src_line)
+                ir["types"].append(typ)
+                i += consumed
+            elif _is_task_def(line):
+                task, consumed = _parse_task(lines, i, _src_line)
+                ir["tasks"].append(task)
+                i += consumed
+            elif line.startswith("on "):
+                fn, consumed = _parse_function(lines, i, fn_signatures, _src_line)
+                ir["functions"].append(fn)
+                i += consumed
+            elif line and not line.startswith("#"):
+                # try as a bare function call statement (has parens, no '=')
+                if "(" in line and "=" not in line:
+                    fn_call = _try_parse_fn_call(line, fn_signatures)
+                    if fn_call:
+                        ir.setdefault("statements", []).append(fn_call)
+                        i += 1
+                        continue
+                var = _parse_variable(line, fn_signatures, task_signatures)
+                if var:
+                    ir["variables"].append(var)
+                i += 1
+            else:
+                i += 1
+        except ZeroParseError as e:
+            if not recover:
+                raise
+            errors.append(e)
+            # skip to next top-level declaration
             i += 1
-        else:
-            i += 1
+            while i < len(lines):
+                next_line = lines[i].strip()
+                if (next_line.startswith("type ") or next_line.startswith("on ")
+                        or _is_task_def(next_line) or next_line == ""):
+                    break
+                i += 1
+
+    if errors:
+        ir["errors"] = errors
 
     # detect features used
     ir["features"] = _detect_features(ir)
@@ -260,11 +292,11 @@ def _collect_signatures(lines: list[str]) -> list[dict]:
     return signatures
 
 
-def _parse_type(lines: list[str], start: int) -> tuple[dict, int]:
+def _parse_type(lines: list[str], start: int, src_line=None) -> tuple[dict, int]:
     """Parse a type declaration starting at the given line index.
     Returns (type_dict, number_of_lines_consumed)."""
     line = lines[start].strip()
-    line_num = start + 1
+    line_num = src_line(start) if src_line else start + 1
 
     # check for 'type =' (missing name)
     if re.match(r"type\s*=", line):
@@ -280,7 +312,7 @@ def _parse_type(lines: list[str], start: int) -> tuple[dict, int]:
             if next_stripped and not next_stripped.startswith("type ") and not next_stripped.startswith("on "):
                 has_fields = True
         if has_fields:
-            return _parse_struct_type(abstract_match.group(1), lines, start, line_num)
+            return _parse_struct_type(abstract_match.group(1), lines, start, line_num, src_line=src_line)
         return {"kind": "struct", "name": abstract_match.group(1), "fields": [], "parents": []}, 1
 
     # type composition: "type dog = animal +" or "type pet = animal + named +"
@@ -291,7 +323,7 @@ def _parse_type(lines: list[str], start: int) -> tuple[dict, int]:
         # split on + to get parent types (last + has nothing after it)
         parts = [p.strip() for p in rhs.split("+") if p.strip()]
         parents = parts
-        return _parse_struct_type(name, lines, start, line_num, parents=parents)
+        return _parse_struct_type(name, lines, start, line_num, parents=parents, src_line=src_line)
 
     match = re.match(r"type\s+(\S+)\s*=\s*(.*)", line)
     if not match:
@@ -309,7 +341,7 @@ def _parse_type(lines: list[str], start: int) -> tuple[dict, int]:
 
     # check if rest is empty (struct with fields on next lines)
     if rest == "":
-        return _parse_struct_type(name, lines, start, line_num)
+        return _parse_struct_type(name, lines, start, line_num, src_line=src_line)
 
     # union or enum: distinguish by whether values look like type names or enum values
     # enum: single words separated by |, not matching known type patterns
@@ -350,10 +382,10 @@ def _parse_numeric_type(name: str, rest: str) -> dict:
     return {"kind": "numeric", "name": name, "base": base, "size": size}
 
 
-def _parse_struct_type(name: str, lines: list[str], start: int, line_num: int = None, parents: list = None) -> tuple[dict, int]:
+def _parse_struct_type(name: str, lines: list[str], start: int, line_num: int = None, parents: list = None, src_line=None) -> tuple[dict, int]:
     """Parse a struct type with indented field lines."""
     if line_num is None:
-        line_num = start + 1
+        line_num = src_line(start) if src_line else start + 1
     if parents is None:
         parents = []
     fields = []
@@ -728,10 +760,10 @@ def _parse_literal(s: str):
 
 # --- functions ---
 
-def _parse_function(lines: list[str], start: int, fn_signatures: list = None) -> tuple[dict, int]:
+def _parse_function(lines: list[str], start: int, fn_signatures: list = None, src_line=None) -> tuple[dict, int]:
     """Parse a function definition starting with 'on'."""
     line = lines[start].strip()
-    line_num = start + 1
+    line_num = src_line(start) if src_line else start + 1
 
     # try value-returning function: on (type result) = signature
     result_match = re.match(r"on\s+\((\w+)\s+(\w+)\)\s*=\s*(.*)", line)
@@ -788,7 +820,7 @@ def _parse_function(lines: list[str], start: int, fn_signatures: list = None) ->
         stmt = _parse_expression(item, fn_signatures)
         if stmt["kind"] == "assign":
             if stmt["target"] in assigned:
-                body_line_num = start + 2 + idx
+                body_line_num = src_line(start + 1 + idx) if src_line else start + 2 + idx
                 raise ZeroParseError(
                     f"variable '{stmt['target']}' already assigned (SSA violation)",
                     body_line_num, item, column=0)
@@ -923,10 +955,10 @@ def _collect_task_signatures(lines: list[str]) -> list[dict]:
     return signatures
 
 
-def _parse_task(lines: list[str], start: int) -> tuple[dict, int]:
+def _parse_task(lines: list[str], start: int, src_line=None) -> tuple[dict, int]:
     """Parse a task definition: on (type name$) <- signature"""
     line = lines[start].strip()
-    line_num = start + 1
+    line_num = src_line(start) if src_line else start + 1
 
     match = re.match(r"on\s+\((\w+)\s+(\w+)\$\)\s*<-\s*(.*)", line)
     if not match:
