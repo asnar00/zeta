@@ -109,6 +109,10 @@ def process(source: str, recover: bool = False) -> dict:
                 var = _parse_variable(line, fn_signatures, task_signatures)
                 if var:
                     ir["variables"].append(var)
+                else:
+                    ir.setdefault("warnings", []).append(
+                        f"line {_src_line(i)}: unrecognized: {line}"
+                    )
                 i += 1
             else:
                 i += 1

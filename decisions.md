@@ -63,3 +63,15 @@ Each entry records: what I chose to do, why, what changed, and the outcome.
 
 ---
 
+## 5. parser warnings for unrecognized lines (2026-03-29)
+
+**What:** The parser now collects warnings for lines it can't parse, instead of silently skipping them. Warnings are stored in `ir["warnings"]` and shown in `--verbose` mode.
+
+**Why:** Silent skipping is a major source of confusion — a typo in zero source means the line vanishes with no feedback. This is listed under "parser hardening" in ideas.md.
+
+**Fix:** When `_parse_variable` returns `None` for a non-empty, non-comment line, a warning is added with the source line number and text. Warnings are surfaced in `zeta.py --verbose` output.
+
+**Outcome:** 332 tests pass. No regressions.
+
+---
+

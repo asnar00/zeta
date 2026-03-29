@@ -67,6 +67,9 @@ def main():
         if ir.get("errors"):
             for e in ir["errors"]:
                 log.log(f"error: {e.format()}")
+        if ir.get("warnings"):
+            for w in ir["warnings"]:
+                log.log(f"warning: {w}")
 
     with log.section(f"emit {ext}"):
         output = emit(ir)
