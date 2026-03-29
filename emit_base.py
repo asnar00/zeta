@@ -177,7 +177,7 @@ def make_task_fn_name(task: dict) -> str:
     """Build the function name for a task."""
     name_parts = task["name_parts"]
     all_params = task.get("input_streams", []) + task.get("params", [])
-    fn_name = "fn_" + "_".join(name_parts)
+    fn_name = "task_" + "_".join(name_parts)
     for p in all_params:
         fn_name += f"__{p['type']}"
     return fn_name
@@ -234,7 +234,7 @@ def source_comment(fn_or_task: dict, source_file: str = None, comment_char: str 
 def make_task_call_fn_name(call: dict) -> str:
     """Build the function name for a task call."""
     sig_parts = call["signature_parts"]
-    fn_name = "fn_" + "_".join(p for p in sig_parts if not p.startswith("("))
+    fn_name = "task_" + "_".join(p for p in sig_parts if not p.startswith("("))
     for p in sig_parts:
         if p.startswith("("):
             fn_name += f"__{p[1:-1]}"

@@ -608,9 +608,9 @@ def test_emit_task_filter(report):
     int even$ <- only evens from (all$)"""
     _check(report, "task: filter evens",
            source,
-           lambda out: _assert_in("def fn_only_evens_from__int(numbers_arr", out),
+           lambda out: _assert_in("def task_only_evens_from__int(numbers_arr", out),
            lambda out: _assert_in("yield n", out),
-           lambda out: _assert_in("even_arr = list(fn_only_evens_from__int(all_arr))", out))
+           lambda out: _assert_in("even_arr = list(task_only_evens_from__int(all_arr))", out))
 
 
 # --- end-to-end ---

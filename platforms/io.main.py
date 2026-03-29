@@ -3,7 +3,7 @@ import sys
 
 if __name__ == "__main__" or True:
     try:
-        for line in fn_main__string(sys.argv[1:]):
+        for line in task_main__string(sys.argv[1:]):
             print(line)
     except NameError:
         pass  # no main task defined

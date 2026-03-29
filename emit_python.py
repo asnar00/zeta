@@ -427,7 +427,7 @@ def _emit_task(task: dict) -> str:
     params_str = ", ".join(param_strs)
 
     # build function name from name parts + param types
-    fn_name = "fn_" + "_".join(name_parts)
+    fn_name = "task_" + "_".join(name_parts)
     for p in all_params:
         fn_name += f"__{p['type']}"
 
@@ -540,6 +540,10 @@ def _emit_expr(node: dict) -> str:
                 return f"{name} = [{items}]"
             elif isinstance(val, dict) and "range" in val:
                 return f"{name} = {_emit_range(val)}"
+            elif isinstance(val, dict) and val.get("kind") == "task_call":
+                fn_name = make_task_call_fn_name(val)
+                args = ", ".join(a.replace("$", "_arr") for a in val["args"])
+                return f"{name} = list({fn_name}({args}))"
             elif isinstance(val, dict) and "kind" in val:
                 return f"{name} = {_emit_array_map_expr(val)}"
             return f"{name} = {val}"

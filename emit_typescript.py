@@ -452,7 +452,7 @@ def _emit_task_ts(task: dict) -> str:
         param_strs.append(f"{pname}: readonly {ts_type}[]" if p in task.get("input_streams", []) else f"{pname}: {ts_type}")
     params_str = ", ".join(param_strs)
 
-    fn_name = "fn_" + "_".join(name_parts)
+    fn_name = "task_" + "_".join(name_parts)
     for p in all_params:
         fn_name += f"__{p['type']}"
 

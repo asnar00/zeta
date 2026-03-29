@@ -381,9 +381,9 @@ def test_emit_task_filter(report):
     int even$ <- only evens from (all$)"""
     _check(report, "ts: task: filter evens",
            source,
-           lambda out: _assert_in("function* fn_only_evens_from__int(numbers_arr", out),
+           lambda out: _assert_in("function* task_only_evens_from__int(numbers_arr", out),
            lambda out: _assert_in("yield n;", out),
-           lambda out: _assert_in("const even_arr: number[] = [...fn_only_evens_from__int(all_arr)];", out))
+           lambda out: _assert_in("const even_arr: number[] = [...task_only_evens_from__int(all_arr)];", out))
 
 
 # --- type composition ---
