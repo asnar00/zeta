@@ -160,6 +160,18 @@ def test_exec_array_slice_through():
     int mid$ = i$[1 through 3]"""
     assert _run(source, "mid_arr") == [20, 30, 40]
 
+def test_exec_array_slice_onwards():
+    source = """\
+    int i$ = [10, 20, 30, 40, 50]
+    int tail$ = i$[2 onwards]"""
+    assert _run(source, "tail_arr") == [30, 40, 50]
+
+def test_exec_string_slice_onwards():
+    source = """\
+    string s = "hello world"
+    string tail = s[6 onwards]"""
+    assert _run(source, "tail") == "world"
+
 
 # --- where ---
 

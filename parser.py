@@ -1227,9 +1227,13 @@ def _parse_expr(s: str, fn_sigs: list = None) -> dict:
             inclusive = range_match.group(2) == "through"
             return {"kind": "slice", "array": array_expr, "start": start_expr, "end": end_expr, "inclusive": inclusive}
 
-        # open-ended slice: name$[expr:]
-        if inner.endswith(":"):
-            start_expr = _parse_expr(inner[:-1].strip(), fn_sigs)
+        # open-ended slice: name$[expr:] or name$[expr onwards]
+        onwards_match = re.match(r"(.+?)\s+onwards$", inner)
+        if inner.endswith(":") or onwards_match:
+            if onwards_match:
+                start_expr = _parse_expr(onwards_match.group(1).strip(), fn_sigs)
+            else:
+                start_expr = _parse_expr(inner[:-1].strip(), fn_sigs)
             return {"kind": "slice", "array": array_expr, "start": start_expr, "end": None, "inclusive": False}
 
         # open-start slice: name$[:expr]
