@@ -173,6 +173,21 @@ def test_exec_string_slice_onwards():
     assert _run(source, "tail") == "world"
 
 
+# --- index of first ---
+
+def test_exec_index_of_first():
+    source = """\
+    int i$ = [10, 20, 30, 40, 50]
+    int pos = index of first in [i$] where (_ > 25)"""
+    assert _run(source, "pos") == 2
+
+def test_exec_index_of_first_at_start():
+    source = """\
+    int i$ = [5, 1, 2, 3]
+    int pos = index of first in [i$] where (_ == 5)"""
+    assert _run(source, "pos") == 0
+
+
 # --- where ---
 
 def test_exec_where():

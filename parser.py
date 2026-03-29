@@ -212,7 +212,7 @@ def _detect_in_exprs(ir: dict, features: set):
             features.add("array_fns")
         if node.get("kind") == "index":
             features.add("indexing")
-        if node.get("kind") in ("where", "first_where"):
+        if node.get("kind") in ("where", "first_where", "index_of_first_where"):
             features.add("filtering")
         if node.get("kind") == "sort":
             features.add("sorting")
@@ -462,10 +462,13 @@ def _parse_scalar_variable(type_name: str, var_name: str, rest: str, fn_sigs: li
     value = None
     if rest.startswith("="):
         rhs = rest[1:].strip()
+        # check for index of first in [...] where (...)
+        index_first = _try_parse_index_of_first_where(rhs, fn_sigs)
+        if index_first:
+            value = index_first
         # check for first of [...] where (...)
-        first_where = _try_parse_first_where(rhs, fn_sigs)
-        if first_where:
-            value = first_where
+        elif _try_parse_first_where(rhs, fn_sigs):
+            value = _try_parse_first_where(rhs, fn_sigs)
         # check for reduce expression (contains _ as standalone reduce marker)
         elif _is_reduce_expr(rhs):
             value = _parse_reduce(rhs)
@@ -506,6 +509,17 @@ def _try_parse_first_where(rhs: str, fn_sigs: list = None) -> dict | None:
         cond_str = match.group(2)
         cond = _parse_expr(cond_str, fn_sigs)
         return {"kind": "first_where", "array": array_expr, "condition": cond}
+    return None
+
+
+def _try_parse_index_of_first_where(rhs: str, fn_sigs: list = None) -> dict | None:
+    """Try to parse 'index of first in [array$] where (condition)'."""
+    match = re.match(r"index of first in \[(\w+\$?)\]\s+where\s+\((.+)\)$", rhs)
+    if match:
+        array_expr = _parse_expr(match.group(1), fn_sigs)
+        cond_str = match.group(2)
+        cond = _parse_expr(cond_str, fn_sigs)
+        return {"kind": "index_of_first_where", "array": array_expr, "condition": cond}
     return None
 
 

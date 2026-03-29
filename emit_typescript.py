@@ -618,6 +618,11 @@ def _emit_expr(node: dict, structs: dict) -> str:
         cond = _emit_expr(_replace_underscore(node["condition"], "x"), structs)
         return f"{arr}.find(x => {cond})"
 
+    elif kind == "index_of_first_where":
+        arr = _emit_expr(node["array"], structs)
+        cond = _emit_expr(_replace_underscore(node["condition"], "x"), structs)
+        return f"{arr}.findIndex(x => {cond})"
+
     elif kind == "sort":
         arr = _emit_expr(node["array"], structs)
         if node["key"] is None:

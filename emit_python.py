@@ -578,6 +578,11 @@ def _emit_expr(node: dict) -> str:
         cond = _emit_expr(_replace_underscore(node["condition"], "x"))
         return f"next(x for x in {arr} if {cond})"
 
+    elif kind == "index_of_first_where":
+        arr = _emit_expr(node["array"])
+        cond = _emit_expr(_replace_underscore(node["condition"], "x"))
+        return f"next(i for i, x in enumerate({arr}) if {cond})"
+
     elif kind == "index":
         arr = _emit_expr(node["array"])
         idx = _emit_expr(node["index"])
