@@ -281,26 +281,27 @@ Tasks can produce streams from scalar inputs:
 
     int i$ <- count down from (4)           # i$ = [4, 3, 2, 1]
 
-Tasks can also consume from input streams using `<-`, pulling one element at a time. The task body runs repeatedly until the input stream is exhausted:
+Tasks can iterate over input streams using `for each`. Variables declared above the loop persist across iterations (mutable state). The loop body runs once per element, and can emit zero or more values to the output stream:
 
-    on (int even$) <- only evens from (int numbers$)
-        even$ <- number$ where (_ % 2 == 0)
-
-    int all$ = [1, 2, 3, 4, 5, 6, 7, 8]
-    int even$ <- only evens from (all$)     # even$ = [2, 4, 6, 8]
-
-Here, `int n <- numbers$` pulls the next number from the input, and `even$ <- n` conditionally emits it to the output. Each invocation consumes one element and emits zero or one.
-
-In tasks, conditional blocks can contain any imperative code including stream operations:
+    on (int depth$) <- bracket depth of (char c$) matching (string pair)
+        int d = 0
+        for each (c) in (c$)
+            if (c == pair[0])
+                d = d + 1
+            else if (c == pair[1])
+                d = d - 1
+            depth$ <- d
 
     on (string label$) <- classify (int numbers$)
-        int n <- numbers$
-        if (n > 0)
-            label$ <- "positive"
-        else if (n < 0)
-            label$ <- "negative"
-        else
-            label$ <- "zero"
+        for each (n) in (numbers$)
+            if (n > 0)
+                label$ <- "positive"
+            else if (n < 0)
+                label$ <- "negative"
+            else
+                label$ <- "zero"
+
+The distinction: `for each (x) in (stream$)` iterates over a stream. Variables above the loop are initialised once; variables inside are per-iteration.
 
 ## concurrency
 

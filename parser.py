@@ -1131,6 +1131,16 @@ def _parse_task_body(body_lines: list[str], raw_body_lines: list[str], output_st
         stripped = line.strip()
         indent = len(raw_line) - len(raw_line.lstrip())
 
+        # for each (name) in (stream$) — explicit loop over stream
+        for_each_match = re.match(r"for each \((\w+)\) in \((\w+\$)\)$", stripped)
+        if for_each_match:
+            nodes_with_indent.append((indent, {
+                "kind": "for_each",
+                "name": for_each_match.group(1),
+                "stream": for_each_match.group(2),
+            }))
+            continue
+
         # consume: type name <- stream$ OR type name <- task call
         consume_match = re.match(r"(\w+)\s+(\w+)\s*<-\s*(.*)", stripped)
         if consume_match and not re.match(r"(\w+\$)\s*<-", stripped):
@@ -1192,12 +1202,29 @@ def _parse_task_body(body_lines: list[str], raw_body_lines: list[str], output_st
 
 
 def _group_task_if_blocks(nodes_with_indent: list) -> list:
-    """Group task_if/task_elif/task_else nodes into if_block structures, recursively."""
+    """Group task_if/task_elif/task_else/for_each nodes into structured blocks, recursively."""
     result = []
     i = 0
     while i < len(nodes_with_indent):
         indent, node = nodes_with_indent[i]
-        if node["kind"] == "task_if":
+        if node["kind"] == "for_each":
+            # collect indented body
+            body_with_indent = []
+            i += 1
+            while i < len(nodes_with_indent):
+                ni, nn = nodes_with_indent[i]
+                if ni > indent:
+                    body_with_indent.append((ni, nn))
+                    i += 1
+                else:
+                    break
+            result.append({
+                "kind": "for_each",
+                "name": node["name"],
+                "stream": node["stream"],
+                "body": _group_task_if_blocks(body_with_indent),
+            })
+        elif node["kind"] == "task_if":
             branches = []
             cond = node["condition"]
             body_with_indent = []

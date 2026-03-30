@@ -633,7 +633,21 @@ def _emit_task(task: dict) -> str:
 
         kind = node.get("kind")
 
-        if kind == "consume":
+        if kind == "for_each":
+            stream_name = node["stream"].replace("$", "_arr")
+            lines.append(f"{base_indent}{extra_indent}for {node['name']} in {stream_name}:")
+            loop_indent = base_indent + extra_indent + "    "
+            for body_node in node["body"]:
+                bk = body_node.get("kind", "")
+                if bk == "emit":
+                    lines.append(f"{loop_indent}yield {_emit_expr(body_node['value'])}")
+                elif bk == "if_block":
+                    for bl in _emit_if_block(body_node, is_task=True).split("\n"):
+                        lines.append(f"{loop_indent}{bl}")
+                else:
+                    lines.extend(_indent(_emit_expr(body_node), loop_indent))
+
+        elif kind == "consume":
             stream_name = node["stream"].replace("$", "_arr")
             lines.append(f"{base_indent}for {node['name']} in {stream_name}:")
             extra_indent = "    "

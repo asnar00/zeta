@@ -28,12 +28,12 @@ A task that tracks bracket depth as it scans characters:
 
     on (int depth$) <- bracket depth of (char c$) matching (string pair)
         int d = 0
-        char c <- c$
-        if (c == pair[0])
-            d = d + 1
-        else if (c == pair[1])
-            d = d - 1
-        depth$ <- d
+        for each (c) in (c$)
+            if (c == pair[0])
+                d = d + 1
+            else if (c == pair[1])
+                d = d - 1
+            depth$ <- d
 
 Find the position of the matching bracket:
 

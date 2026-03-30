@@ -664,7 +664,24 @@ def _emit_task_ts(task: dict, structs: dict = None) -> str:
 
         kind = node.get("kind")
 
-        if kind == "consume":
+        if kind == "for_each":
+            stream_name = node["stream"].replace("$", "_arr")
+            lines.append(f"{base_indent}{extra_indent}for (const {node['name']} of {stream_name}) {{")
+            loop_indent = base_indent + extra_indent + "    "
+            for body_node in node["body"]:
+                bk = body_node.get("kind", "")
+                if bk == "emit":
+                    lines.append(f"{loop_indent}yield {_emit_expr(body_node['value'], structs)};")
+                elif bk == "if_block":
+                    for bl in _emit_task_if_block_ts(body_node, structs).split("\n"):
+                        lines.append(f"{loop_indent}{bl}")
+                elif bk == "assign":
+                    lines.append(f"{loop_indent}{body_node['target']} = {_emit_expr(body_node['value'], structs)};")
+                else:
+                    lines.append(f"{loop_indent}{_emit_expr(body_node, structs)};")
+            lines.append(f"{base_indent}{extra_indent}}}")
+
+        elif kind == "consume":
             stream_name = node["stream"].replace("$", "_arr")
             lines.append(f"{base_indent}for (const {node['name']} of {stream_name}) {{")
             extra_indent = "    "
