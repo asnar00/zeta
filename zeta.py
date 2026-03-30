@@ -438,6 +438,7 @@ def _build_features(features_path: str, output_dir: str, flags: set):
                 break
         if owner is None:
             owner = root_name  # default to root
+            fn["_platform"] = True  # mark as platform function
         ir_by_feature[owner]["functions"].append(fn)
 
     for task in ir.get("tasks", []):
@@ -481,6 +482,8 @@ def _build_features(features_path: str, output_dir: str, flags: set):
     module_map = {}
     for feat_name, feat_ir_data in ir_by_feature.items():
         for fn in feat_ir_data["functions"]:
+            if fn.get("_platform"):
+                continue  # platform functions are available directly, not via module
             emitted_name = make_function_name(fn["signature_parts"])
             module_map[emitted_name] = feat_name
         for task in feat_ir_data["tasks"]:
@@ -535,6 +538,10 @@ def _build_features(features_path: str, output_dir: str, flags: set):
 
                 code = emit(feat_ir)
 
+                # prepend platform implementations to all features
+                if platform_prepend[ext]:
+                    code = "\n\n".join(platform_prepend[ext]) + "\n\n" + code
+
                 # non-root features
                 if feat_name != root_name:
                     # child features with tests import from _runtime
@@ -563,8 +570,6 @@ def _build_features(features_path: str, output_dir: str, flags: set):
                             imports.append(f"import * as {dep} from './{dep}.js';")
                     if imports:
                         code = "\n".join(imports) + "\n\n" + code
-                    if platform_prepend[ext]:
-                        code = "\n\n".join(platform_prepend[ext]) + "\n\n" + code
                     harness = "\n\n".join(platform_append[ext]) if platform_append[ext] else ""
                     code += _main_entry_point(harness, has_tests, ext)
 

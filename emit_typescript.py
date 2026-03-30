@@ -22,7 +22,7 @@ from emit_base import (
 _BUILTINS = {"number"}
 
 # Zero numeric base types to TS types
-_TS_NUMERIC = {"int": "number", "float": "number", "int | float": "number", "char": "string"}
+_TS_NUMERIC = {"int": "number", "float": "number", "int | float": "number", "char": "string", "bool": "boolean"}
 
 _enum_values = {}  # populated by emit(), maps value -> "type.value"
 
@@ -118,9 +118,12 @@ def _emit_test_section_ts(tests: list[dict], feature_name: str, structs: dict) -
         call_code = _emit_expr(test["call"], structs)
         expected_code = _emit_expr(test["expected"], structs) if isinstance(test["expected"], dict) else repr(test["expected"])
         is_task = test["call"].get("kind") == "task_call"
-        if is_task and test["expected"].get("kind") != "array_lit":
+        expected_is_array = (test["expected"].get("kind") == "array_lit" or
+                             (test["expected"].get("kind") == "raw" and test["expected"].get("value", "").startswith("[")))
+        if is_task and not expected_is_array:
             expected_code = f"[{expected_code}]"
-        cmp = "JSON.stringify(_result) !== JSON.stringify(_expected)" if is_task else "_result !== _expected"
+        use_json = is_task or expected_is_array
+        cmp = "JSON.stringify(_result) !== JSON.stringify(_expected)" if use_json else "_result !== _expected"
         desc = test.get("source_text", "")
         test_entries.append((name, desc))
         lines.append(f"function {name}(): void {{")
@@ -350,9 +353,11 @@ def _task_call_param_types(call: dict) -> list[str]:
 
 def _coerce_task_arg(arg: str, param_type: str, call: dict) -> str:
     """Coerce a task call argument — spread strings into char arrays for char params."""
-    name = arg.replace("$", "_arr")
     if param_type == "char":
-        return f"[...{name}]"
+        # for char params, spread into array; use base name for string$ lens
+        base = arg[:-1] if arg.endswith("$") else arg
+        return f"[...{base}]"
+    name = arg.replace("$", "_arr") if arg.endswith("$") else arg
     return name
 
 
@@ -363,12 +368,109 @@ def _emit_element(v, structs: dict = None) -> str:
     return str(v)
 
 
+def _has_index_underscore(node: dict) -> bool:
+    """Check if an expression contains _ used as an array index reference."""
+    if not isinstance(node, dict):
+        return False
+    if node.get("kind") == "index" and _contains_name(node.get("index", {}), "_"):
+        return True
+    return any(_has_index_underscore(v) for v in node.values() if isinstance(v, dict))
+
+
+def _contains_name(node: dict, name: str) -> bool:
+    """Check if an expression tree contains a specific name."""
+    if not isinstance(node, dict):
+        return False
+    if node.get("kind") == "name" and node.get("value") == name:
+        return True
+    return any(_contains_name(v, name) for v in node.values() if isinstance(v, dict))
+
+
+def _collect_to_chars_refs(node: dict) -> list[str]:
+    """Collect to_chars reference names from an expression."""
+    refs = []
+    if not isinstance(node, dict):
+        return refs
+    if node.get("kind") == "to_chars":
+        refs.append(node["value"])
+    for v in node.values():
+        if isinstance(v, dict):
+            refs.extend(_collect_to_chars_refs(v))
+        elif isinstance(v, list):
+            for item in v:
+                if isinstance(item, dict):
+                    refs.extend(_collect_to_chars_refs(item))
+    return refs
+
+
+def _rewrite_for_indexed_ts(node: dict, structs: dict) -> dict:
+    """Rewrite an expression for index-based iteration (TypeScript)."""
+    if not isinstance(node, dict):
+        return node
+    kind = node.get("kind")
+
+    if kind == "index" and _contains_name(node.get("index", {}), "_"):
+        arr_node = node["array"]
+        if arr_node.get("kind") == "name" and arr_node["value"].endswith("$"):
+            arr_str = arr_node["value"].replace("$", "_arr")
+        elif arr_node.get("kind") == "to_chars":
+            arr_str = f"[...{arr_node['value']}]"
+        else:
+            arr_str = _emit_expr(arr_node, structs)
+        idx = _rewrite_for_indexed_ts(node["index"], structs)
+        idx_str = _emit_expr(idx, structs)
+        return {"kind": "raw", "value": f"({idx_str} >= 0 ? {arr_str}[{idx_str}] : 0)"}
+
+    if kind == "name" and node.get("value", "").endswith("$"):
+        ts_name = node["value"].replace("$", "_arr")
+        return {"kind": "raw", "value": f"{ts_name}[_i]"}
+
+    if kind == "to_chars":
+        return {"kind": "raw", "value": f"[...{node['value']}][_i]"}
+
+    if kind == "name" and node.get("value") == "_":
+        return {"kind": "raw", "value": "_i"}
+
+    result = {}
+    for key, val in node.items():
+        if isinstance(val, dict):
+            result[key] = _rewrite_for_indexed_ts(val, structs)
+        elif isinstance(val, list):
+            result[key] = [_rewrite_for_indexed_ts(v, structs) if isinstance(v, dict) else v for v in val]
+        else:
+            result[key] = val
+    return result
+
+
+def _emit_indexed_map_expr_ts(node: dict, structs: dict) -> str:
+    """Emit index-based array mapping for expressions using _-relative indexing (TypeScript)."""
+    array_refs = list(dict.fromkeys(_collect_array_refs(node)))
+    to_chars = _collect_to_chars_refs(node)
+
+    if array_refs:
+        len_src = array_refs[0].replace("$", "_arr")
+    elif to_chars:
+        len_src = f"[...{to_chars[0]}]"
+    else:
+        return _emit_expr(node, structs)
+
+    rewritten = _rewrite_for_indexed_ts(node, structs)
+    expr = _emit_expr(rewritten, structs)
+    return f"Array.from({{ length: {len_src}.length }}, (_, _i) => {expr})"
+
+
 def _emit_array_map_expr(node: dict, structs: dict) -> str:
     """Emit array-mapped expressions using .map() or Array.from()."""
+    if _has_index_underscore(node):
+        return _emit_indexed_map_expr_ts(node, structs)
+
     array_refs = list(dict.fromkeys(_collect_array_refs(node)))  # deduplicate, preserve order
-    if len(array_refs) == 0:
+    to_chars = _collect_to_chars_refs(node)
+    if len(array_refs) == 0 and not to_chars:
         return _emit_expr(node, structs)
-    elif len(array_refs) == 1:
+    if to_chars:
+        return _emit_indexed_map_expr_ts(node, structs)
+    if len(array_refs) == 1:
         # single array: arr.map(x => expr)
         arr_name = array_refs[0]
         ts_arr = arr_name.replace("$", "_arr")
@@ -519,7 +621,10 @@ def _emit_task_if_block_ts(node: dict, structs: dict = None) -> str:
             lines.append("} else {")
         for stmt in branch["body"]:
             kind = stmt.get("kind", "")
-            if kind == "assign":
+            if kind == "if_block":
+                for bl in _emit_task_if_block_ts(stmt, structs).split("\n"):
+                    lines.append(f"    {bl}")
+            elif kind == "assign":
                 lines.append(f"    {stmt['target']} = {_emit_expr(stmt['value'], structs)};")
             elif kind == "emit":
                 lines.append(f"    yield {_emit_expr(stmt['value'], structs)};")
@@ -631,6 +736,9 @@ def _emit_function(fn: dict, structs: dict, async_fns: set[str] = None) -> str:
     if fn["result"] is not None:
         ret_type = _ts_type(fn["result"]["type"])
         result_var = fn["result"]["name"]
+        if result_var.endswith("$"):
+            result_var = result_var.replace("$", "_arr")
+            ret_type = f"{ret_type}[]"
         # if body has if_blocks, declare result var with let at top
         has_if = any(isinstance(s, dict) and s.get("kind") == "if_block" for s in fn["body"])
         lines = [f"{prefix} {name}({params}): {ret_type} {{"]
@@ -724,7 +832,8 @@ def _emit_expr(node: dict, structs: dict) -> str:
     elif kind == "binop":
         left = _emit_expr(node["left"], structs)
         right = _emit_expr(node["right"], structs)
-        return f"{left} {node['op']} {right}"
+        op = {"and": "&&", "or": "||"}.get(node["op"], node["op"])
+        return f"{left} {op} {right}"
 
     elif kind == "array_fn":
         if node["name"] == "length_of":
@@ -745,6 +854,11 @@ def _emit_expr(node: dict, structs: dict) -> str:
         arr = _emit_expr(node["array"], structs)
         cond = _emit_expr(_replace_underscore(node["condition"], "x"), structs)
         return f"{arr}.findIndex(x => {cond})"
+
+    elif kind == "indices_where":
+        arr = _emit_expr(node["array"], structs)
+        cond = _emit_expr(_replace_underscore(node["condition"], "x"), structs)
+        return f"{arr}.map((x, i) => ({cond}) ? i : -1).filter(i => i >= 0)"
 
     elif kind == "sort":
         arr = _emit_expr(node["array"], structs)
@@ -788,8 +902,16 @@ def _emit_expr(node: dict, structs: dict) -> str:
             return val.replace("$", "_arr")
         return val
 
+    elif kind == "to_chars":
+        return f"[...{node['value']}]"
+
     elif kind == "literal":
-        return str(node["value"])
+        v = node["value"]
+        if v is True:
+            return "true"
+        if v is False:
+            return "false"
+        return str(v)
 
     elif kind == "ternary":
         true = _emit_expr(node["true"], structs)
@@ -828,6 +950,13 @@ def _emit_expr(node: dict, structs: dict) -> str:
                 args = ", ".join(_coerce_task_arg(a, t, val) for a, t in
                                  zip(val["args"], _task_call_param_types(val)))
                 return f"const {name} = [...{call_fn}({args})]"
+            elif isinstance(val, dict) and val.get("kind") == "stream" and len(val.get("steps", [])) == 1 and val.get("terminate") is None:
+                return f"const {name} = {_emit_array_map_expr(val['steps'][0], structs)}"
+            elif isinstance(val, dict) and val.get("kind") == "fn_call" and \
+                    any(isinstance(a, dict) and a.get("kind") == "array_fn_call" for a in val.get("args", [])):
+                fn_name = _make_function_name(val["signature_parts"])
+                inner = _emit_expr(val["args"][0], structs)
+                return f"const {name} = {inner}.map(x => {fn_name}(x))"
             elif isinstance(val, dict) and "kind" in val:
                 return f"const {name} = {_emit_array_map_expr(val, structs)}"
             return f"const {name} = {val}"

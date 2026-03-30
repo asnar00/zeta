@@ -176,14 +176,14 @@ def _extract_function_name(line: str) -> str:
             parts.append(token)
         return " ".join(parts) if parts else rhs.split("(")[0].strip()
 
-    # value-returning: on (type result) = ...
-    match = re.match(r"on\s+\(\w+\s+\w+\)\s*=\s*(.*)", line)
+    # value-returning: on (type result[$]) = ...
+    match = re.match(r"on\s+\(\w+\s+\w+\$?\)\s*=\s*(.*)", line)
     if match:
         rhs = match.group(1).strip()
         # extract words before first (
         parts = []
-        for token in re.findall(r"\([\w\s]+\)|\S+", rhs):
-            if token.startswith("("):
+        for token in re.findall(r"\[[\w\s\$]+\]|\([\w\s]+\)|\S+", rhs):
+            if token.startswith("(") or token.startswith("["):
                 break
             parts.append(token)
         return " ".join(parts) if parts else rhs.split("(")[0].strip()

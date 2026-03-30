@@ -12,6 +12,27 @@ A zero feature is written in a `.md` file with the following layout:
 - a natural-language `## specification`, describing why the feature exists and what it does, in 500 words or less
 - an `## interface` describing the externally callable functions that the feature defines, using examples of when and how to call them, in a *literate style* : each example is a natural language explanation line or paragraph followed by a code block
 - a `## definition`, defining types, feature-scope variables, and functions, also in a literate style (each code block is preceded by a natural-language line or paragraph introducing it)
+- optionally, a `## tests` section defining tests
+
+### interface
+
+The interface consists of a list of publically visible functions that the feature defines. Each one is introduced by a paragraph describing what it does, followed by literate examples of input/output, separated using the symbol `=>`, as follows:
+
+The `add` function adds two numbers together:
+
+    add(4, 3) => 7
+
+### definition
+
+The definition is literate zero (text paragraphs introducing types, feature-scope variables, and functions). The convention is that each function lives in a separate code-block with its own introduction.
+
+### tests
+
+The tests section specifies more exhaustive tests, using the same literate format as the interface. The idea is that the interface provides a minimal number of examples, and the tests section rounds them out.
+
+# language
+
+The following section introduces the zero language.
 
 ## agent instructions
 
@@ -35,6 +56,7 @@ In general, you can use any combination eg. `int8`, `float16`, as appropriate.
     type uint = ... any-size unsigned integer
     type float = ... any-size IEEE floating-point number
     type number = int | float
+    type bool = ... true or false
 
 *enumerations* are types which take one of a range of values, each specified by a single word:
 
@@ -109,6 +131,11 @@ In functions, inline ternaries work for simple cases:
 
     n = (a) if (a < b) else (b)
 
+Conditions can be combined using `and` and `or`:
+
+    bool valid = (x > 0 and x < 100)
+    bool found = (name == "alice" or name == "bob")
+
 For multi-branch logic, use `if`, `else if`, and `else` blocks. In pure functions, each branch must assign the result:
 
     on (string s) = describe (int n)
@@ -132,6 +159,13 @@ There are many ways of declaring array variables:
     int i$ = [1 through 4]      # i$ = [1, 2, 3, 4]
     int i$ = [0 to 4]           # i$ = [0, 1, 2, 3]
 
+A string can be viewed as a character array by adding the `$` suffix:
+
+    string name = "hello"
+    char c$ = name$                 # c$ = ['h', 'e', 'l', 'l', 'o']
+
+This works anywhere an array is expected — in function mapping, streaming, and array operations. `name` is the string, `name$` is the same data viewed as `char$`.
+
 ## applying functions to arrays
 
 Functions cannot be declared with array parameters; however, passing an array to a function maps the function to each element of the array.
@@ -154,6 +188,13 @@ The `_` symbol refers to the *current element* when operating on arrays. When us
     int i$ = [1, 2, 3, 4]
     int sum = i$ + _                    # sum = 1 + 2 + 3 + 4 = 10
     int min = smaller of (i$) and (_)   # min = 1
+
+When `_` is used as an array index, it refers to the *current element's position*, allowing relative references:
+
+    int i$ = [10, 20, 30, 40]
+    int prev$ = i$[_ - 1]              # prev$ = [0, 10, 20, 30]
+
+Out-of-bounds index references return the default value for the type (0 for numbers, "" for strings, false for bools).
 
 ## filtering arrays
 
@@ -243,9 +284,7 @@ Tasks can produce streams from scalar inputs:
 Tasks can also consume from input streams using `<-`, pulling one element at a time. The task body runs repeatedly until the input stream is exhausted:
 
     on (int even$) <- only evens from (int numbers$)
-        int n <- numbers$
-        if (n % 2 == 0)
-            even$ <- n
+        even$ <- number$ where (_ % 2 == 0)
 
     int all$ = [1, 2, 3, 4, 5, 6, 7, 8]
     int even$ <- only evens from (all$)     # even$ = [2, 4, 6, 8]
@@ -314,7 +353,6 @@ yielding the following behaviour:
     >run()
     10 9 8 7 6 5 4 3 2 1
     hello world
-
 
 Then we extend this by printing "goodbye" after everything is finished:
 

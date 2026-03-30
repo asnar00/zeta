@@ -4,6 +4,8 @@ import re
 
 IR_VERSION = 1
 
+_declared_arrays = set()  # populated by process(), used by _parse_expr
+
 
 class ZeroParseError(Exception):
     """Error raised when zero source cannot be parsed."""
@@ -82,6 +84,19 @@ def process(source: str, recover: bool = False, source_file: str = None) -> dict
     # first pass: collect function and task signatures for call resolution
     fn_signatures = _collect_signatures(lines)
     task_signatures = _collect_task_signatures(lines)
+    # collect declared array variable names (names with $) so we can distinguish
+    # string$ (to_chars conversion) from array$ (declared array reference)
+    global _declared_arrays
+    _declared_arrays = set()
+    for line in lines:
+        stripped = line.strip()
+        # variable declarations: "type name$" or "type name$ ="  or "type name$ <-"
+        m = re.match(r'\w+\s+(\w+)\$\s*(?:[=\[<]|$)', stripped)
+        if m:
+            _declared_arrays.add(m.group(1))
+        # function/task parameters: "(type name$)"
+        for pm in re.finditer(r'\(\w+\s+(\w+)\$\)', stripped):
+            _declared_arrays.add(pm.group(1))
 
     errors = []
     i = 0
@@ -256,7 +271,7 @@ def _detect_in_exprs(ir: dict, features: set):
             features.add("array_fns")
         if node.get("kind") == "index":
             features.add("indexing")
-        if node.get("kind") in ("where", "first_where", "index_of_first_where"):
+        if node.get("kind") in ("where", "first_where", "index_of_first_where", "indices_where"):
             features.add("filtering")
         if node.get("kind") == "sort":
             features.add("sorting")
@@ -308,8 +323,8 @@ def _collect_signatures(lines: list[str]) -> list[dict]:
         stripped = line.strip()
         if not stripped.startswith("on "):
             continue
-        # try value-returning: on (type result) = signature
-        match = re.match(r"on\s+\((\w+)\s+(\w+)\)\s*=\s*(.*)", stripped)
+        # try value-returning: on (type result[$]) = signature
+        match = re.match(r"on\s+\((\w+)\s+(\w+\$?)\)\s*=\s*(.*)", stripped)
         if match:
             rhs = match.group(3).strip()
         else:
@@ -324,8 +339,12 @@ def _collect_signatures(lines: list[str]) -> list[dict]:
         has_array_params = False
         for part in sig_parts:
             param_match = re.match(r"\((\w+)\s+\w+\$?\)", part)
+            typed_array_match = re.match(r"\[(\w+)\s+(\w+\$?)\]", part)
             array_param_match = re.match(r"\[(\w+\$?)\]", part)
-            if array_param_match:
+            if typed_array_match:
+                pattern.append(("array_param", typed_array_match.group(1)))
+                has_array_params = True
+            elif array_param_match:
                 pattern.append(("array_param", array_param_match.group(1)))
                 has_array_params = True
             elif param_match:
@@ -506,10 +525,13 @@ def _parse_scalar_variable(type_name: str, var_name: str, rest: str, fn_sigs: li
     value = None
     if rest.startswith("="):
         rhs = rest[1:].strip()
+        # check for indices of [...] where (...)
+        indices = _try_parse_indices_where(rhs, fn_sigs)
+        if indices:
+            value = indices
         # check for index of first in [...] where (...)
-        index_first = _try_parse_index_of_first_where(rhs, fn_sigs)
-        if index_first:
-            value = index_first
+        elif _try_parse_index_of_first_where(rhs, fn_sigs):
+            value = _try_parse_index_of_first_where(rhs, fn_sigs)
         # check for first of [...] where (...)
         elif _try_parse_first_where(rhs, fn_sigs):
             value = _try_parse_first_where(rhs, fn_sigs)
@@ -564,6 +586,17 @@ def _try_parse_index_of_first_where(rhs: str, fn_sigs: list = None) -> dict | No
         cond_str = match.group(2)
         cond = _parse_expr(cond_str, fn_sigs)
         return {"kind": "index_of_first_where", "array": array_expr, "condition": cond}
+    return None
+
+
+def _try_parse_indices_where(rhs: str, fn_sigs: list = None) -> dict | None:
+    """Try to parse 'indices of [array$] where (condition)'."""
+    match = re.match(r"indices of \[(\w+\$?)\]\s+where\s+\((.+)\)$", rhs)
+    if match:
+        array_expr = _parse_expr(match.group(1), fn_sigs)
+        cond_str = match.group(2)
+        cond = _parse_expr(cond_str, fn_sigs)
+        return {"kind": "indices_where", "array": array_expr, "condition": cond}
     return None
 
 
@@ -811,6 +844,10 @@ def _is_expression(s: str) -> bool:
 
 def _parse_literal(s: str):
     """Parse a literal value string into a Python value."""
+    if s == "true":
+        return True
+    if s == "false":
+        return False
     try:
         return int(s)
     except ValueError:
@@ -829,8 +866,8 @@ def _parse_function(lines: list[str], start: int, fn_signatures: list = None, sr
     line = lines[start].strip()
     line_num = src_line(start) if src_line else start + 1
 
-    # try value-returning function: on (type result) = signature
-    result_match = re.match(r"on\s+\((\w+)\s+(\w+)\)\s*=\s*(.*)", line)
+    # try value-returning function: on (type result[$]) = signature
+    result_match = re.match(r"on\s+\((\w+)\s+(\w+\$?)\)\s*=\s*(.*)", line)
     if result_match:
         result = {"name": result_match.group(2), "type": result_match.group(1)}
         rhs = result_match.group(3).strip()
@@ -1107,19 +1144,22 @@ def _parse_task_body(body_lines: list[str], raw_body_lines: list[str], output_st
                     "name": consume_name,
                     "stream": consume_rhs,
                 }))
+                continue
             else:
                 rhs_stripped = re.sub(r"\(\)\s*$", "", consume_rhs).strip()
                 task_call = _try_parse_task_call(rhs_stripped, task_sigs) if task_sigs else None
                 if not task_call:
                     task_call = _try_parse_task_call(consume_rhs, task_sigs) if task_sigs else None
                 fn_call = _try_parse_fn_call(consume_rhs, fn_sigs) if not task_call and fn_sigs else None
-                nodes_with_indent.append((indent, {
-                    "kind": "consume_call",
-                    "type": consume_type,
-                    "name": consume_name,
-                    "call": task_call or fn_call or {"kind": "raw", "value": consume_rhs},
-                }))
-            continue
+                if task_call or fn_call:
+                    nodes_with_indent.append((indent, {
+                        "kind": "consume_call",
+                        "type": consume_type,
+                        "name": consume_name,
+                        "call": task_call or fn_call,
+                    }))
+                    continue
+                # not a stream variable or task/function call — fall through to expression parsing
 
         # emit: output$ <- expr
         emit_match = re.match(r"(\w+\$)\s*<-\s*(.*)", stripped)
@@ -1148,39 +1188,42 @@ def _parse_task_body(body_lines: list[str], raw_body_lines: list[str], output_st
         nodes_with_indent.append((indent, _parse_expression(stripped, fn_sigs, task_sigs)))
 
     # now group if/elif/else blocks using indentation
+    return _group_task_if_blocks(nodes_with_indent)
+
+
+def _group_task_if_blocks(nodes_with_indent: list) -> list:
+    """Group task_if/task_elif/task_else nodes into if_block structures, recursively."""
     result = []
     i = 0
     while i < len(nodes_with_indent):
         indent, node = nodes_with_indent[i]
         if node["kind"] == "task_if":
-            # collect the if block: branches with their indented body lines
             branches = []
             cond = node["condition"]
-            body = []
+            body_with_indent = []
             i += 1
             while i < len(nodes_with_indent):
                 ni, nn = nodes_with_indent[i]
                 if ni > indent:
-                    body.append(nn)
+                    body_with_indent.append((ni, nn))
                     i += 1
                 elif ni == indent and nn.get("kind") == "task_elif":
-                    branches.append({"condition": cond, "body": body})
+                    branches.append({"condition": cond, "body": _group_task_if_blocks(body_with_indent)})
                     cond = nn["condition"]
-                    body = []
+                    body_with_indent = []
                     i += 1
                 elif ni == indent and nn.get("kind") == "task_else":
-                    branches.append({"condition": cond, "body": body})
+                    branches.append({"condition": cond, "body": _group_task_if_blocks(body_with_indent)})
                     cond = None
-                    body = []
+                    body_with_indent = []
                     i += 1
                 else:
                     break
-            branches.append({"condition": cond, "body": body})
+            branches.append({"condition": cond, "body": _group_task_if_blocks(body_with_indent)})
             result.append({"kind": "if_block", "branches": branches})
         else:
             result.append(node)
             i += 1
-
     return result
 
 
@@ -1256,6 +1299,16 @@ def _parse_signature(rhs: str) -> tuple[list[dict], list[str]]:
             params.append({"name": var_name, "type": type_name})
             parts.append(f"({type_name} {var_name})")
             remaining = remaining[param_match.end():]
+            continue
+
+        # typed array parameter: [type name$] or [type name]
+        typed_array_match = re.match(r"\[(\w+)\s+(\w+\$?)\]", remaining)
+        if typed_array_match:
+            type_name = typed_array_match.group(1)
+            var_name = typed_array_match.group(2)
+            params.append({"name": var_name, "type": type_name})
+            parts.append(f"[{type_name} {var_name}]")
+            remaining = remaining[typed_array_match.end():]
             continue
 
         # array parameter (generic): [name$]
@@ -1347,6 +1400,37 @@ def _find_assignment_eq(line: str) -> int | None:
     return None
 
 
+def _parse_bracket_expr(array_name: str, inner: str, fn_sigs: list = None) -> dict:
+    """Parse array bracket operations: slicing, indexing."""
+    array_expr = _parse_expr(array_name, fn_sigs)
+
+    # slice with to/through: name$[expr to expr] or name$[expr through expr]
+    range_match = re.match(r"(.+?)\s+(to|through)\s+(.+?)$", inner)
+    if range_match:
+        start_expr = _parse_expr(range_match.group(1), fn_sigs)
+        end_expr = _parse_expr(range_match.group(3), fn_sigs)
+        inclusive = range_match.group(2) == "through"
+        return {"kind": "slice", "array": array_expr, "start": start_expr, "end": end_expr, "inclusive": inclusive}
+
+    # open-ended slice: name$[expr:] or name$[expr onwards]
+    onwards_match = re.match(r"(.+?)\s+onwards$", inner)
+    if inner.endswith(":") or onwards_match:
+        if onwards_match:
+            start_expr = _parse_expr(onwards_match.group(1).strip(), fn_sigs)
+        else:
+            start_expr = _parse_expr(inner[:-1].strip(), fn_sigs)
+        return {"kind": "slice", "array": array_expr, "start": start_expr, "end": None, "inclusive": False}
+
+    # open-start slice: name$[:expr]
+    if inner.startswith(":"):
+        end_expr = _parse_expr(inner[1:].strip(), fn_sigs)
+        return {"kind": "slice", "array": array_expr, "start": None, "end": end_expr, "inclusive": False}
+
+    # single index: name$[expr]
+    index_expr = _parse_expr(inner, fn_sigs)
+    return {"kind": "index", "array": array_expr, "index": index_expr}
+
+
 def _parse_expr(s: str, fn_sigs: list = None) -> dict:
     """Parse a zero expression string into an AST node."""
     s = s.strip()
@@ -1361,6 +1445,22 @@ def _parse_expr(s: str, fn_sigs: list = None) -> dict:
     index_first = _try_parse_index_of_first_where(s, fn_sigs)
     if index_first:
         return index_first
+
+    # indices of [...] where (...)
+    indices = _try_parse_indices_where(s, fn_sigs)
+    if indices:
+        return indices
+
+    # array operations: name$[...] — must check before binop so name$[_ - 1] isn't split at -
+    bracket_match = re.match(r"(\w+\$?)\[(.+)\]$", s)
+    if bracket_match:
+        return _parse_bracket_expr(bracket_match.group(1), bracket_match.group(2), fn_sigs)
+
+    # open-syntax function call — try before binop so "smaller of (a) and (b)"
+    # isn't mistaken for a binary "and" operation
+    fn_call = _try_parse_fn_call(s, fn_sigs)
+    if fn_call:
+        return fn_call
 
     # try binary operation at top level
     binop = _try_parse_binop(s, fn_sigs)
@@ -1379,48 +1479,16 @@ def _parse_expr(s: str, fn_sigs: list = None) -> dict:
         args = _parse_call_args(args_str, fn_sigs) if args_str.strip() else []
         return {"kind": "call", "name": name, "args": args}
 
-    # open-syntax function call
-    fn_call = _try_parse_fn_call(s, fn_sigs)
-    if fn_call:
-        return fn_call
-
     # builtin array function: length of [expr]
     length_match = re.match(r"length of \[(.+)\]$", s)
     if length_match:
         inner = length_match.group(1).strip()
         return {"kind": "array_fn", "name": "length_of", "args": [_parse_expr(inner, fn_sigs)]}
 
-    # array operations: name$[...] — slice, index, or open-ended slice
-    bracket_match = re.match(r"(\w+\$?)\[(.+?)\]$", s)
+    # array operations: name$[...] — slice, index, or open-ended slice (duplicate check for non-early match)
+    bracket_match = re.match(r"(\w+\$?)\[(.+)\]$", s)
     if bracket_match:
-        array_expr = _parse_expr(bracket_match.group(1), fn_sigs)
-        inner = bracket_match.group(2)
-
-        # slice with to/through: name$[expr to expr] or name$[expr through expr]
-        range_match = re.match(r"(.+?)\s+(to|through)\s+(.+?)$", inner)
-        if range_match:
-            start_expr = _parse_expr(range_match.group(1), fn_sigs)
-            end_expr = _parse_expr(range_match.group(3), fn_sigs)
-            inclusive = range_match.group(2) == "through"
-            return {"kind": "slice", "array": array_expr, "start": start_expr, "end": end_expr, "inclusive": inclusive}
-
-        # open-ended slice: name$[expr:] or name$[expr onwards]
-        onwards_match = re.match(r"(.+?)\s+onwards$", inner)
-        if inner.endswith(":") or onwards_match:
-            if onwards_match:
-                start_expr = _parse_expr(onwards_match.group(1).strip(), fn_sigs)
-            else:
-                start_expr = _parse_expr(inner[:-1].strip(), fn_sigs)
-            return {"kind": "slice", "array": array_expr, "start": start_expr, "end": None, "inclusive": False}
-
-        # open-start slice: name$[:expr]
-        if inner.startswith(":"):
-            end_expr = _parse_expr(inner[1:].strip(), fn_sigs)
-            return {"kind": "slice", "array": array_expr, "start": None, "end": end_expr, "inclusive": False}
-
-        # single index: name$[expr]
-        index_expr = _parse_expr(inner, fn_sigs)
-        return {"kind": "index", "array": array_expr, "index": index_expr}
+        return _parse_bracket_expr(bracket_match.group(1), bracket_match.group(2), fn_sigs)
 
     # numeric literal (must check before member access so 1.5 isn't parsed as member)
     try:
@@ -1431,6 +1499,12 @@ def _parse_expr(s: str, fn_sigs: list = None) -> dict:
         return {"kind": "literal", "value": float(s)}
     except ValueError:
         pass
+
+    # boolean literal
+    if s == "true":
+        return {"kind": "literal", "value": True}
+    if s == "false":
+        return {"kind": "literal", "value": False}
 
     # string literal
     if (s.startswith('"') and s.endswith('"')) or (s.startswith("'") and s.endswith("'")):
@@ -1443,6 +1517,9 @@ def _parse_expr(s: str, fn_sigs: list = None) -> dict:
 
     # name (including array names with $ suffix)
     if re.match(r"\w+\$?$", s):
+        # string$ means "view string as char array" (to_chars conversion)
+        if s.endswith("$") and s[:-1] not in _declared_arrays:
+            return {"kind": "to_chars", "value": s[:-1]}
         return {"kind": "name", "value": s}
 
     return {"kind": "raw", "value": s}
@@ -1567,7 +1644,7 @@ def _try_parse_binop(s: str, fn_sigs: list = None) -> dict | None:
     """Try to parse a binary operation at the top level (outside parens)."""
     # scan for operators outside parentheses, lowest precedence first
     # order: bitwise or, xor, and, comparison, shift, additive, multiplicative
-    for ops in [["|"], ["^"], ["&"], ["<", ">", "<=", ">=", "==", "!="],
+    for ops in [["or"], ["and"], ["|"], ["^"], ["&"], ["<", ">", "<=", ">=", "==", "!="],
                 ["<<", ">>"], ["+", "-"], ["*", "/", "%"]]:
         best = _find_top_level_op(s, ops)
         if best is not None:

@@ -119,7 +119,9 @@ def _emit_test_section(tests: list[dict], feature_name: str) -> str:
         call_code = _emit_expr(test["call"])
         expected_code = _emit_expr(test["expected"]) if isinstance(test["expected"], dict) else repr(test["expected"])
         is_task = test["call"].get("kind") == "task_call"
-        if is_task and test["expected"].get("kind") != "array_lit":
+        expected_is_array = (test["expected"].get("kind") == "array_lit" or
+                             (test["expected"].get("kind") == "raw" and test["expected"].get("value", "").startswith("[")))
+        if is_task and not expected_is_array:
             expected_code = f"[{expected_code}]"
         desc = test.get("source_text", "")
         test_entries.append((name, desc))
@@ -370,12 +372,140 @@ def _emit_range(val: dict) -> str:
         return f"list(range({start}, {end}))"
 
 
+def _has_index_underscore(node: dict) -> bool:
+    """Check if an expression contains _ used as an array index reference."""
+    if not isinstance(node, dict):
+        return False
+    if node.get("kind") == "index" and _contains_name(node.get("index", {}), "_"):
+        return True
+    return any(_has_index_underscore(v) for v in node.values() if isinstance(v, dict))
+
+
+def _contains_name(node: dict, name: str) -> bool:
+    """Check if an expression tree contains a specific name."""
+    if not isinstance(node, dict):
+        return False
+    if node.get("kind") == "name" and node.get("value") == name:
+        return True
+    return any(_contains_name(v, name) for v in node.values() if isinstance(v, dict))
+
+
+def _emit_indexed_map_expr(node: dict) -> str:
+    """Emit index-based array mapping for expressions using _-relative indexing."""
+    # collect all array refs and to_chars refs
+    array_refs = list(dict.fromkeys(_collect_array_refs(node)))
+    to_chars_refs = _collect_to_chars_refs(node)
+
+    # determine the length source
+    if array_refs:
+        len_src = array_refs[0].replace("$", "_arr")
+    elif to_chars_refs:
+        len_src = f"list({to_chars_refs[0]})"
+    else:
+        return _emit_expr(node)
+
+    # rewrite the expression: replace array refs, to_chars, and _ with _i
+    rewritten = _rewrite_for_indexed(node)
+    expr = _emit_expr(rewritten)
+    return f"[{expr} for _i in range(len({len_src}))]"
+
+
+def _collect_to_chars_refs(node: dict) -> list[str]:
+    """Collect to_chars reference names from an expression."""
+    refs = []
+    if not isinstance(node, dict):
+        return refs
+    if node.get("kind") == "to_chars":
+        refs.append(node["value"])
+    for v in node.values():
+        if isinstance(v, dict):
+            refs.extend(_collect_to_chars_refs(v))
+        elif isinstance(v, list):
+            for item in v:
+                if isinstance(item, dict):
+                    refs.extend(_collect_to_chars_refs(item))
+    return refs
+
+
+def _rewrite_for_indexed(node: dict) -> dict:
+    """Rewrite an expression for index-based iteration.
+    - array$  → array_arr[_i]
+    - array$[_ - N]  → array_arr[_i - N] with bounds check
+    - to_chars  → list(name)[_i]
+    - bare _  → _i (in index expressions)
+    """
+    if not isinstance(node, dict):
+        return node
+    kind = node.get("kind")
+
+    # index with _ reference: arr$[_ - 1] → (arr_arr[_i - 1] if _i - 1 >= 0 else default)
+    if kind == "index" and _contains_name(node.get("index", {}), "_"):
+        # emit the array name directly (not rewritten to arr[_i])
+        arr_node = node["array"]
+        if arr_node.get("kind") == "name" and arr_node["value"].endswith("$"):
+            arr_str = arr_node["value"].replace("$", "_arr")
+        elif arr_node.get("kind") == "to_chars":
+            arr_str = f"list({arr_node['value']})"
+        else:
+            arr_str = _emit_expr(arr_node)
+        idx = _rewrite_for_indexed(node["index"])
+        idx_str = _emit_expr(idx)
+        return {"kind": "raw", "value": f"({arr_str}[{idx_str}] if {idx_str} >= 0 else 0)"}
+
+    # bare array ref: arr$ → arr_arr[_i]
+    if kind == "name" and node.get("value", "").endswith("$"):
+        py_name = node["value"].replace("$", "_arr")
+        return {"kind": "raw", "value": f"{py_name}[_i]"}
+
+    # to_chars: → list(name)[_i]
+    if kind == "to_chars":
+        return {"kind": "raw", "value": f"list({node['value']})[_i]"}
+
+    # _ in index context → _i
+    if kind == "name" and node.get("value") == "_":
+        return {"kind": "raw", "value": "_i"}
+
+    # recurse
+    result = {}
+    for key, val in node.items():
+        if isinstance(val, dict):
+            result[key] = _rewrite_for_indexed(val)
+        elif isinstance(val, list):
+            result[key] = [_rewrite_for_indexed(v) if isinstance(v, dict) else v for v in val]
+        else:
+            result[key] = val
+    return result
+
+
+def _task_call_param_types_py(call: dict) -> list[str]:
+    """Extract param types from a task_call's signature_parts."""
+    return [p.strip("()") for p in call["signature_parts"] if p.startswith("(")]
+
+
+def _coerce_task_arg_py(arg: str, param_type: str) -> str:
+    """Coerce a task call argument — spread strings into char arrays for char params."""
+    if arg.endswith("$"):
+        base = arg[:-1]
+        if param_type == "char":
+            return f"list({base})"
+        return f"{base}_arr"
+    return arg
+
+
 def _emit_array_map_expr(node: dict) -> str:
     """Emit a list comprehension for array-mapped expressions."""
+    # if expression uses _ as an index reference, use index-based iteration
+    if _has_index_underscore(node):
+        return _emit_indexed_map_expr(node)
+
     array_refs = list(dict.fromkeys(_collect_array_refs(node)))  # deduplicate, preserve order
-    if len(array_refs) == 0:
+    to_chars = _collect_to_chars_refs(node)
+    if len(array_refs) == 0 and not to_chars:
         return _emit_expr(node)
-    elif len(array_refs) == 1:
+    # if to_chars refs present, always use indexed mapping (need position access)
+    if to_chars:
+        return _emit_indexed_map_expr(node)
+    if len(array_refs) == 1:
         # single array: [expr for x in arr]
         arr_name = array_refs[0]
         py_arr = arr_name.replace("$", "_arr")
@@ -447,7 +577,7 @@ def _emit_sort(node: dict) -> str:
 
 
 
-def _emit_if_block(node: dict) -> str:
+def _emit_if_block(node: dict, is_task: bool = False) -> str:
     """Emit an if/else if/else block."""
     lines = []
     for i, branch in enumerate(node["branches"]):
@@ -460,7 +590,13 @@ def _emit_if_block(node: dict) -> str:
         else:
             lines.append("else:")
         for stmt in branch["body"]:
-            lines.append(f"    {_emit_expr(stmt)}")
+            if isinstance(stmt, dict) and stmt.get("kind") == "if_block":
+                for bl in _emit_if_block(stmt, is_task).split("\n"):
+                    lines.append(f"    {bl}")
+            elif isinstance(stmt, dict) and stmt.get("kind") == "emit":
+                lines.append(f"    yield {_emit_expr(stmt['value'])}")
+            else:
+                lines.append(f"    {_emit_expr(stmt)}")
     return "\n".join(lines)
 
 
@@ -516,7 +652,7 @@ def _emit_task(task: dict) -> str:
             lines.append(f"{base_indent}{extra_indent}yield {_emit_expr(node['value'])}")
 
         elif kind == "if_block":
-            block_code = _emit_if_block(node)
+            block_code = _emit_if_block(node, is_task=True)
             for bl in block_code.split("\n"):
                 lines.append(f"{base_indent}{extra_indent}{bl}")
 
@@ -542,6 +678,8 @@ def _emit_function(fn: dict) -> str:
     if fn["result"] is not None:
         ret_type = _py_type_ann(fn["result"]["type"])
         result_var = fn["result"]["name"]
+        if result_var.endswith("$"):
+            result_var = result_var.replace("$", "_arr")
         lines = [f"def {name}({params}) -> {ret_type}:"]
         for stmt in fn["body"]:
             lines.extend(_indent(_emit_expr(stmt), "    "))
@@ -601,8 +739,18 @@ def _emit_expr(node: dict) -> str:
                 return f"{name} = {_emit_range(val)}"
             elif isinstance(val, dict) and val.get("kind") == "task_call":
                 fn_name = make_task_call_fn_name(val)
-                args = ", ".join(a.replace("$", "_arr") for a in val["args"])
+                args = ", ".join(_coerce_task_arg_py(a, t) for a, t in
+                                 zip(val["args"], _task_call_param_types_py(val)))
                 return f"{name} = list({fn_name}({args}))"
+            elif isinstance(val, dict) and val.get("kind") == "stream" and len(val.get("steps", [])) == 1 and val.get("terminate") is None:
+                # single-step stream without terminator = array-mapped expression
+                return f"{name} = {_emit_array_map_expr(val['steps'][0])}"
+            elif isinstance(val, dict) and val.get("kind") == "fn_call" and \
+                    any(isinstance(a, dict) and a.get("kind") == "array_fn_call" for a in val.get("args", [])):
+                # scalar function wrapping array function = map the scalar over results
+                fn_name = _make_function_name(val["signature_parts"])
+                inner = _emit_expr(val["args"][0])
+                return f"{name} = [{fn_name}(x) for x in {inner}]"
             elif isinstance(val, dict) and "kind" in val:
                 return f"{name} = {_emit_array_map_expr(val)}"
             return f"{name} = {val}"
@@ -651,6 +799,11 @@ def _emit_expr(node: dict) -> str:
         cond = _emit_expr(_replace_underscore(node["condition"], "x"))
         return f"next(i for i, x in enumerate({arr}) if {cond})"
 
+    elif kind == "indices_where":
+        arr = _emit_expr(node["array"])
+        cond = _emit_expr(_replace_underscore(node["condition"], "x"))
+        return f"[i for i, x in enumerate({arr}) if {cond}]"
+
     elif kind == "index":
         arr = _emit_expr(node["array"])
         idx = _emit_expr(node["index"])
@@ -679,6 +832,9 @@ def _emit_expr(node: dict) -> str:
         if val.endswith("$"):
             return val.replace("$", "_arr")
         return val
+
+    elif kind == "to_chars":
+        return f"list({node['value']})"
 
     elif kind == "literal":
         return str(node["value"])

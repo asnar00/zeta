@@ -1,3 +1,6 @@
+from _runtime import register_tests, run_tests
+import parser
+
 # Platform implementation: io (Python)
 # Implements the functions declared in io.zero.md
 
@@ -19,8 +22,27 @@ def fn_print__string(message: str):
     print(message)
 
 
-from _runtime import register_tests, run_tests
-import parser
+# Platform implementation: string (Python)
+# Implements the functions declared in string.zero.md
+
+
+# @zero on (string result) = trim (string s)
+def fn_trim__string(s: str) -> str:
+    return s.strip()
+
+
+# @zero on (string result$) = split [string s] at [int positions$]
+def fn_split_at(s: str, positions: list[int]) -> list[str]:
+    parts = []
+    start = 0
+    for pos in positions:
+        parts.append(s[start:pos - 1])
+        start = pos + 1
+    remainder = s[start:]
+    if remainder:
+        parts.append(remainder)
+    return parts
+
 
 def test_zeta_0():
     '''main(["input.zero.md", "output.py"]) => "ᕦ(ツ)ᕤ"'''
@@ -30,7 +52,7 @@ def test_zeta_0():
 
 register_tests('zeta', [(test_zeta_0, 'main(["input.zero.md", "output.py"]) => "ᕦ(ツ)ᕤ"')])
 
-# @zero on (string out$) <- main (string args$); ziz/zeta.zero.md:17
+# @zero on (string out$) <- main (string args$); ziz/zeta.zero.md:27
 def task_main__string(args_arr: str):
     yield logo
 
