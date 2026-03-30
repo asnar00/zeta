@@ -112,7 +112,39 @@ Void functions have `"result": null`.
 { "kind": "if_block", "branches": [{ "condition": <expr>, "body": [...] }, ...] }
 { "kind": "concurrently", "blocks": [[<lines>], ...] }
 { "kind": "var_decl", "name": "c", "type": "int", "value": <expr> }
+{ "kind": "to_chars", "value": "name" }    # string$ lens: string → char[]
+{ "kind": "indices_where", "array": <expr>, "condition": <expr> }
 ```
+
+## testing
+
+Tests are derived from `=>` examples in `## interface` and `## tests` sections of `.zero.md` feature files:
+
+    matching ("()") in ("ᕦ(ツ)ᕤ") after (1) => 3
+
+Each example becomes a test function in the output. A shared `_runtime.py`/`_runtime.ts` provides the test registry and runner. Run with `--test [feature_names]`.
+
+The build pipeline automatically validates all output:
+- Python: `py_compile` on each `.py` file
+- TypeScript: `tsc --strict --noEmit` on all `.ts` files
+
+## platforms
+
+Platform-specific functions live in `platforms/`:
+
+- `io.zero.md` — declares `read file`, `write file`, `print`
+- `string.zero.md` — declares `trim`, `split at`
+
+Each has `.py` and `.ts` implementation files. Platform code is prepended to all feature output files. Platform functions are excluded from the cross-module map (they're available directly, not via imports).
+
+## self-hosting (ziz/)
+
+The `ziz/` directory contains zero programs that implement parts of zeta itself:
+
+- `zeta.zero.md` — base feature (logo, main entry point)
+- `parser.zero.md` — parser functions (bracket matching, split stream parts)
+
+Built via `python3 zeta.py ziz/features.md ziz/output/`. Output includes per-feature `.py` and `.ts` files, `_runtime` test infrastructure, and a `package.json` for ESM support.
 
 ## key decisions
 
@@ -123,3 +155,5 @@ Void functions have `"result": null`.
 5. **Struct fields default to 0** if no explicit default.
 6. **IR versioning** — parser stamps version and feature set; emitters check compatibility.
 7. **Modular by language feature** — each construct is handled independently, easy to add new features.
+8. **Safety catch** — zeta refuses to write output into its own source directory.
+9. **Decomposed streams over imperative loops** — the preferred zero style decomposes loop accumulators into parallel array streams, avoiding mutable state. See `split stream parts` in `atoz.md`.

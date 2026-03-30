@@ -106,3 +106,25 @@ Each entry records: what I chose to do, why, what changed, and the outcome.
 
 ---
 
+## 8. test framework from interface examples (2026-03-30)
+
+**What:** Built a test framework that automatically derives tests from `=>` examples in `## interface` and `## tests` sections of `.zero.md` feature files.
+
+**How:** `feature_parser` extracts `call => expected` pairs. `parser.parse_tests()` parses them against known signatures. Emitters generate per-feature test functions + `register_tests()` calls. Shared `_runtime.py`/`.ts` provides the test registry and `run_tests()`. Build pipeline compiles all output (`py_compile` + `tsc --strict`).
+
+**Outcome:** 6 tests (3 parser + 1 zeta + 2 bracket matching), all passing in both Python and TypeScript. Output is "actually executable programs" — if it doesn't compile, the build fails.
+
+---
+
+## 9. split stream parts via decomposed streams (2026-03-30)
+
+**What:** Translated `_split_stream_parts` from Python to zero. Discovered that the imperative loop (3 accumulators, 2-char lookahead) decomposes into 6 lines of declarative zero code using parallel array streams.
+
+**Why:** Stress-test the language's expressiveness. The function is complex enough to force new language features: `bool`, `and`/`or`, `string$` lens, `_`-relative index references, `indices of [...] where (...)`, and `split [...] at [...]`.
+
+**Key insight:** Imperative loops with multiple accumulators decompose into parallel streams. Each accumulator becomes one line. The `_` index reference (`lt$[_ - 1]`) replaces manual state tracking across iterations. The sentinel pattern (`s + "<-"`) replaces post-loop cleanup.
+
+**Outcome:** 363 existing tests pass. 6 ziz tests pass in both Python and TypeScript. The decomposed style is the preferred zero idiom for loop translation.
+
+---
+
