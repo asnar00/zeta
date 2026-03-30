@@ -5,6 +5,13 @@
 
 Parser functions for the zero translator, starting with bracket matching.
 
+## interface
+
+The `matching` function finds the position of a closing bracket in a string:
+
+    matching ("()") in ("ᕦ(ツ)ᕤ") after (1) => 3
+    matching ("[]") in ("a[b[c]d]e") after (1) => 7
+
 ## definition
 
     feature parser extends zeta
@@ -29,20 +36,3 @@ Find the position of the matching bracket:
         int depth$ <- bracket depth of (sub) matching (pair)
         pos = start + index of first in [depth$] where (_ == 0)
 
-### tests
-
-Test bracket matching on the zeta logo:
-
-    on (string result$) <- test brackets ()
-        string logo = "ᕦ(ツ)ᕤ"
-        int pos = matching ("()") in (logo) after (1)
-        if (pos == 3)
-            result$ <- "PASS brackets: logo paren at 3"
-        else
-            result$ <- "FAIL brackets: expected 3"
-
-Extend main to run parser tests:
-
-    after main (string args$)
-        string r <- test brackets ()
-        out$ <- r

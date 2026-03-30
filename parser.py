@@ -100,6 +100,23 @@ def process(source: str, recover: bool = False, source_file: str = None) -> dict
                 fn, consumed = _parse_function(lines, i, fn_signatures, _src_line, task_signatures)
                 ir["functions"].append(fn)
                 i += consumed
+            elif " => " in line:
+                # test example: call_expr => expected_value
+                idx = line.index(" => ")
+                call_str = line[:idx].strip()
+                expected_str = line[idx + 4:].strip()
+                call_node = _try_parse_fn_call(call_str, fn_signatures)
+                if call_node is None:
+                    call_node = _try_parse_task_call(call_str, task_signatures)
+                if call_node is not None:
+                    expected_node = _parse_expr(expected_str, fn_signatures)
+                    ir.setdefault("tests", []).append({
+                        "call": call_node,
+                        "expected": expected_node,
+                        "source_line": _src_line(i),
+                        "source_text": line,
+                    })
+                i += 1
             elif line and not line.startswith("#"):
                 # try as a bare function call statement (has parens, no '=')
                 if "(" in line and "=" not in line:
@@ -137,6 +154,33 @@ def process(source: str, recover: bool = False, source_file: str = None) -> dict
     # detect features used
     ir["features"] = _detect_features(ir)
     return ir
+
+
+def parse_tests(test_pairs: list[dict], source: str) -> list[dict]:
+    """Parse test call/expected pairs against known signatures in source.
+
+    Each item in test_pairs should have 'call' and 'expected' strings.
+    Returns list of dicts with parsed 'call' and 'expected' IR nodes.
+    """
+    if _is_markdown(source):
+        source, _ = _extract_code(source)
+    lines = source.split("\n")
+    fn_sigs = _collect_signatures(lines)
+    task_sigs = _collect_task_signatures(lines)
+    results = []
+    for pair in test_pairs:
+        call_node = _try_parse_fn_call(pair["call"], fn_sigs)
+        if call_node is None:
+            call_node = _try_parse_task_call(pair["call"], task_sigs)
+        if call_node is None:
+            continue  # skip tests we can't parse
+        expected_node = _parse_expr(pair["expected"], fn_sigs)
+        results.append({
+            "call": call_node,
+            "expected": expected_node,
+            "source_text": f"{pair['call']} => {pair['expected']}",
+        })
+    return results
 
 
 def _detect_features(ir: dict) -> set[str]:

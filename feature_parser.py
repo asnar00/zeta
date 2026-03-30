@@ -16,6 +16,7 @@ def parse_features(source: str) -> list[dict]:
     lines = source.split("\n")
     features = []
     current = None
+    pending_tests = []  # tests found before first feature declaration
     i = 0
 
     while i < len(lines):
@@ -33,8 +34,23 @@ def parse_features(source: str) -> list[dict]:
                 "type_extensions": [],
                 "types": [],
                 "variables": [],
+                "tests": [],
             }
+            # attach any tests found before this feature declaration
+            if pending_tests:
+                current["tests"].extend(pending_tests)
+                pending_tests = []
             features.append(current)
+            i += 1
+            continue
+
+        # test example: call_expr => expected_value (always buffer for next feature)
+        if " => " in stripped:
+            idx = stripped.index(" => ")
+            pending_tests.append({
+                "call": stripped[:idx].strip(),
+                "expected": stripped[idx + 4:].strip(),
+            })
             i += 1
             continue
 

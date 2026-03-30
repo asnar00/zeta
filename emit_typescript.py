@@ -55,6 +55,16 @@ def emit(ir: dict) -> str:
     if has_concurrently:
         sections.append(_CONCURRENTLY_HELPER_TS)
 
+    # emit test functions at the top, grouped by feature
+    tests = ir.get("tests", [])
+    if tests:
+        by_feature = {}
+        for t in tests:
+            feat = t.get("feature", ir.get("test_feature", "test"))
+            by_feature.setdefault(feat, []).append(t)
+        for feat_name, feat_tests in by_feature.items():
+            sections.append(_emit_test_section_ts(feat_tests, feat_name, structs))
+
     for typ in ir["types"]:
         code = _emit_type(typ, enums, structs)
         if code:
@@ -97,6 +107,35 @@ def emit(ir: dict) -> str:
                 result = result.replace(f"{fn_name}(", f"{mod_name}.{fn_name}(")
 
     return result
+
+
+def _emit_test_section_ts(tests: list[dict], feature_name: str, structs: dict) -> str:
+    """Emit test functions and register them for a feature (TypeScript)."""
+    lines = []
+    test_entries = []  # (function_name, description)
+    for i, test in enumerate(tests):
+        name = f"test_{feature_name}_{i}"
+        call_code = _emit_expr(test["call"], structs)
+        expected_code = _emit_expr(test["expected"], structs) if isinstance(test["expected"], dict) else repr(test["expected"])
+        is_task = test["call"].get("kind") == "task_call"
+        if is_task and test["expected"].get("kind") != "array_lit":
+            expected_code = f"[{expected_code}]"
+        cmp = "JSON.stringify(_result) !== JSON.stringify(_expected)" if is_task else "_result !== _expected"
+        desc = test.get("source_text", "")
+        test_entries.append((name, desc))
+        lines.append(f"function {name}(): void {{")
+        lines.append(f"    // {desc}")
+        lines.append(f"    const _result = {call_code};")
+        lines.append(f"    const _expected = {expected_code};")
+        lines.append(f'    if ({cmp}) throw new Error(`expected ${{_expected}}, got ${{_result}}`);')
+        lines.append("}")
+        lines.append("")
+
+    # register tests
+    entries = ", ".join(f"[{n}, {repr(d)}]" for n, d in test_entries)
+    lines.append(f"register_tests({repr(feature_name)}, [{entries}]);")
+
+    return "\n".join(lines)
 
 
 def _generate_dispatchers_ts(functions: list[dict], types: list[dict]) -> list[str]:
@@ -299,8 +338,22 @@ def _emit_stream_ts(name: str, type_ann: str, stream: dict, structs: dict = None
 def _emit_task_call_ts(name: str, type_ann: str, call: dict) -> str:
     """Emit a task call — spread generator into array."""
     fn_name = make_task_call_fn_name(call)
-    args = ", ".join(a.replace("$", "_arr") for a in call["args"])
+    args = ", ".join(_coerce_task_arg(a, t, call) for a, t in
+                     zip(call["args"], _task_call_param_types(call)))
     return f"const {name}: {type_ann}[] = [...{fn_name}({args})];"
+
+
+def _task_call_param_types(call: dict) -> list[str]:
+    """Extract param types from a task_call's signature_parts."""
+    return [p.strip("()") for p in call["signature_parts"] if p.startswith("(")]
+
+
+def _coerce_task_arg(arg: str, param_type: str, call: dict) -> str:
+    """Coerce a task call argument — spread strings into char arrays for char params."""
+    name = arg.replace("$", "_arr")
+    if param_type == "char":
+        return f"[...{name}]"
+    return name
 
 
 def _emit_element(v, structs: dict = None) -> str:
@@ -515,7 +568,8 @@ def _emit_task_ts(task: dict, structs: dict = None) -> str:
             call = node["call"]
             if call.get("kind") == "task_call":
                 call_fn = make_task_call_fn_name(call)
-                args = ", ".join(a.replace("$", "_arr") for a in call["args"])
+                args = ", ".join(_coerce_task_arg(a, t, call) for a, t in
+                                 zip(call["args"], _task_call_param_types(call)))
                 lines.append(f"{base_indent}for (const {node['name']} of {call_fn}({args})) {{")
             else:
                 lines.append(f"{base_indent}for (const {node['name']} of {_emit_expr(call, structs)}) {{")
@@ -534,7 +588,8 @@ def _emit_task_ts(task: dict, structs: dict = None) -> str:
             val = node.get("value")
             if node.get("array") and isinstance(val, dict) and val.get("kind") == "task_call":
                 call_fn = make_task_call_fn_name(val)
-                args = ", ".join(a.replace("$", "_arr") for a in val["args"])
+                args = ", ".join(_coerce_task_arg(a, t, val) for a, t in
+                                 zip(val["args"], _task_call_param_types(val)))
                 lines.append(f"{base_indent}{extra_indent}const {name} = [...{call_fn}({args})];")
             elif node.get("array") and isinstance(val, list):
                 items = ", ".join(_emit_expr(v, structs) if isinstance(v, dict) else str(v) for v in val)
@@ -660,6 +715,12 @@ def _emit_expr(node: dict, structs: dict) -> str:
         args = ", ".join(_emit_expr(a, structs) for a in node["args"])
         return f"{fn_name}({args})"
 
+    elif kind == "task_call":
+        fn_name = make_task_call_fn_name(node)
+        args = ", ".join(_coerce_task_arg(a, t, node) for a, t in
+                         zip(node["args"], _task_call_param_types(node)))
+        return f"[...{fn_name}({args})]"
+
     elif kind == "binop":
         left = _emit_expr(node["left"], structs)
         right = _emit_expr(node["right"], structs)
@@ -764,7 +825,8 @@ def _emit_expr(node: dict, structs: dict) -> str:
                 return f"const {name} = Array.from({{ length: {length} }}, (_, i) => i + {start})"
             elif isinstance(val, dict) and val.get("kind") == "task_call":
                 call_fn = make_task_call_fn_name(val)
-                args = ", ".join(a.replace("$", "_arr") for a in val["args"])
+                args = ", ".join(_coerce_task_arg(a, t, val) for a, t in
+                                 zip(val["args"], _task_call_param_types(val)))
                 return f"const {name} = [...{call_fn}({args})]"
             elif isinstance(val, dict) and "kind" in val:
                 return f"const {name} = {_emit_array_map_expr(val, structs)}"

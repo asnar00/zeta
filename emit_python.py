@@ -54,6 +54,17 @@ def emit(ir: dict) -> str:
     if has_concurrently:
         sections.append(_CONCURRENTLY_HELPER)
 
+    # emit test functions at the top, grouped by feature
+    tests = ir.get("tests", [])
+    if tests:
+        # group tests by feature
+        by_feature = {}
+        for t in tests:
+            feat = t.get("feature", ir.get("test_feature", "test"))
+            by_feature.setdefault(feat, []).append(t)
+        for feat_name, feat_tests in by_feature.items():
+            sections.append(_emit_test_section(feat_tests, feat_name))
+
     # build type lookup for parent field resolution
     all_types = {t["name"]: t for t in ir["types"]}
 
@@ -97,6 +108,33 @@ def emit(ir: dict) -> str:
                 result = result.replace(f"{fn_name}(", f"{mod_name}.{fn_name}(")
 
     return result
+
+
+def _emit_test_section(tests: list[dict], feature_name: str) -> str:
+    """Emit test functions and register them for a feature."""
+    lines = []
+    test_entries = []  # (name, desc)
+    for i, test in enumerate(tests):
+        name = f"test_{feature_name}_{i}"
+        call_code = _emit_expr(test["call"])
+        expected_code = _emit_expr(test["expected"]) if isinstance(test["expected"], dict) else repr(test["expected"])
+        is_task = test["call"].get("kind") == "task_call"
+        if is_task and test["expected"].get("kind") != "array_lit":
+            expected_code = f"[{expected_code}]"
+        desc = test.get("source_text", "")
+        test_entries.append((name, desc))
+        lines.append(f"def {name}():")
+        lines.append(f"    '''{desc}'''")
+        lines.append(f"    _result = {call_code}")
+        lines.append(f"    _expected = {expected_code}")
+        lines.append(f'    assert _result == _expected, f"expected {{_expected}}, got {{_result}}"')
+        lines.append("")
+
+    # register tests
+    entries = ", ".join(f"({n}, {repr(d)})" for n, d in test_entries)
+    lines.append(f"register_tests({repr(feature_name)}, [{entries}])")
+
+    return "\n".join(lines)
 
 
 def _generate_dispatchers(functions: list[dict], types: list[dict]) -> list[str]:
@@ -582,6 +620,11 @@ def _emit_expr(node: dict) -> str:
         fn_name = _make_function_name(node["signature_parts"])
         args = ", ".join(_emit_expr(a) for a in node["args"])
         return f"{fn_name}({args})"
+
+    elif kind == "task_call":
+        fn_name = make_task_call_fn_name(node)
+        args = ", ".join(a.replace("$", "_arr") for a in node["args"])
+        return f"list({fn_name}({args}))"
 
     elif kind == "binop":
         left = _emit_expr(node["left"])
