@@ -30,6 +30,11 @@ def fn_trim__string(s: str) -> str:
     return s.strip()
 
 
+# @zero on (char c) = char (int i) of (string s)
+def fn_char__int_of__string(i: int, s: str) -> str:
+    return s[i]
+
+
 # @zero on (string result$) = split [string s] at [int positions$]
 def fn_split_at(s: str, positions: list[int]) -> list[str]:
     parts = []
@@ -75,29 +80,29 @@ def test_parser_4():
 
 register_tests('parser', [(test_parser_0, 'matching ("()") in ("ᕦ(ツ)ᕤ") after (1) => 3'), (test_parser_1, 'matching ("[]") in ("a[b[c]d]e") after (1) => 7'), (test_parser_2, 'split stream parts ("1 <- 2 <- 3") => ["1", "2", "3"]'), (test_parser_3, 'split stream parts ("1 <- (a <- b) <- 3") => ["1", "(a <- b)", "3"]'), (test_parser_4, 'split stream parts ("hello") => ["hello"]')])
 
-# @zero on (int depth$) <- bracket depth of matching (char c$) (string pair); ziz/parser.zero.md:30
-def task_bracket_depth_of_matching__char__string(c_arr: str, pair: str):
+# @zero on (int depth$) <- bracket depth of matching (string s) (string pair); ziz/parser.zero.md:33
+def task_bracket_depth_of_matching__string__string(s: str, pair: str):
     d = 0
-    for c in c_arr:
-        if c == pair[0]:
+    for c in list(s):
+        if c == fn_char__int_of__string(0, pair):
             d = d + 1
-        elif c == pair[1]:
+        elif c == fn_char__int_of__string(1, pair):
             d = d - 1
         yield d
 
-# @zero on (int pos) = matching (string pair) in (string s) after (int start); ziz/parser.zero.md:39
+# @zero on (int pos) = matching (string pair) in (string s) after (int start); ziz/parser.zero.md:42
 def fn_matching__string_in__string_after__int(pair: str, s: str, start: int) -> int:
     sub = s[start:]
-    depth_arr = list(task_bracket_depth_of_matching__char__string(sub, pair))
+    depth_arr = list(task_bracket_depth_of_matching__string__string(sub, pair))
     pos = start + next(i for i, x in enumerate(depth_arr) if x == 0)
     return pos
 
-# @zero on (string part$) = split stream parts (string s); ziz/parser.zero.md:44
+# @zero on (string part$) = split stream parts (string s); ziz/parser.zero.md:47
 def fn_split_stream_parts__string(s: str) -> str:
     padded = s + "<-"
-    depth_arr = list(task_bracket_depth_of_matching__char__string(list(padded), "()"))
-    lt_arr = [list(padded)[_i] == "<" for _i in range(len(list(padded)))]
-    is_sep_arr = [(lt_arr[_i - 1] if _i - 1 >= 0 else 0) and list(padded)[_i] == "-" and depth_arr[_i] == 0 for _i in range(len(depth_arr))]
+    depth_arr = list(task_bracket_depth_of_matching__string__string(padded, "()"))
+    lt_arr = [fn_char__int_of__string(_i, padded) == "<" for _i in range(len(padded))]
+    is_sep_arr = [(lt_arr[_i - 1] if _i - 1 >= 0 else 0) and fn_char__int_of__string(_i, padded) == "-" and depth_arr[_i] == 0 for _i in range(len(depth_arr))]
     pos_arr = [i for i, x in enumerate(is_sep_arr) if x]
     part_arr = [fn_trim__string(x) for x in fn_split_at(padded, pos_arr)]
     return part_arr

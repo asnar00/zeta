@@ -26,12 +26,12 @@ The `split stream parts` task splits a stream expression at top-level `<-` token
 
 A task that tracks bracket depth as it scans characters:
 
-    on (int depth$) <- bracket depth of (char c$) matching (string pair)
+    on (int depth$) <- bracket depth of (string s) matching (string pair)
         int d = 0
-        for each (c) in (c$)
-            if (c == pair[0])
+        for each (c) in (s.char$)
+            if (c == char (0) of (pair))
                 d = d + 1
-            else if (c == pair[1])
+            else if (c == char (1) of (pair))
                 d = d - 1
             depth$ <- d
 
@@ -48,8 +48,8 @@ Splits a stream expression at top-level `<-` tokens, respecting parenthesis dept
 
     on (string part$) = split stream parts (string s)
         string padded = s + "<-"
-        int depth$ <- bracket depth of (padded$) matching ("()")
-        bool lt$ <- (padded$ == "<")
-        bool is_sep$ <- (lt$[_ - 1] and padded$ == "-" and depth$ == 0)
+        int depth$ <- bracket depth of (padded) matching ("()")
+        bool lt$ <- (char (_) of (padded) == "<")
+        bool is_sep$ <- (lt$[_ - 1] and char (_) of (padded) == "-" and depth$ == 0)
         int pos$ = indices of [is_sep$] where (_)
         string part$ = trim (split [padded] at [pos$])

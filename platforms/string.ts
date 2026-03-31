@@ -8,6 +8,12 @@ function fn_trim__string(s: string): string {
 }
 
 
+// @zero on (char c) = char (int i) of (string s)
+function fn_char__int_of__string(i: number, s: string): string {
+    return s[i];
+}
+
+
 // @zero on (string result$) = split [string s] at [int positions$]
 function fn_split_at(s: string, positions: readonly number[]): string[] {
     const parts: string[] = [];

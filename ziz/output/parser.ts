@@ -31,6 +31,12 @@ export function fn_trim__string(s: string): string {
 }
 
 
+// @zero on (char c) = char (int i) of (string s)
+export function fn_char__int_of__string(i: number, s: string): string {
+    return s[i];
+}
+
+
 // @zero on (string result$) = split [string s] at [int positions$]
 export function fn_split_at(s: string, positions: readonly number[]): string[] {
     const parts: string[] = [];
@@ -82,33 +88,33 @@ export function test_parser_4(): void {
 
 register_tests('parser', [[test_parser_0, 'matching ("()") in ("ᕦ(ツ)ᕤ") after (1) => 3'], [test_parser_1, 'matching ("[]") in ("a[b[c]d]e") after (1) => 7'], [test_parser_2, 'split stream parts ("1 <- 2 <- 3") => ["1", "2", "3"]'], [test_parser_3, 'split stream parts ("1 <- (a <- b) <- 3") => ["1", "(a <- b)", "3"]'], [test_parser_4, 'split stream parts ("hello") => ["hello"]']]);
 
-// @zero on (int depth$) <- bracket depth of matching (char c$) (string pair); ziz/parser.zero.md:30
-export function* task_bracket_depth_of_matching__char__string(c_arr: readonly string[], pair: string): Generator<number> {
+// @zero on (int depth$) <- bracket depth of matching (string s) (string pair); ziz/parser.zero.md:33
+export function* task_bracket_depth_of_matching__string__string(s: string, pair: string): Generator<number> {
     let d = 0;
-    for (const c of c_arr) {
-        if (c == pair[0]) {
+    for (const c of [...s]) {
+        if (c == fn_char__int_of__string(0, pair)) {
             d = d + 1;
-        } else if (c == pair[1]) {
+        } else if (c == fn_char__int_of__string(1, pair)) {
             d = d - 1;
         }
         yield d;
     }
 }
 
-// @zero on (int pos) = matching (string pair) in (string s) after (int start); ziz/parser.zero.md:39
+// @zero on (int pos) = matching (string pair) in (string s) after (int start); ziz/parser.zero.md:42
 export function fn_matching__string_in__string_after__int(pair: string, s: string, start: number): number {
     const sub = s.slice(start);
-    const depth_arr = [...task_bracket_depth_of_matching__char__string([...sub], pair)];
+    const depth_arr = [...task_bracket_depth_of_matching__string__string(sub, pair)];
     const pos: number = start + depth_arr.findIndex(x => x == 0);
     return pos;
 }
 
-// @zero on (string part$) = split stream parts (string s); ziz/parser.zero.md:44
+// @zero on (string part$) = split stream parts (string s); ziz/parser.zero.md:47
 export function fn_split_stream_parts__string(s: string): string[] {
     const padded = s + "<-";
-    const depth_arr = [...task_bracket_depth_of_matching__char__string([...padded], "()")];
-    const lt_arr = Array.from({ length: [...padded].length }, (_, _i) => [...padded][_i] == "<");
-    const is_sep_arr = Array.from({ length: depth_arr.length }, (_, _i) => (_i - 1 >= 0 ? lt_arr[_i - 1] : 0) && [...padded][_i] == "-" && depth_arr[_i] == 0);
+    const depth_arr = [...task_bracket_depth_of_matching__string__string(padded, "()")];
+    const lt_arr = Array.from({ length: padded.length }, (_, _i) => fn_char__int_of__string(_i, padded) == "<");
+    const is_sep_arr = Array.from({ length: depth_arr.length }, (_, _i) => (_i - 1 >= 0 ? lt_arr[_i - 1] : 0) && fn_char__int_of__string(_i, padded) == "-" && depth_arr[_i] == 0);
     const pos_arr = is_sep_arr.map((x, i) => (x) ? i : -1).filter(i => i >= 0);
     const part_arr = fn_split_at(padded, pos_arr).map(x => fn_trim__string(x));
     return part_arr;

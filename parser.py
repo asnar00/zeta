@@ -4,7 +4,6 @@ import re
 
 IR_VERSION = 1
 
-_declared_arrays = set()  # populated by process(), used by _parse_expr
 
 
 class ZeroParseError(Exception):
@@ -84,19 +83,6 @@ def process(source: str, recover: bool = False, source_file: str = None) -> dict
     # first pass: collect function and task signatures for call resolution
     fn_signatures = _collect_signatures(lines)
     task_signatures = _collect_task_signatures(lines)
-    # collect declared array variable names (names with $) so we can distinguish
-    # string$ (to_chars conversion) from array$ (declared array reference)
-    global _declared_arrays
-    _declared_arrays = set()
-    for line in lines:
-        stripped = line.strip()
-        # variable declarations: "type name$" or "type name$ ="  or "type name$ <-"
-        m = re.match(r'\w+\s+(\w+)\$\s*(?:[=\[<]|$)', stripped)
-        if m:
-            _declared_arrays.add(m.group(1))
-        # function/task parameters: "(type name$)"
-        for pm in re.finditer(r'\(\w+\s+(\w+)\$\)', stripped):
-            _declared_arrays.add(pm.group(1))
 
     errors = []
     i = 0
@@ -1131,13 +1117,14 @@ def _parse_task_body(body_lines: list[str], raw_body_lines: list[str], output_st
         stripped = line.strip()
         indent = len(raw_line) - len(raw_line.lstrip())
 
-        # for each (name) in (stream$) — explicit loop over stream
-        for_each_match = re.match(r"for each \((\w+)\) in \((\w+\$)\)$", stripped)
+        # for each (name) in (expr) — explicit loop over stream/array
+        for_each_match = re.match(r"for each \((\w+)\) in \((.+)\)$", stripped)
         if for_each_match:
+            iter_expr = _parse_expr(for_each_match.group(2).strip(), fn_sigs)
             nodes_with_indent.append((indent, {
                 "kind": "for_each",
                 "name": for_each_match.group(1),
-                "stream": for_each_match.group(2),
+                "iter": iter_expr,
             }))
             continue
 
@@ -1221,7 +1208,7 @@ def _group_task_if_blocks(nodes_with_indent: list) -> list:
             result.append({
                 "kind": "for_each",
                 "name": node["name"],
-                "stream": node["stream"],
+                "iter": node["iter"],
                 "body": _group_task_if_blocks(body_with_indent),
             })
         elif node["kind"] == "task_if":
@@ -1537,16 +1524,13 @@ def _parse_expr(s: str, fn_sigs: list = None) -> dict:
     if (s.startswith('"') and s.endswith('"')) or (s.startswith("'") and s.endswith("'")):
         return {"kind": "literal", "value": s}
 
-    # member access: obj.field
-    if "." in s and re.match(r"(\w+)\.(\w+)$", s):
-        m = re.match(r"(\w+)\.(\w+)$", s)
+    # member access: obj.field or obj.field$
+    if "." in s and re.match(r"(\w+)\.(\w+\$?)$", s):
+        m = re.match(r"(\w+)\.(\w+\$?)$", s)
         return {"kind": "member", "object": m.group(1), "field": m.group(2)}
 
     # name (including array names with $ suffix)
     if re.match(r"\w+\$?$", s):
-        # string$ means "view string as char array" (to_chars conversion)
-        if s.endswith("$") and s[:-1] not in _declared_arrays:
-            return {"kind": "to_chars", "value": s[:-1]}
         return {"kind": "name", "value": s}
 
     return {"kind": "raw", "value": s}

@@ -33,6 +33,12 @@ function fn_trim__string(s: string): string {
 }
 
 
+// @zero on (char c) = char (int i) of (string s)
+function fn_char__int_of__string(i: number, s: string): string {
+    return s[i];
+}
+
+
 // @zero on (string result$) = split [string s] at [int positions$]
 function fn_split_at(s: string, positions: readonly number[]): string[] {
     const parts: string[] = [];
@@ -58,7 +64,7 @@ register_tests('zeta', [[test_zeta_0, 'main(["input.zero.md", "output.py"]) => "
 
 const logo: string = "ᕦ(ツ)ᕤ";
 
-// @zero on (string out$) <- main (string args$); ziz/zeta.zero.md:27
+// @zero on (string out$) <- main (string args$); ziz/zeta.zero.md:30
 function* task_main__string(args_arr: readonly string[]): Generator<string> {
     yield logo;
 }

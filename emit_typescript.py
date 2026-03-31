@@ -369,38 +369,19 @@ def _emit_element(v, structs: dict = None) -> str:
 
 
 def _has_index_underscore(node: dict) -> bool:
-    """Check if an expression contains _ used as an array index reference."""
-    if not isinstance(node, dict):
-        return False
-    if node.get("kind") == "index" and _contains_name(node.get("index", {}), "_"):
-        return True
-    return any(_has_index_underscore(v) for v in node.values() if isinstance(v, dict))
+    """Check if an expression contains _ used as a position reference."""
+    return _contains_name(node, "_")
 
 
-def _contains_name(node: dict, name: str) -> bool:
+def _contains_name(node, name: str) -> bool:
     """Check if an expression tree contains a specific name."""
+    if isinstance(node, list):
+        return any(_contains_name(v, name) for v in node)
     if not isinstance(node, dict):
         return False
     if node.get("kind") == "name" and node.get("value") == name:
         return True
-    return any(_contains_name(v, name) for v in node.values() if isinstance(v, dict))
-
-
-def _collect_to_chars_refs(node: dict) -> list[str]:
-    """Collect to_chars reference names from an expression."""
-    refs = []
-    if not isinstance(node, dict):
-        return refs
-    if node.get("kind") == "to_chars":
-        refs.append(node["value"])
-    for v in node.values():
-        if isinstance(v, dict):
-            refs.extend(_collect_to_chars_refs(v))
-        elif isinstance(v, list):
-            for item in v:
-                if isinstance(item, dict):
-                    refs.extend(_collect_to_chars_refs(item))
-    return refs
+    return any(_contains_name(v, name) for v in node.values() if isinstance(v, (dict, list)))
 
 
 def _rewrite_for_indexed_ts(node: dict, structs: dict) -> dict:
@@ -413,8 +394,6 @@ def _rewrite_for_indexed_ts(node: dict, structs: dict) -> dict:
         arr_node = node["array"]
         if arr_node.get("kind") == "name" and arr_node["value"].endswith("$"):
             arr_str = arr_node["value"].replace("$", "_arr")
-        elif arr_node.get("kind") == "to_chars":
-            arr_str = f"[...{arr_node['value']}]"
         else:
             arr_str = _emit_expr(arr_node, structs)
         idx = _rewrite_for_indexed_ts(node["index"], structs)
@@ -424,9 +403,6 @@ def _rewrite_for_indexed_ts(node: dict, structs: dict) -> dict:
     if kind == "name" and node.get("value", "").endswith("$"):
         ts_name = node["value"].replace("$", "_arr")
         return {"kind": "raw", "value": f"{ts_name}[_i]"}
-
-    if kind == "to_chars":
-        return {"kind": "raw", "value": f"[...{node['value']}][_i]"}
 
     if kind == "name" and node.get("value") == "_":
         return {"kind": "raw", "value": "_i"}
@@ -445,18 +421,39 @@ def _rewrite_for_indexed_ts(node: dict, structs: dict) -> dict:
 def _emit_indexed_map_expr_ts(node: dict, structs: dict) -> str:
     """Emit index-based array mapping for expressions using _-relative indexing (TypeScript)."""
     array_refs = list(dict.fromkeys(_collect_array_refs(node)))
-    to_chars = _collect_to_chars_refs(node)
 
     if array_refs:
         len_src = array_refs[0].replace("$", "_arr")
-    elif to_chars:
-        len_src = f"[...{to_chars[0]}]"
     else:
-        return _emit_expr(node, structs)
+        len_src = _find_length_source(node)
+        if not len_src:
+            return _emit_expr(node, structs)
 
     rewritten = _rewrite_for_indexed_ts(node, structs)
     expr = _emit_expr(rewritten, structs)
     return f"Array.from({{ length: {len_src}.length }}, (_, _i) => {expr})"
+
+
+def _find_length_source(node) -> str | None:
+    """Find a variable name suitable for determining length in indexed mapping."""
+    if not isinstance(node, dict):
+        return None
+    if node.get("kind") in ("fn_call", "array_fn_call"):
+        for arg in node.get("args", []):
+            if isinstance(arg, dict) and arg.get("kind") == "name" and arg["value"] != "_":
+                return arg["value"]
+    for v in node.values():
+        if isinstance(v, dict):
+            result = _find_length_source(v)
+            if result:
+                return result
+        elif isinstance(v, list):
+            for item in v:
+                if isinstance(item, dict):
+                    result = _find_length_source(item)
+                    if result:
+                        return result
+    return None
 
 
 def _emit_array_map_expr(node: dict, structs: dict) -> str:
@@ -465,11 +462,8 @@ def _emit_array_map_expr(node: dict, structs: dict) -> str:
         return _emit_indexed_map_expr_ts(node, structs)
 
     array_refs = list(dict.fromkeys(_collect_array_refs(node)))  # deduplicate, preserve order
-    to_chars = _collect_to_chars_refs(node)
-    if len(array_refs) == 0 and not to_chars:
+    if len(array_refs) == 0:
         return _emit_expr(node, structs)
-    if to_chars:
-        return _emit_indexed_map_expr_ts(node, structs)
     if len(array_refs) == 1:
         # single array: arr.map(x => expr)
         arr_name = array_refs[0]
@@ -665,8 +659,8 @@ def _emit_task_ts(task: dict, structs: dict = None) -> str:
         kind = node.get("kind")
 
         if kind == "for_each":
-            stream_name = node["stream"].replace("$", "_arr")
-            lines.append(f"{base_indent}{extra_indent}for (const {node['name']} of {stream_name}) {{")
+            iter_expr = _emit_expr(node["iter"], structs)
+            lines.append(f"{base_indent}{extra_indent}for (const {node['name']} of {iter_expr}) {{")
             loop_indent = base_indent + extra_indent + "    "
             for body_node in node["body"]:
                 bk = body_node.get("kind", "")
@@ -909,6 +903,8 @@ def _emit_expr(node: dict, structs: dict) -> str:
             return f"{arr}.slice({start})"
 
     elif kind == "member":
+        if node["field"] == "char$":
+            return f"[...{node['object']}]"
         return f"{node['object']}.{node['field']}"
 
     elif kind == "name":
@@ -918,9 +914,6 @@ def _emit_expr(node: dict, structs: dict) -> str:
         if val.endswith("$"):
             return val.replace("$", "_arr")
         return val
-
-    elif kind == "to_chars":
-        return f"[...{node['value']}]"
 
     elif kind == "literal":
         v = node["value"]

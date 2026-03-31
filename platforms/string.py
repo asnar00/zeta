@@ -7,6 +7,11 @@ def fn_trim__string(s: str) -> str:
     return s.strip()
 
 
+# @zero on (char c) = char (int i) of (string s)
+def fn_char__int_of__string(i: int, s: str) -> str:
+    return s[i]
+
+
 # @zero on (string result$) = split [string s] at [int positions$]
 def fn_split_at(s: str, positions: list[int]) -> list[str]:
     parts = []

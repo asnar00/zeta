@@ -373,65 +373,65 @@ def _emit_range(val: dict) -> str:
 
 
 def _has_index_underscore(node: dict) -> bool:
-    """Check if an expression contains _ used as an array index reference."""
-    if not isinstance(node, dict):
-        return False
-    if node.get("kind") == "index" and _contains_name(node.get("index", {}), "_"):
-        return True
-    return any(_has_index_underscore(v) for v in node.values() if isinstance(v, dict))
+    """Check if an expression contains _ used as a position reference."""
+    return _contains_name(node, "_")
 
 
-def _contains_name(node: dict, name: str) -> bool:
+def _contains_name(node, name: str) -> bool:
     """Check if an expression tree contains a specific name."""
+    if isinstance(node, list):
+        return any(_contains_name(v, name) for v in node)
     if not isinstance(node, dict):
         return False
     if node.get("kind") == "name" and node.get("value") == name:
         return True
-    return any(_contains_name(v, name) for v in node.values() if isinstance(v, dict))
+    return any(_contains_name(v, name) for v in node.values() if isinstance(v, (dict, list)))
 
 
 def _emit_indexed_map_expr(node: dict) -> str:
     """Emit index-based array mapping for expressions using _-relative indexing."""
-    # collect all array refs and to_chars refs
     array_refs = list(dict.fromkeys(_collect_array_refs(node)))
-    to_chars_refs = _collect_to_chars_refs(node)
 
-    # determine the length source
     if array_refs:
         len_src = array_refs[0].replace("$", "_arr")
-    elif to_chars_refs:
-        len_src = f"list({to_chars_refs[0]})"
     else:
-        return _emit_expr(node)
+        # no array refs — find any name arg to use for length (e.g. string length)
+        len_src = _find_length_source(node)
+        if not len_src:
+            return _emit_expr(node)
 
-    # rewrite the expression: replace array refs, to_chars, and _ with _i
     rewritten = _rewrite_for_indexed(node)
     expr = _emit_expr(rewritten)
     return f"[{expr} for _i in range(len({len_src}))]"
 
 
-def _collect_to_chars_refs(node: dict) -> list[str]:
-    """Collect to_chars reference names from an expression."""
-    refs = []
+def _find_length_source(node: dict) -> str | None:
+    """Find a variable name suitable for determining length in indexed mapping."""
     if not isinstance(node, dict):
-        return refs
-    if node.get("kind") == "to_chars":
-        refs.append(node["value"])
+        return None
+    # fn_call args: look for plain name args (not _)
+    if node.get("kind") in ("fn_call", "array_fn_call"):
+        for arg in node.get("args", []):
+            if isinstance(arg, dict) and arg.get("kind") == "name" and arg["value"] != "_":
+                return arg["value"]
     for v in node.values():
         if isinstance(v, dict):
-            refs.extend(_collect_to_chars_refs(v))
+            result = _find_length_source(v)
+            if result:
+                return result
         elif isinstance(v, list):
             for item in v:
                 if isinstance(item, dict):
-                    refs.extend(_collect_to_chars_refs(item))
-    return refs
+                    result = _find_length_source(item)
+                    if result:
+                        return result
+    return None
 
 
 def _rewrite_for_indexed(node: dict) -> dict:
     """Rewrite an expression for index-based iteration.
     - array$  → array_arr[_i]
     - array$[_ - N]  → array_arr[_i - N] with bounds check
-    - to_chars  → list(name)[_i]
     - bare _  → _i (in index expressions)
     """
     if not isinstance(node, dict):
@@ -444,8 +444,6 @@ def _rewrite_for_indexed(node: dict) -> dict:
         arr_node = node["array"]
         if arr_node.get("kind") == "name" and arr_node["value"].endswith("$"):
             arr_str = arr_node["value"].replace("$", "_arr")
-        elif arr_node.get("kind") == "to_chars":
-            arr_str = f"list({arr_node['value']})"
         else:
             arr_str = _emit_expr(arr_node)
         idx = _rewrite_for_indexed(node["index"])
@@ -456,10 +454,6 @@ def _rewrite_for_indexed(node: dict) -> dict:
     if kind == "name" and node.get("value", "").endswith("$"):
         py_name = node["value"].replace("$", "_arr")
         return {"kind": "raw", "value": f"{py_name}[_i]"}
-
-    # to_chars: → list(name)[_i]
-    if kind == "to_chars":
-        return {"kind": "raw", "value": f"list({node['value']})[_i]"}
 
     # _ in index context → _i
     if kind == "name" and node.get("value") == "_":
@@ -483,12 +477,9 @@ def _task_call_param_types_py(call: dict) -> list[str]:
 
 
 def _coerce_task_arg_py(arg: str, param_type: str) -> str:
-    """Coerce a task call argument — spread strings into char arrays for char params."""
+    """Coerce a task call argument."""
     if arg.endswith("$"):
-        base = arg[:-1]
-        if param_type == "char":
-            return f"list({base})"
-        return f"{base}_arr"
+        return f"{arg[:-1]}_arr"
     return arg
 
 
@@ -499,12 +490,8 @@ def _emit_array_map_expr(node: dict) -> str:
         return _emit_indexed_map_expr(node)
 
     array_refs = list(dict.fromkeys(_collect_array_refs(node)))  # deduplicate, preserve order
-    to_chars = _collect_to_chars_refs(node)
-    if len(array_refs) == 0 and not to_chars:
+    if len(array_refs) == 0:
         return _emit_expr(node)
-    # if to_chars refs present, always use indexed mapping (need position access)
-    if to_chars:
-        return _emit_indexed_map_expr(node)
     if len(array_refs) == 1:
         # single array: [expr for x in arr]
         arr_name = array_refs[0]
@@ -634,8 +621,8 @@ def _emit_task(task: dict) -> str:
         kind = node.get("kind")
 
         if kind == "for_each":
-            stream_name = node["stream"].replace("$", "_arr")
-            lines.append(f"{base_indent}{extra_indent}for {node['name']} in {stream_name}:")
+            iter_expr = _emit_expr(node["iter"])
+            lines.append(f"{base_indent}{extra_indent}for {node['name']} in {iter_expr}:")
             loop_indent = base_indent + extra_indent + "    "
             for body_node in node["body"]:
                 bk = body_node.get("kind", "")
@@ -837,6 +824,8 @@ def _emit_expr(node: dict) -> str:
         return f"{arr}[{start}:{end}]"
 
     elif kind == "member":
+        if node["field"] == "char$":
+            return f"list({node['object']})"
         return f"{node['object']}.{node['field']}"
 
     elif kind == "name":
@@ -847,8 +836,6 @@ def _emit_expr(node: dict) -> str:
             return val.replace("$", "_arr")
         return val
 
-    elif kind == "to_chars":
-        return f"list({node['value']})"
 
     elif kind == "literal":
         return str(node["value"])

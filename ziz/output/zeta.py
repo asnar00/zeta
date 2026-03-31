@@ -31,6 +31,11 @@ def fn_trim__string(s: str) -> str:
     return s.strip()
 
 
+# @zero on (char c) = char (int i) of (string s)
+def fn_char__int_of__string(i: int, s: str) -> str:
+    return s[i]
+
+
 # @zero on (string result$) = split [string s] at [int positions$]
 def fn_split_at(s: str, positions: list[int]) -> list[str]:
     parts = []
@@ -52,7 +57,7 @@ def test_zeta_0():
 
 register_tests('zeta', [(test_zeta_0, 'main(["input.zero.md", "output.py"]) => "ᕦ(ツ)ᕤ"')])
 
-# @zero on (string out$) <- main (string args$); ziz/zeta.zero.md:27
+# @zero on (string out$) <- main (string args$); ziz/zeta.zero.md:30
 def task_main__string(args_arr: str):
     yield logo
 
