@@ -91,6 +91,22 @@ Agent-powered tool that reads existing code and translates it *into* zero. Force
 
 Anthropic's Claude Code leaked via npm source maps in March 2026 — 512k lines of TypeScript, 1,900 files. Once atoz is functional, translate the entire codebase to zero. This would be the ultimate stress test for both atoz (can it decompose a real-world 512k-line codebase?) and zero (can the language express a production agent system?). The decomposed zero version would also be a proof point for the language — if it can express Claude Code more clearly than the TypeScript original, that says something.
 
+## per-user context: feature flags, preferences, and implicit parameters
+
+Feature-scoped variables are currently global (one value for all users). Make them **per-user**: each user (identified by IP, cookie, or login) gets their own context object holding all feature-scoped variable values.
+
+The emitter threads the context as a hidden first parameter through all function calls — the zero source never sees it. At the HTTP boundary, the platform creates or looks up the context per request.
+
+**What this gives you:**
+- Per-user feature flags (`landing_page_enabled`) — same infrastructure as LaunchDarkly, but falls out from zero's model
+- Per-user preferences (`theme`, `language`, `font_size`) — same mechanism, just different variables
+- Clean function signatures — `book flight ("LHR") ("JFK") (tomorrow)` instead of threading `class`, `time_preference`, `airlines`, `routing` as parameters. The preferences live on the context, read implicitly by the function.
+- Testability — swap the context object per-test to simulate different users/configurations
+
+**Implementation:** one dict lookup per request to find the user's context, then bare attribute access (`ctx.landing_page_enabled`) for every guard — same speed as a global on the hot path. The hidden `ctx` parameter is like `self` in Python — the emitter injects it, the programmer doesn't write it.
+
+This is algebraic effects for configuration: an implicit parameter that flows through all calls, swappable at the boundary.
+
 ## round-trip correctness testing
 
 Prove atoz + zeta preserve semantics by running original tests against re-emitted code. Multi-target agreement: emit to all targets, assert they agree.

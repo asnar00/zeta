@@ -26,3 +26,21 @@ function fn_split_at(s: string, positions: readonly number[]): string[] {
     if (remainder) parts.push(remainder);
     return parts;
 }
+
+
+// @zero on (bool result) = (string s) starts with (string prefix)
+function fn__string_starts_with__string(s: string, prefix: string): boolean {
+    return s.startsWith(prefix);
+}
+
+
+// @zero on (string result$) = split (string s) by (string delim)
+function fn_split__string_by__string(s: string, delim: string): string[] {
+    return s.split(delim);
+}
+
+
+// @zero on (int n) = length of (string s)
+function fn_length_of__string(s: string): number {
+    return s.length;
+}

@@ -183,7 +183,18 @@ class http_response(NamedTuple):
     request: http_request = 0
     body: str = ""
 
-# @zero on (string body) = not found; not_found.zero.md:91
-def fn_not_found() -> str:
-    body = "not found"
+# @zero on (string body) = handle admin (http_request request); website/admin.zero.md:94
+def fn_handle_admin__http_request(request: http_request) -> str:
+    parts_arr = fn_split__string_by__string(request.path, "/")
+    action = parts_arr[2]
+    if action == "set":
+        name = parts_arr[3]
+        value = parts_arr[4]
+        fn_set_feature_var__string__string(name, value)
+        body = name + " = " + value
+    elif action == "get":
+        name = parts_arr[3]
+        body = fn_get_feature_var__string(name)
+    else:
+        body = "unknown action: " + action
     return body

@@ -76,6 +76,30 @@ export function fn_print__string(message: string): void {
 }
 
 
+// Platform implementation: runtime (TypeScript)
+// Implements the functions declared in runtime.zero.md
+
+// @zero on set feature var (string name) (string value)
+export function fn_set_feature_var__string__string(name: string, value: string): void {
+    // set the variable on the global scope
+    if (value === "true" || value === "false") {
+        (globalThis as any)[name] = value === "true";
+    } else if (/^\d+$/.test(value)) {
+        (globalThis as any)[name] = parseInt(value);
+    } else {
+        (globalThis as any)[name] = value;
+    }
+}
+
+// @zero on (string value) = get feature var (string name)
+export function fn_get_feature_var__string(name: string): string {
+    const val = (globalThis as any)[name];
+    if (val === undefined) return "";
+    if (typeof val === "boolean") return val ? "true" : "false";
+    return String(val);
+}
+
+
 // Platform implementation: string (TypeScript)
 // Implements the functions declared in string.zero.md
 
@@ -103,6 +127,24 @@ export function fn_split_at(s: string, positions: readonly number[]): string[] {
     const remainder = s.slice(start);
     if (remainder) parts.push(remainder);
     return parts;
+}
+
+
+// @zero on (bool result) = (string s) starts with (string prefix)
+export function fn__string_starts_with__string(s: string, prefix: string): boolean {
+    return s.startsWith(prefix);
+}
+
+
+// @zero on (string result$) = split (string s) by (string delim)
+export function fn_split__string_by__string(s: string, delim: string): string[] {
+    return s.split(delim);
+}
+
+
+// @zero on (int n) = length of (string s)
+export function fn_length_of__string(s: string): number {
+    return s.length;
 }
 
 
@@ -140,7 +182,7 @@ export function http_response(args: Partial<http_response> = {}): http_response 
     return { request: args.request ?? http_request(), body: args.body ?? "" };
 }
 
-// @zero on (string body) = not found; not_found.zero.md:73
+// @zero on (string body) = not found; not_found.zero.md:91
 export function fn_not_found(): string {
     const body: string = "not found";
     return body;

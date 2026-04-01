@@ -720,7 +720,9 @@ def _emit_function(fn: dict) -> str:
             code = _emit_expr(stmt)
             if needs_guard and _assigns_result(stmt, result_var):
                 if seen_conditional_assign:
-                    lines.extend(_indent(f"if {result_var} is None:\n    {code}", "    "))
+                    guard_line = f"if {result_var} is None:"
+                    lines.extend(_indent(guard_line, "    "))
+                    lines.extend(_indent(code, "        "))
                 else:
                     lines.extend(_indent(code, "    "))
                     if stmt.get("kind") == "if_block":

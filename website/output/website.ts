@@ -1,5 +1,7 @@
 import './not_found.js';
 import * as not_found from './not_found.js';
+import './admin.js';
+import * as admin from './admin.js';
 import './landing_page.js';
 import * as landing_page from './landing_page.js';
 
@@ -81,6 +83,30 @@ function fn_print__string(message: string): void {
 }
 
 
+// Platform implementation: runtime (TypeScript)
+// Implements the functions declared in runtime.zero.md
+
+// @zero on set feature var (string name) (string value)
+function fn_set_feature_var__string__string(name: string, value: string): void {
+    // set the variable on the global scope
+    if (value === "true" || value === "false") {
+        (globalThis as any)[name] = value === "true";
+    } else if (/^\d+$/.test(value)) {
+        (globalThis as any)[name] = parseInt(value);
+    } else {
+        (globalThis as any)[name] = value;
+    }
+}
+
+// @zero on (string value) = get feature var (string name)
+function fn_get_feature_var__string(name: string): string {
+    const val = (globalThis as any)[name];
+    if (val === undefined) return "";
+    if (typeof val === "boolean") return val ? "true" : "false";
+    return String(val);
+}
+
+
 // Platform implementation: string (TypeScript)
 // Implements the functions declared in string.zero.md
 
@@ -108,6 +134,24 @@ function fn_split_at(s: string, positions: readonly number[]): string[] {
     const remainder = s.slice(start);
     if (remainder) parts.push(remainder);
     return parts;
+}
+
+
+// @zero on (bool result) = (string s) starts with (string prefix)
+function fn__string_starts_with__string(s: string, prefix: string): boolean {
+    return s.startsWith(prefix);
+}
+
+
+// @zero on (string result$) = split (string s) by (string delim)
+function fn_split__string_by__string(s: string, delim: string): string[] {
+    return s.split(delim);
+}
+
+
+// @zero on (int n) = length of (string s)
+function fn_length_of__string(s: string): number {
+    return s.length;
 }
 
 
@@ -149,7 +193,7 @@ const port: number = 8084;
 const logo: string = "ᕦ(ツ)ᕤ";
 const landing_page_enabled: boolean = true;
 
-// @zero on main (string args$); website/website.zero.md:60
+// @zero on main (string args$); website/website.zero.md:76
 async function task_main__string(args_arr: readonly string[]): Promise<void> {
     _push_terminal_out(logo);
     const request_arr = task_serve_http__int(port);
@@ -160,12 +204,17 @@ async function task_main__string(args_arr: readonly string[]): Promise<void> {
     }
 }
 
-// @zero on (string body) = handle request (http_request request); website/website.zero.md:68
+// @zero on (string body) = handle request (http_request request); website/website.zero.md:84
 function fn_handle_request__http_request(request: http_request): string {
     let body: string = undefined!;
     if (landing_page_enabled && request.path == "/") {
     body = landing_page.fn_landing_page();
 }
+    if (body === undefined) {
+        if (fn__string_starts_with__string(request.path, "/@admin/")) {
+    body = admin.fn_handle_admin__http_request(request);
+}
+    }
     if (body === undefined) {
         body = not_found.fn_not_found();
     }

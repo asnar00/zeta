@@ -182,8 +182,21 @@ export function http_response(args: Partial<http_response> = {}): http_response 
     return { request: args.request ?? http_request(), body: args.body ?? "" };
 }
 
-// @zero on (string body) = landing page; landing_page.zero.md:108
-export function fn_landing_page(): string {
-    const body: string = fn_read_file__string("website/index.html");
+// @zero on (string body) = handle admin (http_request request); website/admin.zero.md:94
+export function fn_handle_admin__http_request(request: http_request): string {
+    let body: string = undefined!;
+    const parts_arr = fn_split__string_by__string(request.path, "/");
+    const action = parts_arr[2];
+    if (action == "set") {
+    const name = parts_arr[3];
+    const value = parts_arr[4];
+    fn_set_feature_var__string__string(name, value);
+    body = name + " = " + value;
+} else if (action == "get") {
+    const name = parts_arr[3];
+    body = fn_get_feature_var__string(name);
+} else {
+    body = "unknown action: " + action;
+}
     return body;
 }
