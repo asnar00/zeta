@@ -1,3 +1,5 @@
+import website
+
 # Platform implementation: http (Python)
 # Implements the streams and tasks declared in http.zero.md
 
@@ -90,13 +92,22 @@ def fn_set_feature_var__string__string(name: str, value: str):
     mod = _find_root_module()
     if mod is None:
         return
+    # zero uses hyphens, Python uses underscores
+    attr_name = name.replace("-", "_")
     # convert string value to appropriate type
     if value in ("true", "false"):
-        setattr(mod, name, value == "true")
+        setattr(mod, attr_name, value == "true")
     elif value.isdigit():
-        setattr(mod, name, int(value))
+        setattr(mod, attr_name, int(value))
     else:
-        setattr(mod, name, value)
+        setattr(mod, attr_name, value)
+
+
+# @zero on exit process ()
+def fn_exit_process():
+    import os, threading
+    # exit after a short delay so the HTTP response can be sent
+    threading.Timer(0.5, lambda: os._exit(0)).start()
 
 
 # @zero on (string value) = get feature var (string name)
@@ -104,7 +115,8 @@ def fn_get_feature_var__string(name: str) -> str:
     mod = _find_root_module()
     if mod is None:
         return ""
-    val = getattr(mod, name, None)
+    attr_name = name.replace("-", "_")
+    val = getattr(mod, attr_name, None)
     if val is None:
         return ""
     if isinstance(val, bool):
@@ -183,7 +195,7 @@ class http_response(NamedTuple):
     request: http_request = 0
     body: str = ""
 
-# @zero on (string body) = handle admin (http_request request); website/admin.zero.md:94
+# @zero on (string body) = handle admin (http-request request); website/admin.zero.md:98
 def fn_handle_admin__http_request(request: http_request) -> str:
     parts_arr = fn_split__string_by__string(request.path, "/")
     action = parts_arr[2]
@@ -195,6 +207,10 @@ def fn_handle_admin__http_request(request: http_request) -> str:
     elif action == "get":
         name = parts_arr[3]
         body = fn_get_feature_var__string(name)
+    elif action == "stop":
+        website.fn_stop()
+        fn_exit_process()
+        body = "stopping"
     else:
         body = "unknown action: " + action
     return body

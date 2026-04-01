@@ -3,9 +3,9 @@
 
 ## definition
 
-    feature not_found extends website
+    feature not-found extends website
 
-    replace (string body) = handle request (http_request request)
+    replace (string body) = handle request (http-request request)
         body = not found ()
 
     on (string body) = not found ()

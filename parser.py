@@ -4,6 +4,13 @@ import re
 
 IR_VERSION = 1
 
+# Identifier pattern: letters, digits, underscores, with hyphens between letter-runs.
+# Matches: landing-page, http-request, x, my-var, not-found
+# Does NOT match: -foo, foo-, 3-bar
+# Use W in regex patterns where \w+ previously matched identifiers.
+ID = r'[a-zA-Z_]\w*(?:-[a-zA-Z_]\w*)*'
+W = ID  # shorthand for use in regex string building
+
 
 
 class ZeroParseError(Exception):
@@ -334,7 +341,7 @@ def _collect_signatures(lines: list[str]) -> list[dict]:
         if not stripped.startswith("on "):
             continue
         # try value-returning: on (type result[$]) = signature
-        match = re.match(r"on\s+\((\w+)\s+(\w+\$?)\)\s*=\s*(.*)", stripped)
+        match = re.match(rf"on\s+\(({W})\s+({W}\$?)\)\s*=\s*(.*)", stripped)
         if match:
             rhs = match.group(3).strip()
         else:
@@ -348,9 +355,9 @@ def _collect_signatures(lines: list[str]) -> list[dict]:
         pattern = []
         has_array_params = False
         for part in sig_parts:
-            param_match = re.match(r"\((\w+)\s+\w+\$?\)", part)
-            typed_array_match = re.match(r"\[(\w+)\s+(\w+\$?)\]", part)
-            array_param_match = re.match(r"\[(\w+\$?)\]", part)
+            param_match = re.match(rf"\(({W})\s+{W}\$?\)", part)
+            typed_array_match = re.match(rf"\[({W})\s+({W}\$?)\]", part)
+            array_param_match = re.match(rf"\[({W}\$?)\]", part)
             if typed_array_match:
                 pattern.append(("array_param", typed_array_match.group(1)))
                 has_array_params = True
@@ -382,7 +389,7 @@ def _parse_type(lines: list[str], start: int, src_line=None) -> tuple[dict, int]
         raise ZeroParseError("expected type name after 'type'", line_num, line, column=5)
 
     # abstract base type or struct without '=': "type animal" possibly followed by indented fields
-    abstract_match = re.match(r"type\s+(\w+)\s*$", line)
+    abstract_match = re.match(rf"type\s+({W})\s*$", line)
     if abstract_match:
         # check if next line is indented and looks like a field (not another declaration)
         has_fields = False
@@ -395,7 +402,7 @@ def _parse_type(lines: list[str], start: int, src_line=None) -> tuple[dict, int]
         return {"kind": "struct", "name": abstract_match.group(1), "fields": [], "parents": []}, 1
 
     # type composition: "type dog = animal +" or "type pet = animal + named +"
-    comp_match = re.match(r"type\s+(\w+)\s*=\s*(.+\+)\s*$", line)
+    comp_match = re.match(rf"type\s+({W})\s*=\s*(.+\+)\s*$", line)
     if comp_match:
         name = comp_match.group(1)
         rhs = comp_match.group(2).strip()
@@ -479,7 +486,7 @@ def _parse_struct_type(name: str, lines: list[str], start: int, line_num: int = 
         if stripped.startswith("type ") or stripped.startswith("on "):
             break
         # stop if line looks like a variable declaration (has $ or [)
-        if "$" in stripped or re.match(r"\S+\s+\w+\[", stripped):
+        if "$" in stripped or re.match(rf"\S+\s+{W}\[", stripped):
             break
         # struct fields must be more indented than the type line
         type_indent = len(lines[start]) - len(lines[start].lstrip())
@@ -515,7 +522,7 @@ def _parse_struct_fields(line: str) -> list[dict]:
 def _parse_variable(line: str, fn_sigs: list = None, task_sigs: list = None) -> dict | None:
     """Parse a variable declaration like 'int32 i = 10' or 'int i$[4] = 1'."""
     # match: type name[$][size] [= value]
-    match = re.match(r"(\S+)\s+(\w+)(\$)?\s*(.*)", line)
+    match = re.match(rf"(\S+)\s+({W})(\$)?\s*(.*)", line)
     if not match:
         return None
 
@@ -549,8 +556,8 @@ def _parse_scalar_variable(type_name: str, var_name: str, rest: str, fn_sigs: li
         elif _is_reduce_expr(rhs):
             value = _parse_reduce(rhs)
         # check for constructor call: name(...)
-        elif re.match(r"(\w+)\(([^)]*)\)$", rhs):
-            call_match = re.match(r"(\w+)\(([^)]*)\)", rhs)
+        elif re.match(rf"({W})\(([^)]*)\)$", rhs):
+            call_match = re.match(rf"({W})\(([^)]*)\)", rhs)
             value = _parse_constructor_call(call_match.group(1), call_match.group(2))
         # try function call
         elif fn_sigs and _try_parse_fn_call(rhs, fn_sigs):
@@ -567,7 +574,7 @@ def _parse_scalar_variable(type_name: str, var_name: str, rest: str, fn_sigs: li
 
 def _try_parse_where(rhs: str, fn_sigs: list = None) -> dict | None:
     """Try to parse '[array$] where (condition)'."""
-    match = re.match(r"\[(\w+\$?)\]\s+where\s+\((.+)\)$", rhs)
+    match = re.match(rf"\[({W}\$?)\]\s+where\s+\((.+)\)$", rhs)
     if match:
         array_expr = _parse_expr(match.group(1), fn_sigs)
         # parse condition, replacing _ with __elem__
@@ -579,7 +586,7 @@ def _try_parse_where(rhs: str, fn_sigs: list = None) -> dict | None:
 
 def _try_parse_first_where(rhs: str, fn_sigs: list = None) -> dict | None:
     """Try to parse 'first of [array$] where (condition)'."""
-    match = re.match(r"first of \[(\w+\$?)\]\s+where\s+\((.+)\)$", rhs)
+    match = re.match(rf"first of \[({W}\$?)\]\s+where\s+\((.+)\)$", rhs)
     if match:
         array_expr = _parse_expr(match.group(1), fn_sigs)
         cond_str = match.group(2)
@@ -590,7 +597,7 @@ def _try_parse_first_where(rhs: str, fn_sigs: list = None) -> dict | None:
 
 def _try_parse_index_of_first_where(rhs: str, fn_sigs: list = None) -> dict | None:
     """Try to parse 'index of first in [array$] where (condition)'."""
-    match = re.match(r"index of first in \[(\w+\$?)\]\s+where\s+\((.+)\)$", rhs)
+    match = re.match(rf"index of first in \[({W}\$?)\]\s+where\s+\((.+)\)$", rhs)
     if match:
         array_expr = _parse_expr(match.group(1), fn_sigs)
         cond_str = match.group(2)
@@ -601,7 +608,7 @@ def _try_parse_index_of_first_where(rhs: str, fn_sigs: list = None) -> dict | No
 
 def _try_parse_indices_where(rhs: str, fn_sigs: list = None) -> dict | None:
     """Try to parse 'indices of [array$] where (condition)'."""
-    match = re.match(r"indices of \[(\w+\$?)\]\s+where\s+\((.+)\)$", rhs)
+    match = re.match(rf"indices of \[({W}\$?)\]\s+where\s+\((.+)\)$", rhs)
     if match:
         array_expr = _parse_expr(match.group(1), fn_sigs)
         cond_str = match.group(2)
@@ -613,14 +620,14 @@ def _try_parse_indices_where(rhs: str, fn_sigs: list = None) -> dict | None:
 def _try_parse_sort(rhs: str, fn_sigs: list = None) -> dict | None:
     """Try to parse 'sort [array$]' or 'sort [array$] by (key_expr)'."""
     # sort with key: sort [a$] by (_.field)
-    match_by = re.match(r"sort\s+\[(\w+\$?)\]\s+by\s+\((.+)\)(\s+descending)?$", rhs)
+    match_by = re.match(rf"sort\s+\[({W}\$?)\]\s+by\s+\((.+)\)(\s+descending)?$", rhs)
     if match_by:
         array_expr = _parse_expr(match_by.group(1), fn_sigs)
         key_expr = _parse_expr(match_by.group(2), fn_sigs)
         descending = match_by.group(3) is not None
         return {"kind": "sort", "array": array_expr, "key": key_expr, "descending": descending}
     # simple sort: sort [a$]
-    match_simple = re.match(r"sort\s+\[(\w+\$?)\]$", rhs)
+    match_simple = re.match(rf"sort\s+\[({W}\$?)\]$", rhs)
     if match_simple:
         array_expr = _parse_expr(match_simple.group(1), fn_sigs)
         return {"kind": "sort", "array": array_expr, "key": None, "descending": False}
@@ -636,7 +643,7 @@ def _is_reduce_expr(s: str) -> bool:
 def _parse_reduce(rhs: str) -> dict:
     """Parse a reduce expression like 'i$ + _' or 'smaller of (i$) and (_)'."""
     # operator reduce: array$ op _
-    op_match = re.match(r"(\w+\$)\s*([+\-*/%&|^]|<<|>>)\s*_\s*$", rhs)
+    op_match = re.match(rf"({W}\$)\s*([+\-*/%&|^]|<<|>>)\s*_\s*$", rhs)
     if op_match:
         return {"kind": "reduce", "array": op_match.group(1), "op": op_match.group(2)}
 
@@ -646,7 +653,7 @@ def _parse_reduce(rhs: str) -> dict:
     array_ref = None
     for part in parts:
         # look inside parens for array ref
-        inner_match = re.match(r"\((\w+\$)\)", part)
+        inner_match = re.match(rf"\(({W}\$)\)", part)
         if inner_match:
             array_ref = inner_match.group(1)
             break
@@ -877,7 +884,7 @@ def _parse_function(lines: list[str], start: int, fn_signatures: list = None, sr
     line_num = src_line(start) if src_line else start + 1
 
     # try value-returning function: on (type result[$]) = signature
-    result_match = re.match(r"on\s+\((\w+)\s+(\w+\$?)\)\s*=\s*(.*)", line)
+    result_match = re.match(rf"on\s+\(({W})\s+({W}\$?)\)\s*=\s*(.*)", line)
     if result_match:
         result = {"name": result_match.group(2), "type": result_match.group(1)}
         rhs = result_match.group(3).strip()
@@ -1038,7 +1045,7 @@ def _collect_indented(body_lines, raw_body_lines, start, parent_indent, fn_sigs=
 
 def _is_task_def(line: str) -> bool:
     """Check if a line is a task definition: on (type name$) <- ..."""
-    return bool(re.match(r"on\s+\(\w+\s+\w+\$\)\s*<-", line))
+    return bool(re.match(rf"on\s+\({W}\s+{W}\$\)\s*<-", line))
 
 
 def _is_void_task(line: str, lines: list[str], start: int, uses: list[dict]) -> bool:
@@ -1046,7 +1053,7 @@ def _is_void_task(line: str, lines: list[str], start: int, uses: list[dict]) -> 
     A void task is an 'on' function whose body emits to platform streams."""
     if not line.startswith("on ") or _is_task_def(line):
         return False
-    if re.match(r"on\s+\(\w+\s+\w+\$?\)\s*=", line):
+    if re.match(rf"on\s+\({W}\s+{W}\$?\)\s*=", line):
         return False  # value-returning function
     platform_streams = {u["name"] for u in uses}
     if not platform_streams:
@@ -1062,12 +1069,12 @@ def _is_void_task(line: str, lines: list[str], start: int, uses: list[dict]) -> 
         if line_indent <= fn_indent:
             break
         stripped = body_line.strip()
-        emit_match = re.match(r"(\w+\$)\s*<-", stripped)
+        emit_match = re.match(rf"({W}\$)\s*<-", stripped)
         if emit_match and emit_match.group(1) in platform_streams:
             return True
         if stripped.startswith("for each "):
             return True
-        consume_match = re.match(r"\w+\s+\w+\$?\s*<-", stripped)
+        consume_match = re.match(rf"{W}\s+{W}\$?\s*<-", stripped)
         if consume_match:
             return True
         i += 1
@@ -1089,7 +1096,7 @@ def _parse_void_task(lines: list[str], start: int, src_line=None, fn_signatures:
     name_parts = []
 
     for part in sig_parts:
-        param_match = re.match(r"\((\w+)\s+(\w+)(\$)?\)", part)
+        param_match = re.match(rf"\(({W})\s+({W})(\$)?\)", part)
         if param_match:
             ptype = param_match.group(1)
             pname = param_match.group(2)
@@ -1136,14 +1143,14 @@ def _collect_task_signatures(lines: list[str]) -> list[dict]:
     signatures = []
     for line in lines:
         stripped = line.strip()
-        match = re.match(r"on\s+\(\w+\s+\w+\$\)\s*<-\s*(.*)", stripped)
+        match = re.match(rf"on\s+\({W}\s+{W}\$\)\s*<-\s*(.*)", stripped)
         if not match:
             continue
         rhs = match.group(1).strip()
         params, sig_parts = _parse_signature(rhs)
         pattern = []
         for part in sig_parts:
-            param_match = re.match(r"\((\w+)\s+\w+(\$)?\)", part)
+            param_match = re.match(rf"\(({W})\s+{W}(\$)?\)", part)
             if param_match:
                 is_stream = param_match.group(2) is not None
                 pattern.append(("stream_param" if is_stream else "param", param_match.group(1)))
@@ -1163,7 +1170,7 @@ def _parse_task(lines: list[str], start: int, src_line=None, fn_signatures: list
     line = lines[start].strip()
     line_num = src_line(start) if src_line else start + 1
 
-    match = re.match(r"on\s+\((\w+)\s+(\w+)\$\)\s*<-\s*(.*)", line)
+    match = re.match(rf"on\s+\(({W})\s+({W})\$\)\s*<-\s*(.*)", line)
     if not match:
         raise ZeroParseError("expected task definition", line_num, line, column=3)
 
@@ -1178,7 +1185,7 @@ def _parse_task(lines: list[str], start: int, src_line=None, fn_signatures: list
     name_parts = []
 
     for part in sig_parts:
-        param_match = re.match(r"\((\w+)\s+(\w+)(\$)?\)", part)
+        param_match = re.match(rf"\(({W})\s+({W})(\$)?\)", part)
         if param_match:
             ptype = param_match.group(1)
             pname = param_match.group(2)
@@ -1241,7 +1248,7 @@ def _parse_task_body(body_lines: list[str], raw_body_lines: list[str], output_st
         indent = len(raw_line) - len(raw_line.lstrip())
 
         # for each (name) in (expr) — explicit loop over stream/array
-        for_each_match = re.match(r"for each \((\w+)\) in \((.+)\)$", stripped)
+        for_each_match = re.match(rf"for each \(({W})\) in \((.+)\)$", stripped)
         if for_each_match:
             iter_expr = _parse_expr(for_each_match.group(2).strip(), fn_sigs)
             nodes_with_indent.append((indent, {
@@ -1252,12 +1259,12 @@ def _parse_task_body(body_lines: list[str], raw_body_lines: list[str], output_st
             continue
 
         # consume: type name <- stream$ OR type name <- task call
-        consume_match = re.match(r"(\w+)\s+(\w+)\s*<-\s*(.*)", stripped)
-        if consume_match and not re.match(r"(\w+\$)\s*<-", stripped):
+        consume_match = re.match(rf"({W})\s+({W})\s*<-\s*(.*)", stripped)
+        if consume_match and not re.match(rf"({W}\$)\s*<-", stripped):
             consume_type = consume_match.group(1)
             consume_name = consume_match.group(2)
             consume_rhs = consume_match.group(3).strip()
-            if re.match(r"\w+\$$", consume_rhs):
+            if re.match(rf"{W}\$$", consume_rhs):
                 nodes_with_indent.append((indent, {
                     "kind": "consume",
                     "type": consume_type,
@@ -1282,7 +1289,7 @@ def _parse_task_body(body_lines: list[str], raw_body_lines: list[str], output_st
                 # not a stream variable or task/function call — fall through to expression parsing
 
         # emit: output$ <- expr (to task's own stream or a platform stream)
-        emit_match = re.match(r"(\w+\$)\s*<-\s*(.*)", stripped)
+        emit_match = re.match(rf"({W}\$)\s*<-\s*(.*)", stripped)
         if emit_match:
             stream_name = emit_match.group(1)
             expr_str = emit_match.group(2).strip()
@@ -1438,7 +1445,7 @@ def _parse_signature(rhs: str) -> tuple[list[dict], list[str]]:
             break
 
         # typed parameter: (type name) or (type name$)
-        param_match = re.match(r"\((\w+)\s+(\w+\$?)\)", remaining)
+        param_match = re.match(rf"\(({W})\s+({W}\$?)\)", remaining)
         if param_match:
             type_name = param_match.group(1)
             var_name = param_match.group(2)
@@ -1448,7 +1455,7 @@ def _parse_signature(rhs: str) -> tuple[list[dict], list[str]]:
             continue
 
         # typed array parameter: [type name$] or [type name]
-        typed_array_match = re.match(r"\[(\w+)\s+(\w+\$?)\]", remaining)
+        typed_array_match = re.match(rf"\[({W})\s+({W}\$?)\]", remaining)
         if typed_array_match:
             type_name = typed_array_match.group(1)
             var_name = typed_array_match.group(2)
@@ -1458,7 +1465,7 @@ def _parse_signature(rhs: str) -> tuple[list[dict], list[str]]:
             continue
 
         # array parameter (generic): [name$]
-        array_param_match = re.match(r"\[(\w+\$?)\]", remaining)
+        array_param_match = re.match(rf"\[({W}\$?)\]", remaining)
         if array_param_match:
             var_name = array_param_match.group(1)
             params.append({"name": var_name, "type": None})
@@ -1483,7 +1490,7 @@ def _parse_signature(rhs: str) -> tuple[list[dict], list[str]]:
 def _parse_expression(line: str, fn_signatures: list = None, task_signatures: list = None) -> dict:
     """Parse a zero expression line into an AST node."""
     # array variable declaration with task call: type name$ <- task call
-    task_decl = re.match(r"(\w+)\s+(\w+)\$\s*(<-\s*.+)", line)
+    task_decl = re.match(rf"({W})\s+({W})\$\s*(<-\s*.+)", line)
     if task_decl and _looks_like_type(task_decl.group(1)):
         type_name = task_decl.group(1)
         var_name = task_decl.group(2)
@@ -1492,7 +1499,7 @@ def _parse_expression(line: str, fn_signatures: list = None, task_signatures: li
         return {"kind": "var_decl", **arr_var}
 
     # variable declaration: type name[$] = value
-    var_decl = re.match(r"(\w+)\s+(\w+)(\$)?\s*=\s*(.*)", line)
+    var_decl = re.match(rf"({W})\s+({W})(\$)?\s*=\s*(.*)", line)
     if var_decl and _looks_like_type(var_decl.group(1)):
         type_name = var_decl.group(1)
         var_name = var_decl.group(2)
@@ -1598,7 +1605,7 @@ def _parse_expr(s: str, fn_sigs: list = None) -> dict:
         return indices
 
     # array operations: name$[...] — must check before binop so name$[_ - 1] isn't split at -
-    bracket_match = re.match(r"(\w+\$?)\[(.+)\]$", s)
+    bracket_match = re.match(rf"({W}\$?)\[(.+)\]$", s)
     if bracket_match:
         return _parse_bracket_expr(bracket_match.group(1), bracket_match.group(2), fn_sigs)
 
@@ -1618,7 +1625,7 @@ def _parse_expr(s: str, fn_sigs: list = None) -> dict:
         return _parse_expr(s[1:-1], fn_sigs)
 
     # function/constructor call: name(args)
-    call_match = re.match(r"(\w+)\((.*)?\)$", s)
+    call_match = re.match(rf"({W})\((.*)?\)$", s)
     if call_match:
         name = call_match.group(1)
         args_str = call_match.group(2) or ""
@@ -1632,7 +1639,7 @@ def _parse_expr(s: str, fn_sigs: list = None) -> dict:
         return {"kind": "array_fn", "name": "length_of", "args": [_parse_expr(inner, fn_sigs)]}
 
     # array operations: name$[...] — slice, index, or open-ended slice (duplicate check for non-early match)
-    bracket_match = re.match(r"(\w+\$?)\[(.+)\]$", s)
+    bracket_match = re.match(rf"({W}\$?)\[(.+)\]$", s)
     if bracket_match:
         return _parse_bracket_expr(bracket_match.group(1), bracket_match.group(2), fn_sigs)
 
@@ -1657,12 +1664,12 @@ def _parse_expr(s: str, fn_sigs: list = None) -> dict:
         return {"kind": "literal", "value": s}
 
     # member access: obj.field or obj.field$
-    if "." in s and re.match(r"(\w+)\.(\w+\$?)$", s):
-        m = re.match(r"(\w+)\.(\w+\$?)$", s)
+    if "." in s and re.match(rf"({W})\.({W}\$?)$", s):
+        m = re.match(rf"({W})\.({W}\$?)$", s)
         return {"kind": "member", "object": m.group(1), "field": m.group(2)}
 
     # name (including array names with $ suffix)
-    if re.match(r"\w+\$?$", s):
+    if re.match(rf"{W}\$?$", s):
         return {"kind": "name", "value": s}
 
     return {"kind": "raw", "value": s}

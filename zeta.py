@@ -371,8 +371,8 @@ def _parse_feature_list(features_path: str) -> list[dict]:
         if path is None:
             print(f"Error: cannot find feature '{name}' (searched from {search_dir})")
             sys.exit(1)
-        # derive clean name from the feature file
-        clean_name = os.path.basename(path).replace(".zero.md", "").replace("-", "_")
+        # derive clean name from the feature file (keep hyphens — zero supports them)
+        clean_name = os.path.basename(path).replace(".zero.md", "")
         entries.append({
             "name": clean_name,
             "path": path,
@@ -429,7 +429,7 @@ def _build_features(features_path: str, output_dir: str, flags: set):
     # so they're accessible where the composed extensions run
     for entry in feature_entries:
         if entry["dynamic"]:
-            code_parts[0] += f"\nbool {entry['name']}_enabled = true\n"
+            code_parts[0] += f"\nbool {entry['name']}-enabled = true\n"
 
     # parse features and compose per-feature
     dynamic_set = {e["name"] for e in feature_entries if e["dynamic"]}
@@ -553,14 +553,15 @@ def _build_features(features_path: str, output_dir: str, flags: set):
     from emit_base import make_function_name, make_task_fn_name as _make_task_fn_name
     module_map = {}
     for feat_name, feat_ir_data in ir_by_feature.items():
+        safe_name = feat_name.replace("-", "_")
         for fn in feat_ir_data["functions"]:
             if fn.get("_platform"):
                 continue  # platform functions are available directly, not via module
             emitted_name = make_function_name(fn["signature_parts"])
-            module_map[emitted_name] = feat_name
+            module_map[emitted_name] = safe_name
         for task in feat_ir_data["tasks"]:
             emitted_name = _make_task_fn_name(task)
-            module_map[emitted_name] = feat_name
+            module_map[emitted_name] = safe_name
 
     # figure out dependency order
     feature_deps = {}
@@ -608,7 +609,7 @@ def _build_features(features_path: str, output_dir: str, flags: set):
                 feat_ir["source_file"] = feat_source_file or f"{feat_name}.zero.md"
                 # pass module_map so emitter can prefix cross-module calls
                 feat_ir["module_map"] = module_map
-                feat_ir["current_module"] = feat_name
+                feat_ir["current_module"] = feat_name.replace("-", "_")
                 # add tests for this feature
                 if ir_by_feature[feat_name].get("tests"):
                     feat_ir["tests"] = ir_by_feature[feat_name]["tests"]
@@ -622,12 +623,22 @@ def _build_features(features_path: str, output_dir: str, flags: set):
 
                 # non-root features
                 if feat_name != root_name:
+                    child_imports = []
                     # child features with tests import from _runtime
                     if ir_by_feature[feat_name].get("tests"):
                         if ext == ".py":
-                            code = f"from _runtime import register_tests\n\n" + code
+                            child_imports.append("from _runtime import register_tests")
                         elif ext == ".ts":
-                            code = f"import {{ register_tests }} from './_runtime.js';\n\n" + code
+                            child_imports.append("import { register_tests } from './_runtime.js';")
+                    # add imports for any cross-module references
+                    for mod_name in set(module_map.values()):
+                        if mod_name != feat_name and f"{mod_name}." in code:
+                            if ext == ".py":
+                                child_imports.append(f"import {mod_name}")
+                            elif ext == ".ts":
+                                child_imports.append(f"import * as {mod_name} from './{mod_name}.js';")
+                    if child_imports:
+                        code = "\n".join(child_imports) + "\n\n" + code
                     if ext == ".ts":
                         # add export to all function declarations
                         lines = code.split('\n')
@@ -638,6 +649,16 @@ def _build_features(features_path: str, output_dir: str, flags: set):
                                 lines[li] = indent + 'export ' + stripped
                         code = '\n'.join(lines)
 
+                # root feature: export functions in TS (child features may import them)
+                if feat_name == root_name and ext == ".ts":
+                    lines = code.split('\n')
+                    for li, ln in enumerate(lines):
+                        stripped = ln.lstrip()
+                        if stripped.startswith(('function ', 'function* ', 'async function ', 'async function* ')):
+                            indent = ln[:len(ln) - len(stripped)]
+                            lines[li] = indent + 'export ' + stripped
+                    code = '\n'.join(lines)
+
                 # root feature gets platform code, imports, harness
                 if feat_name == root_name:
                     imports = []
@@ -647,17 +668,19 @@ def _build_features(features_path: str, output_dir: str, flags: set):
                     elif has_tests and ext == ".ts":
                         imports.append("import { register_tests, run_tests } from './_runtime.js';")
                     for dep in dep_order:
+                        safe_dep = dep.replace("-", "_")
                         if ext == ".py":
-                            imports.append(f"import {dep}")
+                            imports.append(f"import {safe_dep}")
                         elif ext == ".ts":
-                            imports.append(f"import './{dep}.js';")  # side-effect: registers tests
-                            imports.append(f"import * as {dep} from './{dep}.js';")
+                            imports.append(f"import './{safe_dep}.js';")
+                            imports.append(f"import * as {safe_dep} from './{safe_dep}.js';")
                     if imports:
                         code = "\n".join(imports) + "\n\n" + code
                     harness = "\n\n".join(platform_append[ext]) if platform_append[ext] else ""
                     code += _main_entry_point(harness, has_tests, ext)
 
-                out_path = os.path.join(output_dir, f"{feat_name}{pext}")
+                safe_name = feat_name.replace("-", "_")
+                out_path = os.path.join(output_dir, f"{safe_name}{pext}")
                 with open(out_path, "w") as f:
                     f.write(code)
                 log.log(f"{feat_name} -> {out_path}")

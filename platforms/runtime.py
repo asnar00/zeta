@@ -17,13 +17,22 @@ def fn_set_feature_var__string__string(name: str, value: str):
     mod = _find_root_module()
     if mod is None:
         return
+    # zero uses hyphens, Python uses underscores
+    attr_name = name.replace("-", "_")
     # convert string value to appropriate type
     if value in ("true", "false"):
-        setattr(mod, name, value == "true")
+        setattr(mod, attr_name, value == "true")
     elif value.isdigit():
-        setattr(mod, name, int(value))
+        setattr(mod, attr_name, int(value))
     else:
-        setattr(mod, name, value)
+        setattr(mod, attr_name, value)
+
+
+# @zero on exit process ()
+def fn_exit_process():
+    import os, threading
+    # exit after a short delay so the HTTP response can be sent
+    threading.Timer(0.5, lambda: os._exit(0)).start()
 
 
 # @zero on (string value) = get feature var (string name)
@@ -31,7 +40,8 @@ def fn_get_feature_var__string(name: str) -> str:
     mod = _find_root_module()
     if mod is None:
         return ""
-    val = getattr(mod, name, None)
+    attr_name = name.replace("-", "_")
+    val = getattr(mod, attr_name, None)
     if val is None:
         return ""
     if isinstance(val, bool):

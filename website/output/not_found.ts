@@ -91,6 +91,11 @@ export function fn_set_feature_var__string__string(name: string, value: string):
     }
 }
 
+// @zero on exit process ()
+export function fn_exit_process(): void {
+    setTimeout(() => process.exit(0), 500);
+}
+
 // @zero on (string value) = get feature var (string name)
 export function fn_get_feature_var__string(name: string): string {
     const val = (globalThis as any)[name];
@@ -182,7 +187,7 @@ export function http_response(args: Partial<http_response> = {}): http_response 
     return { request: args.request ?? http_request(), body: args.body ?? "" };
 }
 
-// @zero on (string body) = not found; not_found.zero.md:91
+// @zero on (string body) = not found; website/not-found.zero.md:95
 export function fn_not_found(): string {
     const body: string = "not found";
     return body;

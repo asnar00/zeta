@@ -5,18 +5,18 @@
 
 Intercepts `/@admin/` paths to get and set feature variables at runtime.
 
-    /@admin/set/landing_page_enabled/false => "landing_page_enabled = false"
-    /@admin/get/landing_page_enabled => "true"
+    /@admin/set/landing-page-enabled/false => "landing-page-enabled = false"
+    /@admin/get/landing-page-enabled => "true"
 
 ## definition
 
     feature admin extends website
 
-    before (string body) = handle request (http_request request)
+    before (string body) = handle request (http-request request)
         if ((request.path) starts with ("/@admin/"))
             body = handle admin (request)
 
-    on (string body) = handle admin (http_request request)
+    on (string body) = handle admin (http-request request)
         string parts$ = split (request.path) by ("/")
         string action = parts$[2]
         if (action == "set")
@@ -27,5 +27,9 @@ Intercepts `/@admin/` paths to get and set feature variables at runtime.
         else if (action == "get")
             string name = parts$[3]
             body = get feature var (name)
+        else if (action == "stop")
+            stop ()
+            exit process ()
+            body = "stopping"
         else
             body = "unknown action: " + action

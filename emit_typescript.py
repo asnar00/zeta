@@ -194,7 +194,7 @@ def _ts_type(zero_type: str) -> str:
     # abstract unsigned integers map to number
     if zero_type == "uint":
         return "number"
-    return zero_type
+    return zero_type.replace("-", "_")
 
 
 def _emit_type(typ: dict, enums: dict = None, structs: dict = None) -> str | None:
@@ -246,7 +246,7 @@ def _qualify_default_ts(field: dict, enums: dict, structs: dict = None) -> str:
 
     # struct-typed fields: use factory call
     if field["type"] in structs:
-        return f"{field['type']}()"
+        return f"{_ts_name(field['type'])}()"
 
     if field["type"] in enums:
         enum = enums[field["type"]]
@@ -256,9 +256,14 @@ def _qualify_default_ts(field: dict, enums: dict, structs: dict = None) -> str:
     return str(default_val)
 
 
+def _safe(name: str) -> str:
+    """Convert a zero name to a TypeScript-safe name."""
+    return name.replace("-", "_")
+
+
 def _emit_variable(var: dict, structs: dict) -> str:
     """Emit a variable declaration."""
-    name = var["name"] + "_arr" if var["array"] else var["name"]
+    name = _safe(var["name"] + "_arr" if var["array"] else var["name"])
     type_ann = _ts_type(var["type"])
 
     if var["array"]:
@@ -887,14 +892,15 @@ def _emit_expr(node: dict, structs: dict) -> str:
 
     elif kind == "call":
         name = node["name"]
+        safe_name = _safe(name)
         if name in structs:
             # struct constructor -> object literal via factory
             fields = structs[name]["fields"]
             args = node["args"]
             parts = [f"{fields[i]['name']}: {_emit_expr(a, structs)}" for i, a in enumerate(args)]
-            return f"{name}({{ {', '.join(parts)} }})"
+            return f"{safe_name}({{ {', '.join(parts)} }})"
         args = ", ".join(_emit_expr(a, structs) for a in node["args"])
-        return f"{name}({args})"
+        return f"{safe_name}({args})"
 
     elif kind in ("fn_call", "array_fn_call"):
         fn_name = _make_function_name(node["signature_parts"])
@@ -972,15 +978,15 @@ def _emit_expr(node: dict, structs: dict) -> str:
     elif kind == "member":
         if node["field"] == "char$":
             return f"[...{node['object']}]"
-        return f"{node['object']}.{node['field']}"
+        return f"{_safe(node['object'])}.{_safe(node['field'])}"
 
     elif kind == "name":
         val = node["value"]
         if val in _enum_values:
             return _enum_values[val]
         if val.endswith("$"):
-            return val.replace("$", "_arr")
-        return val
+            return _safe(val.replace("$", "_arr"))
+        return _safe(val)
 
     elif kind == "literal":
         v = node["value"]

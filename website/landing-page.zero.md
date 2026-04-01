@@ -3,9 +3,9 @@
 
 ## definition
 
-    feature landing_page extends website
+    feature landing-page extends website
 
-    before (string body) = handle request (http_request request)
+    before (string body) = handle request (http-request request)
         if (request.path == "/")
             body = landing page ()
 

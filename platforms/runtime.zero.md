@@ -9,3 +9,4 @@ Runtime platform for reading and writing feature-scoped variables. Used by the a
 
     on set feature var (string name) (string value)
     on (string value) = get feature var (string name)
+    on exit process ()

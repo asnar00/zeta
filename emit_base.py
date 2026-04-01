@@ -2,6 +2,8 @@
 
 import re
 
+from parser import W
+
 # Symbol-to-word mapping for function names (shared across all targets)
 SYMBOL_WORDS = {
     "+": "plus", "-": "minus", "*": "times", "/": "div", "%": "mod",
@@ -28,12 +30,17 @@ def check_compatibility(ir: dict):
         raise ValueError(f"unsupported features: {', '.join(sorted(unsupported))}")
 
 
+def _emit_safe(name: str) -> str:
+    """Convert a zero identifier to a target-safe name (hyphens to underscores)."""
+    return name.replace("-", "_")
+
+
 def get_base_name(sig_parts: list[str]) -> str:
     """Extract the base function name (words only, no type params)."""
     words = []
     for part in sig_parts:
         if not part.startswith("(") and not part.startswith("["):
-            words.append(part)
+            words.append(_emit_safe(part))
     return "_".join(words)
 
 
@@ -43,10 +50,10 @@ def make_function_name(signature_parts: list[str]) -> str:
     """
     result = "fn"
     for part in signature_parts:
-        param_match = re.match(r"\((\w+)(?:\s+\w+\$?)?\)", part)
-        array_param_match = re.match(r"\[(\w+\$?)\]", part)
+        param_match = re.match(rf"\(({W})(?:\s+{W}\$?)?\)", part)
+        array_param_match = re.match(rf"\[({W}\$?)\]", part)
         if param_match:
-            result += f"__{param_match.group(1)}"
+            result += f"__{_emit_safe(param_match.group(1))}"
         elif array_param_match:
             pass  # generic array params omitted from name
         elif part in SYMBOL_WORDS:
@@ -56,7 +63,7 @@ def make_function_name(signature_parts: list[str]) -> str:
         else:
             if result and not result.endswith("_"):
                 result += "_"
-            result += part
+            result += _emit_safe(part)
     return result
 
 
@@ -64,7 +71,7 @@ def make_function_name_from_reduce(fn_parts: list[str], zero_type: str) -> str:
     """Build a function name from reduce fn_parts, replacing array/accumulator refs with types."""
     result = "fn"
     for part in fn_parts:
-        if re.match(r"\(\w+\$\)", part):
+        if re.match(rf"\({W}\$\)", part):
             result += f"__{zero_type}"
         elif part in ("(..)", "(_)"):
             result += f"__{zero_type}"
@@ -177,9 +184,9 @@ def make_task_fn_name(task: dict) -> str:
     """Build the function name for a task."""
     name_parts = task["name_parts"]
     all_params = task.get("input_streams", []) + task.get("params", [])
-    fn_name = "task_" + "_".join(name_parts)
+    fn_name = "task_" + "_".join(_emit_safe(n) for n in name_parts)
     for p in all_params:
-        fn_name += f"__{p['type']}"
+        fn_name += f"__{_emit_safe(p['type'])}"
     return fn_name
 
 

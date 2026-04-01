@@ -1,3 +1,5 @@
+import * as website from './website.js';
+
 // Platform implementation: http (TypeScript)
 // Implements the streams and tasks declared in http.zero.md
 
@@ -91,6 +93,11 @@ export function fn_set_feature_var__string__string(name: string, value: string):
     }
 }
 
+// @zero on exit process ()
+export function fn_exit_process(): void {
+    setTimeout(() => process.exit(0), 500);
+}
+
 // @zero on (string value) = get feature var (string name)
 export function fn_get_feature_var__string(name: string): string {
     const val = (globalThis as any)[name];
@@ -182,7 +189,7 @@ export function http_response(args: Partial<http_response> = {}): http_response 
     return { request: args.request ?? http_request(), body: args.body ?? "" };
 }
 
-// @zero on (string body) = handle admin (http_request request); website/admin.zero.md:94
+// @zero on (string body) = handle admin (http-request request); website/admin.zero.md:98
 export function fn_handle_admin__http_request(request: http_request): string {
     let body: string = undefined!;
     const parts_arr = fn_split__string_by__string(request.path, "/");
@@ -195,6 +202,10 @@ export function fn_handle_admin__http_request(request: http_request): string {
 } else if (action == "get") {
     const name = parts_arr[3];
     body = fn_get_feature_var__string(name);
+} else if (action == "stop") {
+    website.fn_stop();
+    fn_exit_process();
+    body = "stopping";
 } else {
     body = "unknown action: " + action;
 }

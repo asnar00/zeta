@@ -21,11 +21,14 @@ Serves the noob logo on the test domain. Prints the logo on startup, logs each r
 
     on main (string args$)
         out$ <- logo
-        http_request request$ <- serve http (port)
+        http-request request$ <- serve http (port)
         for each (request) in (request$)
             out$ <- request.path
             string body = handle request (request)
-            response$ <- http_response(request, body)
+            response$ <- http-response(request, body)
 
-    on (string body) = handle request (http_request request)
+    on (string body) = handle request (http-request request)
         body = logo
+
+    on stop ()
+        print ("stopping")

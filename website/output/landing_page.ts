@@ -91,6 +91,11 @@ export function fn_set_feature_var__string__string(name: string, value: string):
     }
 }
 
+// @zero on exit process ()
+export function fn_exit_process(): void {
+    setTimeout(() => process.exit(0), 500);
+}
+
 // @zero on (string value) = get feature var (string name)
 export function fn_get_feature_var__string(name: string): string {
     const val = (globalThis as any)[name];
@@ -182,7 +187,7 @@ export function http_response(args: Partial<http_response> = {}): http_response 
     return { request: args.request ?? http_request(), body: args.body ?? "" };
 }
 
-// @zero on (string body) = landing page; landing_page.zero.md:108
+// @zero on (string body) = landing page; website/landing-page.zero.md:116
 export function fn_landing_page(): string {
     const body: string = fn_read_file__string("website/index.html");
     return body;

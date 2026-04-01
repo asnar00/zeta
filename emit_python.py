@@ -267,12 +267,20 @@ def _qualify_default(field: dict, enums: dict) -> str:
 
 def _py_type_ann(zero_type: str) -> str:
     """Map a zero type to its Python annotation."""
-    return _PY_TYPE_MAP.get(zero_type, zero_type)
+    mapped = _PY_TYPE_MAP.get(zero_type)
+    if mapped:
+        return mapped
+    return zero_type.replace("-", "_")
+
+
+def _safe(name: str) -> str:
+    """Convert a zero name to a Python-safe name."""
+    return name.replace("-", "_")
 
 
 def _emit_variable(var: dict) -> str:
     """Emit a variable declaration."""
-    name = var["name"] + "_arr" if var["array"] else var["name"]
+    name = _safe(var["name"] + "_arr" if var["array"] else var["name"])
     type_ann = _py_type_ann(var["type"])
 
     if var["array"]:
@@ -823,10 +831,10 @@ def _emit_expr(node: dict) -> str:
         return f"{name} = {_emit_expr(node['value'])}"
 
     elif kind == "assign":
-        return f"{node['target']} = {_emit_expr(node['value'])}"
+        return f"{_safe(node['target'])} = {_emit_expr(node['value'])}"
 
     elif kind == "call":
-        name = node["name"]
+        name = _safe(node["name"])
         args = ", ".join(_emit_expr(a) for a in node["args"])
         return f"{name}({args})"
 
@@ -890,16 +898,16 @@ def _emit_expr(node: dict) -> str:
 
     elif kind == "member":
         if node["field"] == "char$":
-            return f"list({node['object']})"
-        return f"{node['object']}.{node['field']}"
+            return f"list({_safe(node['object'])})"
+        return f"{_safe(node['object'])}.{_safe(node['field'])}"
 
     elif kind == "name":
         val = node["value"]
         if val in _enum_values:
             return _enum_values[val]
         if val.endswith("$"):
-            return val.replace("$", "_arr")
-        return val
+            return _safe(val.replace("$", "_arr"))
+        return _safe(val)
 
 
     elif kind == "literal":

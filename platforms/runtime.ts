@@ -13,6 +13,11 @@ function fn_set_feature_var__string__string(name: string, value: string): void {
     }
 }
 
+// @zero on exit process ()
+function fn_exit_process(): void {
+    setTimeout(() => process.exit(0), 500);
+}
+
 // @zero on (string value) = get feature var (string name)
 function fn_get_feature_var__string(name: string): string {
     const val = (globalThis as any)[name];

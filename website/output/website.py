@@ -94,13 +94,22 @@ def fn_set_feature_var__string__string(name: str, value: str):
     mod = _find_root_module()
     if mod is None:
         return
+    # zero uses hyphens, Python uses underscores
+    attr_name = name.replace("-", "_")
     # convert string value to appropriate type
     if value in ("true", "false"):
-        setattr(mod, name, value == "true")
+        setattr(mod, attr_name, value == "true")
     elif value.isdigit():
-        setattr(mod, name, int(value))
+        setattr(mod, attr_name, int(value))
     else:
-        setattr(mod, name, value)
+        setattr(mod, attr_name, value)
+
+
+# @zero on exit process ()
+def fn_exit_process():
+    import os, threading
+    # exit after a short delay so the HTTP response can be sent
+    threading.Timer(0.5, lambda: os._exit(0)).start()
 
 
 # @zero on (string value) = get feature var (string name)
@@ -108,7 +117,8 @@ def fn_get_feature_var__string(name: str) -> str:
     mod = _find_root_module()
     if mod is None:
         return ""
-    val = getattr(mod, name, None)
+    attr_name = name.replace("-", "_")
+    val = getattr(mod, attr_name, None)
     if val is None:
         return ""
     if isinstance(val, bool):
@@ -187,7 +197,7 @@ class http_response(NamedTuple):
     request: http_request = 0
     body: str = ""
 
-# @zero on main (string args$); website/website.zero.md:76
+# @zero on main (string args$); website/website.zero.md:77
 def task_main__string(args_arr: str):
     _push_terminal_out(logo)
     request_arr = task_serve_http__int(port)
@@ -196,7 +206,7 @@ def task_main__string(args_arr: str):
         body = fn_handle_request__http_request(request)
         _push_http_response(http_response(request, body))
 
-# @zero on (string body) = handle request (http_request request); website/website.zero.md:84
+# @zero on (string body) = handle request (http-request request); website/website.zero.md:85
 def fn_handle_request__http_request(request: http_request) -> str:
     body = None
     if landing_page_enabled and request.path == "/":
@@ -207,6 +217,10 @@ def fn_handle_request__http_request(request: http_request) -> str:
     if body is None:
         body = not_found.fn_not_found()
     return body
+
+# @zero on stop; website/website.zero.md:92
+def fn_stop():
+    fn_print__string("stopping")
 
 port: int = 8084
 logo: str = "ᕦ(ツ)ᕤ"

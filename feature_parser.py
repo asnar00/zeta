@@ -6,6 +6,8 @@ and type extensions into the dict format expected by the composer.
 
 import re
 
+from parser import W
+
 
 def parse_features(source: str) -> list[dict]:
     """Parse zero source containing feature definitions.
@@ -181,7 +183,7 @@ def _extract_function_name(line: str) -> str:
         on name (type param)              ->  name
     """
     # task: on (type name$) <- signature
-    task_match = re.match(r"on\s+\(\w+\s+\w+\$\)\s*<-\s*(.*)", line)
+    task_match = re.match(rf"on\s+\({W}\s+{W}\$\)\s*<-\s*(.*)", line)
     if task_match:
         rhs = task_match.group(1).strip()
         parts = []
@@ -192,7 +194,7 @@ def _extract_function_name(line: str) -> str:
         return " ".join(parts) if parts else rhs.split("(")[0].strip()
 
     # value-returning: on (type result[$]) = ...
-    match = re.match(r"on\s+\(\w+\s+\w+\$?\)\s*=\s*(.*)", line)
+    match = re.match(rf"on\s+\({W}\s+{W}\$?\)\s*=\s*(.*)", line)
     if match:
         rhs = match.group(1).strip()
         # extract words before first (
@@ -211,7 +213,7 @@ def _extract_function_name(line: str) -> str:
         rhs = re.sub(r"\(\)\s*$", "", rhs).strip()
         # extract words before first typed param (type name)
         parts = []
-        for token in re.findall(r"\(\w+\s+\w+\)|\S+", rhs):
+        for token in re.findall(rf"\({W}\s+{W}\)|\S+", rhs):
             if token.startswith("("):
                 break
             parts.append(token)

@@ -3,18 +3,18 @@
 
 ## specification
 
-HTTP server platform. `serve http` listens on a port and produces a stream of requests. `response$` is a stream of responses paired to requests by the `http_response` type.
+HTTP server platform. `serve http` listens on a port and produces a stream of requests. `response$` is a stream of responses paired to requests by the `http-response` type.
 
 ## interface
 
-    type http_request
+    type http-request
         string path = ""
         string method = ""
 
-    type http_response
-        http_request request
+    type http-response
+        http-request request
         string body = ""
 
-    http_response response$
+    http-response response$
 
-    on (http_request request$) <- serve http (int port)
+    on (http-request request$) <- serve http (int port)
