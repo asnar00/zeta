@@ -8,9 +8,10 @@ import queue
 
 class _Request:
     """Wraps an HTTP request with a channel for the response."""
-    def __init__(self, path, method):
+    def __init__(self, path, method, token=""):
         self.path = path
         self.method = method
+        self.token = token
         self._response = queue.Queue()
 
     def _send(self, body):
@@ -26,7 +27,14 @@ def task_serve_http__int(port):
 
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
-            req = _Request(self.path, "GET")
+            # extract session token from cookie
+            token = ""
+            cookie_header = self.headers.get("Cookie", "")
+            for part in cookie_header.split(";"):
+                part = part.strip()
+                if part.startswith("session="):
+                    token = part[8:]
+            req = _Request(self.path, "GET", token)
             q.put(req)
             body = req._wait()
             self.send_response(200)
@@ -40,8 +48,24 @@ def task_serve_http__int(port):
     server = HTTPServer(("", port), Handler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
 
+    # keep a reference to the default context
+    _default_ctx = None
+    import sys as _sys
+    _main_mod = _sys.modules.get('__main__')
+    if _main_mod and hasattr(_main_mod, '_ctx_var'):
+        _default_ctx = _main_mod._ctx_var.get()
+
     while True:
-        yield q.get()
+        req = q.get()
+        # switch context: session-specific if token, default otherwise
+        if _main_mod and hasattr(_main_mod, '_ctx_var'):
+            if req.token:
+                sessions = getattr(_main_mod, '_sessions', {}) if _main_mod else {}
+                ctx = sessions.get(req.token, _default_ctx)
+                _main_mod._ctx_var.set(ctx)
+            else:
+                _main_mod._ctx_var.set(_default_ctx)
+        yield req
 
 
 # @zero http.response$

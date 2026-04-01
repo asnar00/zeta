@@ -9,6 +9,7 @@ import { createServer, IncomingMessage, ServerResponse } from 'http';
 interface _PendingRequest {
     path: string;
     method: string;
+    token: string;
     _send: (body: string) => void;
 }
 
@@ -35,9 +36,19 @@ export function _next_request(): Promise<_PendingRequest> {
 // @zero on (http_request request$) <- serve http (int port)
 export async function* task_serve_http__int(port: number): AsyncGenerator<_PendingRequest> {
     createServer((req: IncomingMessage, res: ServerResponse) => {
+        // extract session token from cookie
+        let token = "";
+        const cookie = req.headers.cookie || "";
+        for (const part of cookie.split(";")) {
+            const trimmed = part.trim();
+            if (trimmed.startsWith("session=")) {
+                token = trimmed.slice(8);
+            }
+        }
         const pending: _PendingRequest = {
             path: req.url || "/",
             method: req.method || "GET",
+            token,
             _send: (body: string) => {
                 res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
                 res.end(body);
@@ -81,6 +92,27 @@ export function fn_print__string(message: string): void {
 
 // Platform implementation: runtime (TypeScript)
 // Implements the functions declared in runtime.zero.md
+
+const _sessions: Map<string, any> = new Map();
+
+// @zero on (string token) = create session ()
+export function fn_create_session(): string {
+    const token = Math.random().toString(36).slice(2, 10);
+    // _Context will be available in the compiled output
+    const ctx = new (globalThis as any)._Context();
+    _sessions.set(token, ctx);
+    return token;
+}
+
+// @zero on set session (string token)
+export function fn_set_session__string(token: string): void {
+    const ctx = _sessions.get(token);
+    if (ctx && typeof (globalThis as any)._ctx_storage?.run === 'function') {
+        // note: AsyncLocalStorage.run needs to wrap the request handler
+        // for now, store as the default fallback
+        (globalThis as any)._default_ctx = ctx;
+    }
+}
 
 // @zero on exit process ()
 export function fn_exit_process(): void {
@@ -200,10 +232,11 @@ register_tests('landing-page', [[test_landing_page_0, 'handle request (http-requ
 interface http_request {
     readonly path: string;
     readonly method: string;
+    readonly token: string;
 }
 
 export function http_request(args: Partial<http_request> = {}): http_request {
-    return { path: args.path ?? "", method: args.method ?? "" };
+    return { path: args.path ?? "", method: args.method ?? "", token: args.token ?? "" };
 }
 
 interface http_response {
@@ -215,7 +248,7 @@ export function http_response(args: Partial<http_response> = {}): http_response 
     return { request: args.request ?? http_request(), body: args.body ?? "" };
 }
 
-// @zero on (string body) = landing page; website/landing-page.zero.md:129
+// @zero on (string body) = landing page; website/landing-page.zero.md:157
 export function fn_landing_page(): string {
     const body: string = fn_read_file__string("website/index.html");
     return body;

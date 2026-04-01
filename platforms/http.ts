@@ -6,6 +6,7 @@ import { createServer, IncomingMessage, ServerResponse } from 'http';
 interface _PendingRequest {
     path: string;
     method: string;
+    token: string;
     _send: (body: string) => void;
 }
 
@@ -32,9 +33,19 @@ function _next_request(): Promise<_PendingRequest> {
 // @zero on (http_request request$) <- serve http (int port)
 async function* task_serve_http__int(port: number): AsyncGenerator<_PendingRequest> {
     createServer((req: IncomingMessage, res: ServerResponse) => {
+        // extract session token from cookie
+        let token = "";
+        const cookie = req.headers.cookie || "";
+        for (const part of cookie.split(";")) {
+            const trimmed = part.trim();
+            if (trimmed.startsWith("session=")) {
+                token = trimmed.slice(8);
+            }
+        }
         const pending: _PendingRequest = {
             path: req.url || "/",
             method: req.method || "GET",
+            token,
             _send: (body: string) => {
                 res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
                 res.end(body);

@@ -63,7 +63,7 @@ def _find_module(name):
 
 
 def _coerce_value(s):
-    """Convert a string value to the appropriate Python type."""
+    """Convert a string value to the appropriate Python type for variable assignment."""
     if s in ("true", "false"):
         return s == "true"
     try:
@@ -153,6 +153,38 @@ def _find_function(mod, fn_words, arg_count=0):
                     if callable(fn):
                         return fn
     return None
+
+
+def _get_sessions():
+    """Get the shared sessions dict from the root module."""
+    mod = _find_root_module()
+    if mod is None:
+        return {}
+    if not hasattr(mod, '_sessions'):
+        mod._sessions = {}
+    return mod._sessions
+
+
+# @zero on (string token) = create session ()
+def fn_create_session() -> str:
+    import uuid
+    mod = _find_root_module()
+    if mod is None:
+        return ""
+    token = str(uuid.uuid4())[:8]
+    ctx = mod._Context()
+    _get_sessions()[token] = ctx
+    return token
+
+
+# @zero on set session (string token)
+def fn_set_session__string(token: str):
+    mod = _find_root_module()
+    if mod is None:
+        return
+    ctx = _get_sessions().get(token)
+    if ctx is not None:
+        mod._ctx_var.set(ctx)
 
 
 # @zero on (string result) = test ()
@@ -390,8 +422,8 @@ def fn_rpc_eval__string(expr: str) -> str:
     if fn is None:
         return f"error: function '{fn_words}' not found"
     try:
-        coerced = [_coerce_value(a) for a in args]
-        result = fn(*coerced)
+        # pass args as strings — the compiled function handles its own types
+        result = fn(*args)
         return _format_value(result)
     except Exception as e:
         return f"error: {e}"

@@ -1,5 +1,6 @@
 from _runtime import register_tests, run_tests
 import not_found
+import login
 import rpc
 import landing_page
 
@@ -13,9 +14,10 @@ import queue
 
 class _Request:
     """Wraps an HTTP request with a channel for the response."""
-    def __init__(self, path, method):
+    def __init__(self, path, method, token=""):
         self.path = path
         self.method = method
+        self.token = token
         self._response = queue.Queue()
 
     def _send(self, body):
@@ -31,7 +33,14 @@ def task_serve_http__int(port):
 
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
-            req = _Request(self.path, "GET")
+            # extract session token from cookie
+            token = ""
+            cookie_header = self.headers.get("Cookie", "")
+            for part in cookie_header.split(";"):
+                part = part.strip()
+                if part.startswith("session="):
+                    token = part[8:]
+            req = _Request(self.path, "GET", token)
             q.put(req)
             body = req._wait()
             self.send_response(200)
@@ -45,8 +54,24 @@ def task_serve_http__int(port):
     server = HTTPServer(("", port), Handler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
 
+    # keep a reference to the default context
+    _default_ctx = None
+    import sys as _sys
+    _main_mod = _sys.modules.get('__main__')
+    if _main_mod and hasattr(_main_mod, '_ctx_var'):
+        _default_ctx = _main_mod._ctx_var.get()
+
     while True:
-        yield q.get()
+        req = q.get()
+        # switch context: session-specific if token, default otherwise
+        if _main_mod and hasattr(_main_mod, '_ctx_var'):
+            if req.token:
+                sessions = getattr(_main_mod, '_sessions', {}) if _main_mod else {}
+                ctx = sessions.get(req.token, _default_ctx)
+                _main_mod._ctx_var.set(ctx)
+            else:
+                _main_mod._ctx_var.set(_default_ctx)
+        yield req
 
 
 # @zero http.response$
@@ -141,7 +166,7 @@ def _find_module(name):
 
 
 def _coerce_value(s):
-    """Convert a string value to the appropriate Python type."""
+    """Convert a string value to the appropriate Python type for variable assignment."""
     if s in ("true", "false"):
         return s == "true"
     try:
@@ -231,6 +256,38 @@ def _find_function(mod, fn_words, arg_count=0):
                     if callable(fn):
                         return fn
     return None
+
+
+def _get_sessions():
+    """Get the shared sessions dict from the root module."""
+    mod = _find_root_module()
+    if mod is None:
+        return {}
+    if not hasattr(mod, '_sessions'):
+        mod._sessions = {}
+    return mod._sessions
+
+
+# @zero on (string token) = create session ()
+def fn_create_session() -> str:
+    import uuid
+    mod = _find_root_module()
+    if mod is None:
+        return ""
+    token = str(uuid.uuid4())[:8]
+    ctx = mod._Context()
+    _get_sessions()[token] = ctx
+    return token
+
+
+# @zero on set session (string token)
+def fn_set_session__string(token: str):
+    mod = _find_root_module()
+    if mod is None:
+        return
+    ctx = _get_sessions().get(token)
+    if ctx is not None:
+        mod._ctx_var.set(ctx)
 
 
 # @zero on (string result) = test ()
@@ -468,8 +525,8 @@ def fn_rpc_eval__string(expr: str) -> str:
     if fn is None:
         return f"error: function '{fn_words}' not found"
     try:
-        coerced = [_coerce_value(a) for a in args]
-        result = fn(*coerced)
+        # pass args as strings — the compiled function handles its own types
+        result = fn(*args)
         return _format_value(result)
     except Exception as e:
         return f"error: {e}"
@@ -646,12 +703,13 @@ register_tests('website', [(test_website_0, 'trim ("  hello  ") => "hello"'), (t
 class http_request(NamedTuple):
     path: str = ""
     method: str = ""
+    token: str = ""
 
 class http_response(NamedTuple):
     request: http_request = 0
     body: str = ""
 
-# @zero on main (string args$); website/website.zero.md:107
+# @zero on main (string args$); website/website.zero.md:114
 def task_main__string(args_arr: str):
     _push_terminal_out(logo)
     request_arr = task_serve_http__int(port)
@@ -660,7 +718,7 @@ def task_main__string(args_arr: str):
         body = fn_handle_request__http_request(request)
         _push_http_response(http_response(request, body))
 
-# @zero on (string body) = handle request (http-request request); website/website.zero.md:115
+# @zero on (string body) = handle request (http-request request); website/website.zero.md:122
 def fn_handle_request__http_request(request: http_request) -> str:
     body = None
     if _get_ctx().landing_page.enabled and request.path == "/":
@@ -673,7 +731,7 @@ def fn_handle_request__http_request(request: http_request) -> str:
         body = not_found.fn_not_found()
     return body
 
-# @zero on stop; website/website.zero.md:123
+# @zero on stop; website/website.zero.md:130
 def fn_stop():
     fn_print__string("stopping")
 

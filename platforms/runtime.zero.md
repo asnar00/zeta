@@ -20,6 +20,14 @@ Run all tests, or tests for a specific feature:
     on (string result) = test ()
     on (string result) = test (string feature)
 
+Create a new session context, returns a token:
+
+    on (string token) = create session ()
+
+Switch the current request to a session's context by token:
+
+    on set session (string token)
+
 Terminate the process (with a short delay for response delivery):
 
     on exit process ()

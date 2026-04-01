@@ -1,5 +1,4 @@
 from _runtime import register_tests
-import website
 
 # Platform implementation: http (Python)
 # Implements the streams and tasks declared in http.zero.md
@@ -611,25 +610,19 @@ def _get_ctx() -> '_Context':
 
 from typing import NamedTuple
 
-def test_not_found_0():
-    '''not found () => "not found"'''
-    _result = fn_not_found()
-    _expected = "not found"
+def test_login_0():
+    '''request login ("+44 7700 900000") => "1234"'''
+    _result = fn_request_login__string("+44 7700 900000")
+    _expected = "1234"
     assert _result == _expected, f"expected {_expected}, got {_result}"
 
-def test_not_found_1():
-    '''handle request (http-request(path="/")) => "not found"'''
-    _result = website.fn_handle_request__http_request(http_request(path="/"))
-    _expected = "not found"
+def test_login_1():
+    '''verify login ("+44 7700 900000") ("0000") => "invalid code"'''
+    _result = fn_verify_login__string__string("+44 7700 900000", "0000")
+    _expected = "invalid code"
     assert _result == _expected, f"expected {_expected}, got {_result}"
 
-def test_not_found_2():
-    '''handle request (http-request(path="/nope")) => "not found"'''
-    _result = website.fn_handle_request__http_request(http_request(path="/nope"))
-    _expected = "not found"
-    assert _result == _expected, f"expected {_expected}, got {_result}"
-
-register_tests('not-found', [(test_not_found_0, 'not found () => "not found"'), (test_not_found_1, 'handle request (http-request(path="/")) => "not found"'), (test_not_found_2, 'handle request (http-request(path="/nope")) => "not found"')])
+register_tests('login', [(test_login_0, 'request login ("+44 7700 900000") => "1234"'), (test_login_1, 'verify login ("+44 7700 900000") ("0000") => "invalid code"')])
 
 class http_request(NamedTuple):
     path: str = ""
@@ -640,7 +633,32 @@ class http_response(NamedTuple):
     request: http_request = 0
     body: str = ""
 
-# @zero on (string body) = not found; website/not-found.zero.md:133
-def fn_not_found() -> str:
-    body = "not found"
-    return body
+# @zero on (string code) = request login (string phone); website/login.zero.md:136
+def fn_request_login__string(phone: str) -> str:
+    code = fn_generate_code()
+    fn_store_code__string_for__string(code, phone)
+    return code
+
+# @zero on (string result) = verify login (string phone) (string code); website/login.zero.md:140
+def fn_verify_login__string__string(phone: str, code: str) -> str:
+    valid = fn_check_code__string_for__string(code, phone)
+    if valid:
+        token = fn_create_session()
+        result = token
+    else:
+        result = "invalid code"
+    return result
+
+# @zero on (string code) = generate code; website/login.zero.md:148
+def fn_generate_code() -> str:
+    code = "1234"
+    return code
+
+# @zero on store code (string code) for (string phone); website/login.zero.md:151
+def fn_store_code__string_for__string(code: str, phone: str):
+    fn_print__string(phone + ":" + code)
+
+# @zero on (bool valid) = check code (string code) for (string phone); website/login.zero.md:154
+def fn_check_code__string_for__string(code: str, phone: str) -> bool:
+    valid = code == "1234"
+    return valid

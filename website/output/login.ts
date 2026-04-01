@@ -1,5 +1,4 @@
 import { register_tests } from './_runtime.js';
-import * as website from './website.js';
 
 // Platform implementation: http (TypeScript)
 // Implements the streams and tasks declared in http.zero.md
@@ -213,28 +212,21 @@ export function _get_ctx(): _Context {
 }
 
 
-export function test_not_found_0(): void {
-    // not found () => "not found"
-    const _result = fn_not_found();
-    const _expected = "not found";
+export function test_login_0(): void {
+    // request login ("+44 7700 900000") => "1234"
+    const _result = fn_request_login__string("+44 7700 900000");
+    const _expected = "1234";
     if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
 }
 
-export function test_not_found_1(): void {
-    // handle request (http-request(path="/")) => "not found"
-    const _result = website.fn_handle_request__http_request(http_request({ path: "/" }));
-    const _expected = "not found";
+export function test_login_1(): void {
+    // verify login ("+44 7700 900000") ("0000") => "invalid code"
+    const _result = fn_verify_login__string__string("+44 7700 900000", "0000");
+    const _expected = "invalid code";
     if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
 }
 
-export function test_not_found_2(): void {
-    // handle request (http-request(path="/nope")) => "not found"
-    const _result = website.fn_handle_request__http_request(http_request({ path: "/nope" }));
-    const _expected = "not found";
-    if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
-}
-
-register_tests('not-found', [[test_not_found_0, 'not found () => "not found"'], [test_not_found_1, 'handle request (http-request(path="/")) => "not found"'], [test_not_found_2, 'handle request (http-request(path="/nope")) => "not found"']]);
+register_tests('login', [[test_login_0, 'request login ("+44 7700 900000") => "1234"'], [test_login_1, 'verify login ("+44 7700 900000") ("0000") => "invalid code"']]);
 
 interface http_request {
     readonly path: string;
@@ -255,8 +247,39 @@ export function http_response(args: Partial<http_response> = {}): http_response 
     return { request: args.request ?? http_request(), body: args.body ?? "" };
 }
 
-// @zero on (string body) = not found; website/not-found.zero.md:133
-export function fn_not_found(): string {
-    const body: string = "not found";
-    return body;
+// @zero on (string code) = request login (string phone); website/login.zero.md:136
+export function fn_request_login__string(phone: string): string {
+    const code: string = fn_generate_code();
+    fn_store_code__string_for__string(code, phone);
+    return code;
+}
+
+// @zero on (string result) = verify login (string phone) (string code); website/login.zero.md:140
+export function fn_verify_login__string__string(phone: string, code: string): string {
+    let result: string = undefined!;
+    const valid = fn_check_code__string_for__string(code, phone);
+    if (valid) {
+    const token = fn_create_session();
+    result = token;
+} else {
+    result = "invalid code";
+}
+    return result;
+}
+
+// @zero on (string code) = generate code; website/login.zero.md:148
+export function fn_generate_code(): string {
+    const code: string = "1234";
+    return code;
+}
+
+// @zero on store code (string code) for (string phone); website/login.zero.md:151
+export function fn_store_code__string_for__string(code: string, phone: string): void {
+    fn_print__string(phone + ":" + code);
+}
+
+// @zero on (bool valid) = check code (string code) for (string phone); website/login.zero.md:154
+export function fn_check_code__string_for__string(code: string, phone: string): boolean {
+    const valid: boolean = code == "1234";
+    return valid;
 }

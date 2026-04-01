@@ -1,6 +1,8 @@
 import { register_tests, run_tests } from './_runtime.js';
 import './not_found.js';
 import * as not_found from './not_found.js';
+import './login.js';
+import * as login from './login.js';
 import './rpc.js';
 import * as rpc from './rpc.js';
 import './landing_page.js';
@@ -14,6 +16,7 @@ import { createServer, IncomingMessage, ServerResponse } from 'http';
 interface _PendingRequest {
     path: string;
     method: string;
+    token: string;
     _send: (body: string) => void;
 }
 
@@ -40,9 +43,19 @@ export function _next_request(): Promise<_PendingRequest> {
 // @zero on (http_request request$) <- serve http (int port)
 export async function* task_serve_http__int(port: number): AsyncGenerator<_PendingRequest> {
     createServer((req: IncomingMessage, res: ServerResponse) => {
+        // extract session token from cookie
+        let token = "";
+        const cookie = req.headers.cookie || "";
+        for (const part of cookie.split(";")) {
+            const trimmed = part.trim();
+            if (trimmed.startsWith("session=")) {
+                token = trimmed.slice(8);
+            }
+        }
         const pending: _PendingRequest = {
             path: req.url || "/",
             method: req.method || "GET",
+            token,
             _send: (body: string) => {
                 res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
                 res.end(body);
@@ -86,6 +99,27 @@ export function fn_print__string(message: string): void {
 
 // Platform implementation: runtime (TypeScript)
 // Implements the functions declared in runtime.zero.md
+
+const _sessions: Map<string, any> = new Map();
+
+// @zero on (string token) = create session ()
+export function fn_create_session(): string {
+    const token = Math.random().toString(36).slice(2, 10);
+    // _Context will be available in the compiled output
+    const ctx = new (globalThis as any)._Context();
+    _sessions.set(token, ctx);
+    return token;
+}
+
+// @zero on set session (string token)
+export function fn_set_session__string(token: string): void {
+    const ctx = _sessions.get(token);
+    if (ctx && typeof (globalThis as any)._ctx_storage?.run === 'function') {
+        // note: AsyncLocalStorage.run needs to wrap the request handler
+        // for now, store as the default fallback
+        (globalThis as any)._default_ctx = ctx;
+    }
+}
 
 // @zero on exit process ()
 export function fn_exit_process(): void {
@@ -289,10 +323,11 @@ register_tests('website', [[test_website_0, 'trim ("  hello  ") => "hello"'], [t
 interface http_request {
     readonly path: string;
     readonly method: string;
+    readonly token: string;
 }
 
 export function http_request(args: Partial<http_request> = {}): http_request {
-    return { path: args.path ?? "", method: args.method ?? "" };
+    return { path: args.path ?? "", method: args.method ?? "", token: args.token ?? "" };
 }
 
 interface http_response {
@@ -307,7 +342,7 @@ export function http_response(args: Partial<http_response> = {}): http_response 
 const port: number = 8084;
 const logo: string = "ᕦ(ツ)ᕤ";
 
-// @zero on main (string args$); website/website.zero.md:107
+// @zero on main (string args$); website/website.zero.md:114
 export async function task_main__string(args_arr: readonly string[]): Promise<void> {
     _push_terminal_out(logo);
     const request_arr = task_serve_http__int(port);
@@ -318,7 +353,7 @@ export async function task_main__string(args_arr: readonly string[]): Promise<vo
     }
 }
 
-// @zero on (string body) = handle request (http-request request); website/website.zero.md:115
+// @zero on (string body) = handle request (http-request request); website/website.zero.md:122
 export function fn_handle_request__http_request(request: http_request): string {
     let body: string = undefined!;
     if (_get_ctx().landing_page.enabled && request.path == "/") {
@@ -336,7 +371,7 @@ export function fn_handle_request__http_request(request: http_request): string {
     return body;
 }
 
-// @zero on stop; website/website.zero.md:123
+// @zero on stop; website/website.zero.md:130
 export function fn_stop(): void {
     fn_print__string("stopping");
 }

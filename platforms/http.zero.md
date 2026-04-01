@@ -10,6 +10,7 @@ HTTP server platform. `serve http` listens on a port and produces a stream of re
     type http-request
         string path = ""
         string method = ""
+        string token = ""
 
     type http-response
         http-request request
