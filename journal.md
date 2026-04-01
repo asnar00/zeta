@@ -1,13 +1,148 @@
 # journal
 *development log for zeta*
 
+## 2026-03-28: day one — the translator exists
+
+### the approach
+
+Ash had been thinking about zero for years — a natural language programming language designed for agents to write, but easy for humans to read. Four previous attempts at a compiler. This time: use Claude Code as the builder, with Ash making design decisions and Claude doing the mechanical work.
+
+The starting point: `zero.md` (the language spec), `zero-to-py.md` and `zero-to-ts.md` (translation example pairs), and the idea for `zeta.py` — a translator that reads zero source and emits Python or TypeScript.
+
+### what got built
+
+In one session:
+- **parser.py** — zero source → IR dict. Types (numeric, enum, struct, composition), variables (scalar, array, stream), functions (open syntax, named result), tasks (coroutines with stream I/O). Two-pass: first collects signatures, second resolves calls.
+- **emit_python.py** — IR → Python. NamedTuples for structs, generators for tasks, isinstance dispatch for multiple dispatch.
+- **emit_typescript.py** — IR → TypeScript. Interfaces + factory functions for structs, generator functions for tasks.
+- **Execution tests** — not just string matching, but actually running the generated code and checking results.
+
+Found and fixed 7 bugs by running the emitted code. Brought TypeScript to parity with Python.
+
+### platforms
+
+Added the platform concept: abstract function declarations in `.zero.md` files, concrete implementations in `.py`/`.ts` files. `io.zero.md` declares `read file`, `write file`, `print`. Platform code gets prepended to the output.
+
+### the first bug hunt
+
+The execution tests immediately caught real bugs that string-matching tests missed: functions returning wrong values, types not mapping correctly, struct fields not being initialized. The lesson: generated code that *looks* right may not *be* right. Always execute.
+
+### commits
+- `8bb8241` Initial commit: zeta translator for the zero programming language
+- `334262f` Add execution tests, fix 7 bugs found by running emitted code
+- `b1b8ae3` Bring TypeScript emitter to parity with Python
+- `5d1360c` Add platform I/O, markdown code extraction, abstract functions
+
+---
+
+## 2026-03-29: hardening, hello world, and self-hosting begins
+
+### morning: robustness
+
+Started with error recovery (`recover=True` mode), shared emitter base (`emit_base.py` for function naming, dispatch, field collection), structured logging (`--verbose` with timed sections), and parser warnings for unrecognized lines.
+
+Fixed the 3-step streaming bug: with a terminator, steps[0..N-2] are initial seeds, steps[N-1] is the loop repeat. Both emitters updated.
+
+### TypeScript execution tests and strict mode
+
+Created 30 TypeScript execution tests that actually run the generated code with `npx tsx`. Found bugs invisible to string tests:
+- if/else blocks emitting raw AST dicts instead of code
+- result variable scoping in if/else (needed `let` at function scope)
+- type composition missing inherited parent fields
+- type annotations using zero names (`int`) instead of TS names (`number`)
+
+Added 26 `tsc --strict` tests. All generated TypeScript passes the real TypeScript compiler in strict mode. By end of session: 359 tests.
+
+### ᕦ(ツ)ᕤ hello world
+
+The first zero program compiled to both targets and ran:
+```zero
+feature zeta
+string logo = "ᕦ(ツ)ᕤ"
+on (string out$) <- main (string args$)
+    out$ <- logo
+```
+
+Added `@zero` source comments to all generated functions, `zero.sh` runner script, platform runtime harness.
+
+### self-hosting begins (ziz)
+
+Started translating zeta's own functions from Python to zero, bottom-up. First function: `_matching_paren` → `matching (pair) in (s) after (start)`.
+
+The translation process (documented in `atoz.md`):
+1. **What not how** — describe in one sentence
+2. **Decompose** — separate mixed concerns
+3. **Match to constructs** — each concern → one zero construct
+4. **Generalise** — decomposition reveals what's really a parameter
+5. **Name naturally** — call sites should read like English
+
+**Accumulator extraction rule**: every mutable variable that changes across loop iterations IS a stream. Extract it, name it, query it.
+
+The bracket matcher decomposed into a task (tracks depth) and a query (`index of first ... where`). Two hardcoded Python functions became one parameterised zero function.
+
+New language features added to support this: `onwards` slice syntax, `index of first in [...] where (...)`, task call prefix (`task_` instead of `fn_`), task calls inside function bodies.
+
+### feature composition
+
+Built the feature composition pipeline: `feature_parser.py` extracts features/extensions, `composer.py` applies before/after/on/replace, `zeta.py` wires it all together with per-feature output files, cross-module imports, and test infrastructure.
+
+The parser feature (`parser.zero.md`) extends the zeta feature — first real test of composition. Tests from both features compose correctly.
+
+### commits
+- `b0d2416` Add error recovery, shared emitter base, and structured logging
+- `093f911` Fix 3-step streaming bug in both emitters
+- `949afe6` through `81e9a08` — TS execution tests, strict mode, bug fixes
+- `7f07d16` ᕦ(ツ)ᕤ hello world
+- `03d40ff` through `dda3c7b` — platform harness, zero.sh, source comments
+- `e84dc6b` through `0643f5f` — new language features for self-hosting
+- `6adb464` First zero-translated function passes its test
+- `6d715b4` through `472103e` — feature composition pipeline
+
+---
+
+## 2026-03-30: split stream parts and language refinements
+
+### the decomposed stream translation
+
+Translated `_split_stream_parts` from Python to zero. The imperative version: one loop, three accumulators (`depth`, `current`, `parts`), two-character lookahead. The zero version: 6 lines of declarative parallel streams.
+
+```zero
+on (string part$) = split stream parts (string s)
+    string padded = s + "<-"
+    int depth$ <- bracket depth of (padded) matching ("()")
+    bool lt$ <- (char (_) of (padded) == "<")
+    bool is_sep$ <- (lt$[_ - 1] and char (_) of (padded) == "-" and depth$ == 0)
+    int pos$ = indices of [is_sep$] where (_)
+    string part$ = trim (split [padded] at [pos$])
+```
+
+Each accumulator became one line. The `_` index reference replaced manual position tracking. A sentinel (`s + "<-"`) replaced post-loop cleanup.
+
+### test framework from interface examples
+
+Built a test framework that derives tests from `=>` examples in `.zero.md` interface sections. Feature parser extracts `call => expected` pairs, emitters generate test functions, shared runtime provides test registry. Tests auto-discovered from the zero source.
+
+### language syntax refinements
+
+- Replaced implicit consume loop with explicit `for each (name) in (stream$)` — clearer intent
+- Replaced `to_chars`/`string$` lens with `char (i) of (s)` and `s.char$` — more natural
+
+### commits
+- `3a3d166` Test framework
+- `90f50d2` Split stream parts: decomposed streams
+- `db2d186` Document test framework, decomposed streams, architecture
+- `8629598` Replace implicit consume loop with explicit for each
+- `0af35c6` Replace to_chars/string$ lens with char (i) of (s)
+
+---
+
 ## 2026-04-01: first zero website — from streams to servers
 
 ### the stream insight
 
 Started the day by reviewing the codebase: zeta (zero-to-any translator), ziz (self-hosting), and atoz (anything-to-zero). The self-hosting work had produced two translated functions (bracket matching, split stream parts) and a solid foundation of 363 tests.
 
-The user wanted to shift gears — build outward-facing applications instead of self-hosting. The goal: a simple website matching the existing nøøb landing page, built in zero.
+Ash wanted to shift gears — build outward-facing applications instead of self-hosting. The goal: a simple website matching the existing nøøb landing page, built in zero.
 
 The key design conversation was about how a web server looks in zero. The breakthrough: **a server is a stream of requests, and the website is a stream transformer.** This unifies everything — a terminal app transforms stdin→stdout, a web server transforms requests→responses, a GUI transforms events→views. Same pattern, different streams.
 
@@ -26,7 +161,7 @@ How does the response get routed back to the right request? Three approaches wer
 2. A paired stream where response$ is the output end — cleaner but pairing is implicit
 3. An `http-response` type that carries the request it belongs to — explicit, data-driven
 
-The user chose #3: `response$ <- http-response(request, body)`. The response carries its request. The platform matches them up. This also makes concurrent request handling possible — each response is stamped with which request it answers.
+Ash chose #3: `response$ <- http-response(request, body)`. The response carries its request. The platform matches them up. This also makes concurrent request handling possible — each response is stamped with which request it answers.
 
 ### coroutine fusion
 
@@ -99,13 +234,13 @@ Added an admin feature that intercepted `/@admin/` paths to get/set feature vari
 
 ### hyphenated identifiers
 
-The user preferred `landing-page` over `landing_page`. A centralized `ID`/`W` regex pattern was defined as the single source of truth for identifier matching across the parser, feature parser, and emit_base. Hyphens stay as hyphens through the IR; conversion to underscores happens only at the emit boundary (Python/TS don't allow hyphens in identifiers).
+Ash preferred `landing-page` over `landing_page`. A centralized `ID`/`W` regex pattern was defined as the single source of truth for identifier matching across the parser, feature parser, and emit_base. Hyphens stay as hyphens through the IR; conversion to underscores happens only at the emit boundary (Python/TS don't allow hyphens in identifiers).
 
 This touched ~50 regex patterns in the parser but was done as a mechanical replacement using the `W` variable.
 
 ### RPC eval
 
-The admin endpoint was replaced with a generic RPC endpoint. The user's insight: send actual zero syntax over HTTP. `/@rpc/set feature var ("landing-page-enabled") ("false")` — the part after `/@rpc/` is a zero expression, URL-encoded.
+The admin endpoint was replaced with a generic RPC endpoint. Ash's insight: send actual zero syntax over HTTP. `/@rpc/set feature var ("landing-page-enabled") ("false")` — the part after `/@rpc/` is a zero expression, URL-encoded.
 
 The RPC handler parses the expression at runtime:
 - No `(` and no `=` → variable get
