@@ -9,3 +9,4 @@ Runtime platform for reading and writing feature-scoped variables. Used by the a
 
     on exit process ()
     on (string result) = rpc eval (string expr)
+    on (string result) = directory ()

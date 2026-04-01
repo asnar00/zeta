@@ -190,12 +190,163 @@ def fn_exit_process():
 
 
 
+def _is_user_var(attr, val):
+    """Check if a module attribute is a user-defined variable (not import/platform)."""
+    if attr.startswith("_") or attr.startswith("fn_") or attr.startswith("task_"):
+        return False
+    if callable(val) or isinstance(val, type):
+        return False
+    if hasattr(val, '__file__'):  # module
+        return False
+    if isinstance(val, (str, int, float, bool)):
+        return True
+    return False
+
+
+def _build_platform_map(mod):
+    """Build a map of function attr_name -> platform name from source comments."""
+    result = {}
+    try:
+        import inspect
+        source = inspect.getsource(mod)
+        lines = source.split("\n")
+        current_platform = None
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+            if stripped.startswith("# Platform implementation:"):
+                current_platform = stripped.split(":")[1].strip().split(" ")[0]
+            elif stripped.startswith("# @zero "):
+                # check for feature source location — means it's NOT a platform fn
+                if "; " in stripped:
+                    current_platform = None
+                # find the def line
+                for j in range(i + 1, min(i + 3, len(lines))):
+                    defline = lines[j].strip()
+                    if defline.startswith("def fn_") or defline.startswith("def task_"):
+                        attr_name = defline.split("(")[0].replace("def ", "").strip()
+                        if current_platform:
+                            result[attr_name] = current_platform
+                        break
+    except (OSError, TypeError):
+        pass
+    return result
+
+
+def _extract_zero_signatures(mod):
+    """Extract @zero source comments from a module's source file."""
+    sigs = {}
+    try:
+        import inspect
+        source = inspect.getsource(mod)
+        for line in source.split("\n"):
+            stripped = line.strip()
+            if stripped.startswith("# @zero ") or stripped.startswith("// @zero "):
+                sig = stripped.split("@zero ", 1)[1]
+                # strip source location suffix
+                if "; " in sig:
+                    sig = sig[:sig.index("; ")]
+                # find the next function def to map sig -> attr name
+                continue
+        # simpler: scan pairs of comment + def lines
+        lines = source.split("\n")
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+            if stripped.startswith("# @zero "):
+                sig = stripped.split("@zero ", 1)[1]
+                if "; " in sig:
+                    sig = sig[:sig.index("; ")]
+                # find the def on the next non-empty line
+                for j in range(i + 1, min(i + 3, len(lines))):
+                    defline = lines[j].strip()
+                    if defline.startswith("def fn_") or defline.startswith("def task_"):
+                        attr_name = defline.split("(")[0].replace("def ", "").strip()
+                        sigs[attr_name] = sig
+                        break
+    except (OSError, TypeError):
+        pass
+    return sigs
+
+
+def _build_directory(mod):
+    """Build a directory of available features, variables, and functions."""
+    lines = []
+
+    # collect child feature modules
+    feature_modules = []
+    for attr in sorted(dir(mod)):
+        child = getattr(mod, attr)
+        if hasattr(child, '__file__') and hasattr(child, '__name__') and attr not in ('sys', 're', 'urllib', 'queue', 'threading', 'os'):
+            feature_modules.append((attr.replace("_", "-"), child))
+
+    # extract signatures and classify: platform vs user-defined
+    root_fns = set()
+    zero_sigs = _extract_zero_signatures(mod)
+    platform_map = _build_platform_map(mod)
+    platform_lines = {}  # platform_name -> [sig_lines]
+    user_fn_lines = []
+    user_var_lines = []
+
+    for attr in sorted(dir(mod)):
+        val = getattr(mod, attr)
+        if _is_user_var(attr, val):
+            user_var_lines.append(f"  {attr.replace('_', '-')} = {_format_value(val)}")
+
+    for attr in sorted(dir(mod)):
+        is_fn = attr.startswith("fn_") and callable(getattr(mod, attr))
+        is_task = attr.startswith("task_") and callable(getattr(mod, attr))
+        if not is_fn and not is_task:
+            continue
+        root_fns.add(attr)
+        sig = zero_sigs.get(attr, attr)
+        plat = platform_map.get(attr)
+        if plat:
+            platform_lines.setdefault(plat, []).append(f"  {sig}")
+        else:
+            user_fn_lines.append(f"  {sig}")
+
+    # features first, in composition order (root then children)
+    lines.append("website:")
+    lines.extend(user_var_lines)
+    lines.extend(user_fn_lines)
+
+    for mod_name, m in feature_modules:
+        child_sigs = _extract_zero_signatures(m)
+        child_lines = []
+        for attr in sorted(dir(m)):
+            if attr.startswith("fn_") and attr not in root_fns and callable(getattr(m, attr)):
+                child_lines.append(f"  {child_sigs.get(attr, attr)}")
+        if child_lines:
+            lines.append(f"{mod_name}:")
+            lines.extend(child_lines)
+
+    # platforms grouped together
+    if platform_lines:
+        lines.append("platform:")
+        for plat_name in sorted(platform_lines):
+            lines.append(f"  {plat_name}:")
+            lines.extend(f"    {l.strip()}" for l in platform_lines[plat_name])
+
+    return "\n".join(lines) if lines else "empty"
+
+
+# @zero on (string result) = directory ()
+def fn_directory() -> str:
+    mod = _find_root_module()
+    if mod is None:
+        return "error: no root module"
+    return _build_directory(mod)
+
+
 # @zero on (string result) = rpc eval (string expr)
 def fn_rpc_eval__string(expr: str) -> str:
     expr = urllib.parse.unquote(expr).strip()
     mod = _find_root_module()
     if mod is None:
         return "error: no root module"
+
+    # empty expression: return directory
+    if not expr:
+        return fn_directory()
 
     # assignment: module.var = value  or  var = value
     assign_match = re.match(r'^([\w.-]+)\s*=\s*(.+)$', expr)
