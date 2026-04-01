@@ -361,6 +361,27 @@ A tricky bug: after disabling landing-page for one session, the default (no-sess
 
 2. **Cross-module _sessions**: the runtime platform code is prepended to EVERY compiled module. Each module got its own `_sessions = {}` dict. `fn_create_session` in the login module added the token to login's `_sessions`, but the HTTP generator in the website module read website's `_sessions` — which was empty. Fix: store sessions on the root module via `_find_root_module()`, not in module-level `_sessions`.
 
+### keyed collections
+
+Added `string codes$[string]` map syntax — the key type in brackets. Parser distinguishes maps from sized arrays by checking if the bracket content is a type name. Python emits `dict`, TS emits `Map`. Indexed assignments (`codes$[key] = value`) are exempt from the SSA checker since they're collection mutations.
+
+### user vs session
+
+Design conversation clarified the distinction: a **user** is a person (permanent, has preferences and feature flags). A **session** is a temporary link between a request and a user (a browser tab, expires). Multiple sessions can point to the same user. The context comes from the user, not the session: `token → user → context`.
+
+### persistence by default
+
+All `shared` and `user` variables persist by default — no `persistent` keyword needed. The platform serialises on shutdown, loads on startup. Two files per application:
+- `app.state.json` — shared variables
+- `app.users.json` — user records with per-user feature variable overrides
+
+The zero source doesn't change. Persistence is a platform concern.
+
+### minimising the platform surface
+
+Key design principle articulated: everything below the platform line costs one implementation per target. Patience pays — write it in zero where possible, even if it means extending the language. For login, the true platform primitives are: outbound HTTP request (for SMS via Vonage API), random number, current time, create/set session. Everything else — phone normalisation, code generation/storage/verification, the login flow — is zero code.
+
 ### commits
 - `b92518a` Per-user context: shared/user variable scoping with contextvars
 - `691efda` Login feature with per-session context isolation
+- `485c4d6` Keyed collections: string$[string] map declarations, store, retrieve

@@ -688,7 +688,7 @@ on (int result$) = first three of (int items$)
 ```python
 # @zero on (int result$) = first three of (int items$)
 def fn_first_three_of__int(items_arr: int) -> int:
-    result$ = items_arr[0:3]
+    result_arr = items_arr[0:3]
     return result_arr
 ```
 
@@ -706,7 +706,7 @@ on (int result$) = mid of (int items$)
 ```python
 # @zero on (int result$) = mid of (int items$)
 def fn_mid_of__int(items_arr: int) -> int:
-    result$ = items_arr[1:4]
+    result_arr = items_arr[1:4]
     return result_arr
 ```
 
@@ -900,7 +900,7 @@ on (int result$) = rest of (int items$)
 ```python
 # @zero on (int result$) = rest of (int items$)
 def fn_rest_of__int(items_arr: int) -> int:
-    result$ = items_arr[1:]
+    result_arr = items_arr[1:]
     return result_arr
 ```
 
@@ -918,7 +918,7 @@ on (int result$) = first three of (int items$)
 ```python
 # @zero on (int result$) = first three of (int items$)
 def fn_first_three_of__int(items_arr: int) -> int:
-    result$ = items_arr[:3]
+    result_arr = items_arr[:3]
     return result_arr
 ```
 
