@@ -163,6 +163,24 @@ export function* terminal_in(): Generator<string> {
 }
 
 
+import { AsyncLocalStorage } from 'async_hooks';
+
+class _Ctx_landing_page {
+    enabled: boolean = true;
+}
+
+class _Context {
+    landing_page = new _Ctx_landing_page();
+}
+
+const _ctx_storage = new AsyncLocalStorage<_Context>();
+const _default_ctx = new _Context();
+
+export function _get_ctx(): _Context {
+    return _ctx_storage.getStore() ?? _default_ctx;
+}
+
+
 export function test_landing_page_0(): void {
     // handle request (http-request(path="/")) => read file ("website/index.html")
     const _result = website.fn_handle_request__http_request(http_request({ path: "/" }));

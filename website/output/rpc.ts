@@ -162,6 +162,24 @@ export function* terminal_in(): Generator<string> {
 }
 
 
+import { AsyncLocalStorage } from 'async_hooks';
+
+class _Ctx_landing_page {
+    enabled: boolean = true;
+}
+
+class _Context {
+    landing_page = new _Ctx_landing_page();
+}
+
+const _ctx_storage = new AsyncLocalStorage<_Context>();
+const _default_ctx = new _Context();
+
+export function _get_ctx(): _Context {
+    return _ctx_storage.getStore() ?? _default_ctx;
+}
+
+
 export function test_rpc_0(): void {
     // rpc eval ("port") => "8084"
     const _result = fn_rpc_eval__string("port");

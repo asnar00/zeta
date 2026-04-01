@@ -168,6 +168,24 @@ export function* terminal_in(): Generator<string> {
 }
 
 
+import { AsyncLocalStorage } from 'async_hooks';
+
+class _Ctx_landing_page {
+    enabled: boolean = true;
+}
+
+class _Context {
+    landing_page = new _Ctx_landing_page();
+}
+
+const _ctx_storage = new AsyncLocalStorage<_Context>();
+const _default_ctx = new _Context();
+
+export function _get_ctx(): _Context {
+    return _ctx_storage.getStore() ?? _default_ctx;
+}
+
+
 export function test_website_0(): void {
     // trim ("  hello  ") => "hello"
     const _result = fn_trim__string("  hello  ");
@@ -288,7 +306,6 @@ export function http_response(args: Partial<http_response> = {}): http_response 
 
 const port: number = 8084;
 const logo: string = "ᕦ(ツ)ᕤ";
-const landing_page_enabled: boolean = true;
 
 // @zero on main (string args$); website/website.zero.md:107
 export async function task_main__string(args_arr: readonly string[]): Promise<void> {
@@ -304,7 +321,7 @@ export async function task_main__string(args_arr: readonly string[]): Promise<vo
 // @zero on (string body) = handle request (http-request request); website/website.zero.md:115
 export function fn_handle_request__http_request(request: http_request): string {
     let body: string = undefined!;
-    if (landing_page_enabled && request.path == "/") {
+    if (_get_ctx().landing_page.enabled && request.path == "/") {
     body = landing_page.fn_landing_page();
 }
     if (body === undefined) {

@@ -109,6 +109,27 @@ Structure types are initialised using C-style constructors, but these don't have
     vector v = vector(1, 2, 3)          # x=1, y=2, z=3
     vector v = vector(z=2, x=1)         # x=1, y=0, z=2
 
+## variable scoping
+
+Feature-scoped variables have two kinds of scope:
+
+**shared** variables have one value for the entire application. They are set at deploy time and don't vary between users or sessions:
+
+    shared int port = 8084
+    shared string logo = "ᕦ(ツ)ᕤ"
+
+**user** variables have one value per user session. Each user gets their own copy, initialised from the defaults. They can be changed at runtime per-user:
+
+    user bool enabled = true
+    user string theme = "teal"
+    user string font-size = "32pt"
+
+The distinction matters for multi-user applications: `shared` variables live on the module (one copy), `user` variables live on the *context* — an implicit per-session object that the runtime threads through all function calls. Functions never explicitly receive or pass the context; the compiler handles it.
+
+Within a feature, `user` variables are accessed by name. Across features, they're namespaced by feature: `landing-page.enabled`, `theme.font-size`. The context object mirrors the feature structure, with one section per feature.
+
+For single-user applications (desktop, CLI), there is one context. For multi-user applications (web server), each session has its own context. The zero source code is the same in both cases — the deployment decides how many contexts exist.
+
 ## functions
 
 Functions have *open syntax* - a function prototype can be any sequence of words or symbols, with typed parameters in brackets (at least one set, even if there are no parameters) anywhere in the sequence.

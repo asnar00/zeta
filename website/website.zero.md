@@ -1,9 +1,9 @@
 # website
-*the noob landing page*
+*the nøøb website*
 
 ## specification
 
-Serves the noob logo on the test domain. Prints the logo on startup, logs each request path to the terminal, and responds to each request via `handle request`.
+Serves the nøøb logo on the test domain. Prints the logo on startup, logs each request path to the terminal, and responds to each request via `handle request`.
 
 ## interface
 
@@ -21,8 +21,8 @@ The `stop` function is a lifecycle hook for cleanup before shutdown.
     use terminal.out$
     use http.request$, http.response$
 
-    int port = 8084
-    string logo = "ᕦ(ツ)ᕤ"
+    shared int port = 8084
+    shared string logo = "ᕦ(ツ)ᕤ"
 
     on main (string args$)
         out$ <- logo

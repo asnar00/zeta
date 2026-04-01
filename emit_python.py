@@ -35,6 +35,15 @@ def emit(ir: dict) -> str:
     global _enum_values
     sections = []
 
+    # populate context feature set for user-var access detection
+    global _context_features
+    _context_features = set()
+    var_owners = ir.get("_var_owners", {})
+    all_user = ir.get("_all_user_vars", [v for v in ir["variables"] if v.get("scope") == "user"])
+    for v in all_user:
+        feat = var_owners.get(v["name"], "default")
+        _context_features.add(feat)
+
     # collect enum names for qualifying default values and expression references
     enums = {t["name"]: t for t in ir["types"] if t["kind"] == "enum"}
     _enum_values = {}
@@ -88,11 +97,18 @@ def emit(ir: dict) -> str:
     concrete_fns = [fn for fn in ir["functions"] if not fn.get("abstract")]
     dispatch_sections = _generate_dispatchers(concrete_fns, ir.get("types", []))
 
+    # generate context class from user-scoped variables (all features, not just current)
+    user_vars = ir.get("_all_user_vars", [v for v in ir["variables"] if v.get("scope") == "user"])
+    if user_vars:
+        sections.insert(0, _emit_context_class(user_vars, ir))
+
     # variables last — they may reference functions and tasks
-    # skip platform stream declarations (handled by platform implementations)
+    # skip platform stream declarations and user-scoped vars (handled by context)
     platform_stream_names = {u["name"].replace("$", "") for u in ir.get("uses", [])}
     var_lines = []
     for var in ir["variables"]:
+        if var.get("scope") == "user":
+            continue
         if var["name"] in platform_stream_names and var.get("array") and var.get("value") is None:
             continue
         if var.get("_platform") and var.get("array") and var.get("value") is None:
@@ -273,9 +289,54 @@ def _py_type_ann(zero_type: str) -> str:
     return zero_type.replace("-", "_")
 
 
+# set of feature names that have user-scoped variables (for context access detection)
+_context_features = set()
+
+
+def _is_context_access(object_name: str) -> bool:
+    """Check if a member access is a user-context variable lookup."""
+    return object_name in _context_features
+
+
 def _safe(name: str) -> str:
     """Convert a zero name to a Python-safe name."""
     return name.replace("-", "_")
+
+
+def _emit_context_class(user_vars: list[dict], ir: dict) -> str:
+    """Generate a _Context class from user-scoped variables, plus contextvars setup."""
+    lines = ["import contextvars", ""]
+
+    # group user vars by feature (from ir's feature ownership info)
+    var_owners = ir.get("_var_owners", {})
+    by_feature = {}
+    for v in user_vars:
+        feature = var_owners.get(v["name"], "default")
+        by_feature.setdefault(feature, []).append(v)
+
+    # generate nested classes per feature
+    lines.append("class _Context:")
+    for feat_name in sorted(by_feature):
+        safe_feat = _safe(feat_name)
+        lines.append(f"    class {safe_feat}:")
+        for v in by_feature[feat_name]:
+            type_ann = _py_type_ann(v["type"])
+            val = _emit_value(v["value"], v["type"])
+            lines.append(f"        {_safe(v['name'])}: {type_ann} = {val}")
+    lines.append(f"    def __init__(self):")
+    for feat_name in sorted(by_feature):
+        safe_feat = _safe(feat_name)
+        lines.append(f"        self.{safe_feat} = _Context.{safe_feat}()")
+    lines.append("")
+
+    # contextvars setup
+    lines.append("_ctx_var: contextvars.ContextVar['_Context'] = contextvars.ContextVar('_ctx', default=_Context())")
+    lines.append("")
+    lines.append("def _get_ctx() -> '_Context':")
+    lines.append("    return _ctx_var.get()")
+    lines.append("")
+
+    return "\n".join(lines)
 
 
 def _emit_variable(var: dict) -> str:
@@ -899,6 +960,9 @@ def _emit_expr(node: dict) -> str:
     elif kind == "member":
         if node["field"] == "char$":
             return f"list({_safe(node['object'])})"
+        # check if this is a user-context variable access (feature.var)
+        if _is_context_access(node["object"]):
+            return f"_get_ctx().{_safe(node['object'])}.{_safe(node['field'])}"
         return f"{_safe(node['object'])}.{_safe(node['field'])}"
 
     elif kind == "name":

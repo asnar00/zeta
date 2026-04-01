@@ -520,9 +520,20 @@ def _parse_struct_fields(line: str) -> list[dict]:
 
 
 def _parse_variable(line: str, fn_sigs: list = None, task_sigs: list = None) -> dict | None:
-    """Parse a variable declaration like 'int32 i = 10' or 'int i$[4] = 1'."""
+    """Parse a variable declaration like 'int32 i = 10' or 'int i$[4] = 1'.
+    Optionally prefixed with 'shared' or 'user' for scoping."""
+    # check for scope prefix
+    scope = None
+    stripped = line
+    if line.startswith("shared "):
+        scope = "shared"
+        stripped = line[7:]
+    elif line.startswith("user "):
+        scope = "user"
+        stripped = line[5:]
+
     # match: type name[$][size] [= value]
-    match = re.match(rf"(\S+)\s+({W})(\$)?\s*(.*)", line)
+    match = re.match(rf"(\S+)\s+({W})(\$)?\s*(.*)", stripped)
     if not match:
         return None
 
@@ -532,9 +543,13 @@ def _parse_variable(line: str, fn_sigs: list = None, task_sigs: list = None) -> 
     rest = match.group(4).strip()
 
     if is_array:
-        return _parse_array_variable(type_name, var_name, rest, fn_sigs, task_sigs)
+        result = _parse_array_variable(type_name, var_name, rest, fn_sigs, task_sigs)
     else:
-        return _parse_scalar_variable(type_name, var_name, rest, fn_sigs)
+        result = _parse_scalar_variable(type_name, var_name, rest, fn_sigs)
+
+    if result and scope:
+        result["scope"] = scope
+    return result
 
 
 def _parse_scalar_variable(type_name: str, var_name: str, rest: str, fn_sigs: list = None) -> dict:

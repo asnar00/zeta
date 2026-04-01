@@ -464,11 +464,8 @@ def _build_features(features_path: str, output_dir: str, flags: set):
                 src += f"\n{key} = {val}\n"
             code_parts.append(src)
 
-    # inject _enabled variables into the base (first) feature's source
-    # so they're accessible where the composed extensions run
-    for entry in feature_entries:
-        if entry["dynamic"]:
-            code_parts[0] += f"\nbool {entry['name']}-enabled = true\n"
+    # note: dynamic feature _enabled variables are now declared as 'user bool enabled'
+    # in each feature's .zero.md source — no injection needed here
 
     # parse features and compose per-feature
     dynamic_set = {e["name"] for e in feature_entries if e["dynamic"]}
@@ -568,6 +565,7 @@ def _build_features(features_path: str, output_dir: str, flags: set):
     for f in features:
         for v in f.get("variables", []):
             var_owners[v] = f["name"]
+    ir_var_owners = {}  # var_name -> feature_name (for context class generation)
     for var in ir["variables"]:
         # match by name
         owner = root_name
@@ -576,6 +574,8 @@ def _build_features(features_path: str, output_dir: str, flags: set):
                 owner = feat_name
                 break
         ir_by_feature[owner]["variables"].append(var)
+        ir_var_owners[var["name"]] = owner
+    ir["_var_owners"] = ir_var_owners
 
     # parse and assign tests per feature
     from parser import parse_tests
@@ -657,6 +657,9 @@ def _build_features(features_path: str, output_dir: str, flags: set):
                 # pass module_map so emitter can prefix cross-module calls
                 feat_ir["module_map"] = module_map
                 feat_ir["current_module"] = feat_name.replace("-", "_")
+                feat_ir["_var_owners"] = ir_var_owners
+                # pass ALL user vars so every feature can generate/access the context
+                feat_ir["_all_user_vars"] = [v for v in ir["variables"] if v.get("scope") == "user"]
                 # add tests for this feature
                 if ir_by_feature[feat_name].get("tests"):
                     feat_ir["tests"] = ir_by_feature[feat_name]["tests"]

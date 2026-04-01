@@ -18,8 +18,10 @@ After composition, root path returns the landing page, other paths fall through:
 
     feature landing-page extends website
 
+    user bool enabled = true
+
     before (string body) = handle request (http-request request)
-        if (request.path == "/")
+        if (landing-page.enabled and request.path == "/")
             body = landing page ()
 
     on (string body) = landing page ()

@@ -39,6 +39,15 @@ def emit(ir: dict) -> str:
     global _enum_values
     sections = []
 
+    # populate context feature set for user-var access detection
+    global _context_features_ts
+    _context_features_ts = set()
+    var_owners = ir.get("_var_owners", {})
+    all_user = ir.get("_all_user_vars", [v for v in ir["variables"] if v.get("scope") == "user"])
+    for v in all_user:
+        feat = var_owners.get(v["name"], "default")
+        _context_features_ts.add(feat)
+
     # collect type info for translation
     structs = {t["name"]: t for t in ir["types"] if t["kind"] == "struct"}
     enums = {t["name"]: t for t in ir["types"] if t["kind"] == "enum"}
@@ -70,10 +79,17 @@ def emit(ir: dict) -> str:
         if code:
             sections.append(code)
 
-    # skip platform stream declarations
+    # generate context class from user-scoped variables
+    user_vars = ir.get("_all_user_vars", [v for v in ir["variables"] if v.get("scope") == "user"])
+    if user_vars:
+        sections.insert(0, _emit_context_class_ts(user_vars, ir))
+
+    # skip platform stream declarations and user-scoped vars
     platform_stream_names = {u["name"].replace("$", "") for u in ir.get("uses", [])}
     var_lines = []
     for var in ir["variables"]:
+        if var.get("scope") == "user":
+            continue
         if var["name"] in platform_stream_names and var.get("array") and var.get("value") is None:
             continue
         if var.get("_platform") and var.get("array") and var.get("value") is None:
@@ -254,6 +270,53 @@ def _qualify_default_ts(field: dict, enums: dict, structs: dict = None) -> str:
             ts_name = _ts_name(field["type"])
             return f"{ts_name}.{default_val}"
     return str(default_val)
+
+
+# set of feature names that have user-scoped variables (for context access detection)
+_context_features_ts = set()
+
+
+def _is_context_access_ts(object_name: str) -> bool:
+    """Check if a member access is a user-context variable lookup."""
+    return object_name in _context_features_ts
+
+
+def _emit_context_class_ts(user_vars: list[dict], ir: dict) -> str:
+    """Generate a _Context class from user-scoped variables, plus AsyncLocalStorage setup."""
+    lines = ["import { AsyncLocalStorage } from 'async_hooks';", ""]
+
+    var_owners = ir.get("_var_owners", {})
+    by_feature = {}
+    for v in user_vars:
+        feature = var_owners.get(v["name"], "default")
+        by_feature.setdefault(feature, []).append(v)
+
+    # generate nested classes per feature
+    for feat_name in sorted(by_feature):
+        safe_feat = _safe(feat_name)
+        lines.append(f"class _Ctx_{safe_feat} {{")
+        for v in by_feature[feat_name]:
+            type_ann = _ts_type(v["type"])
+            val = _emit_value(v["value"], v["type"], {})
+            lines.append(f"    {_safe(v['name'])}: {type_ann} = {val};")
+        lines.append("}")
+        lines.append("")
+
+    lines.append("class _Context {")
+    for feat_name in sorted(by_feature):
+        safe_feat = _safe(feat_name)
+        lines.append(f"    {safe_feat} = new _Ctx_{safe_feat}();")
+    lines.append("}")
+    lines.append("")
+    lines.append("const _ctx_storage = new AsyncLocalStorage<_Context>();")
+    lines.append("const _default_ctx = new _Context();")
+    lines.append("")
+    lines.append("function _get_ctx(): _Context {")
+    lines.append("    return _ctx_storage.getStore() ?? _default_ctx;")
+    lines.append("}")
+    lines.append("")
+
+    return "\n".join(lines)
 
 
 def _safe(name: str) -> str:
@@ -985,6 +1048,9 @@ def _emit_expr(node: dict, structs: dict) -> str:
     elif kind == "member":
         if node["field"] == "char$":
             return f"[...{node['object']}]"
+        # check if this is a user-context variable access (feature.var)
+        if _is_context_access_ts(node["object"]):
+            return f"_get_ctx().{_safe(node['object'])}.{_safe(node['field'])}"
         return f"{_safe(node['object'])}.{_safe(node['field'])}"
 
     elif kind == "name":

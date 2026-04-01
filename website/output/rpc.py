@@ -94,6 +94,43 @@ def _find_root_module():
     return None
 
 
+def _try_get_ctx(mod, name):
+    """Try to get a user-scoped variable from the context. Returns value or None."""
+    try:
+        ctx = mod._ctx_var.get() if hasattr(mod, '_ctx_var') else None
+        if ctx is None:
+            return None
+        if '.' in name:
+            feat_name, var_name = name.rsplit('.', 1)
+            safe_feat = feat_name.replace("-", "_")
+            safe_var = var_name.replace("-", "_")
+            section = getattr(ctx, safe_feat, None)
+            if section is not None:
+                return getattr(section, safe_var, None)
+        return None
+    except Exception:
+        return None
+
+
+def _try_set_ctx(mod, name, value):
+    """Try to set a user-scoped variable on the context. Returns True if successful."""
+    try:
+        ctx = mod._ctx_var.get() if hasattr(mod, '_ctx_var') else None
+        if ctx is None:
+            return False
+        if '.' in name:
+            feat_name, var_name = name.rsplit('.', 1)
+            safe_feat = feat_name.replace("-", "_")
+            safe_var = var_name.replace("-", "_")
+            section = getattr(ctx, safe_feat, None)
+            if section is not None and hasattr(section, safe_var):
+                setattr(section, safe_var, _coerce_value(value))
+                return True
+        return False
+    except Exception:
+        return False
+
+
 def _find_module(name):
     """Find a module by zero name (hyphenated)."""
     safe = name.replace("-", "_")
@@ -382,12 +419,15 @@ def fn_rpc_eval__string(expr: str) -> str:
     if not expr:
         return fn_directory()
 
-    # assignment: module.var = value  or  var = value
+    # assignment: feature.var = value  or  var = value
     assign_match = re.match(r'^([\w.-]+)\s*=\s*(.+)$', expr)
     if assign_match and '(' not in assign_match.group(2):
         name = assign_match.group(1)
         value = assign_match.group(2).strip().strip('"')
-        # resolve module.var
+        # try context first (for user-scoped vars)
+        if '.' in name and _try_set_ctx(mod, name, value):
+            return f"{name} = {value}"
+        # fall back to module attribute
         if '.' in name:
             mod_name, var_name = name.rsplit('.', 1)
             target = _find_module(mod_name) or mod
@@ -398,9 +438,14 @@ def fn_rpc_eval__string(expr: str) -> str:
         setattr(target, attr_name, _coerce_value(value))
         return f"{name} = {value}"
 
-    # var get: module.var  or  var  (no parens, no =)
+    # var get: feature.var  or  var  (no parens, no =)
     if '(' not in expr and '=' not in expr:
         name = expr.strip()
+        # try context first (for user-scoped vars)
+        ctx_val = _try_get_ctx(mod, name)
+        if ctx_val is not None:
+            return _format_value(ctx_val)
+        # fall back to module attribute
         if '.' in name:
             mod_name, var_name = name.rsplit('.', 1)
             target = _find_module(mod_name) or mod
@@ -491,6 +536,20 @@ def _push_terminal_out(value: str):
 def terminal_in():
     for line in sys.stdin:
         yield line.rstrip('\n')
+
+
+import contextvars
+
+class _Context:
+    class landing_page:
+        enabled: bool = True
+    def __init__(self):
+        self.landing_page = _Context.landing_page()
+
+_ctx_var: contextvars.ContextVar['_Context'] = contextvars.ContextVar('_ctx', default=_Context())
+
+def _get_ctx() -> '_Context':
+    return _ctx_var.get()
 
 
 from typing import NamedTuple

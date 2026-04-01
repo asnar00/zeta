@@ -246,7 +246,7 @@ def _wrap_dynamic(insert_lines: list[str], feature_name: str) -> list[str]:
             indent = line[:len(line) - len(stripped)]
             # replace "if (condition)" with "if (feature_enabled and condition)"
             inner = stripped[4:-1]  # strip "if (" and ")"
-            wrapped.append(f"{indent}if ({feature_name}-enabled and {inner})")
+            wrapped.append(f"{indent}if ({feature_name}.enabled and {inner})")
             guard_injected = True
         else:
             wrapped.append(line)
@@ -257,7 +257,7 @@ def _wrap_dynamic(insert_lines: list[str], feature_name: str) -> list[str]:
             if line.strip():
                 base_indent = line[:len(line) - len(line.lstrip())]
                 break
-        wrapped = [f"{base_indent}if ({feature_name}-enabled)"]
+        wrapped = [f"{base_indent}if ({feature_name}.enabled)"]
         for line in insert_lines:
             if line.strip():
                 wrapped.append("    " + line)
