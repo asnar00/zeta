@@ -15,9 +15,11 @@ Set a variable:
 
     rpc eval ("logo = hi") => "logo = hi"
 
-Call a zero-arg function:
+Call a function:
 
     rpc eval ("not found ()") => "not found"
+    rpc eval ("trim (\"  hello  \")") => "hello"
+    rpc eval ("length of (\"test\")") => "4"
 
 ## definition
 

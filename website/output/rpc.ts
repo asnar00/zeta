@@ -183,7 +183,21 @@ export function test_rpc_2(): void {
     if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
 }
 
-register_tests('rpc', [[test_rpc_0, 'rpc eval ("port") => "8084"'], [test_rpc_1, 'rpc eval ("logo = hi") => "logo = hi"'], [test_rpc_2, 'rpc eval ("not found ()") => "not found"']]);
+export function test_rpc_3(): void {
+    // rpc eval ("trim (\"  hello  \")") => "hello"
+    const _result = fn_rpc_eval__string("trim (\"  hello  \")");
+    const _expected = "hello";
+    if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
+}
+
+export function test_rpc_4(): void {
+    // rpc eval ("length of (\"test\")") => "4"
+    const _result = fn_rpc_eval__string("length of (\"test\")");
+    const _expected = "4";
+    if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
+}
+
+register_tests('rpc', [[test_rpc_0, 'rpc eval ("port") => "8084"'], [test_rpc_1, 'rpc eval ("logo = hi") => "logo = hi"'], [test_rpc_2, 'rpc eval ("not found ()") => "not found"'], [test_rpc_3, 'rpc eval ("trim (\\"  hello  \\")") => "hello"'], [test_rpc_4, 'rpc eval ("length of (\\"test\\")") => "4"']]);
 
 interface http_request {
     readonly path: string;

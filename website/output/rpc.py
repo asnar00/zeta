@@ -513,7 +513,19 @@ def test_rpc_2():
     _expected = "not found"
     assert _result == _expected, f"expected {_expected}, got {_result}"
 
-register_tests('rpc', [(test_rpc_0, 'rpc eval ("port") => "8084"'), (test_rpc_1, 'rpc eval ("logo = hi") => "logo = hi"'), (test_rpc_2, 'rpc eval ("not found ()") => "not found"')])
+def test_rpc_3():
+    '''rpc eval ("trim (\"  hello  \")") => "hello"'''
+    _result = fn_rpc_eval__string("trim (\"  hello  \")")
+    _expected = "hello"
+    assert _result == _expected, f"expected {_expected}, got {_result}"
+
+def test_rpc_4():
+    '''rpc eval ("length of (\"test\")") => "4"'''
+    _result = fn_rpc_eval__string("length of (\"test\")")
+    _expected = "4"
+    assert _result == _expected, f"expected {_expected}, got {_result}"
+
+register_tests('rpc', [(test_rpc_0, 'rpc eval ("port") => "8084"'), (test_rpc_1, 'rpc eval ("logo = hi") => "logo = hi"'), (test_rpc_2, 'rpc eval ("not found ()") => "not found"'), (test_rpc_3, 'rpc eval ("trim (\\"  hello  \\")") => "hello"'), (test_rpc_4, 'rpc eval ("length of (\\"test\\")") => "4"')])
 
 class http_request(NamedTuple):
     path: str = ""
