@@ -527,7 +527,13 @@ def _build_features(features_path: str, output_dir: str, flags: set):
                 feat_ir["functions"] = ir_by_feature[feat_name]["functions"]
                 feat_ir["tasks"] = ir_by_feature[feat_name]["tasks"]
                 feat_ir["variables"] = ir_by_feature[feat_name]["variables"]
-                feat_ir["source_file"] = f"ziz/{feat_name}.zero.md"
+                # find the source file for this feature
+                feat_source_file = None
+                for p in input_paths:
+                    if feat_name in p:
+                        feat_source_file = p
+                        break
+                feat_ir["source_file"] = feat_source_file or f"{feat_name}.zero.md"
                 # pass module_map so emitter can prefix cross-module calls
                 feat_ir["module_map"] = module_map
                 feat_ir["current_module"] = feat_name

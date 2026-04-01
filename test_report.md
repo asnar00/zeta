@@ -414,6 +414,7 @@ on (number n) = double (number x)
 ### python
 
 ```python
+# @zero on (number n) = double (number x)
 def fn_double__number(x: number) -> number:
     n = x * 2
     return n
@@ -435,6 +436,7 @@ on (number n) = double (number x)
 ### python
 
 ```python
+# @zero on (number n) = double (number x)
 def fn_double__number(x: number) -> number:
     n = x * 2
     return n
@@ -457,6 +459,7 @@ on (number n) = smaller of (number a) and (number b)
 ### python
 
 ```python
+# @zero on (number n) = smaller of (number a) and (number b)
 def fn_smaller_of__number_and__number(a: number, b: number) -> number:
     n = (a) if (a < b) else (b)
     return n
@@ -513,6 +516,7 @@ on (vector v) = (vector a) + (vector b)
 ### python
 
 ```python
+# @zero on (vector v) = (vector a) + (vector b)
 def fn__vector_plus__vector(a: vector, b: vector) -> vector:
     v = vector(a.x + b.x, a.y + b.y, a.z + b.z)
     return v
@@ -530,6 +534,7 @@ on hello()
 ### python
 
 ```python
+# @zero on hello
 def fn_hello():
     print "hello world"
 ```
@@ -546,6 +551,7 @@ on greet (string name)
 ### python
 
 ```python
+# @zero on greet (string name)
 def fn_greet__string(name: str):
     print name
 ```
@@ -574,6 +580,7 @@ def _concurrently(*fns):
     for t in threads:
         t.join()
 
+# @zero on run
 def fn_run():
     _concurrently(lambda: hello(), lambda: beep())
 ```
@@ -590,6 +597,7 @@ on (number n) = smaller of (number a) and (number b)
 ### python
 
 ```python
+# @zero on (number n) = smaller of (number a) and (number b)
 def fn_smaller_of__number_and__number(a: number, b: number) -> number:
     n = (a) if (a < b) else (b)
     return n
@@ -678,8 +686,10 @@ on (int result$) = first three of (int items$)
 ### python
 
 ```python
-def fn_(int result$)_=_first_three_of_(int items$)(result_arr: int, items_arr: int):
+# @zero on (int result$) = first three of (int items$)
+def fn_first_three_of__int(items_arr: int) -> int:
     result$ = items_arr[0:3]
+    return result_arr
 ```
 
 ## slice with through
@@ -694,8 +704,10 @@ on (int result$) = mid of (int items$)
 ### python
 
 ```python
-def fn_(int result$)_=_mid_of_(int items$)(result_arr: int, items_arr: int):
+# @zero on (int result$) = mid of (int items$)
+def fn_mid_of__int(items_arr: int) -> int:
     result$ = items_arr[1:4]
+    return result_arr
 ```
 
 ## subtype flattens parent fields
@@ -734,6 +746,7 @@ on (string s) = describe (int n)
 ### python
 
 ```python
+# @zero on (string s) = describe (int n)
 def fn_describe__int(n: int) -> str:
     s = "a number"
     return s
@@ -771,14 +784,17 @@ class dog(NamedTuple):
 class cat(NamedTuple):
     lives: int = 9
 
+# @zero on (string s) = describe (animal a)
 def fn_describe__animal(a: animal) -> str:
     s = "an animal"
     return s
 
+# @zero on (string s) = describe (dog d)
 def fn_describe__dog(d: dog) -> str:
     s = "a dog"
     return s
 
+# @zero on (string s) = describe (cat c)
 def fn_describe__cat(c: cat) -> str:
     s = "a cat"
     return s
@@ -805,6 +821,7 @@ on (int n) = factorial of (int x)
 ### python
 
 ```python
+# @zero on (int n) = factorial of (int x)
 def fn_factorial_of__int(x: int) -> int:
     n = (1) if (x == 1) else (x * fn_factorial_of__int(x - 1))
     return n
@@ -822,6 +839,7 @@ on (int n) = count of [items$]
 ### python
 
 ```python
+# @zero on (int n) = count of [items$]
 def fn_count_of(items_arr) -> int:
     n = len(items_arr)
     return n
@@ -841,6 +859,7 @@ on (int n) = count of [items$]
 ### python
 
 ```python
+# @zero on (int n) = count of [items$]
 def fn_count_of(items_arr) -> int:
     n = len(items_arr)
     return n
@@ -861,7 +880,8 @@ on (int r) = first of (int items$)
 ### python
 
 ```python
-def fn_first_of_(int items$)(items_arr: int) -> int:
+# @zero on (int r) = first of (int items$)
+def fn_first_of__int(items_arr: int) -> int:
     r = items_arr[0]
     return r
 ```
@@ -878,8 +898,10 @@ on (int result$) = rest of (int items$)
 ### python
 
 ```python
-def fn_(int result$)_=_rest_of_(int items$)(result_arr: int, items_arr: int):
+# @zero on (int result$) = rest of (int items$)
+def fn_rest_of__int(items_arr: int) -> int:
     result$ = items_arr[1:]
+    return result_arr
 ```
 
 ## slice open start
@@ -894,8 +916,10 @@ on (int result$) = first three of (int items$)
 ### python
 
 ```python
-def fn_(int result$)_=_first_three_of_(int items$)(result_arr: int, items_arr: int):
+# @zero on (int result$) = first three of (int items$)
+def fn_first_three_of__int(items_arr: int) -> int:
     result$ = items_arr[:3]
+    return result_arr
 ```
 
 ## length of array
@@ -910,7 +934,8 @@ on (int n) = size of (int items$)
 ### python
 
 ```python
-def fn_size_of_(int items$)(items_arr: int) -> int:
+# @zero on (int n) = size of (int items$)
+def fn_size_of__int(items_arr: int) -> int:
     n = len(items_arr)
     return n
 ```
@@ -930,6 +955,7 @@ on (string s) = describe (int n)
 ### python
 
 ```python
+# @zero on (string s) = describe (int n)
 def fn_describe__int(n: int) -> str:
     if n > 0:
         s = "positive"
@@ -955,6 +981,7 @@ on (string s) = describe (int n)
 ### python
 
 ```python
+# @zero on (string s) = describe (int n)
 def fn_describe__int(n: int) -> str:
     if n > 0:
         s = "positive"
@@ -980,6 +1007,7 @@ on (int r) = sum up to (int n)
 ```python
 import functools
 
+# @zero on (int r) = sum up to (int n)
 def fn_sum_up_to__int(n: int) -> int:
     i_arr = list(range(1, n + 1))
     r = functools.reduce(lambda a, b: a + b, i_arr)
@@ -999,6 +1027,7 @@ on (int r) = sum of (int a) and (int b)
 ### python
 
 ```python
+# @zero on (int r) = sum of (int a) and (int b)
 def fn_sum_of__int_and__int(a: int, b: int) -> int:
     c = a + b
     r = c
@@ -1020,6 +1049,7 @@ on (int r) = sum list
 ```python
 import functools
 
+# @zero on (int r) = sum list
 def fn_sum_list() -> int:
     i_arr = [1, 2, 3, 4]
     r = functools.reduce(lambda a, b: a + b, i_arr)
@@ -1040,10 +1070,12 @@ on (number n) = double (number x)
 ### python
 
 ```python
+# @zero on (number n) = double (number x)
 def fn_double__number(x: number) -> number:
     n = x * 2
     return n
 
+# @zero on (number n) = quadruple (number x)
 def fn_quadruple__number(x: number) -> number:
     n = fn_double__number(fn_double__number(x))
     return n
@@ -1063,10 +1095,12 @@ on (number n) = smaller of (number a) and (number b)
 ### python
 
 ```python
+# @zero on (number n) = smaller of (number a) and (number b)
 def fn_smaller_of__number_and__number(a: number, b: number) -> number:
     n = (a) if (a < b) else (b)
     return n
 
+# @zero on (number n) = smallest of (number a) and (number b) and (number c)
 def fn_smallest_of__number_and__number_and__number(a: number, b: number, c: number) -> number:
     n = fn_smaller_of__number_and__number(fn_smaller_of__number_and__number(a, b), c)
     return n
@@ -1093,6 +1127,7 @@ class direction(Enum):
     east = "east"
     west = "west"
 
+# @zero on (int dx) = x step for (direction d)
 def fn_x_step_for__direction(d: direction) -> int:
     dx = (1) if (d == direction.east) else (0)
     return dx
@@ -1120,6 +1155,7 @@ class vector(NamedTuple):
     y: number = 0
     z: number = 0
 
+# @zero on (number n) = length of (vector v)
 def fn_length_of__vector(v: vector) -> number:
     n = v.x * v.x + v.y * v.y + v.z * v.z
     return n
@@ -1143,13 +1179,14 @@ on (int even$) <- only evens from (int numbers$)
 ### python
 
 ```python
-def fn_only_evens_from__int(numbers_arr: int):
+# @zero on (int even$) <- only evens from (int numbers$)
+def task_only_evens_from__int(numbers_arr: int):
     for n in numbers_arr:
         if n % 2 == 0:
             yield n
 
 all_arr: list[int] = [1, 2, 3, 4, 5, 6]
-even_arr = list(fn_only_evens_from__int(all_arr))
+even_arr = list(task_only_evens_from__int(all_arr))
 ```
 
 ## full program
@@ -1193,13 +1230,29 @@ class vector(NamedTuple):
     y: number = 0
     z: number = 0
 
+# @zero on (vector v) = (vector a) + (vector b)
 def fn__vector_plus__vector(a: vector, b: vector) -> vector:
     v = vector(a.x + b.x, a.y + b.y, a.z + b.z)
     return v
 
+# @zero on (number n) = smaller of (number a) and (number b)
 def fn_smaller_of__number_and__number(a: number, b: number) -> number:
     n = (a) if (a < b) else (b)
     return n
+```
+
+## ts: int maps to number
+
+### zero
+
+```zero
+int i = 42
+```
+
+### python
+
+```python
+const i: number = 42;
 ```
 
 ## ts: concrete int type
@@ -1424,7 +1477,7 @@ int32 i = 10
 ### python
 
 ```python
-const i: int32 = 10;
+const i: number = 10;
 ```
 
 ## ts: scalar float variable
@@ -1438,7 +1491,7 @@ float f = 1.02
 ### python
 
 ```python
-const f: float = 1.02;
+const f: number = 1.02;
 ```
 
 ## ts: string variable
@@ -1494,7 +1547,7 @@ int i$
 ### python
 
 ```python
-const i_arr: readonly int[] = [];
+const i_arr: readonly number[] = [];
 ```
 
 ## ts: sized array
@@ -1508,7 +1561,7 @@ int i$[4]
 ### python
 
 ```python
-const i_arr: readonly int[] = Array(4).fill(0);
+const i_arr: readonly number[] = Array(4).fill(0);
 ```
 
 ## ts: sized array with fill
@@ -1522,7 +1575,7 @@ int i$[4] = 1
 ### python
 
 ```python
-const i_arr: readonly int[] = Array(4).fill(1);
+const i_arr: readonly number[] = Array(4).fill(1);
 ```
 
 ## ts: array literal
@@ -1536,7 +1589,7 @@ int i$ = [1, 2, 3, 4]
 ### python
 
 ```python
-const i_arr: readonly int[] = [1, 2, 3, 4];
+const i_arr: readonly number[] = [1, 2, 3, 4];
 ```
 
 ## ts: array with through range
@@ -1550,7 +1603,7 @@ int i$ = [1 through 4]
 ### python
 
 ```python
-const i_arr: readonly int[] = Array.from({ length: 4 }, (_, i) => i + 1);
+const i_arr: readonly number[] = Array.from({ length: 4 }, (_, i) => i + 1);
 ```
 
 ## ts: array with to range
@@ -1564,7 +1617,7 @@ int i$ = [0 to 4]
 ### python
 
 ```python
-const i_arr: readonly int[] = Array.from({ length: 4 }, (_, i) => i);
+const i_arr: readonly number[] = Array.from({ length: 4 }, (_, i) => i);
 ```
 
 ## ts: simple stream
@@ -1578,7 +1631,7 @@ int i$ <- 1 <- 2 <- 3 <- 4
 ### python
 
 ```python
-const i_arr: int[] = [1, 2, 3, 4];
+const i_arr: number[] = [1, 2, 3, 4];
 ```
 
 ## ts: stream with until
@@ -1592,7 +1645,7 @@ int i$ <- 1 <- (i$ + 1) until (i$ == 4)
 ### python
 
 ```python
-const i_arr: int[] = [1];
+const i_arr: number[] = [1];
 while (!(i_arr[i_arr.length - 1] == 4)) {
     i_arr.push(i_arr[i_arr.length - 1] + 1);
 }
@@ -1609,7 +1662,7 @@ int i$ <- 0 <- (i$ + 1) while (i$ < 4)
 ### python
 
 ```python
-const i_arr: int[] = [0];
+const i_arr: number[] = [0];
 while (i_arr[i_arr.length - 1] < 4) {
     i_arr.push(i_arr[i_arr.length - 1] + 1);
 }
@@ -1627,8 +1680,8 @@ int i$ = [1, 2, 3, 4]
 ### python
 
 ```python
-const i_arr: readonly int[] = [1, 2, 3, 4];
-const j_arr: readonly int[] = i_arr.map(x => x * 2);
+const i_arr: readonly number[] = [1, 2, 3, 4];
+const j_arr: readonly number[] = i_arr.map(x => x * 2);
 ```
 
 ## ts: array map with two arrays
@@ -1644,9 +1697,9 @@ int i$ = [1, 2, 3, 4, 5]
 ### python
 
 ```python
-const i_arr: readonly int[] = [1, 2, 3, 4, 5];
-const j_arr: readonly int[] = [1, 4, 7];
-const k_arr: readonly int[] = Array.from({ length: Math.max(i_arr.length, j_arr.length) }, (_, i) => (i_arr[i] ?? 0) + (j_arr[i] ?? 0));
+const i_arr: readonly number[] = [1, 2, 3, 4, 5];
+const j_arr: readonly number[] = [1, 4, 7];
+const k_arr: readonly number[] = Array.from({ length: Math.max(i_arr.length, j_arr.length) }, (_, i) => (i_arr[i] ?? 0) + (j_arr[i] ?? 0));
 ```
 
 ## ts: named function mapped over array
@@ -1663,9 +1716,10 @@ on (number n) = double (number x)
 ### python
 
 ```python
-const i_arr: readonly int[] = [1, 2, 3, 4];
-const j_arr: readonly int[] = i_arr.map(x => fn_double__number(x));
+const i_arr: readonly number[] = [1, 2, 3, 4];
+const j_arr: readonly number[] = i_arr.map(x => fn_double__number(x));
 
+// @zero on (number n) = double (number x)
 function fn_double__number(x: number): number {
     const n: number = x * 2;
     return n;
@@ -1686,9 +1740,10 @@ on (number n) = smaller of (number a) and (number b)
 ### python
 
 ```python
-const i_arr: readonly int[] = [3, 1, 4, 1, 5];
-const j_arr: readonly int[] = i_arr.map(x => fn_smaller_of__number_and__number(x, 3));
+const i_arr: readonly number[] = [3, 1, 4, 1, 5];
+const j_arr: readonly number[] = i_arr.map(x => fn_smaller_of__number_and__number(x, 3));
 
+// @zero on (number n) = smaller of (number a) and (number b)
 function fn_smaller_of__number_and__number(a: number, b: number): number {
     const n: number = (a < b) ? (a) : (b);
     return n;
@@ -1707,8 +1762,8 @@ int i$ = [1, 2, 3, 4]
 ### python
 
 ```python
-const i_arr: readonly int[] = [1, 2, 3, 4];
-const sum: int = i_arr.reduce((a, b) => a + b);
+const i_arr: readonly number[] = [1, 2, 3, 4];
+const sum: number = i_arr.reduce((a, b) => a + b);
 ```
 
 ## ts: array reduce with named function
@@ -1723,8 +1778,8 @@ int i$ = [1, 2, 3, 4]
 ### python
 
 ```python
-const i_arr: readonly int[] = [1, 2, 3, 4];
-const min: int = i_arr.reduce(fn_smaller_of__int_and__int);
+const i_arr: readonly number[] = [1, 2, 3, 4];
+const min: number = i_arr.reduce(fn_smaller_of__int_and__int);
 ```
 
 ## ts: concurrently block
@@ -1746,6 +1801,7 @@ async function _concurrently(...fns: (() => any)[]) {
     await Promise.all(fns.map(fn => fn()));
 }
 
+// @zero on run
 async function fn_run(): void {
     await _concurrently(() => hello(), () => beep());
 }
@@ -1770,6 +1826,7 @@ async function _concurrently(...fns: (() => any)[]) {
     await Promise.all(fns.map(fn => fn()));
 }
 
+// @zero on run
 async function fn_run(): void {
     await _concurrently(() => hello(), () => beep());
 }
@@ -1796,10 +1853,12 @@ async function _concurrently(...fns: (() => any)[]) {
     await Promise.all(fns.map(fn => fn()));
 }
 
+// @zero on run
 async function fn_run(): void {
     await _concurrently(() => hello(), () => beep());
 }
 
+// @zero on main
 async function fn_main(): void {
     await run();
 }
@@ -1817,6 +1876,7 @@ on (number n) = double (number x)
 ### python
 
 ```python
+// @zero on (number n) = double (number x)
 function fn_double__number(x: number): number {
     const n: number = x * 2;
     return n;
@@ -1835,6 +1895,7 @@ on (vector v) = (vector a) + (vector b)
 ### python
 
 ```python
+// @zero on (vector v) = (vector a) + (vector b)
 function fn__vector_plus__vector(a: vector, b: vector): vector {
     const v: vector = vector(a.x + b.x, a.y + b.y, a.z + b.z);
     return v;
@@ -1853,6 +1914,7 @@ on (number n) = smaller of (number a) and (number b)
 ### python
 
 ```python
+// @zero on (number n) = smaller of (number a) and (number b)
 function fn_smaller_of__number_and__number(a: number, b: number): number {
     const n: number = (a < b) ? (a) : (b);
     return n;
@@ -1871,6 +1933,7 @@ on (number n) = smaller of (number a) and (number b)
 ### python
 
 ```python
+// @zero on (number n) = smaller of (number a) and (number b)
 function fn_smaller_of__number_and__number(a: number, b: number): number {
     const n: number = (a < b) ? (a) : (b);
     return n;
@@ -1891,11 +1954,13 @@ on (number n) = double (number x)
 ### python
 
 ```python
+// @zero on (number n) = double (number x)
 function fn_double__number(x: number): number {
     const n: number = x * 2;
     return n;
 }
 
+// @zero on (number n) = quadruple (number x)
 function fn_quadruple__number(x: number): number {
     const n: number = fn_double__number(fn_double__number(x));
     return n;
@@ -1916,11 +1981,13 @@ on (number n) = smaller of (number a) and (number b)
 ### python
 
 ```python
+// @zero on (number n) = smaller of (number a) and (number b)
 function fn_smaller_of__number_and__number(a: number, b: number): number {
     const n: number = (a < b) ? (a) : (b);
     return n;
 }
 
+// @zero on (number n) = smallest of (number a) and (number b) and (number c)
 function fn_smallest_of__number_and__number_and__number(a: number, b: number, c: number): number {
     const n: number = fn_smaller_of__number_and__number(fn_smaller_of__number_and__number(a, b), c);
     return n;
@@ -1943,10 +2010,11 @@ on (int even$) <- only evens from (int numbers$)
 ### python
 
 ```python
-const all_arr: readonly int[] = [1, 2, 3, 4, 5, 6];
-even_arr = [...fn_only_evens_from__int(all_arr)]
+const all_arr: readonly number[] = [1, 2, 3, 4, 5, 6];
+const even_arr: number[] = [...task_only_evens_from__int(all_arr)];
 
-function* fn_only_evens_from__int(numbers_arr: int[]): Generator<int> {
+// @zero on (int even$) <- only evens from (int numbers$)
+function* task_only_evens_from__int(numbers_arr: readonly number[]): Generator<number> {
     for (const n of numbers_arr) {
         if (n % 2 == 0) {
             yield n;
@@ -1978,11 +2046,12 @@ function animal(args: Partial<animal> = {}): animal {
 }
 
 interface dog {
+    readonly name: string;
     readonly breed: string;
 }
 
 function dog(args: Partial<dog> = {}): dog {
-    return { breed: args.breed ?? "unknown" };
+    return { name: args.name ?? "", breed: args.breed ?? "unknown" };
 }
 ```
 
@@ -1998,8 +2067,8 @@ int i$ = [1, 2, 3, 4, 5, 6]
 ### python
 
 ```python
-const i_arr: readonly int[] = [1, 2, 3, 4, 5, 6];
-evens_arr = i_arr.filter(x => x % 2 == 0);
+const i_arr: readonly number[] = [1, 2, 3, 4, 5, 6];
+const evens_arr: number[] = i_arr.filter(x => x % 2 == 0);
 ```
 
 ## ts: first of where
@@ -2014,8 +2083,8 @@ int i$ = [1, 2, 3, 4, 5, 6]
 ### python
 
 ```python
-const i_arr: readonly int[] = [1, 2, 3, 4, 5, 6];
-const first_even: int = i_arr.find(x => x % 2 == 0);
+const i_arr: readonly number[] = [1, 2, 3, 4, 5, 6];
+const first_even: number = i_arr.find(x => x % 2 == 0);
 ```
 
 ## ts: sort simple
@@ -2030,8 +2099,8 @@ int i$ = [3, 1, 4]
 ### python
 
 ```python
-const i_arr: readonly int[] = [3, 1, 4];
-sorted_arr = [...i_arr].sort();
+const i_arr: readonly number[] = [3, 1, 4];
+const sorted_arr: number[] = [...i_arr].sort();
 ```
 
 ## ts: sort by key
@@ -2049,7 +2118,7 @@ type person =
 
 ```python
 interface person {
-    readonly age: int;
+    readonly age: number;
 }
 
 function person(args: Partial<person> = {}): person {
@@ -2057,7 +2126,7 @@ function person(args: Partial<person> = {}): person {
 }
 
 const people_arr: readonly person[] = [...];
-sorted_arr = [...people_arr].sort((a, b) => a.age - b.age);
+const sorted_arr: person[] = [...people_arr].sort((a, b) => a.age - b.age);
 ```
 
 ## ts: array function call
@@ -2074,11 +2143,12 @@ on (int n) = count of [items$]
 ### python
 
 ```python
-const i_arr: readonly int[] = [1, 2, 3];
-const c: int = fn_count_of(i_arr);
+const i_arr: readonly number[] = [1, 2, 3];
+const c: number = fn_count_of(i_arr);
 
-function fn_count_of(items_arr): int {
-    const n: int = items_arr.length;
+// @zero on (int n) = count of [items$]
+function fn_count_of(items_arr): number {
+    const n: number = items_arr.length;
     return n;
 }
 ```
@@ -2115,11 +2185,13 @@ function dog(args: Partial<dog> = {}): dog {
     return { breed: args.breed ?? "unknown" };
 }
 
+// @zero on (string s) = describe (animal a)
 function fn_describe__animal(a: animal): string {
     const s: string = "an animal";
     return s;
 }
 
+// @zero on (string s) = describe (dog d)
 function fn_describe__dog(d: dog): string {
     const s: string = "a dog";
     return s;
@@ -2165,11 +2237,13 @@ function vector(args: Partial<vector> = {}): vector {
     return { x: args.x ?? 0, y: args.y ?? 0, z: args.z ?? 0 };
 }
 
+// @zero on (vector v) = (vector a) + (vector b)
 function fn__vector_plus__vector(a: vector, b: vector): vector {
     const v: vector = vector({ x: a.x + b.x, y: a.y + b.y, z: a.z + b.z });
     return v;
 }
 
+// @zero on (number n) = smaller of (number a) and (number b)
 function fn_smaller_of__number_and__number(a: number, b: number): number {
     const n: number = (a < b) ? (a) : (b);
     return n;

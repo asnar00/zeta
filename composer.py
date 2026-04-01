@@ -71,8 +71,17 @@ def compose(features: list[dict]) -> str:
     for feature in features:
         all_variables.extend(feature.get("variables", []))
 
+    # collect use declarations
+    all_uses = []
+    for feature in features:
+        for use in feature.get("uses", []):
+            all_uses.append(f"use {use['platform']}.{use['name']}")
+
     # assemble output
     output_parts = []
+
+    if all_uses:
+        output_parts.append("\n".join(all_uses))
 
     if type_lines:
         output_parts.append("\n".join(type_lines))
@@ -121,11 +130,22 @@ def compose_per_feature(features: list[dict]) -> dict:
         feature_types[name] = type_lines
         feature_vars[name] = feature.get("variables", [])
 
+    # collect use declarations per feature
+    feature_uses = {}
+    for feature in features:
+        uses = []
+        for use in feature.get("uses", []):
+            uses.append(f"use {use['platform']}.{use['name']}")
+        feature_uses[feature["name"]] = uses
+
     # assemble per-feature output
     result = {}
     for feature in features:
         name = feature["name"]
         parts = []
+
+        if feature_uses.get(name):
+            parts.append("\n".join(feature_uses[name]))
 
         if feature_types.get(name):
             parts.append("\n".join(feature_types[name]))

@@ -216,6 +216,8 @@ def zero_task_prototype(task: dict) -> str:
     for p in task.get("input_streams", []) + task.get("params", []):
         pname = p["name"] + "$" if p in task.get("input_streams", []) else p["name"]
         sig += f" ({p['type']} {pname})"
+    if out is None:
+        return f"on {sig}"
     return f"on ({out['type']} {out['name']}$) <- {sig}"
 
 

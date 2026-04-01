@@ -133,6 +133,20 @@ The regex-based parser is fragile:
 - No formal grammar — adding features means more special cases
 - Consider: write a proper grammar-driven parser in zero as part of self-hosting
 
+## coroutine fusion: optimising pure stream chains into loops
+
+All tasks are coroutines. The emitter defaults to async coroutines — correct everywhere, handles I/O naturally (`serve http`, file reads, etc.).
+
+But pure computational chains (no awaits, no I/O) don't need the overhead. The emitter can detect when a chain of coroutines is purely computational and fuse them into a plain loop. For example, `bracket depth of` feeding into `index of first ... where` is just a `for` loop with an early return — no need for two generators yielding back and forth.
+
+**Strategy:**
+- Emit async coroutines by default — always correct
+- Detect pure chains (no I/O, no platform calls) and fuse into loops
+- SSA decomposition is for the human; fused loops are for the machine
+- Same zero source, different output depending on what's optimal
+
+This also clarifies the streaming vs map question: `j$ = i$ + 1` (map) could compile to a fused SIMD/parallel operation, while `j$ <- (i$ + 1)` (stream) implies sequential coroutine semantics. The optimiser decides.
+
 ## emitter deduplication (PARTIALLY RESOLVED)
 
 `emit_base.py` now contains shared logic: function naming, array refs, dispatch groups, underscore replacement, field collection. Both emitters import from it. Further deduplication possible but diminishing returns until a third emitter is added.

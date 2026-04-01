@@ -35,6 +35,7 @@ def parse_features(source: str) -> list[dict]:
                 "types": [],
                 "variables": [],
                 "tests": [],
+                "uses": [],
             }
             # attach any tests found before this feature declaration
             if pending_tests:
@@ -55,6 +56,20 @@ def parse_features(source: str) -> list[dict]:
             continue
 
         if current is None:
+            i += 1
+            continue
+
+        # use declaration: use platform.var$[, platform.var$, ...]
+        use_match = re.match(r"use\s+(.*)", stripped)
+        if use_match:
+            refs = [r.strip() for r in use_match.group(1).split(",")]
+            for ref in refs:
+                parts = ref.split(".")
+                if len(parts) == 2:
+                    current["uses"].append({
+                        "platform": parts[0],
+                        "name": parts[1],
+                    })
             i += 1
             continue
 

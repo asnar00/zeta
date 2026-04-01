@@ -70,8 +70,14 @@ def emit(ir: dict) -> str:
         if code:
             sections.append(code)
 
+    # skip platform stream declarations
+    platform_stream_names = {u["name"].replace("$", "") for u in ir.get("uses", [])}
     var_lines = []
     for var in ir["variables"]:
+        if var["name"] in platform_stream_names and var.get("array") and var.get("value") is None:
+            continue
+        if var.get("_platform") and var.get("array") and var.get("value") is None:
+            continue
         var_lines.append(_emit_variable(var, structs))
     # bare function call statements
     for stmt in ir.get("statements", []):
@@ -82,7 +88,9 @@ def emit(ir: dict) -> str:
     src = ir.get("source_file")
 
     for task in ir.get("tasks", []):
-        sections.append(source_comment(task, src, "//") + "\n" + _emit_task_ts(task, structs))
+        if task.get("abstract"):
+            continue
+        sections.append(source_comment(task, src, "//") + "\n" + _emit_task_ts(task, structs, ir.get("uses", [])))
 
     # compute which functions are async (contain concurrently or call async fns)
     async_fns = _compute_async_fns(ir["functions"])
@@ -628,8 +636,17 @@ def _emit_task_if_block_ts(node: dict, structs: dict = None) -> str:
     return "\n".join(lines)
 
 
-def _emit_task_ts(task: dict, structs: dict = None) -> str:
-    """Emit a task as a TypeScript generator function."""
+def _platform_stream_fn_ts(stream_name: str, uses: list[dict]) -> str:
+    """Map a platform stream name to its TypeScript handler function name."""
+    for use in uses:
+        if use["name"] == stream_name:
+            return f"_push_{use['platform']}_{use['name'].replace('$', '')}"
+    return f"_push_{stream_name.replace('$', '')}"
+
+
+def _emit_task_ts(task: dict, structs: dict = None, uses: list[dict] = None) -> str:
+    """Emit a task as a TypeScript generator function (or plain function for void tasks)."""
+    uses = uses or []
     name_parts = task["name_parts"]
     all_params = task.get("input_streams", []) + task.get("params", [])
     param_strs = []
@@ -643,10 +660,16 @@ def _emit_task_ts(task: dict, structs: dict = None) -> str:
     for p in all_params:
         fn_name += f"__{p['type']}"
 
-    output_type = _ts_type(task["output"]["type"])
-    output_stream_name = task["output"]["name"] + "$"
-
-    lines = [f"function* {fn_name}({params_str}): Generator<{output_type}> {{"]
+    is_void = task["output"] is None
+    has_platform_streams = bool(task.get("platform_streams"))
+    if is_void:
+        if has_platform_streams:
+            lines = [f"async function {fn_name}({params_str}): Promise<void> {{"]
+        else:
+            lines = [f"function {fn_name}({params_str}): void {{"]
+    else:
+        output_type = _ts_type(task["output"]["type"])
+        lines = [f"function* {fn_name}({params_str}): Generator<{output_type}> {{"]
 
     base_indent = "    "
     extra_indent = ""
@@ -660,12 +683,16 @@ def _emit_task_ts(task: dict, structs: dict = None) -> str:
 
         if kind == "for_each":
             iter_expr = _emit_expr(node["iter"], structs)
-            lines.append(f"{base_indent}{extra_indent}for (const {node['name']} of {iter_expr}) {{")
+            for_keyword = "for await" if has_platform_streams else "for"
+            lines.append(f"{base_indent}{extra_indent}{for_keyword} (const {node['name']} of {iter_expr}) {{")
             loop_indent = base_indent + extra_indent + "    "
             for body_node in node["body"]:
                 bk = body_node.get("kind", "")
                 if bk == "emit":
                     lines.append(f"{loop_indent}yield {_emit_expr(body_node['value'], structs)};")
+                elif bk == "emit_external":
+                    handler = _platform_stream_fn_ts(body_node["stream"], uses)
+                    lines.append(f"{loop_indent}{handler}({_emit_expr(body_node['value'], structs)});")
                 elif bk == "if_block":
                     for bl in _emit_task_if_block_ts(body_node, structs).split("\n"):
                         lines.append(f"{loop_indent}{bl}")
@@ -694,6 +721,10 @@ def _emit_task_ts(task: dict, structs: dict = None) -> str:
         elif kind == "emit":
             lines.append(f"{base_indent}{extra_indent}yield {_emit_expr(node['value'], structs)};")
 
+        elif kind == "emit_external":
+            handler = _platform_stream_fn_ts(node["stream"], uses)
+            lines.append(f"{base_indent}{extra_indent}{handler}({_emit_expr(node['value'], structs)});")
+
         elif kind == "if_block":
             block_code = _emit_task_if_block_ts(node, structs)
             for bl in block_code.split("\n"):
@@ -706,7 +737,8 @@ def _emit_task_ts(task: dict, structs: dict = None) -> str:
                 call_fn = make_task_call_fn_name(val)
                 args = ", ".join(_coerce_task_arg(a, t, val) for a, t in
                                  zip(val["args"], _task_call_param_types(val)))
-                lines.append(f"{base_indent}{extra_indent}const {name} = [...{call_fn}({args})];")
+                # inside a task body, assign the generator lazily (don't spread)
+                lines.append(f"{base_indent}{extra_indent}const {name} = {call_fn}({args});")
             elif node.get("array") and isinstance(val, list):
                 items = ", ".join(_emit_expr(v, structs) if isinstance(v, dict) else str(v) for v in val)
                 lines.append(f"{base_indent}{extra_indent}const {name} = [{items}];")

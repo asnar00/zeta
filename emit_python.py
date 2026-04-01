@@ -76,7 +76,9 @@ def emit(ir: dict) -> str:
     src = ir.get("source_file")
 
     for task in ir.get("tasks", []):
-        sections.append(source_comment(task, src, "#") + "\n" + _emit_task(task))
+        if task.get("abstract"):
+            continue
+        sections.append(source_comment(task, src, "#") + "\n" + _emit_task(task, ir.get("uses", [])))
 
     for fn in ir["functions"]:
         if not fn.get("abstract"):
@@ -87,8 +89,14 @@ def emit(ir: dict) -> str:
     dispatch_sections = _generate_dispatchers(concrete_fns, ir.get("types", []))
 
     # variables last — they may reference functions and tasks
+    # skip platform stream declarations (handled by platform implementations)
+    platform_stream_names = {u["name"].replace("$", "") for u in ir.get("uses", [])}
     var_lines = []
     for var in ir["variables"]:
+        if var["name"] in platform_stream_names and var.get("array") and var.get("value") is None:
+            continue
+        if var.get("_platform") and var.get("array") and var.get("value") is None:
+            continue
         var_lines.append(_emit_variable(var))
     # bare function call statements
     for stmt in ir.get("statements", []):
@@ -587,8 +595,17 @@ def _emit_if_block(node: dict, is_task: bool = False) -> str:
     return "\n".join(lines)
 
 
-def _emit_task(task: dict) -> str:
-    """Emit a task as a Python generator function."""
+def _platform_stream_fn(stream_name: str, uses: list[dict]) -> str:
+    """Map a platform stream name to its Python handler function name."""
+    for use in uses:
+        if use["name"] == stream_name:
+            return f"_push_{use['platform']}_{use['name'].replace('$', '')}"
+    return f"_push_{stream_name.replace('$', '')}"
+
+
+def _emit_task(task: dict, uses: list[dict] = None) -> str:
+    """Emit a task as a Python generator function (or plain function for void tasks)."""
+    uses = uses or []
     name_parts = task["name_parts"]
     all_params = task.get("input_streams", []) + task.get("params", [])
     param_strs = []
@@ -602,19 +619,17 @@ def _emit_task(task: dict) -> str:
     for p in all_params:
         fn_name += f"__{p['type']}"
 
-    output_stream_name = task["output"]["name"] + "$"
+    is_void = task["output"] is None
+    output_stream_name = None if is_void else task["output"]["name"] + "$"
 
     lines = [f"def {fn_name}({params_str}):"]
 
     # translate body lines with indent tracking
-    # base indent inside the generator is 4 spaces
-    # consume (for loop) adds another level
     base_indent = "    "
     extra_indent = ""
 
     for node in task["body"]:
         if isinstance(node, str):
-            # legacy: raw string (shouldn't happen with new parser)
             lines.append(f"{base_indent}{extra_indent}{node}")
             continue
 
@@ -628,6 +643,9 @@ def _emit_task(task: dict) -> str:
                 bk = body_node.get("kind", "")
                 if bk == "emit":
                     lines.append(f"{loop_indent}yield {_emit_expr(body_node['value'])}")
+                elif bk == "emit_external":
+                    handler = _platform_stream_fn(body_node["stream"], uses)
+                    lines.append(f"{loop_indent}{handler}({_emit_expr(body_node['value'])})")
                 elif bk == "if_block":
                     for bl in _emit_if_block(body_node, is_task=True).split("\n"):
                         lines.append(f"{loop_indent}{bl}")
@@ -652,10 +670,22 @@ def _emit_task(task: dict) -> str:
         elif kind == "emit":
             lines.append(f"{base_indent}{extra_indent}yield {_emit_expr(node['value'])}")
 
+        elif kind == "emit_external":
+            handler = _platform_stream_fn(node["stream"], uses)
+            lines.append(f"{base_indent}{extra_indent}{handler}({_emit_expr(node['value'])})")
+
         elif kind == "if_block":
             block_code = _emit_if_block(node, is_task=True)
             for bl in block_code.split("\n"):
                 lines.append(f"{base_indent}{extra_indent}{bl}")
+
+        elif kind == "var_decl" and node.get("array") and isinstance(node.get("value"), dict) and node["value"].get("kind") == "task_call":
+            # task call inside a task body: assign the generator lazily, don't materialise
+            call = node["value"]
+            call_fn = make_task_call_fn_name(call)
+            args = ", ".join(a.replace("$", "_arr") for a in call["args"])
+            name = node["name"] + "_arr"
+            lines.append(f"{base_indent}{extra_indent}{name} = {call_fn}({args})")
 
         else:
             # parsed expression node (var_decl, assign, fn_call, etc.)

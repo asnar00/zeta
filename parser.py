@@ -65,7 +65,7 @@ def _extract_code(source: str) -> tuple[str, list[int]]:
 def process(source: str, recover: bool = False, source_file: str = None) -> dict:
     """Parse zero source text and return an IR dict.
     If recover=True, collects errors and continues instead of raising on first error."""
-    ir = {"version": IR_VERSION, "features": set(), "types": [], "variables": [], "functions": [], "tasks": []}
+    ir = {"version": IR_VERSION, "features": set(), "types": [], "variables": [], "functions": [], "tasks": [], "uses": []}
     if source_file:
         ir["source_file"] = source_file
     # extract code from markdown if source looks like markdown
@@ -89,12 +89,26 @@ def process(source: str, recover: bool = False, source_file: str = None) -> dict
     while i < len(lines):
         line = lines[i].strip()
         try:
-            if line.startswith("type "):
+            if line.startswith("use "):
+                refs = [r.strip() for r in line[4:].split(",")]
+                for ref in refs:
+                    parts = ref.split(".")
+                    if len(parts) == 2:
+                        ir["uses"].append({"platform": parts[0], "name": parts[1]})
+                i += 1
+                continue
+            elif line.startswith("type "):
                 typ, consumed = _parse_type(lines, i, _src_line)
                 ir["types"].append(typ)
                 i += consumed
             elif _is_task_def(line):
-                task, consumed = _parse_task(lines, i, _src_line, fn_signatures, task_signatures)
+                platform_streams = {u["name"] for u in ir["uses"]}
+                task, consumed = _parse_task(lines, i, _src_line, fn_signatures, task_signatures, platform_streams)
+                ir["tasks"].append(task)
+                i += consumed
+            elif _is_void_task(line, lines, i, ir.get("uses", [])):
+                platform_streams = {u["name"] for u in ir["uses"]}
+                task, consumed = _parse_void_task(lines, i, _src_line, fn_signatures, task_signatures, platform_streams)
                 ir["tasks"].append(task)
                 i += consumed
             elif line.startswith("on "):
@@ -151,6 +165,16 @@ def process(source: str, recover: bool = False, source_file: str = None) -> dict
 
     if errors:
         ir["errors"] = errors
+
+    # mark platform stream variables (uninitialized arrays matching use declarations
+    # or declared alongside abstract tasks/functions in platform .zero.md files)
+    use_stream_names = {u["name"].replace("$", "") for u in ir["uses"]}
+    has_abstract = (any(t.get("abstract") for t in ir.get("tasks", []))
+                    or any(f.get("abstract") for f in ir.get("functions", [])))
+    for var in ir["variables"]:
+        if var.get("array") and var.get("value") is None:
+            if var["name"] in use_stream_names or has_abstract:
+                var["_platform"] = True
 
     # detect features used
     ir["features"] = _detect_features(ir)
@@ -1017,6 +1041,96 @@ def _is_task_def(line: str) -> bool:
     return bool(re.match(r"on\s+\(\w+\s+\w+\$\)\s*<-", line))
 
 
+def _is_void_task(line: str, lines: list[str], start: int, uses: list[dict]) -> bool:
+    """Check if a void function should be parsed as a void task.
+    A void task is an 'on' function whose body emits to platform streams."""
+    if not line.startswith("on ") or _is_task_def(line):
+        return False
+    if re.match(r"on\s+\(\w+\s+\w+\$?\)\s*=", line):
+        return False  # value-returning function
+    platform_streams = {u["name"] for u in uses}
+    if not platform_streams:
+        return False
+    # scan body for emit to platform streams
+    fn_indent = len(lines[start]) - len(lines[start].lstrip())
+    i = start + 1
+    while i < len(lines):
+        body_line = lines[i]
+        if not body_line or body_line.strip() == "":
+            break
+        line_indent = len(body_line) - len(body_line.lstrip())
+        if line_indent <= fn_indent:
+            break
+        stripped = body_line.strip()
+        emit_match = re.match(r"(\w+\$)\s*<-", stripped)
+        if emit_match and emit_match.group(1) in platform_streams:
+            return True
+        if stripped.startswith("for each "):
+            return True
+        consume_match = re.match(r"\w+\s+\w+\$?\s*<-", stripped)
+        if consume_match:
+            return True
+        i += 1
+    return False
+
+
+def _parse_void_task(lines: list[str], start: int, src_line=None, fn_signatures: list = None, task_signatures: list = None, platform_streams: set = None) -> tuple[dict, int]:
+    """Parse a void task: on name (params) with body that emits to platform streams."""
+    line = lines[start].strip()
+    line_num = src_line(start) if src_line else start + 1
+
+    # parse as void function signature
+    void_match = re.match(r"on\s+(.*)", line)
+    rhs = void_match.group(1).strip()
+    all_params, sig_parts = _parse_signature(rhs)
+
+    input_streams = []
+    scalar_params = []
+    name_parts = []
+
+    for part in sig_parts:
+        param_match = re.match(r"\((\w+)\s+(\w+)(\$)?\)", part)
+        if param_match:
+            ptype = param_match.group(1)
+            pname = param_match.group(2)
+            is_stream = param_match.group(3) is not None
+            if is_stream:
+                input_streams.append({"name": pname, "type": ptype})
+            else:
+                scalar_params.append({"name": pname, "type": ptype})
+        else:
+            name_parts.append(part)
+
+    # collect body
+    fn_indent = len(lines[start]) - len(lines[start].lstrip())
+    body_lines = []
+    raw_body_lines = []
+    i = start + 1
+    while i < len(lines):
+        body_line = lines[i]
+        if not body_line or body_line.strip() == "":
+            break
+        line_indent = len(body_line) - len(body_line.lstrip())
+        if line_indent <= fn_indent:
+            break
+        body_lines.append(body_line.strip())
+        raw_body_lines.append(body_line)
+        i += 1
+
+    # parse body — no declared output stream, but platform streams are valid emit targets
+    parsed_body = _parse_task_body(body_lines, raw_body_lines, None, fn_signatures, task_signatures, platform_streams)
+
+    return {
+        "name_parts": name_parts,
+        "output": None,  # void task — no declared output stream
+        "input_streams": input_streams,
+        "params": scalar_params,
+        "body": parsed_body,
+        "source_line": line_num,
+        "platform_streams": list(platform_streams or []),
+    }, i - start
+
+
 def _collect_task_signatures(lines: list[str]) -> list[dict]:
     """First pass: collect task signatures for resolving task calls."""
     signatures = []
@@ -1044,7 +1158,7 @@ def _collect_task_signatures(lines: list[str]) -> list[dict]:
     return signatures
 
 
-def _parse_task(lines: list[str], start: int, src_line=None, fn_signatures: list = None, task_signatures: list = None) -> tuple[dict, int]:
+def _parse_task(lines: list[str], start: int, src_line=None, fn_signatures: list = None, task_signatures: list = None, platform_streams: set = None) -> tuple[dict, int]:
     """Parse a task definition: on (type name$) <- signature"""
     line = lines[start].strip()
     line_num = src_line(start) if src_line else start + 1
@@ -1093,11 +1207,20 @@ def _parse_task(lines: list[str], start: int, src_line=None, fn_signatures: list
         i += 1
 
     if not body_lines:
-        raise ZeroParseError("expected task body", line_num, line, column=len(line))
+        # abstract/platform task — no body, just a signature
+        return {
+            "name_parts": name_parts,
+            "output": {"name": output_name, "type": output_type},
+            "input_streams": input_streams,
+            "params": scalar_params,
+            "body": [],
+            "abstract": True,
+            "source_line": line_num,
+        }, i - start
 
     # parse body lines into structured nodes, using raw lines for indentation
     output_stream = output_name + "$"
-    parsed_body = _parse_task_body(body_lines, raw_body_lines, output_stream, fn_signatures, task_signatures)
+    parsed_body = _parse_task_body(body_lines, raw_body_lines, output_stream, fn_signatures, task_signatures, platform_streams)
 
     return {
         "name_parts": name_parts,
@@ -1109,7 +1232,7 @@ def _parse_task(lines: list[str], start: int, src_line=None, fn_signatures: list
     }, i - start
 
 
-def _parse_task_body(body_lines: list[str], raw_body_lines: list[str], output_stream: str, fn_sigs: list = None, task_sigs: list = None) -> list:
+def _parse_task_body(body_lines: list[str], raw_body_lines: list[str], output_stream: str, fn_sigs: list = None, task_sigs: list = None, platform_streams: set = None) -> list:
     """Parse task body lines into structured AST nodes, grouping if/elif/else blocks."""
     # first, parse each line into a node with its indentation level
     nodes_with_indent = []
@@ -1158,15 +1281,24 @@ def _parse_task_body(body_lines: list[str], raw_body_lines: list[str], output_st
                     continue
                 # not a stream variable or task/function call — fall through to expression parsing
 
-        # emit: output$ <- expr
+        # emit: output$ <- expr (to task's own stream or a platform stream)
         emit_match = re.match(r"(\w+\$)\s*<-\s*(.*)", stripped)
-        if emit_match and emit_match.group(1) == output_stream:
+        if emit_match:
+            stream_name = emit_match.group(1)
             expr_str = emit_match.group(2).strip()
-            nodes_with_indent.append((indent, {
-                "kind": "emit",
-                "value": _parse_expr(expr_str, fn_sigs),
-            }))
-            continue
+            if stream_name == output_stream:
+                nodes_with_indent.append((indent, {
+                    "kind": "emit",
+                    "value": _parse_expr(expr_str, fn_sigs),
+                }))
+                continue
+            elif platform_streams and stream_name in platform_streams:
+                nodes_with_indent.append((indent, {
+                    "kind": "emit_external",
+                    "stream": stream_name,
+                    "value": _parse_expr(expr_str, fn_sigs),
+                }))
+                continue
 
         # if / else if / else
         if_match = re.match(r"if\s+\((.+)\)$", stripped)
