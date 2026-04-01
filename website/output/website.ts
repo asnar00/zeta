@@ -86,29 +86,14 @@ export function fn_print__string(message: string): void {
 // Platform implementation: runtime (TypeScript)
 // Implements the functions declared in runtime.zero.md
 
-// @zero on set feature var (string name) (string value)
-export function fn_set_feature_var__string__string(name: string, value: string): void {
-    // set the variable on the global scope
-    if (value === "true" || value === "false") {
-        (globalThis as any)[name] = value === "true";
-    } else if (/^\d+$/.test(value)) {
-        (globalThis as any)[name] = parseInt(value);
-    } else {
-        (globalThis as any)[name] = value;
-    }
-}
-
 // @zero on exit process ()
 export function fn_exit_process(): void {
     setTimeout(() => process.exit(0), 500);
 }
 
-// @zero on (string value) = get feature var (string name)
-export function fn_get_feature_var__string(name: string): string {
-    const val = (globalThis as any)[name];
-    if (val === undefined) return "";
-    if (typeof val === "boolean") return val ? "true" : "false";
-    return String(val);
+// @zero on (string result) = rpc eval (string expr)
+export function fn_rpc_eval__string(expr: string): string {
+    return "error: rpc eval not implemented for TypeScript";
 }
 
 
@@ -160,6 +145,12 @@ export function fn_length_of__string(s: string): number {
 }
 
 
+// @zero on (string sub) = substring of (string s) from (int start)
+export function fn_substring_of__string_from__int(s: string, start: number): string {
+    return s.slice(start);
+}
+
+
 // Platform implementation: terminal (TypeScript)
 // Implements the streams declared in terminal.zero.md
 
@@ -198,7 +189,7 @@ const port: number = 8084;
 const logo: string = "ᕦ(ツ)ᕤ";
 const landing_page_enabled: boolean = true;
 
-// @zero on main (string args$); website/website.zero.md:77
+// @zero on main (string args$); website/website.zero.md:79
 export async function task_main__string(args_arr: readonly string[]): Promise<void> {
     _push_terminal_out(logo);
     const request_arr = task_serve_http__int(port);
@@ -209,15 +200,16 @@ export async function task_main__string(args_arr: readonly string[]): Promise<vo
     }
 }
 
-// @zero on (string body) = handle request (http-request request); website/website.zero.md:85
+// @zero on (string body) = handle request (http-request request); website/website.zero.md:87
 export function fn_handle_request__http_request(request: http_request): string {
     let body: string = undefined!;
     if (landing_page_enabled && request.path == "/") {
     body = landing_page.fn_landing_page();
 }
     if (body === undefined) {
-        if (fn__string_starts_with__string(request.path, "/@admin/")) {
-    body = admin.fn_handle_admin__http_request(request);
+        if (fn__string_starts_with__string(request.path, "/@rpc/")) {
+    const expr = fn_substring_of__string_from__int(request.path, 6);
+    body = fn_rpc_eval__string(expr);
 }
     }
     if (body === undefined) {
@@ -226,7 +218,7 @@ export function fn_handle_request__http_request(request: http_request): string {
     return body;
 }
 
-// @zero on stop; website/website.zero.md:92
+// @zero on stop; website/website.zero.md:95
 export function fn_stop(): void {
     fn_print__string("stopping");
 }

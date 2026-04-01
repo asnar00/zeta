@@ -38,3 +38,8 @@ def fn_split__string_by__string(s: str, delim: str) -> list[str]:
 # @zero on (int n) = length of (string s)
 def fn_length_of__string(s: str) -> int:
     return len(s)
+
+
+# @zero on (string sub) = substring of (string s) from (int start)
+def fn_substring_of__string_from__int(s: str, start: int) -> str:
+    return s[start:]

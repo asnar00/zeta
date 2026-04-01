@@ -1,5 +1,3 @@
-import * as website from './website.js';
-
 // Platform implementation: http (TypeScript)
 // Implements the streams and tasks declared in http.zero.md
 
@@ -81,29 +79,14 @@ export function fn_print__string(message: string): void {
 // Platform implementation: runtime (TypeScript)
 // Implements the functions declared in runtime.zero.md
 
-// @zero on set feature var (string name) (string value)
-export function fn_set_feature_var__string__string(name: string, value: string): void {
-    // set the variable on the global scope
-    if (value === "true" || value === "false") {
-        (globalThis as any)[name] = value === "true";
-    } else if (/^\d+$/.test(value)) {
-        (globalThis as any)[name] = parseInt(value);
-    } else {
-        (globalThis as any)[name] = value;
-    }
-}
-
 // @zero on exit process ()
 export function fn_exit_process(): void {
     setTimeout(() => process.exit(0), 500);
 }
 
-// @zero on (string value) = get feature var (string name)
-export function fn_get_feature_var__string(name: string): string {
-    const val = (globalThis as any)[name];
-    if (val === undefined) return "";
-    if (typeof val === "boolean") return val ? "true" : "false";
-    return String(val);
+// @zero on (string result) = rpc eval (string expr)
+export function fn_rpc_eval__string(expr: string): string {
+    return "error: rpc eval not implemented for TypeScript";
 }
 
 
@@ -155,6 +138,12 @@ export function fn_length_of__string(s: string): number {
 }
 
 
+// @zero on (string sub) = substring of (string s) from (int start)
+export function fn_substring_of__string_from__int(s: string, start: number): string {
+    return s.slice(start);
+}
+
+
 // Platform implementation: terminal (TypeScript)
 // Implements the streams declared in terminal.zero.md
 
@@ -187,27 +176,4 @@ interface http_response {
 
 export function http_response(args: Partial<http_response> = {}): http_response {
     return { request: args.request ?? http_request(), body: args.body ?? "" };
-}
-
-// @zero on (string body) = handle admin (http-request request); website/admin.zero.md:98
-export function fn_handle_admin__http_request(request: http_request): string {
-    let body: string = undefined!;
-    const parts_arr = fn_split__string_by__string(request.path, "/");
-    const action = parts_arr[2];
-    if (action == "set") {
-    const name = parts_arr[3];
-    const value = parts_arr[4];
-    fn_set_feature_var__string__string(name, value);
-    body = name + " = " + value;
-} else if (action == "get") {
-    const name = parts_arr[3];
-    body = fn_get_feature_var__string(name);
-} else if (action == "stop") {
-    website.fn_stop();
-    fn_exit_process();
-    body = "stopping";
-} else {
-    body = "unknown action: " + action;
-}
-    return body;
 }

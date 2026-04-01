@@ -1,35 +1,29 @@
 # admin
-*HTTP bridge for runtime feature management*
+*RPC endpoint for runtime evaluation*
 
 ## specification
 
-Intercepts `/@admin/` paths to get and set feature variables at runtime.
+Intercepts `/@rpc/` paths and evaluates zero expressions at runtime.
 
-    /@admin/set/landing-page-enabled/false => "landing-page-enabled = false"
-    /@admin/get/landing-page-enabled => "true"
+Get a variable:
+
+    /@rpc/port => "8084"
+    /@rpc/landing-page-enabled => "true"
+
+Set a variable:
+
+    /@rpc/landing-page-enabled = false => "landing-page-enabled = false"
+
+Call a function:
+
+    /@rpc/stop () => "ok"
+    /@rpc/get feature var ("landing-page-enabled") => "true"
 
 ## definition
 
     feature admin extends website
 
     before (string body) = handle request (http-request request)
-        if ((request.path) starts with ("/@admin/"))
-            body = handle admin (request)
-
-    on (string body) = handle admin (http-request request)
-        string parts$ = split (request.path) by ("/")
-        string action = parts$[2]
-        if (action == "set")
-            string name = parts$[3]
-            string value = parts$[4]
-            set feature var (name) (value)
-            body = name + " = " + value
-        else if (action == "get")
-            string name = parts$[3]
-            body = get feature var (name)
-        else if (action == "stop")
-            stop ()
-            exit process ()
-            body = "stopping"
-        else
-            body = "unknown action: " + action
+        if ((request.path) starts with ("/@rpc/"))
+            string expr = substring of (request.path) from (6)
+            body = rpc eval (expr)

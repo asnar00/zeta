@@ -44,3 +44,9 @@ function fn_split__string_by__string(s: string, delim: string): string[] {
 function fn_length_of__string(s: string): number {
     return s.length;
 }
+
+
+// @zero on (string sub) = substring of (string s) from (int start)
+function fn_substring_of__string_from__int(s: string, start: number): string {
+    return s.slice(start);
+}

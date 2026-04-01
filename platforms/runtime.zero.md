@@ -7,6 +7,5 @@ Runtime platform for reading and writing feature-scoped variables. Used by the a
 
 ## interface
 
-    on set feature var (string name) (string value)
-    on (string value) = get feature var (string name)
     on exit process ()
+    on (string result) = rpc eval (string expr)

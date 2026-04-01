@@ -30,3 +30,7 @@ Split a string by a delimiter:
 Get the length of a string:
 
     on (int n) = length of (string s)
+
+Get a substring starting from a position:
+
+    on (string sub) = substring of (string s) from (int start)

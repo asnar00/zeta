@@ -79,29 +79,14 @@ export function fn_print__string(message: string): void {
 // Platform implementation: runtime (TypeScript)
 // Implements the functions declared in runtime.zero.md
 
-// @zero on set feature var (string name) (string value)
-export function fn_set_feature_var__string__string(name: string, value: string): void {
-    // set the variable on the global scope
-    if (value === "true" || value === "false") {
-        (globalThis as any)[name] = value === "true";
-    } else if (/^\d+$/.test(value)) {
-        (globalThis as any)[name] = parseInt(value);
-    } else {
-        (globalThis as any)[name] = value;
-    }
-}
-
 // @zero on exit process ()
 export function fn_exit_process(): void {
     setTimeout(() => process.exit(0), 500);
 }
 
-// @zero on (string value) = get feature var (string name)
-export function fn_get_feature_var__string(name: string): string {
-    const val = (globalThis as any)[name];
-    if (val === undefined) return "";
-    if (typeof val === "boolean") return val ? "true" : "false";
-    return String(val);
+// @zero on (string result) = rpc eval (string expr)
+export function fn_rpc_eval__string(expr: string): string {
+    return "error: rpc eval not implemented for TypeScript";
 }
 
 
@@ -153,6 +138,12 @@ export function fn_length_of__string(s: string): number {
 }
 
 
+// @zero on (string sub) = substring of (string s) from (int start)
+export function fn_substring_of__string_from__int(s: string, start: number): string {
+    return s.slice(start);
+}
+
+
 // Platform implementation: terminal (TypeScript)
 // Implements the streams declared in terminal.zero.md
 
@@ -187,7 +178,7 @@ export function http_response(args: Partial<http_response> = {}): http_response 
     return { request: args.request ?? http_request(), body: args.body ?? "" };
 }
 
-// @zero on (string body) = landing page; website/landing-page.zero.md:116
+// @zero on (string body) = landing page; website/landing-page.zero.md:101
 export function fn_landing_page(): string {
     const body: string = fn_read_file__string("website/index.html");
     return body;
