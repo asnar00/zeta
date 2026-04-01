@@ -11,6 +11,11 @@ The `not found` function returns the default 404 body:
 
     not found () => "not found"
 
+After composition, all paths return "not found":
+
+    handle request (http-request(path="/")) => "not found"
+    handle request (http-request(path="/nope")) => "not found"
+
 ## definition
 
     feature not-found extends website

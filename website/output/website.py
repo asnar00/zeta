@@ -570,7 +570,19 @@ def test_website_11():
     _expected = "abc"
     assert _result == _expected, f"expected {_expected}, got {_result}"
 
-register_tests('website', [(test_website_0, 'trim ("  hello  ") => "hello"'), (test_website_1, 'trim ("already") => "already"'), (test_website_2, 'char (0) of ("hello") => "h"'), (test_website_3, 'char (4) of ("hello") => "o"'), (test_website_4, '("hello world") starts with ("hello") => true'), (test_website_5, '("hello world") starts with ("world") => false'), (test_website_6, 'split ("a/b/c") by ("/") => ["a", "b", "c"]'), (test_website_7, 'split ("hello") by ("/") => ["hello"]'), (test_website_8, 'length of ("hello") => 5'), (test_website_9, 'length of ("") => 0'), (test_website_10, 'substring of ("hello world") from (6) => "world"'), (test_website_11, 'substring of ("abc") from (0) => "abc"')])
+def test_website_12():
+    '''handle request (http-request(path="/")) => "ᕦ(ツ)ᕤ"'''
+    _result = fn_handle_request__http_request(http_request(path="/"))
+    _expected = "ᕦ(ツ)ᕤ"
+    assert _result == _expected, f"expected {_expected}, got {_result}"
+
+def test_website_13():
+    '''handle request (http-request(path="/nope")) => "ᕦ(ツ)ᕤ"'''
+    _result = fn_handle_request__http_request(http_request(path="/nope"))
+    _expected = "ᕦ(ツ)ᕤ"
+    assert _result == _expected, f"expected {_expected}, got {_result}"
+
+register_tests('website', [(test_website_0, 'trim ("  hello  ") => "hello"'), (test_website_1, 'trim ("already") => "already"'), (test_website_2, 'char (0) of ("hello") => "h"'), (test_website_3, 'char (4) of ("hello") => "o"'), (test_website_4, '("hello world") starts with ("hello") => true'), (test_website_5, '("hello world") starts with ("world") => false'), (test_website_6, 'split ("a/b/c") by ("/") => ["a", "b", "c"]'), (test_website_7, 'split ("hello") by ("/") => ["hello"]'), (test_website_8, 'length of ("hello") => 5'), (test_website_9, 'length of ("") => 0'), (test_website_10, 'substring of ("hello world") from (6) => "world"'), (test_website_11, 'substring of ("abc") from (0) => "abc"'), (test_website_12, 'handle request (http-request(path="/")) => "ᕦ(ツ)ᕤ"'), (test_website_13, 'handle request (http-request(path="/nope")) => "ᕦ(ツ)ᕤ"')])
 
 class http_request(NamedTuple):
     path: str = ""

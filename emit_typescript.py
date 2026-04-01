@@ -895,9 +895,16 @@ def _emit_expr(node: dict, structs: dict) -> str:
         safe_name = _safe(name)
         if name in structs:
             # struct constructor -> object literal via factory
-            fields = structs[name]["fields"]
             args = node["args"]
-            parts = [f"{fields[i]['name']}: {_emit_expr(a, structs)}" for i, a in enumerate(args)]
+            parts = []
+            fields = structs[name]["fields"]
+            for i, a in enumerate(args):
+                # named arg: raw value like 'path="/"'
+                if isinstance(a, dict) and a.get("kind") == "raw" and "=" in a.get("value", ""):
+                    k, v = a["value"].split("=", 1)
+                    parts.append(f"{k.strip()}: {v.strip()}")
+                else:
+                    parts.append(f"{fields[i]['name']}: {_emit_expr(a, structs)}")
             return f"{safe_name}({{ {', '.join(parts)} }})"
         args = ", ".join(_emit_expr(a, structs) for a in node["args"])
         return f"{safe_name}({args})"

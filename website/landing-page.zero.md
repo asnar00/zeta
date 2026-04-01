@@ -9,7 +9,10 @@ Adds a `before` extension to `handle request` that serves the landing page HTML 
 
 The `landing page` function returns the HTML content of `website/index.html`.
 
-After composition, `handle request` serves the landing page at "/" and falls through to `not found` otherwise.
+After composition, root path returns the landing page, other paths fall through:
+
+    handle request (http-request(path="/")) => read file ("website/index.html")
+    handle request (http-request(path="/nope")) => "not found"
 
 ## definition
 

@@ -1,3 +1,6 @@
+from _runtime import register_tests
+import website
+
 # Platform implementation: http (Python)
 # Implements the streams and tasks declared in http.zero.md
 
@@ -492,6 +495,20 @@ def terminal_in():
 
 
 from typing import NamedTuple
+
+def test_landing_page_0():
+    '''handle request (http-request(path="/")) => read file ("website/index.html")'''
+    _result = website.fn_handle_request__http_request(http_request(path="/"))
+    _expected = fn_read_file__string("website/index.html")
+    assert _result == _expected, f"expected {_expected}, got {_result}"
+
+def test_landing_page_1():
+    '''handle request (http-request(path="/nope")) => "not found"'''
+    _result = website.fn_handle_request__http_request(http_request(path="/nope"))
+    _expected = "not found"
+    assert _result == _expected, f"expected {_expected}, got {_result}"
+
+register_tests('landing-page', [(test_landing_page_0, 'handle request (http-request(path="/")) => read file ("website/index.html")'), (test_landing_page_1, 'handle request (http-request(path="/nope")) => "not found"')])
 
 class http_request(NamedTuple):
     path: str = ""

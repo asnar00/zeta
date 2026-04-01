@@ -1,3 +1,6 @@
+import { register_tests } from './_runtime.js';
+import * as website from './website.js';
+
 // Platform implementation: http (TypeScript)
 // Implements the streams and tasks declared in http.zero.md
 
@@ -159,6 +162,22 @@ export function* terminal_in(): Generator<string> {
     // stdin reading requires async in Node — stub for now
 }
 
+
+export function test_landing_page_0(): void {
+    // handle request (http-request(path="/")) => read file ("website/index.html")
+    const _result = website.fn_handle_request__http_request(http_request({ path: "/" }));
+    const _expected = fn_read_file__string("website/index.html");
+    if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
+}
+
+export function test_landing_page_1(): void {
+    // handle request (http-request(path="/nope")) => "not found"
+    const _result = website.fn_handle_request__http_request(http_request({ path: "/nope" }));
+    const _expected = "not found";
+    if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
+}
+
+register_tests('landing-page', [[test_landing_page_0, 'handle request (http-request(path="/")) => read file ("website/index.html")'], [test_landing_page_1, 'handle request (http-request(path="/nope")) => "not found"']]);
 
 interface http_request {
     readonly path: string;

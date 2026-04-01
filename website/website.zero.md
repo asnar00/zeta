@@ -7,7 +7,10 @@ Serves the noob logo on the test domain. Prints the logo on startup, logs each r
 
 ## interface
 
-The `handle request` function takes an http-request and returns a response body. Without other features composed, it returns the logo for all paths.
+The `handle request` function takes an http-request and returns a response body. Without other features composed, it returns the logo for all paths:
+
+    handle request (http-request(path="/")) => "ᕦ(ツ)ᕤ"
+    handle request (http-request(path="/nope")) => "ᕦ(ツ)ᕤ"
 
 The `stop` function is a lifecycle hook for cleanup before shutdown.
 
