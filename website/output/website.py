@@ -3,6 +3,7 @@ import not_found
 import login
 import rpc
 import landing_page
+import background
 
 # Platform implementation: http (Python)
 # Implements the streams and tasks declared in http.zero.md
@@ -569,6 +570,11 @@ def fn_split__string_by__string(s: str, delim: str) -> list[str]:
     return s.split(delim)
 
 
+# @zero on (string result) = replace (string needle) in (string s) with (string replacement)
+def fn_replace__string_in__string_with__string(needle: str, s: str, replacement: str) -> str:
+    return s.replace(needle, replacement)
+
+
 # @zero on (int n) = length of (string s)
 def fn_length_of__string(s: str) -> int:
     return len(s)
@@ -601,14 +607,22 @@ def terminal_in():
 import contextvars
 
 class _Context:
+    class background:
+        colour: str = "#34988b"
     class landing_page:
         enabled: bool = True
+        background: str = "#34988b"
     def __init__(self):
+        self.background = _Context.background()
         self.landing_page = _Context.landing_page()
 
 _ctx_var: contextvars.ContextVar['_Context'] = contextvars.ContextVar('_ctx', default=_Context())
 
 def _get_ctx() -> '_Context':
+    import sys
+    _main = sys.modules.get('__main__')
+    if _main and hasattr(_main, '_ctx_var'):
+        return _main._ctx_var.get()
     return _ctx_var.get()
 
 
@@ -675,30 +689,36 @@ def test_website_9():
     assert _result == _expected, f"expected {_expected}, got {_result}"
 
 def test_website_10():
+    '''replace ("world") in ("hello world") with ("zero") => "hello zero"'''
+    _result = fn_replace__string_in__string_with__string("world", "hello world", "zero")
+    _expected = "hello zero"
+    assert _result == _expected, f"expected {_expected}, got {_result}"
+
+def test_website_11():
     '''substring of ("hello world") from (6) => "world"'''
     _result = fn_substring_of__string_from__int("hello world", 6)
     _expected = "world"
     assert _result == _expected, f"expected {_expected}, got {_result}"
 
-def test_website_11():
+def test_website_12():
     '''substring of ("abc") from (0) => "abc"'''
     _result = fn_substring_of__string_from__int("abc", 0)
     _expected = "abc"
     assert _result == _expected, f"expected {_expected}, got {_result}"
 
-def test_website_12():
+def test_website_13():
     '''handle request (http-request(path="/")) => "ᕦ(ツ)ᕤ"'''
     _result = fn_handle_request__http_request(http_request(path="/"))
     _expected = "ᕦ(ツ)ᕤ"
     assert _result == _expected, f"expected {_expected}, got {_result}"
 
-def test_website_13():
+def test_website_14():
     '''handle request (http-request(path="/nope")) => "ᕦ(ツ)ᕤ"'''
     _result = fn_handle_request__http_request(http_request(path="/nope"))
     _expected = "ᕦ(ツ)ᕤ"
     assert _result == _expected, f"expected {_expected}, got {_result}"
 
-register_tests('website', [(test_website_0, 'trim ("  hello  ") => "hello"'), (test_website_1, 'trim ("already") => "already"'), (test_website_2, 'char (0) of ("hello") => "h"'), (test_website_3, 'char (4) of ("hello") => "o"'), (test_website_4, '("hello world") starts with ("hello") => true'), (test_website_5, '("hello world") starts with ("world") => false'), (test_website_6, 'split ("a/b/c") by ("/") => ["a", "b", "c"]'), (test_website_7, 'split ("hello") by ("/") => ["hello"]'), (test_website_8, 'length of ("hello") => 5'), (test_website_9, 'length of ("") => 0'), (test_website_10, 'substring of ("hello world") from (6) => "world"'), (test_website_11, 'substring of ("abc") from (0) => "abc"'), (test_website_12, 'handle request (http-request(path="/")) => "ᕦ(ツ)ᕤ"'), (test_website_13, 'handle request (http-request(path="/nope")) => "ᕦ(ツ)ᕤ"')])
+register_tests('website', [(test_website_0, 'trim ("  hello  ") => "hello"'), (test_website_1, 'trim ("already") => "already"'), (test_website_2, 'char (0) of ("hello") => "h"'), (test_website_3, 'char (4) of ("hello") => "o"'), (test_website_4, '("hello world") starts with ("hello") => true'), (test_website_5, '("hello world") starts with ("world") => false'), (test_website_6, 'split ("a/b/c") by ("/") => ["a", "b", "c"]'), (test_website_7, 'split ("hello") by ("/") => ["hello"]'), (test_website_8, 'length of ("hello") => 5'), (test_website_9, 'length of ("") => 0'), (test_website_10, 'replace ("world") in ("hello world") with ("zero") => "hello zero"'), (test_website_11, 'substring of ("hello world") from (6) => "world"'), (test_website_12, 'substring of ("abc") from (0) => "abc"'), (test_website_13, 'handle request (http-request(path="/")) => "ᕦ(ツ)ᕤ"'), (test_website_14, 'handle request (http-request(path="/nope")) => "ᕦ(ツ)ᕤ"')])
 
 class http_request(NamedTuple):
     path: str = ""
@@ -709,7 +729,12 @@ class http_response(NamedTuple):
     request: http_request = 0
     body: str = ""
 
-# @zero on main (string args$); website/website.zero.md:113
+class user(NamedTuple):
+    name: str = ""
+    phone: str = ""
+    role: str = ""
+
+# @zero on main (string args$); website/website.zero.md:127
 def task_main__string(args_arr: str):
     _push_terminal_out(logo)
     request_arr = task_serve_http__int(port)
@@ -718,7 +743,7 @@ def task_main__string(args_arr: str):
         body = fn_handle_request__http_request(request)
         _push_http_response(http_response(request, body))
 
-# @zero on (string body) = handle request (http-request request); website/website.zero.md:121
+# @zero on (string body) = handle request (http-request request); website/website.zero.md:135
 def fn_handle_request__http_request(request: http_request) -> str:
     body = None
     if _get_ctx().landing_page.enabled and request.path == "/":
@@ -729,9 +754,9 @@ def fn_handle_request__http_request(request: http_request) -> str:
             body = fn_rpc_eval__string(expr)
     if body is None:
         body = not_found.fn_not_found()
-    return body
+    return body if body is not None else ""
 
-# @zero on stop; website/website.zero.md:129
+# @zero on stop; website/website.zero.md:143
 def fn_stop():
     fn_print__string("stopping")
 

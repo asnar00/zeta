@@ -1,6 +1,3 @@
-import { register_tests } from './_runtime.js';
-import * as website from './website.js';
-
 // Platform implementation: http (TypeScript)
 // Implements the streams and tasks declared in http.zero.md
 
@@ -225,29 +222,6 @@ export function _get_ctx(): _Context {
 }
 
 
-export function test_not_found_0(): void {
-    // not found () => "not found"
-    const _result = fn_not_found();
-    const _expected = "not found";
-    if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
-}
-
-export function test_not_found_1(): void {
-    // handle request (http-request(path="/")) => "not found"
-    const _result = website.fn_handle_request__http_request(http_request({ path: "/" }));
-    const _expected = "not found";
-    if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
-}
-
-export function test_not_found_2(): void {
-    // handle request (http-request(path="/nope")) => "not found"
-    const _result = website.fn_handle_request__http_request(http_request({ path: "/nope" }));
-    const _expected = "not found";
-    if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
-}
-
-register_tests('not-found', [[test_not_found_0, 'not found () => "not found"'], [test_not_found_1, 'handle request (http-request(path="/")) => "not found"'], [test_not_found_2, 'handle request (http-request(path="/nope")) => "not found"']]);
-
 interface http_request {
     readonly path: string;
     readonly method: string;
@@ -275,10 +249,4 @@ interface user {
 
 export function user(args: Partial<user> = {}): user {
     return { name: args.name ?? "", phone: args.phone ?? "", role: args.role ?? "" };
-}
-
-// @zero on (string body) = not found; website/not-found.zero.md:146
-export function fn_not_found(): string {
-    const body: string = "not found";
-    return body;
 }

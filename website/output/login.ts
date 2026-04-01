@@ -166,6 +166,12 @@ export function fn_split__string_by__string(s: string, delim: string): string[] 
 }
 
 
+// @zero on (string result) = replace (string needle) in (string s) with (string replacement)
+export function fn_replace__string_in__string_with__string(needle: string, s: string, replacement: string): string {
+    return s.split(needle).join(replacement);
+}
+
+
 // @zero on (int n) = length of (string s)
 export function fn_length_of__string(s: string): number {
     return s.length;
@@ -196,11 +202,17 @@ export function* terminal_in(): Generator<string> {
 
 import { AsyncLocalStorage } from 'async_hooks';
 
+class _Ctx_background {
+    colour: string = "#34988b";
+}
+
 class _Ctx_landing_page {
     enabled: boolean = true;
+    background: string = "#34988b";
 }
 
 class _Context {
+    background = new _Ctx_background();
     landing_page = new _Ctx_landing_page();
 }
 
@@ -213,20 +225,27 @@ export function _get_ctx(): _Context {
 
 
 export function test_login_0(): void {
-    // request login ("+44 7700 900000") => "1234"
-    const _result = fn_request_login__string("+44 7700 900000");
+    // request login ("+440001") => "1234"
+    const _result = fn_request_login__string("+440001");
     const _expected = "1234";
     if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
 }
 
 export function test_login_1(): void {
-    // verify login ("+44 7700 900000") ("0000") => "invalid code"
-    const _result = fn_verify_login__string__string("+44 7700 900000", "0000");
-    const _expected = "invalid code";
+    // request login ("+449999") => "unknown"
+    const _result = fn_request_login__string("+449999");
+    const _expected = "unknown";
     if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
 }
 
-register_tests('login', [[test_login_0, 'request login ("+44 7700 900000") => "1234"'], [test_login_1, 'verify login ("+44 7700 900000") ("0000") => "invalid code"']]);
+export function test_login_2(): void {
+    // verify login ("+440001") ("0000") => user()
+    const _result = fn_verify_login__string__string("+440001", "0000");
+    const _expected = user({  });
+    if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
+}
+
+register_tests('login', [[test_login_0, 'request login ("+440001") => "1234"'], [test_login_1, 'request login ("+449999") => "unknown"'], [test_login_2, 'verify login ("+440001") ("0000") => user()']]);
 
 interface http_request {
     readonly path: string;
@@ -247,39 +266,64 @@ export function http_response(args: Partial<http_response> = {}): http_response 
     return { request: args.request ?? http_request(), body: args.body ?? "" };
 }
 
-// @zero on (string code) = request login (string phone); website/login.zero.md:135
+interface user {
+    readonly name: string;
+    readonly phone: string;
+    readonly role: string;
+}
+
+export function user(args: Partial<user> = {}): user {
+    return { name: args.name ?? "", phone: args.phone ?? "", role: args.role ?? "" };
+}
+
+const users_arr: readonly user[] = [user({ name: "_alice", phone: "+440001", role: "admin" }), user({ name: "_bob", phone: "+440002", role: "user" })];
+const pending_codes_arr: Map<string, string> = new Map();
+
+// @zero on (string code) = request login (string phone); website/login.zero.md:149
 export function fn_request_login__string(phone: string): string {
-    const code: string = fn_generate_code();
-    fn_store_code__string_for__string(code, phone);
+    let code: string = undefined!;
+    const found = users_arr.find(x => x.phone == phone);
+    if (found.phone == phone) {
+    code = fn_generate_code__user(found);
+    const pending-codes$[phone]: string = code;
+} else {
+    code = "unknown";
+}
     return code;
 }
 
-// @zero on (string result) = verify login (string phone) (string code); website/login.zero.md:139
-export function fn_verify_login__string__string(phone: string, code: string): string {
-    let result: string = undefined!;
-    const valid = fn_check_code__string_for__string(code, phone);
-    if (valid) {
-    const token = fn_create_session();
-    result = token;
-} else {
-    result = "invalid code";
+// @zero on (user result) = verify login (string phone) (string code); website/login.zero.md:157
+export function fn_verify_login__string__string(phone: string, code: string): user {
+    let result: user = undefined!;
+    const stored = pending_codes_arr[phone];
+    if (stored == code && stored != "") {
+    const pending-codes$[phone]: user = "";
+    result = users_arr.find(x => x.phone == phone);
 }
     return result;
 }
 
-// @zero on (string code) = generate code; website/login.zero.md:147
-export function fn_generate_code(): string {
-    const code: string = "1234";
+// @zero on (string token) = login (string phone) (string code); website/login.zero.md:163
+export function fn_login__string__string(phone: string, code: string): string {
+    let token: string = undefined!;
+    const found = fn_verify_login__string__string(phone, code);
+    if (found.phone == phone) {
+    token = fn_create_session();
+} else {
+    token = "invalid";
+}
+    return token;
+}
+
+// @zero on (string code) = generate code (user u); website/login.zero.md:170
+export function fn_generate_code__user(u: user): string {
+    let code: string = undefined!;
+    if (u.name == "_alice") {
+    code = "1234";
+} else if (u.name == "_bob") {
+    code = "4321";
+} else {
+    code = "1234";
+}
     return code;
-}
-
-// @zero on store code (string code) for (string phone); website/login.zero.md:150
-export function fn_store_code__string_for__string(code: string, phone: string): void {
-    fn_print__string(phone + ":" + code);
-}
-
-// @zero on (bool valid) = check code (string code) for (string phone); website/login.zero.md:153
-export function fn_check_code__string_for__string(code: string, phone: string): boolean {
-    const valid: boolean = code == "1234";
-    return valid;
 }

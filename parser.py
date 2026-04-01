@@ -184,7 +184,7 @@ def process(source: str, recover: bool = False, source_file: str = None) -> dict
     has_abstract = (any(t.get("abstract") for t in ir.get("tasks", []))
                     or any(f.get("abstract") for f in ir.get("functions", [])))
     for var in ir["variables"]:
-        if var.get("array") and var.get("value") is None:
+        if var.get("array") and var.get("value") is None and not var.get("scope"):
             if var["name"] in use_stream_names or has_abstract:
                 var["_platform"] = True
 
@@ -970,10 +970,14 @@ def _parse_function(lines: list[str], start: int, fn_signatures: list = None, sr
             body.append(item)
             continue
         stmt = _parse_expression(item, fn_signatures, task_signatures)
-        if stmt["kind"] == "assign":
+        if stmt["kind"] == "var_decl":
+            assigned.add(stmt["name"])
+        elif stmt["kind"] == "assign":
             target = stmt["target"]
             # indexed assignments (map/array writes) are not SSA violations
-            if "[" not in target:
+            # result variable is exempt (extensions may reassign via after)
+            result_name = result["name"] if result else None
+            if "[" not in target and target != result_name:
                 if target in assigned:
                     body_line_num = src_line(start + 1 + idx) if src_line else start + 2 + idx
                     raise ZeroParseError(
@@ -1643,6 +1647,11 @@ def _parse_expr(s: str, fn_sigs: list = None) -> dict:
     ternary = _try_parse_ternary(s, fn_sigs)
     if ternary:
         return ternary
+
+    # first of [...] where (...) — check before binop
+    first_w = _try_parse_first_where(s, fn_sigs)
+    if first_w:
+        return first_w
 
     # index of first in [...] where (...) — check before binop (contains _ which looks like reduce)
     index_first = _try_parse_index_of_first_where(s, fn_sigs)

@@ -40,6 +40,12 @@ function fn_split__string_by__string(s: string, delim: string): string[] {
 }
 
 
+// @zero on (string result) = replace (string needle) in (string s) with (string replacement)
+function fn_replace__string_in__string_with__string(needle: string, s: string, replacement: string): string {
+    return s.split(needle).join(replacement);
+}
+
+
 // @zero on (int n) = length of (string s)
 function fn_length_of__string(s: string): number {
     return s.length;

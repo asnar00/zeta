@@ -566,6 +566,11 @@ def fn_split__string_by__string(s: str, delim: str) -> list[str]:
     return s.split(delim)
 
 
+# @zero on (string result) = replace (string needle) in (string s) with (string replacement)
+def fn_replace__string_in__string_with__string(needle: str, s: str, replacement: str) -> str:
+    return s.replace(needle, replacement)
+
+
 # @zero on (int n) = length of (string s)
 def fn_length_of__string(s: str) -> int:
     return len(s)
@@ -598,14 +603,22 @@ def terminal_in():
 import contextvars
 
 class _Context:
+    class background:
+        colour: str = "#34988b"
     class landing_page:
         enabled: bool = True
+        background: str = "#34988b"
     def __init__(self):
+        self.background = _Context.background()
         self.landing_page = _Context.landing_page()
 
 _ctx_var: contextvars.ContextVar['_Context'] = contextvars.ContextVar('_ctx', default=_Context())
 
 def _get_ctx() -> '_Context':
+    import sys
+    _main = sys.modules.get('__main__')
+    if _main and hasattr(_main, '_ctx_var'):
+        return _main._ctx_var.get()
     return _ctx_var.get()
 
 
@@ -634,7 +647,13 @@ class http_response(NamedTuple):
     request: http_request = 0
     body: str = ""
 
-# @zero on (string body) = landing page; website/landing-page.zero.md:156
+class user(NamedTuple):
+    name: str = ""
+    phone: str = ""
+    role: str = ""
+
+# @zero on (string body) = landing page; website/landing-page.zero.md:178
 def fn_landing_page() -> str:
     body = fn_read_file__string("website/index.html")
+    body = fn_replace__string_in__string_with__string("#34988b", body, _get_ctx().background.colour)
     return body

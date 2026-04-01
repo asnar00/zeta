@@ -166,6 +166,12 @@ export function fn_split__string_by__string(s: string, delim: string): string[] 
 }
 
 
+// @zero on (string result) = replace (string needle) in (string s) with (string replacement)
+export function fn_replace__string_in__string_with__string(needle: string, s: string, replacement: string): string {
+    return s.split(needle).join(replacement);
+}
+
+
 // @zero on (int n) = length of (string s)
 export function fn_length_of__string(s: string): number {
     return s.length;
@@ -196,11 +202,17 @@ export function* terminal_in(): Generator<string> {
 
 import { AsyncLocalStorage } from 'async_hooks';
 
+class _Ctx_background {
+    colour: string = "#34988b";
+}
+
 class _Ctx_landing_page {
     enabled: boolean = true;
+    background: string = "#34988b";
 }
 
 class _Context {
+    background = new _Ctx_background();
     landing_page = new _Ctx_landing_page();
 }
 
@@ -266,4 +278,14 @@ interface http_response {
 
 export function http_response(args: Partial<http_response> = {}): http_response {
     return { request: args.request ?? http_request(), body: args.body ?? "" };
+}
+
+interface user {
+    readonly name: string;
+    readonly phone: string;
+    readonly role: string;
+}
+
+export function user(args: Partial<user> = {}): user {
+    return { name: args.name ?? "", phone: args.phone ?? "", role: args.role ?? "" };
 }

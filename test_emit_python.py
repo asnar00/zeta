@@ -320,7 +320,7 @@ def test_emit_first_of_where(report):
     int first_even = first of [i$] where (_ % 2 == 0)"""
     _check(report, "first of where",
            source,
-           lambda out: _assert_in("first_even: int = next(x for x in i_arr if x % 2 == 0)", out))
+           lambda out: _assert_in("next((x for x in i_arr if x % 2 == 0), type(i_arr[0])() if i_arr else None)", out))
 
 
 # --- sorting ---

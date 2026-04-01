@@ -3,39 +3,59 @@
 
 ## specification
 
-Two-step login: request a code for a phone number, then verify the code to create a session. The session token is returned to the caller, who sends it as a cookie on subsequent requests. When a request carries a token, the session's context is loaded.
+Two-step login: request a code for a phone number, then verify the code. Returns the user on success. Codes are stored in a keyed collection. For testing, code generation is deterministic.
 
 ## interface
 
-Request a login code (for now, returns the code directly for testing):
+Request a code for a known user:
 
-    request login ("+44 7700 900000") => "1234"
+    request login ("+440001") => "1234"
 
-Verify the code and get a session token (returns the token string on success, "invalid code" on failure):
+Request a code for an unknown number:
 
-    verify login ("+44 7700 900000") ("0000") => "invalid code"
+    request login ("+449999") => "unknown"
+
+Verify with the wrong code returns an empty user:
+
+    verify login ("+440001") ("0000") => user()
 
 ## definition
 
     feature login extends website
 
+    type user
+        string name = ""
+        string phone = ""
+        string role = ""
+
+    shared user users$ = [user(name="_alice", phone="+440001", role="admin"), user(name="_bob", phone="+440002", role="user")]
+    shared string pending-codes$[string]
+
     on (string code) = request login (string phone)
-        code = generate code ()
-        store code (code) for (phone)
-
-    on (string result) = verify login (string phone) (string code)
-        bool valid = check code (code) for (phone)
-        if (valid)
-            string token = create session ()
-            result = token
+        user found = first of [users$] where (_.phone == phone)
+        if (found.phone == phone)
+            code = generate code (found)
+            pending-codes$[phone] = code
         else
-            result = "invalid code"
+            code = "unknown"
 
-    on (string code) = generate code ()
-        code = "1234"
+    on (user result) = verify login (string phone) (string code)
+        string stored = pending-codes$[phone]
+        if (stored == code and stored != "")
+            pending-codes$[phone] = ""
+            result = first of [users$] where (_.phone == phone)
 
-    on store code (string code) for (string phone)
-        print (phone + ":" + code)
+    on (string token) = login (string phone) (string code)
+        user found = verify login (phone) (code)
+        if (found.phone == phone)
+            token = create session ()
+        else
+            token = "invalid"
 
-    on (bool valid) = check code (string code) for (string phone)
-        valid = (code == "1234")
+    on (string code) = generate code (user u)
+        if (u.name == "_alice")
+            code = "1234"
+        else if (u.name == "_bob")
+            code = "4321"
+        else
+            code = "1234"

@@ -471,11 +471,12 @@ def test_struct_followed_by_array_variable():
 # --- SSA violation ---
 
 def test_error_ssa_violation():
-    """Multiple assignments to the same variable should be an error."""
+    """Multiple assignments to the same non-result variable should be an error."""
     source = """\
     on (int r) = bad (int a)
-        r = a + 1
-        r = a + 2"""
+        int x = a + 1
+        x = a + 2
+        r = x"""
     with pytest.raises(ZeroParseError) as exc_info:
         process(source)
     err = exc_info.value

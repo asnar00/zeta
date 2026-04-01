@@ -46,6 +46,12 @@ Get a substring starting from a position:
 
     on (string sub) = substring of (string s) from (int start)
 
+Replace all occurrences of a needle in a string:
+
+    on (string result) = replace (string needle) in (string s) with (string replacement)
+
+    replace ("world") in ("hello world") with ("zero") => "hello zero"
+
     substring of ("hello world") from (6) => "world"
     substring of ("abc") from (0) => "abc"
 

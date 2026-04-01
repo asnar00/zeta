@@ -7,6 +7,8 @@ import './rpc.js';
 import * as rpc from './rpc.js';
 import './landing_page.js';
 import * as landing_page from './landing_page.js';
+import './background.js';
+import * as background from './background.js';
 
 // Platform implementation: http (TypeScript)
 // Implements the streams and tasks declared in http.zero.md
@@ -174,6 +176,12 @@ export function fn_split__string_by__string(s: string, delim: string): string[] 
 }
 
 
+// @zero on (string result) = replace (string needle) in (string s) with (string replacement)
+export function fn_replace__string_in__string_with__string(needle: string, s: string, replacement: string): string {
+    return s.split(needle).join(replacement);
+}
+
+
 // @zero on (int n) = length of (string s)
 export function fn_length_of__string(s: string): number {
     return s.length;
@@ -204,11 +212,17 @@ export function* terminal_in(): Generator<string> {
 
 import { AsyncLocalStorage } from 'async_hooks';
 
+class _Ctx_background {
+    colour: string = "#34988b";
+}
+
 class _Ctx_landing_page {
     enabled: boolean = true;
+    background: string = "#34988b";
 }
 
 class _Context {
+    background = new _Ctx_background();
     landing_page = new _Ctx_landing_page();
 }
 
@@ -291,34 +305,41 @@ export function test_website_9(): void {
 }
 
 export function test_website_10(): void {
+    // replace ("world") in ("hello world") with ("zero") => "hello zero"
+    const _result = fn_replace__string_in__string_with__string("world", "hello world", "zero");
+    const _expected = "hello zero";
+    if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
+}
+
+export function test_website_11(): void {
     // substring of ("hello world") from (6) => "world"
     const _result = fn_substring_of__string_from__int("hello world", 6);
     const _expected = "world";
     if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
 }
 
-export function test_website_11(): void {
+export function test_website_12(): void {
     // substring of ("abc") from (0) => "abc"
     const _result = fn_substring_of__string_from__int("abc", 0);
     const _expected = "abc";
     if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
 }
 
-export function test_website_12(): void {
+export function test_website_13(): void {
     // handle request (http-request(path="/")) => "ᕦ(ツ)ᕤ"
     const _result = fn_handle_request__http_request(http_request({ path: "/" }));
     const _expected = "ᕦ(ツ)ᕤ";
     if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
 }
 
-export function test_website_13(): void {
+export function test_website_14(): void {
     // handle request (http-request(path="/nope")) => "ᕦ(ツ)ᕤ"
     const _result = fn_handle_request__http_request(http_request({ path: "/nope" }));
     const _expected = "ᕦ(ツ)ᕤ";
     if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
 }
 
-register_tests('website', [[test_website_0, 'trim ("  hello  ") => "hello"'], [test_website_1, 'trim ("already") => "already"'], [test_website_2, 'char (0) of ("hello") => "h"'], [test_website_3, 'char (4) of ("hello") => "o"'], [test_website_4, '("hello world") starts with ("hello") => true'], [test_website_5, '("hello world") starts with ("world") => false'], [test_website_6, 'split ("a/b/c") by ("/") => ["a", "b", "c"]'], [test_website_7, 'split ("hello") by ("/") => ["hello"]'], [test_website_8, 'length of ("hello") => 5'], [test_website_9, 'length of ("") => 0'], [test_website_10, 'substring of ("hello world") from (6) => "world"'], [test_website_11, 'substring of ("abc") from (0) => "abc"'], [test_website_12, 'handle request (http-request(path="/")) => "ᕦ(ツ)ᕤ"'], [test_website_13, 'handle request (http-request(path="/nope")) => "ᕦ(ツ)ᕤ"']]);
+register_tests('website', [[test_website_0, 'trim ("  hello  ") => "hello"'], [test_website_1, 'trim ("already") => "already"'], [test_website_2, 'char (0) of ("hello") => "h"'], [test_website_3, 'char (4) of ("hello") => "o"'], [test_website_4, '("hello world") starts with ("hello") => true'], [test_website_5, '("hello world") starts with ("world") => false'], [test_website_6, 'split ("a/b/c") by ("/") => ["a", "b", "c"]'], [test_website_7, 'split ("hello") by ("/") => ["hello"]'], [test_website_8, 'length of ("hello") => 5'], [test_website_9, 'length of ("") => 0'], [test_website_10, 'replace ("world") in ("hello world") with ("zero") => "hello zero"'], [test_website_11, 'substring of ("hello world") from (6) => "world"'], [test_website_12, 'substring of ("abc") from (0) => "abc"'], [test_website_13, 'handle request (http-request(path="/")) => "ᕦ(ツ)ᕤ"'], [test_website_14, 'handle request (http-request(path="/nope")) => "ᕦ(ツ)ᕤ"']]);
 
 interface http_request {
     readonly path: string;
@@ -339,10 +360,20 @@ export function http_response(args: Partial<http_response> = {}): http_response 
     return { request: args.request ?? http_request(), body: args.body ?? "" };
 }
 
+interface user {
+    readonly name: string;
+    readonly phone: string;
+    readonly role: string;
+}
+
+export function user(args: Partial<user> = {}): user {
+    return { name: args.name ?? "", phone: args.phone ?? "", role: args.role ?? "" };
+}
+
 const port: number = 8084;
 const logo: string = "ᕦ(ツ)ᕤ";
 
-// @zero on main (string args$); website/website.zero.md:113
+// @zero on main (string args$); website/website.zero.md:127
 export async function task_main__string(args_arr: readonly string[]): Promise<void> {
     _push_terminal_out(logo);
     const request_arr = task_serve_http__int(port);
@@ -353,7 +384,7 @@ export async function task_main__string(args_arr: readonly string[]): Promise<vo
     }
 }
 
-// @zero on (string body) = handle request (http-request request); website/website.zero.md:121
+// @zero on (string body) = handle request (http-request request); website/website.zero.md:135
 export function fn_handle_request__http_request(request: http_request): string {
     let body: string = undefined!;
     if (_get_ctx().landing_page.enabled && request.path == "/") {
@@ -371,7 +402,7 @@ export function fn_handle_request__http_request(request: http_request): string {
     return body;
 }
 
-// @zero on stop; website/website.zero.md:129
+// @zero on stop; website/website.zero.md:143
 export function fn_stop(): void {
     fn_print__string("stopping");
 }

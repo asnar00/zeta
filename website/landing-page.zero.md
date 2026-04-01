@@ -19,6 +19,7 @@ After composition, root path returns the landing page, other paths fall through:
     feature landing-page extends website
 
     user bool enabled = true
+    user string background = "#34988b"
 
     before (string body) = handle request (http-request request)
         if (landing-page.enabled and request.path == "/")

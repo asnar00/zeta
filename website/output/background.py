@@ -1,6 +1,3 @@
-from _runtime import register_tests
-import website
-
 # Platform implementation: http (Python)
 # Implements the streams and tasks declared in http.zero.md
 
@@ -624,26 +621,6 @@ def _get_ctx() -> '_Context':
 
 from typing import NamedTuple
 
-def test_not_found_0():
-    '''not found () => "not found"'''
-    _result = fn_not_found()
-    _expected = "not found"
-    assert _result == _expected, f"expected {_expected}, got {_result}"
-
-def test_not_found_1():
-    '''handle request (http-request(path="/")) => "not found"'''
-    _result = website.fn_handle_request__http_request(http_request(path="/"))
-    _expected = "not found"
-    assert _result == _expected, f"expected {_expected}, got {_result}"
-
-def test_not_found_2():
-    '''handle request (http-request(path="/nope")) => "not found"'''
-    _result = website.fn_handle_request__http_request(http_request(path="/nope"))
-    _expected = "not found"
-    assert _result == _expected, f"expected {_expected}, got {_result}"
-
-register_tests('not-found', [(test_not_found_0, 'not found () => "not found"'), (test_not_found_1, 'handle request (http-request(path="/")) => "not found"'), (test_not_found_2, 'handle request (http-request(path="/nope")) => "not found"')])
-
 class http_request(NamedTuple):
     path: str = ""
     method: str = ""
@@ -657,8 +634,3 @@ class user(NamedTuple):
     name: str = ""
     phone: str = ""
     role: str = ""
-
-# @zero on (string body) = not found; website/not-found.zero.md:146
-def fn_not_found() -> str:
-    body = "not found"
-    return body

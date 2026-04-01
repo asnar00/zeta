@@ -298,6 +298,16 @@ def _is_context_access(object_name: str) -> bool:
     return object_name in _context_features
 
 
+def _py_default_for_type(zero_type: str) -> str:
+    """Return the Python default/zero value for a zero type."""
+    defaults = {"string": '""', "int": "0", "uint": "0", "float": "0.0",
+                "number": "0", "bool": "False", "char": '""'}
+    if zero_type in defaults:
+        return defaults[zero_type]
+    # struct type: call default constructor
+    return f"{_safe(zero_type)}()"
+
+
 def _safe(name: str) -> str:
     """Convert a zero name to a Python-safe name."""
     return name.replace("-", "_")
@@ -348,6 +358,10 @@ def _emit_context_class(user_vars: list[dict], ir: dict) -> str:
     lines.append("_ctx_var: contextvars.ContextVar['_Context'] = contextvars.ContextVar('_ctx', default=_Context())")
     lines.append("")
     lines.append("def _get_ctx() -> '_Context':")
+    lines.append("    import sys")
+    lines.append("    _main = sys.modules.get('__main__')")
+    lines.append("    if _main and hasattr(_main, '_ctx_var'):")
+    lines.append("        return _main._ctx_var.get()")
     lines.append("    return _ctx_var.get()")
     lines.append("")
 
@@ -801,8 +815,10 @@ def _emit_function(fn: dict) -> str:
         if result_var.endswith("$"):
             result_var = result_var.replace("$", "_arr")
         needs_guard = _result_needs_guard(fn["body"], result_var)
+        has_conditional_assign = any(s.get("kind") == "if_block" and _assigns_result(s, result_var) for s in fn["body"])
         lines = [f"def {name}({params}) -> {ret_type}:"]
-        if needs_guard:
+        if needs_guard or has_conditional_assign:
+            # use None as sentinel for "not yet assigned"
             lines.append(f"    {result_var} = None")
         seen_conditional_assign = False
         for stmt in fn["body"]:
@@ -818,7 +834,11 @@ def _emit_function(fn: dict) -> str:
                         seen_conditional_assign = True
             else:
                 lines.extend(_indent(code, "    "))
-        lines.append(f"    return {result_var}")
+        if has_conditional_assign:
+            default_val = _py_default_for_type(fn["result"]["type"])
+            lines.append(f"    return {result_var} if {result_var} is not None else {default_val}")
+        else:
+            lines.append(f"    return {result_var}")
     else:
         lines = [f"def {name}({params}):"]
         for stmt in fn["body"]:
@@ -952,7 +972,7 @@ def _emit_expr(node: dict) -> str:
     elif kind == "first_where":
         arr = _emit_expr(node["array"])
         cond = _emit_expr(_replace_underscore(node["condition"], "x"))
-        return f"next(x for x in {arr} if {cond})"
+        return f"next((x for x in {arr} if {cond}), type({arr}[0])() if {arr} else None)"
 
     elif kind == "index_of_first_where":
         arr = _emit_expr(node["array"])

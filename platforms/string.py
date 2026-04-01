@@ -35,6 +35,11 @@ def fn_split__string_by__string(s: str, delim: str) -> list[str]:
     return s.split(delim)
 
 
+# @zero on (string result) = replace (string needle) in (string s) with (string replacement)
+def fn_replace__string_in__string_with__string(needle: str, s: str, replacement: str) -> str:
+    return s.replace(needle, replacement)
+
+
 # @zero on (int n) = length of (string s)
 def fn_length_of__string(s: str) -> int:
     return len(s)
