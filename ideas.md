@@ -83,6 +83,40 @@ Currently deferred:
 
 Division always returns float; assignment to int truncates. Emitters need type-aware wrapping.
 
+## time-indexed streams
+
+Streams can be time-indexed by declaring a `rate` (values per second):
+
+    float audio$ (rate = 44100)
+    float volume$ (rate = 1000)
+    world state$ (rate = 60)
+    frame pixels$$ (rate = 30)
+    int plain$                     # rate = 0, position-indexed (default)
+
+**Indexing:** `stream$[T]` where T is a time in seconds does `stream$[floor(T * rate)]`. For `rate = 0`, T is the index directly (today's behaviour).
+
+**Cross-rate SSA:** when streams with different rates appear in the same expression, the compiler generates resampling:
+
+    float output$ = audio$ * volume$
+
+`audio$` at 44100Hz, `volume$` at 1000Hz — the compiler knows every 44.1 audio samples, volume advances one step. No manual interpolation.
+
+**Observability via RPC:** reading a time-stream via `/@rpc/audio$` returns the current value (at the current time). `/@rpc/audio$[0.5 to 1.0]` returns a time slice — half a second of audio. Every stream becomes observable and debuggable in real-time.
+
+**What this unifies:**
+- Audio: time-stream of samples
+- Video: time-stream of frames
+- Game state: time-stream of world snapshots
+- Sensor data: time-stream of readings
+- UI state: time-stream of view models
+- Network events: time-stream of messages
+
+All are SSA on time-indexed sequences. The same decomposition rules (one concern per stream, parallel streams, query with `first of`/`where`) apply to real-time data.
+
+**Platform scheduling:** a task producing a time-stream is a coroutine that yields at its declared rate. The platform schedules it — real-time for audio/video, as-fast-as-possible for computation. The coroutine fusion optimiser (see above) can merge pure computational chains into tight loops regardless of rate.
+
+**Cross-device streaming:** a time-stream produced on one device (camera on phone, `rate = 30`) can be consumed on another (renderer on laptop) via the RPC bridge. Rates are declared, so the consumer knows how to resample if needed.
+
 ## multi-component deployment: one product, multiple devices
 
 A product is made of multiple components running on different devices — server, laptop, phone, tablet — all forming a single interface. The zero source describes *what* (features, functions, data). A separate `components.md` describes *where* (which component runs which features, which target language).
