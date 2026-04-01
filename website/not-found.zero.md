@@ -1,6 +1,16 @@
 # not found
 *default 404 response*
 
+## specification
+
+Replaces the default `handle request` to return "not found" for all paths.
+
+## interface
+
+The `not found` function returns the default 404 body:
+
+    not found () => "not found"
+
 ## definition
 
     feature not-found extends website

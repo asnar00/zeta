@@ -123,7 +123,7 @@ def _emit_test_section(tests: list[dict], feature_name: str) -> str:
     lines = []
     test_entries = []  # (name, desc)
     for i, test in enumerate(tests):
-        name = f"test_{feature_name}_{i}"
+        name = f"test_{feature_name.replace('-', '_')}_{i}"
         call_code = _emit_expr(test["call"])
         expected_code = _emit_expr(test["expected"]) if isinstance(test["expected"], dict) else repr(test["expected"])
         is_task = test["call"].get("kind") == "task_call"

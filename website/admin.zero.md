@@ -3,21 +3,17 @@
 
 ## specification
 
-Intercepts `/@rpc/` paths and evaluates zero expressions at runtime.
+Adds a `before` extension to `handle request` that intercepts `/@rpc/` paths and evaluates zero expressions at runtime. Non-RPC paths fall through to the next handler.
 
-Get a variable:
+## interface
 
-    /@rpc/port => "8084"
-    /@rpc/landing-page-enabled => "true"
+Get a variable: `/@rpc/port` returns `"8084"`.
 
-Set a variable:
+Set a variable: `/@rpc/landing-page-enabled = false` returns `"landing-page-enabled = false"`.
 
-    /@rpc/landing-page-enabled = false => "landing-page-enabled = false"
+Call a function: `/@rpc/not found ()` returns `"not found"`.
 
-Call a function:
-
-    /@rpc/stop () => "ok"
-    /@rpc/get feature var ("landing-page-enabled") => "true"
+List everything: `/@rpc/` returns a directory of features, variables, and functions.
 
 ## definition
 

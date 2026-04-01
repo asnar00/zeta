@@ -1,3 +1,5 @@
+import { register_tests } from './_runtime.js';
+
 // Platform implementation: http (TypeScript)
 // Implements the streams and tasks declared in http.zero.md
 
@@ -159,6 +161,15 @@ export function* terminal_in(): Generator<string> {
     // stdin reading requires async in Node — stub for now
 }
 
+
+export function test_not_found_0(): void {
+    // not found () => "not found"
+    const _result = fn_not_found();
+    const _expected = "not found";
+    if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
+}
+
+register_tests('not-found', [[test_not_found_0, 'not found () => "not found"']]);
 
 interface http_request {
     readonly path: string;

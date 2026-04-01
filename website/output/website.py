@@ -1,3 +1,4 @@
+from _runtime import register_tests, run_tests
 import not_found
 import admin
 import landing_page
@@ -506,6 +507,9 @@ landing_page_enabled: bool = True
 
 import sys
 if __name__ == '__main__':
+    if '--test' in sys.argv:
+        _names = [a for a in sys.argv[1:] if a != '--test'] or None
+        sys.exit(1 if run_tests(_names) else 0)
     try:
         result = task_main__string(sys.argv[1:])
         if hasattr(result, '__next__'):

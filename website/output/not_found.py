@@ -1,3 +1,5 @@
+from _runtime import register_tests
+
 # Platform implementation: http (Python)
 # Implements the streams and tasks declared in http.zero.md
 
@@ -460,6 +462,14 @@ def terminal_in():
 
 
 from typing import NamedTuple
+
+def test_not_found_0():
+    '''not found () => "not found"'''
+    _result = fn_not_found()
+    _expected = "not found"
+    assert _result == _expected, f"expected {_expected}, got {_result}"
+
+register_tests('not-found', [(test_not_found_0, 'not found () => "not found"')])
 
 class http_request(NamedTuple):
     path: str = ""

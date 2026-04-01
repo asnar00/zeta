@@ -122,7 +122,7 @@ def _emit_test_section_ts(tests: list[dict], feature_name: str, structs: dict) -
     lines = []
     test_entries = []  # (function_name, description)
     for i, test in enumerate(tests):
-        name = f"test_{feature_name}_{i}"
+        name = f"test_{feature_name.replace('-', '_')}_{i}"
         call_code = _emit_expr(test["call"], structs)
         expected_code = _emit_expr(test["expected"], structs) if isinstance(test["expected"], dict) else repr(test["expected"])
         is_task = test["call"].get("kind") == "task_call"

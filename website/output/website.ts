@@ -1,3 +1,4 @@
+import { register_tests, run_tests } from './_runtime.js';
 import './not_found.js';
 import * as not_found from './not_found.js';
 import './admin.js';
@@ -224,6 +225,10 @@ export function fn_stop(): void {
 }
 
 
+if (process.argv.includes('--test')) {
+    const _names = process.argv.slice(2).filter(a => a !== '--test');
+    process.exit(run_tests(_names.length ? _names : undefined) ? 1 : 0);
+} else {
 // Runtime harness: bridges OS to zero's main task
 try {
     const result: unknown = task_main__string(process.argv.slice(2));
@@ -240,4 +245,4 @@ try {
 } catch (e) {
     // no main task defined
 }
-
+}

@@ -3,11 +3,13 @@
 
 ## specification
 
-Serves the noob logo on the test domain. Prints the logo on startup, logs each request path to the terminal, and responds to each request.
+Serves the noob logo on the test domain. Prints the logo on startup, logs each request path to the terminal, and responds to each request via `handle request`.
 
 ## interface
 
-    website () => "listening on 8084"
+The `handle request` function takes an http-request and returns a response body. Without other features composed, it returns the logo for all paths.
+
+The `stop` function is a lifecycle hook for cleanup before shutdown.
 
 ## definition
 
