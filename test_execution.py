@@ -415,6 +415,38 @@ def test_exec_4step_stream_no_terminator():
     source = "    int i$ <- 1 <- 2 <- 3 <- 4"
     assert _run(source, "i_arr") == [1, 2, 3, 4]
 
+def test_exec_map_store_retrieve():
+    """Keyed collection: store a value by key, retrieve it."""
+    source = """\
+    on (string result) = test map ()
+        string codes$[string]
+        codes$["phone1"] = "1234"
+        codes$["phone2"] = "5678"
+        result = codes$["phone1"]
+    """
+    assert _run(source, "fn_test_map()") == "1234"
+
+def test_exec_map_overwrite():
+    """Keyed collection: overwriting a key."""
+    source = """\
+    on (string result) = test map ()
+        string codes$[string]
+        codes$["key"] = "old"
+        codes$["key"] = "new"
+        result = codes$["key"]
+    """
+    assert _run(source, "fn_test_map()") == "new"
+
+def test_exec_map_variable_key():
+    """Keyed collection: using a variable as the key."""
+    source = """\
+    on (string result) = test map (string key)
+        string data$[string]
+        data$[key] = "found"
+        result = data$[key]
+    """
+    assert _run(source, 'fn_test_map__string("hello")') == "found"
+
 def test_exec_sort_descending():
     source = """\
     type person =

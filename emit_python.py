@@ -303,6 +303,21 @@ def _safe(name: str) -> str:
     return name.replace("-", "_")
 
 
+def _safe_target(target: str) -> str:
+    """Convert a zero assignment target to Python-safe form.
+    Handles: name, name$[key], name.field"""
+    # indexed: codes$[phone] → codes_arr[phone]
+    if "$[" in target:
+        parts = target.split("$[", 1)
+        arr_name = _safe(parts[0]) + "_arr"
+        key = _safe(parts[1].rstrip("]"))
+        return f"{arr_name}[{key}]"
+    # array: name$ → name_arr
+    if target.endswith("$"):
+        return _safe(target.replace("$", "_arr"))
+    return _safe(target)
+
+
 def _emit_context_class(user_vars: list[dict], ir: dict) -> str:
     """Generate a _Context class from user-scoped variables, plus contextvars setup."""
     lines = ["import contextvars", ""]
@@ -353,6 +368,11 @@ def _emit_variable(var: dict) -> str:
 
 def _emit_array_variable(name: str, type_ann: str, var: dict) -> str:
     """Emit an array variable declaration."""
+    # keyed collection (map)
+    if var.get("map"):
+        key_type = _py_type_ann(var["key_type"])
+        return f"{name}: dict[{key_type}, {type_ann}] = {{}}"
+
     val = var["value"]
     size = var["size"]
 
@@ -863,7 +883,11 @@ def _emit_expr(node: dict) -> str:
         return f"functools.reduce({fn_name}, {arr})"
 
     elif kind == "var_decl":
-        name = node["name"] + "_arr" if node.get("array") else node["name"]
+        name = _safe(node["name"]) + "_arr" if node.get("array") else _safe(node["name"])
+        if node.get("map"):
+            key_type = _py_type_ann(node["key_type"])
+            val_type = _py_type_ann(node["type"])
+            return f"{name}: dict[{key_type}, {val_type}] = {{}}"
         if node.get("array"):
             val = node["value"]
             # reuse array variable emission logic
@@ -892,7 +916,8 @@ def _emit_expr(node: dict) -> str:
         return f"{name} = {_emit_expr(node['value'])}"
 
     elif kind == "assign":
-        return f"{_safe(node['target'])} = {_emit_expr(node['value'])}"
+        target = _safe_target(node['target'])
+        return f"{target} = {_emit_expr(node['value'])}"
 
     elif kind == "call":
         name = _safe(node["name"])

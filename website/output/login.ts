@@ -247,14 +247,14 @@ export function http_response(args: Partial<http_response> = {}): http_response 
     return { request: args.request ?? http_request(), body: args.body ?? "" };
 }
 
-// @zero on (string code) = request login (string phone); website/login.zero.md:136
+// @zero on (string code) = request login (string phone); website/login.zero.md:135
 export function fn_request_login__string(phone: string): string {
     const code: string = fn_generate_code();
     fn_store_code__string_for__string(code, phone);
     return code;
 }
 
-// @zero on (string result) = verify login (string phone) (string code); website/login.zero.md:140
+// @zero on (string result) = verify login (string phone) (string code); website/login.zero.md:139
 export function fn_verify_login__string__string(phone: string, code: string): string {
     let result: string = undefined!;
     const valid = fn_check_code__string_for__string(code, phone);
@@ -267,18 +267,18 @@ export function fn_verify_login__string__string(phone: string, code: string): st
     return result;
 }
 
-// @zero on (string code) = generate code; website/login.zero.md:148
+// @zero on (string code) = generate code; website/login.zero.md:147
 export function fn_generate_code(): string {
     const code: string = "1234";
     return code;
 }
 
-// @zero on store code (string code) for (string phone); website/login.zero.md:151
+// @zero on store code (string code) for (string phone); website/login.zero.md:150
 export function fn_store_code__string_for__string(code: string, phone: string): void {
     fn_print__string(phone + ":" + code);
 }
 
-// @zero on (bool valid) = check code (string code) for (string phone); website/login.zero.md:154
+// @zero on (bool valid) = check code (string code) for (string phone); website/login.zero.md:153
 export function fn_check_code__string_for__string(code: string, phone: string): boolean {
     const valid: boolean = code == "1234";
     return valid;

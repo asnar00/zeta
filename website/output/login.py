@@ -633,13 +633,13 @@ class http_response(NamedTuple):
     request: http_request = 0
     body: str = ""
 
-# @zero on (string code) = request login (string phone); website/login.zero.md:136
+# @zero on (string code) = request login (string phone); website/login.zero.md:135
 def fn_request_login__string(phone: str) -> str:
     code = fn_generate_code()
     fn_store_code__string_for__string(code, phone)
     return code
 
-# @zero on (string result) = verify login (string phone) (string code); website/login.zero.md:140
+# @zero on (string result) = verify login (string phone) (string code); website/login.zero.md:139
 def fn_verify_login__string__string(phone: str, code: str) -> str:
     valid = fn_check_code__string_for__string(code, phone)
     if valid:
@@ -649,16 +649,16 @@ def fn_verify_login__string__string(phone: str, code: str) -> str:
         result = "invalid code"
     return result
 
-# @zero on (string code) = generate code; website/login.zero.md:148
+# @zero on (string code) = generate code; website/login.zero.md:147
 def fn_generate_code() -> str:
     code = "1234"
     return code
 
-# @zero on store code (string code) for (string phone); website/login.zero.md:151
+# @zero on store code (string code) for (string phone); website/login.zero.md:150
 def fn_store_code__string_for__string(code: str, phone: str):
     fn_print__string(phone + ":" + code)
 
-# @zero on (bool valid) = check code (string code) for (string phone); website/login.zero.md:154
+# @zero on (bool valid) = check code (string code) for (string phone); website/login.zero.md:153
 def fn_check_code__string_for__string(code: str, phone: str) -> bool:
     valid = code == "1234"
     return valid

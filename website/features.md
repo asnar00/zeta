@@ -1,4 +1,4 @@
-website port=8084
+website
 not-found
 login
 rpc

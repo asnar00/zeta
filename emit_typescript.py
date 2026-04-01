@@ -324,6 +324,8 @@ def _safe(name: str) -> str:
     return name.replace("-", "_")
 
 
+
+
 def _emit_variable(var: dict, structs: dict) -> str:
     """Emit a variable declaration."""
     name = _safe(var["name"] + "_arr" if var["array"] else var["name"])
@@ -338,6 +340,11 @@ def _emit_variable(var: dict, structs: dict) -> str:
 
 def _emit_array_variable(name: str, type_ann: str, var: dict, structs: dict = None) -> str:
     """Emit an array variable declaration."""
+    # keyed collection (map)
+    if var.get("map"):
+        key_type = _ts_type(var["key_type"])
+        return f"const {name}: Map<{key_type}, {type_ann}> = new Map();"
+
     val = var["value"]
     size = var["size"]
 
@@ -1119,7 +1126,15 @@ def _emit_expr(node: dict, structs: dict) -> str:
         return f"const {name} = {_emit_expr(node['value'], structs)}"
 
     elif kind == "assign":
-        return f"{node['target']} = {_emit_expr(node['value'], structs)}"
+        target = node['target']
+        value = _emit_expr(node['value'], structs)
+        # map assignment: codes$[phone] = code → codes_arr.set(phone, code)
+        if "$[" in target:
+            parts = target.split("$[", 1)
+            arr_name = _safe(parts[0]) + "_arr"
+            key = _safe(parts[1].rstrip("]"))
+            return f"{arr_name}.set({key}, {value})"
+        return f"{_safe(target)} = {value}"
 
     elif kind == "raw":
         return node["value"]

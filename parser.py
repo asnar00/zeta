@@ -151,9 +151,14 @@ def process(source: str, recover: bool = False, source_file: str = None) -> dict
                 if var:
                     ir["variables"].append(var)
                 else:
-                    ir.setdefault("warnings", []).append(
-                        f"line {_src_line(i)}: unrecognized: {line}"
-                    )
+                    # try as a statement (e.g. indexed assignment: codes$[key] = value)
+                    stmt = _parse_expression(line, fn_signatures, task_signatures)
+                    if stmt and stmt.get("kind") != "raw":
+                        ir.setdefault("statements", []).append(stmt)
+                    else:
+                        ir.setdefault("warnings", []).append(
+                            f"line {_src_line(i)}: unrecognized: {line}"
+                        )
                 i += 1
             else:
                 i += 1
@@ -721,6 +726,19 @@ def _parse_array_variable(type_name: str, var_name: str, rest: str, fn_sigs: lis
         value = _parse_stream(rest, var_name, fn_sigs)
         return {"name": var_name, "type": type_name, "array": True, "size": None, "value": value}
 
+    # check for [type] suffix — keyed collection (map)
+    BUILTIN_TYPES = {"string", "int", "uint", "float", "number", "bool", "char"}
+    key_type_match = re.match(rf"\[({W})\]\s*(.*)", rest)
+    if key_type_match and key_type_match.group(1) in BUILTIN_TYPES:
+        key_type = key_type_match.group(1)
+        rest = key_type_match.group(2).strip()
+        default = None
+        if rest.startswith("="):
+            rhs = rest[1:].strip()
+            default = _parse_expr(rhs, fn_sigs) if _is_expression(rhs) else _parse_literal(rhs)
+        return {"name": var_name, "type": type_name, "array": True, "map": True,
+                "key_type": key_type, "size": None, "value": None, "default": default}
+
     # check for [size] suffix
     size_match = re.match(r"\[(\d+)\]\s*(.*)", rest)
     if size_match:
@@ -953,12 +971,15 @@ def _parse_function(lines: list[str], start: int, fn_signatures: list = None, sr
             continue
         stmt = _parse_expression(item, fn_signatures, task_signatures)
         if stmt["kind"] == "assign":
-            if stmt["target"] in assigned:
-                body_line_num = src_line(start + 1 + idx) if src_line else start + 2 + idx
-                raise ZeroParseError(
-                    f"variable '{stmt['target']}' already assigned (SSA violation)",
-                    body_line_num, item, column=0)
-            assigned.add(stmt["target"])
+            target = stmt["target"]
+            # indexed assignments (map/array writes) are not SSA violations
+            if "[" not in target:
+                if target in assigned:
+                    body_line_num = src_line(start + 1 + idx) if src_line else start + 2 + idx
+                    raise ZeroParseError(
+                        f"variable '{target}' already assigned (SSA violation)",
+                        body_line_num, item, column=0)
+                assigned.add(target)
         body.append(stmt)
 
     return {
@@ -1512,6 +1533,20 @@ def _parse_expression(line: str, fn_signatures: list = None, task_signatures: li
         rest = task_decl.group(3)
         arr_var = _parse_array_variable(type_name, var_name, rest, fn_signatures, task_signatures)
         return {"kind": "var_decl", **arr_var}
+
+    # map declaration: type name$[key_type]
+    map_decl = re.match(rf"({W})\s+({W})\$\[({W})\]\s*(.*)", line)
+    if map_decl and _looks_like_type(map_decl.group(1)):
+        type_name = map_decl.group(1)
+        var_name = map_decl.group(2)
+        key_type = map_decl.group(3)
+        rest = map_decl.group(4).strip()
+        default = None
+        if rest.startswith("="):
+            rhs = rest[1:].strip()
+            default = _parse_expr(rhs, fn_signatures) if _is_expression(rhs) else _parse_literal(rhs)
+        return {"kind": "var_decl", "name": var_name, "type": type_name, "array": True,
+                "map": True, "key_type": key_type, "size": None, "value": None, "default": default}
 
     # variable declaration: type name[$] = value
     var_decl = re.match(rf"({W})\s+({W})(\$)?\s*=\s*(.*)", line)
