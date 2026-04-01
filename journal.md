@@ -381,7 +381,37 @@ The zero source doesn't change. Persistence is a platform concern.
 
 Key design principle articulated: everything below the platform line costs one implementation per target. Patience pays — write it in zero where possible, even if it means extending the language. For login, the true platform primitives are: outbound HTTP request (for SMS via Vonage API), random number, current time, create/set session. Everything else — phone normalisation, code generation/storage/verification, the login flow — is zero code.
 
+### login feature
+
+Built the login feature with test users `_alice` (code "1234") and `_bob` (code "4321"). Two-step flow: `request login (phone)` generates and stores a code in a keyed collection, `verify login (phone) (code)` checks it and returns the user. A separate `login (phone) (code)` function wraps verify + `create session` to return a token.
+
+Several issues surfaced during implementation:
+
+- **`first of [...] where` with no match**: the Python `next()` threw `StopIteration`. Fixed to return the type's default value using `type(arr[0])()`.
+- **Conditional result init**: functions with result assignments inside conditionals need the result variable initialised. Used `None` as sentinel (not the type default — that would break the `if result is None` guard). Added `return result if result is not None else type_default()` at the end.
+- **Map variable marked as platform**: the `_platform` detection was too aggressive — marking all uninitialized arrays as platform vars when abstract functions exist. Fixed to skip vars with explicit `scope`.
+
+### per-user background colour
+
+The real end-to-end test: alice sees red, bob sees blue, anonymous sees teal. Required:
+
+1. **background feature** (`background.zero.md`): declares `user string colour = "#34988b"`, extends `landing-page`.
+2. **`after` extension**: `after (string body) = landing page ()` — post-processes the HTML, replacing the default teal with the user's colour via `replace ("#34988b") in (body) with (background.colour)`.
+3. **`replace` string platform function**: added to both Python and TS platforms.
+4. **Result variable SSA exemption**: the `after` extension reassigns `body` (already set by the original `landing page`). The SSA checker now exempts the result variable — extensions are the one place where reassignment is allowed.
+5. **Cross-module context fix**: `_get_ctx()` was reading from the local module's `_ctx_var` instead of the root module's. Each module has its own `_ctx_var` (platform code is prepended to every module). Fixed `_get_ctx()` to always read from `sys.modules['__main__']._ctx_var`.
+6. **var_decl SSA tracking**: the SSA checker wasn't tracking `var_decl` in the assigned set, so `int x = 1; x = 2` wasn't caught. Fixed.
+
+The demo: login as alice via RPC, set `background.colour = #ff0000`, login as bob, set `background.colour = #0000ff`. Each user's landing page shows their colour. The default (no login) shows teal.
+
+### literate style
+
+Added intro paragraphs before every code block in all six website feature files. The zero convention: each code block is preceded by a natural-language explanation of what it does and why.
+
 ### commits
 - `b92518a` Per-user context: shared/user variable scoping with contextvars
 - `691efda` Login feature with per-session context isolation
 - `485c4d6` Keyed collections: string$[string] map declarations, store, retrieve
+- `99a3892` Journal: keyed collections, user vs session, persistence design
+- `af1fa32` Per-user background colour: login, after extension, cross-module context
+- `7105ad2` Literate style: add intro paragraphs to all website feature definitions
