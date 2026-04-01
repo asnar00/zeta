@@ -16,6 +16,7 @@ case "$1" in
     --fg)      MODE="fg"; shift ;;
     --stop)    MODE="stop"; shift ;;
     --restart) MODE="restart"; shift ;;
+    --test)    MODE="test"; shift ;;
 esac
 
 prog="$1"
@@ -65,6 +66,12 @@ start_program() {
 }
 
 case "$MODE" in
+    test)
+        case "$resolved" in
+            *.py) python3 "$resolved" --test "$@" ;;
+            *.ts) npx tsx "$resolved" --test "$@" ;;
+        esac
+        ;;
     stop)
         stop_program
         ;;

@@ -15,6 +15,11 @@ List all available features, variables, and functions:
 
     on (string result) = directory ()
 
+Run all tests, or tests for a specific feature:
+
+    on (string result) = test ()
+    on (string result) = test (string feature)
+
 Terminate the process (with a short delay for response delivery):
 
     on exit process ()

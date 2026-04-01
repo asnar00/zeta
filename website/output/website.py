@@ -166,13 +166,21 @@ def _extract_fn_words(s):
     return s[:paren_pos].strip()
 
 
-def _find_function(mod, fn_words):
-    """Find a compiled function in a module by its zero name words."""
-    # build expected Python function name: fn_word1_word2__type1__type2
-    # we don't know the types, so search by prefix
+def _find_function(mod, fn_words, arg_count=0):
+    """Find a compiled function in a module by its zero name words and argument count."""
     safe_prefix = "fn_" + fn_words.replace(" ", "_").replace("-", "_")
+    # count type separators to match arg count
+    def _matches(attr_name):
+        if attr_name == safe_prefix:
+            return arg_count == 0
+        if attr_name.startswith(safe_prefix + "__"):
+            type_part = attr_name[len(safe_prefix) + 2:]
+            n_types = type_part.count("__") + 1
+            return n_types == arg_count
+        return False
+    # search root module
     for attr_name in dir(mod):
-        if attr_name == safe_prefix or attr_name.startswith(safe_prefix + "__"):
+        if _matches(attr_name):
             fn = getattr(mod, attr_name, None)
             if callable(fn):
                 return fn
@@ -181,11 +189,35 @@ def _find_function(mod, fn_words):
         child = getattr(mod, attr_name, None)
         if hasattr(child, '__name__') and hasattr(child, '__file__'):
             for child_attr in dir(child):
-                if child_attr == safe_prefix or child_attr.startswith(safe_prefix + "__"):
+                if _matches(child_attr):
                     fn = getattr(child, child_attr, None)
                     if callable(fn):
                         return fn
     return None
+
+
+# @zero on (string result) = test ()
+def fn_test() -> str:
+    return _run_tests_captured(None)
+
+
+# @zero on (string result) = test (string feature)
+def fn_test__string(feature: str) -> str:
+    return _run_tests_captured([feature])
+
+
+def _run_tests_captured(names):
+    """Run tests and capture output as a string."""
+    import io
+    from contextlib import redirect_stdout
+    try:
+        from _runtime import run_tests
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            run_tests(names)
+        return buf.getvalue().rstrip()
+    except ImportError:
+        return "no tests available"
 
 
 # @zero on exit process ()
@@ -387,7 +419,7 @@ def fn_rpc_eval__string(expr: str) -> str:
     # function call: fn name ("arg1") ("arg2")  or  fn name ()
     fn_words = _extract_fn_words(expr)
     args = _extract_args(expr)
-    fn = _find_function(mod, fn_words)
+    fn = _find_function(mod, fn_words, len(args))
     if fn is None:
         return f"error: function '{fn_words}' not found"
     try:
@@ -548,7 +580,7 @@ class http_response(NamedTuple):
     request: http_request = 0
     body: str = ""
 
-# @zero on main (string args$); website/website.zero.md:103
+# @zero on main (string args$); website/website.zero.md:107
 def task_main__string(args_arr: str):
     _push_terminal_out(logo)
     request_arr = task_serve_http__int(port)
@@ -557,7 +589,7 @@ def task_main__string(args_arr: str):
         body = fn_handle_request__http_request(request)
         _push_http_response(http_response(request, body))
 
-# @zero on (string body) = handle request (http-request request); website/website.zero.md:111
+# @zero on (string body) = handle request (http-request request); website/website.zero.md:115
 def fn_handle_request__http_request(request: http_request) -> str:
     body = None
     if landing_page_enabled and request.path == "/":
@@ -570,7 +602,7 @@ def fn_handle_request__http_request(request: http_request) -> str:
         body = not_found.fn_not_found()
     return body
 
-# @zero on stop; website/website.zero.md:119
+# @zero on stop; website/website.zero.md:123
 def fn_stop():
     fn_print__string("stopping")
 
