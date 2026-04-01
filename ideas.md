@@ -83,6 +83,35 @@ Currently deferred:
 
 Division always returns float; assignment to int truncates. Emitters need type-aware wrapping.
 
+## multi-component deployment: one product, multiple devices
+
+A product is made of multiple components running on different devices — server, laptop, phone, tablet — all forming a single interface. The zero source describes *what* (features, functions, data). A separate `components.md` describes *where* (which component runs which features, which target language).
+
+**Example:**
+```
+component server (py)
+    website
+    not-found
+    rpc
+
+component laptop (ts)
+    debugger
+
+component phone (ts)
+    colour-picker
+    chat
+```
+
+**Build:** each component gets its own compilation pass — same zero source, different target, different feature set. Output is one binary/bundle per component.
+
+**Cross-component calls:** when the laptop's debugger calls `pick colour ()` which lives on the phone, the emitter generates an RPC stub on the laptop and a handler on the phone. The call looks local in zero — the deployment config decides it's remote, and the emitter generates the plumbing.
+
+**The RPC bridge already exists** — `rpc eval` parses zero syntax and dispatches to compiled functions. Cross-component calls are the same mechanism over WebSocket/HTTP between devices instead of within one process.
+
+**Per-component context:** each device has its own user identity, permissions, and feature flags. The context object (see per-user context idea) travels with RPC calls so the receiving component knows who's asking.
+
+**No assumptions in zero source:** a feature doesn't know what device it runs on. The same `colour-picker` feature could run on a phone, a tablet, or embedded in the laptop UI. The deployment config decides.
+
 ## atoz: anything to zero
 
 Agent-powered tool that reads existing code and translates it *into* zero. Forces decomposition into pure functions. The inverse of zeta.
