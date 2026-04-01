@@ -1,3 +1,5 @@
+import { register_tests } from './_runtime.js';
+
 // Platform implementation: http (TypeScript)
 // Implements the streams and tasks declared in http.zero.md
 
@@ -159,6 +161,29 @@ export function* terminal_in(): Generator<string> {
     // stdin reading requires async in Node — stub for now
 }
 
+
+export function test_rpc_0(): void {
+    // rpc eval ("port") => "8084"
+    const _result = fn_rpc_eval__string("port");
+    const _expected = "8084";
+    if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
+}
+
+export function test_rpc_1(): void {
+    // rpc eval ("logo = hi") => "logo = hi"
+    const _result = fn_rpc_eval__string("logo = hi");
+    const _expected = "logo = hi";
+    if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
+}
+
+export function test_rpc_2(): void {
+    // rpc eval ("not found ()") => "not found"
+    const _result = fn_rpc_eval__string("not found ()");
+    const _expected = "not found";
+    if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
+}
+
+register_tests('rpc', [[test_rpc_0, 'rpc eval ("port") => "8084"'], [test_rpc_1, 'rpc eval ("logo = hi") => "logo = hi"'], [test_rpc_2, 'rpc eval ("not found ()") => "not found"']]);
 
 interface http_request {
     readonly path: string;

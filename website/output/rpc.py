@@ -1,3 +1,5 @@
+from _runtime import register_tests
+
 # Platform implementation: http (Python)
 # Implements the streams and tasks declared in http.zero.md
 
@@ -492,6 +494,26 @@ def terminal_in():
 
 
 from typing import NamedTuple
+
+def test_rpc_0():
+    '''rpc eval ("port") => "8084"'''
+    _result = fn_rpc_eval__string("port")
+    _expected = "8084"
+    assert _result == _expected, f"expected {_expected}, got {_result}"
+
+def test_rpc_1():
+    '''rpc eval ("logo = hi") => "logo = hi"'''
+    _result = fn_rpc_eval__string("logo = hi")
+    _expected = "logo = hi"
+    assert _result == _expected, f"expected {_expected}, got {_result}"
+
+def test_rpc_2():
+    '''rpc eval ("not found ()") => "not found"'''
+    _result = fn_rpc_eval__string("not found ()")
+    _expected = "not found"
+    assert _result == _expected, f"expected {_expected}, got {_result}"
+
+register_tests('rpc', [(test_rpc_0, 'rpc eval ("port") => "8084"'), (test_rpc_1, 'rpc eval ("logo = hi") => "logo = hi"'), (test_rpc_2, 'rpc eval ("not found ()") => "not found"')])
 
 class http_request(NamedTuple):
     path: str = ""

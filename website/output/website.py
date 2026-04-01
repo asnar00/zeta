@@ -1,6 +1,6 @@
 from _runtime import register_tests, run_tests
 import not_found
-import admin
+import rpc
 import landing_page
 
 # Platform implementation: http (Python)

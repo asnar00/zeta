@@ -1,4 +1,4 @@
 website port=8084
 not-found
-admin
+rpc
 landing-page dynamic

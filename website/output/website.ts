@@ -1,8 +1,8 @@
 import { register_tests, run_tests } from './_runtime.js';
 import './not_found.js';
 import * as not_found from './not_found.js';
-import './admin.js';
-import * as admin from './admin.js';
+import './rpc.js';
+import * as rpc from './rpc.js';
 import './landing_page.js';
 import * as landing_page from './landing_page.js';
 
