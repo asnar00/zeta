@@ -305,7 +305,7 @@ def test_emit_concurrently_caller_is_async(report):
            source,
            lambda out: _assert_in("async function fn_run()", out),
            lambda out: _assert_in("async function fn_main()", out),
-           lambda out: _assert_in("await run()", out))
+           lambda out: _assert_in("await fn_run()", out))
 
 def test_emit_non_async_stays_sync(report):
     """A function with no concurrently and no async calls stays sync."""

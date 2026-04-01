@@ -1,8 +1,3 @@
-import './not_found.js';
-import * as not_found from './not_found.js';
-import './landing_page.js';
-import * as landing_page from './landing_page.js';
-
 // Platform implementation: http (TypeScript)
 // Implements the streams and tasks declared in http.zero.md
 
@@ -17,7 +12,7 @@ interface _PendingRequest {
 const _request_queue: _PendingRequest[] = [];
 let _request_resolve: ((req: _PendingRequest) => void) | null = null;
 
-function _enqueue_request(req: _PendingRequest): void {
+export function _enqueue_request(req: _PendingRequest): void {
     if (_request_resolve) {
         const resolve = _request_resolve;
         _request_resolve = null;
@@ -27,7 +22,7 @@ function _enqueue_request(req: _PendingRequest): void {
     }
 }
 
-function _next_request(): Promise<_PendingRequest> {
+export function _next_request(): Promise<_PendingRequest> {
     if (_request_queue.length > 0) {
         return Promise.resolve(_request_queue.shift()!);
     }
@@ -35,7 +30,7 @@ function _next_request(): Promise<_PendingRequest> {
 }
 
 // @zero on (http_request request$) <- serve http (int port)
-async function* task_serve_http__int(port: number): AsyncGenerator<_PendingRequest> {
+export async function* task_serve_http__int(port: number): AsyncGenerator<_PendingRequest> {
     createServer((req: IncomingMessage, res: ServerResponse) => {
         const pending: _PendingRequest = {
             path: req.url || "/",
@@ -55,7 +50,7 @@ async function* task_serve_http__int(port: number): AsyncGenerator<_PendingReque
 
 // @zero http.response$
 // Routes the response back to the correct client via the paired request
-function _push_http_response(response: { request: any; body: string }): void {
+export function _push_http_response(response: { request: any; body: string }): void {
     response.request._send(response.body);
 }
 
@@ -66,17 +61,17 @@ function _push_http_response(response: { request: any; body: string }): void {
 import { readFileSync, writeFileSync } from 'fs';
 
 // @zero on (string content) = read file (string path)
-function fn_read_file__string(path: string): string {
+export function fn_read_file__string(path: string): string {
     return readFileSync(path, 'utf8');
 }
 
 // @zero on write file (string path) (string content)
-function fn_write_file__string__string(path: string, content: string): void {
+export function fn_write_file__string__string(path: string, content: string): void {
     writeFileSync(path, content, 'utf8');
 }
 
 // @zero on print (string message)
-function fn_print__string(message: string): void {
+export function fn_print__string(message: string): void {
     console.log(message);
 }
 
@@ -86,19 +81,19 @@ function fn_print__string(message: string): void {
 
 
 // @zero on (string result) = trim (string s)
-function fn_trim__string(s: string): string {
+export function fn_trim__string(s: string): string {
     return s.trim();
 }
 
 
 // @zero on (char c) = char (int i) of (string s)
-function fn_char__int_of__string(i: number, s: string): string {
+export function fn_char__int_of__string(i: number, s: string): string {
     return s[i];
 }
 
 
 // @zero on (string result$) = split [string s] at [int positions$]
-function fn_split_at(s: string, positions: readonly number[]): string[] {
+export function fn_split_at(s: string, positions: readonly number[]): string[] {
     const parts: string[] = [];
     let start = 0;
     for (const pos of positions) {
@@ -116,13 +111,13 @@ function fn_split_at(s: string, positions: readonly number[]): string[] {
 
 // @zero string out$
 // Subscription: each value pushed to out$ prints to stdout
-function _push_terminal_out(value: string): void {
+export function _push_terminal_out(value: string): void {
     console.log(value);
 }
 
 // @zero string in$
 // Yields lines from stdin (not implemented for server context)
-function* terminal_in(): Generator<string> {
+export function* terminal_in(): Generator<string> {
     // stdin reading requires async in Node — stub for now
 }
 
@@ -132,7 +127,7 @@ interface http_request {
     readonly method: string;
 }
 
-function http_request(args: Partial<http_request> = {}): http_request {
+export function http_request(args: Partial<http_request> = {}): http_request {
     return { path: args.path ?? "", method: args.method ?? "" };
 }
 
@@ -141,52 +136,12 @@ interface http_response {
     readonly body: string;
 }
 
-function http_response(args: Partial<http_response> = {}): http_response {
+export function http_response(args: Partial<http_response> = {}): http_response {
     return { request: args.request ?? http_request(), body: args.body ?? "" };
 }
 
-const port: number = 8084;
-const logo: string = "ᕦ(ツ)ᕤ";
-const landing_page_enabled: boolean = true;
-
-// @zero on main (string args$); website/website.zero.md:60
-async function task_main__string(args_arr: readonly string[]): Promise<void> {
-    _push_terminal_out(logo);
-    const request_arr = task_serve_http__int(port);
-    for await (const request of request_arr) {
-        _push_terminal_out(request.path);
-        const body = fn_handle_request__http_request(request);
-        _push_http_response(http_response({ request: request, body: body }));
-    }
-}
-
-// @zero on (string body) = handle request (http_request request); website/website.zero.md:68
-function fn_handle_request__http_request(request: http_request): string {
-    let body: string = undefined!;
-    if (landing_page_enabled && request.path == "/") {
-    body = landing_page.fn_landing_page();
-}
-    if (body === undefined) {
-        body = not_found.fn_not_found();
-    }
+// @zero on (string body) = not found; not_found.zero.md:73
+export function fn_not_found(): string {
+    const body: string = "not found";
     return body;
 }
-
-
-// Runtime harness: bridges OS to zero's main task
-try {
-    const result: unknown = task_main__string(process.argv.slice(2));
-    if (result && typeof result === 'object') {
-        if (Symbol.iterator in (result as object)) {
-            for (const line of result as Iterable<string>) {
-                console.log(line);
-            }
-        }
-        if ('then' in (result as object)) {
-            (result as Promise<void>).catch(() => {});
-        }
-    }
-} catch (e) {
-    // no main task defined
-}
-

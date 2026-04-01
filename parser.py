@@ -1730,9 +1730,11 @@ def _try_match_signature(s: str, sig: dict, fn_sigs: list) -> dict | None:
             args.append(_parse_expr(inner, fn_sigs))
             pos = close + 1
 
-    # make sure we consumed the whole string
+    # make sure we consumed the whole string (allow trailing empty parens for zero-arg calls)
     remaining = s[pos:].strip()
-    if remaining:
+    if remaining == "()" or remaining == "":
+        pass
+    elif remaining:
         return None
 
     node_kind = "array_fn_call" if sig.get("has_array_params") else "fn_call"

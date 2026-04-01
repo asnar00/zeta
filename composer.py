@@ -5,7 +5,7 @@ and produces a single composed zero source string that can be fed to the parser.
 """
 
 
-def compose(features: list[dict]) -> str:
+def compose(features: list[dict], dynamic_features: set = None) -> str:
     """Compose a list of features into a single zero source string.
 
     Each feature is a dict with:
@@ -16,16 +16,21 @@ def compose(features: list[dict]) -> str:
         type_extensions: list of {target_type, fields}
         types: list of str (optional, raw type declaration lines)
     """
+    dynamic_features = dynamic_features or set()
+
     # collect all functions across features
     all_functions = {}
     for feature in features:
         for fn_name, fn_def in feature.get("functions", {}).items():
             all_functions[fn_name] = dict(fn_def)
 
-    # collect all extensions
+    # collect all extensions, tagged with feature name
     all_extensions = []
     for feature in features:
-        all_extensions.extend(feature.get("extensions", []))
+        for ext in feature.get("extensions", []):
+            ext_copy = dict(ext)
+            ext_copy["_feature"] = feature["name"]
+            all_extensions.append(ext_copy)
 
     # apply extensions to function bodies
     for ext in all_extensions:
@@ -33,7 +38,7 @@ def compose(features: list[dict]) -> str:
         if target_fn not in all_functions:
             continue
         fn = all_functions[target_fn]
-        fn["body"] = _apply_extension(fn["body"], ext)
+        fn["body"] = _apply_extension(fn["body"], ext, dynamic_features)
 
     # collect and extend types
     type_lines = []
@@ -95,12 +100,14 @@ def compose(features: list[dict]) -> str:
     return "\n\n".join(output_parts) + "\n"
 
 
-def compose_per_feature(features: list[dict]) -> dict:
+def compose_per_feature(features: list[dict], dynamic_features: set = None) -> dict:
     """Compose features and return a dict of {feature_name: zero_source}.
 
     Each function goes in the output of the feature that first defined it,
     with extensions from other features already applied to its body.
     """
+    dynamic_features = dynamic_features or set()
+
     # track which feature owns each function
     fn_owner = {}  # fn_name -> feature_name
     all_functions = {}
@@ -112,12 +119,15 @@ def compose_per_feature(features: list[dict]) -> dict:
     # apply extensions
     all_extensions = []
     for feature in features:
-        all_extensions.extend(feature.get("extensions", []))
+        for ext in feature.get("extensions", []):
+            ext_copy = dict(ext)
+            ext_copy["_feature"] = feature["name"]
+            all_extensions.append(ext_copy)
     for ext in all_extensions:
         target_fn = ext["target_fn"]
         if target_fn in all_functions:
             all_functions[target_fn]["body"] = _apply_extension(
-                all_functions[target_fn]["body"], ext)
+                all_functions[target_fn]["body"], ext, dynamic_features)
 
     # collect types and variables per feature
     feature_types = {}
@@ -163,15 +173,21 @@ def compose_per_feature(features: list[dict]) -> dict:
     return result
 
 
-def _apply_extension(body: list[str], ext: dict) -> list[str]:
+def _apply_extension(body: list[str], ext: dict, dynamic_features: set = None) -> list[str]:
     """Apply a single extension to a function body.
 
     ext has: kind (before/after/on), target_step (str or None), insert (list of lines)
     If target_step is None, before/after applies to the whole body.
     """
+    dynamic_features = dynamic_features or set()
     target_step = ext["target_step"]
     insert_lines = ext["insert"]
     kind = ext["kind"]
+
+    # wrap insert lines in a dynamic guard if the feature is dynamic
+    feature_name = ext.get("_feature", "")
+    if feature_name in dynamic_features:
+        insert_lines = _wrap_dynamic(insert_lines, feature_name)
 
     # whole-body extension (no target step)
     if target_step is None:
@@ -216,6 +232,38 @@ def _matches_step(stripped: str, target_step: str) -> bool:
     call = stripped.rstrip("()")
     target = target_step.rstrip("()")
     return call == target or stripped == target_step or stripped == target_step + "()"
+
+
+def _wrap_dynamic(insert_lines: list[str], feature_name: str) -> list[str]:
+    """Wrap extension lines in a dynamic feature guard.
+    Injects the enabled check into the first if-condition using 'and'."""
+    wrapped = []
+    guard_injected = False
+    for line in insert_lines:
+        stripped = line.strip()
+        # inject enabled check into the first if condition
+        if not guard_injected and stripped.startswith("if ("):
+            indent = line[:len(line) - len(stripped)]
+            # replace "if (condition)" with "if (feature_enabled and condition)"
+            inner = stripped[4:-1]  # strip "if (" and ")"
+            wrapped.append(f"{indent}if ({feature_name}_enabled and {inner})")
+            guard_injected = True
+        else:
+            wrapped.append(line)
+    # if no if-condition found, wrap the whole block
+    if not guard_injected:
+        base_indent = "        "
+        for line in insert_lines:
+            if line.strip():
+                base_indent = line[:len(line) - len(line.lstrip())]
+                break
+        wrapped = [f"{base_indent}if ({feature_name}_enabled)"]
+        for line in insert_lines:
+            if line.strip():
+                wrapped.append("    " + line)
+            else:
+                wrapped.append("")
+    return wrapped
 
 
 def _get_indent(line: str) -> str:

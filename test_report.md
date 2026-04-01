@@ -1860,7 +1860,7 @@ async function fn_run(): void {
 
 // @zero on main
 async function fn_main(): void {
-    await run();
+    await fn_run();
 }
 ```
 

@@ -3,7 +3,7 @@
 
 ## specification
 
-Serves the noob logo on the test domain. Prints the logo on startup, logs each request path to the terminal, and responds with the logo.
+Serves the noob logo on the test domain. Prints the logo on startup, logs each request path to the terminal, and responds to each request.
 
 ## interface
 
@@ -16,11 +16,16 @@ Serves the noob logo on the test domain. Prints the logo on startup, logs each r
     use terminal.out$
     use http.request$, http.response$
 
+    int port = 8084
     string logo = "ᕦ(ツ)ᕤ"
 
     on main (string args$)
         out$ <- logo
-        http_request request$ <- serve http (8084)
+        http_request request$ <- serve http (port)
         for each (request) in (request$)
             out$ <- request.path
-            response$ <- http_response(request, logo)
+            string body = handle request (request)
+            response$ <- http_response(request, body)
+
+    on (string body) = handle request (http_request request)
+        body = logo

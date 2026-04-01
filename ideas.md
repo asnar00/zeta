@@ -87,6 +87,10 @@ Division always returns float; assignment to int truncates. Emitters need type-a
 
 Agent-powered tool that reads existing code and translates it *into* zero. Forces decomposition into pure functions. The inverse of zeta.
 
+### atoz stress test: claude code
+
+Anthropic's Claude Code leaked via npm source maps in March 2026 — 512k lines of TypeScript, 1,900 files. Once atoz is functional, translate the entire codebase to zero. This would be the ultimate stress test for both atoz (can it decompose a real-world 512k-line codebase?) and zero (can the language express a production agent system?). The decomposed zero version would also be a proof point for the language — if it can express Claude Code more clearly than the TypeScript original, that says something.
+
 ## round-trip correctness testing
 
 Prove atoz + zeta preserve semantics by running original tests against re-emitted code. Multi-target agreement: emit to all targets, assert they agree.

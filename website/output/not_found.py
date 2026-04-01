@@ -1,6 +1,3 @@
-import not_found
-import landing_page
-
 # Platform implementation: http (Python)
 # Implements the streams and tasks declared in http.zero.md
 
@@ -130,35 +127,7 @@ class http_response(NamedTuple):
     request: http_request = 0
     body: str = ""
 
-# @zero on main (string args$); website/website.zero.md:60
-def task_main__string(args_arr: str):
-    _push_terminal_out(logo)
-    request_arr = task_serve_http__int(port)
-    for request in request_arr:
-        _push_terminal_out(request.path)
-        body = fn_handle_request__http_request(request)
-        _push_http_response(http_response(request, body))
-
-# @zero on (string body) = handle request (http_request request); website/website.zero.md:68
-def fn_handle_request__http_request(request: http_request) -> str:
-    body = None
-    if landing_page_enabled and request.path == "/":
-        body = landing_page.fn_landing_page()
-    if body is None:
-        body = not_found.fn_not_found()
+# @zero on (string body) = not found; not_found.zero.md:73
+def fn_not_found() -> str:
+    body = "not found"
     return body
-
-port: int = 8084
-logo: str = "ᕦ(ツ)ᕤ"
-landing_page_enabled: bool = True
-
-
-import sys
-if __name__ == '__main__':
-    try:
-        result = task_main__string(sys.argv[1:])
-        if hasattr(result, '__next__'):
-            for line in result:
-                print(line)
-    except NameError:
-        pass  # no main task defined

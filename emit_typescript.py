@@ -498,6 +498,8 @@ def _emit_value(value, zero_type: str, structs: dict) -> str:
         return _emit_call_value(value, structs)
     if isinstance(value, dict) and "kind" in value:
         return _emit_expr(value, structs)
+    if isinstance(value, bool):
+        return "true" if value else "false"
     return str(value)
 
 
@@ -761,6 +763,25 @@ def _emit_task_ts(task: dict, structs: dict = None, uses: list[dict] = None) -> 
     return "\n".join(lines)
 
 
+def _assigns_result_ts(stmt: dict, result_var: str) -> bool:
+    """Check if a statement assigns to the result variable."""
+    if stmt.get("kind") == "assign" and stmt.get("target") == result_var:
+        return True
+    if stmt.get("kind") == "if_block":
+        for branch in stmt.get("branches", []):
+            for s in branch.get("body", []):
+                if _assigns_result_ts(s, result_var):
+                    return True
+    return False
+
+
+def _result_needs_guard_ts(body: list[dict], result_var: str) -> bool:
+    """Check if a function body needs result-assignment-as-return guards."""
+    assign_count = sum(1 for s in body if _assigns_result_ts(s, result_var))
+    has_conditional = any(s.get("kind") == "if_block" and _assigns_result_ts(s, result_var) for s in body)
+    return assign_count > 1 and has_conditional
+
+
 def _emit_function(fn: dict, structs: dict, async_fns: set[str] = None) -> str:
     """Emit a function definition."""
     async_fns = async_fns or set()
@@ -784,11 +805,25 @@ def _emit_function(fn: dict, structs: dict, async_fns: set[str] = None) -> str:
             ret_type = f"{ret_type}[]"
         # if body has if_blocks, declare result var with let at top
         has_if = any(isinstance(s, dict) and s.get("kind") == "if_block" for s in fn["body"])
+        needs_guard = _result_needs_guard_ts(fn["body"], result_var)
         lines = [f"{prefix} {name}({params}): {ret_type} {{"]
-        if has_if:
-            lines.append(f"    let {result_var}: {ret_type};")
+        if has_if or needs_guard:
+            lines.append(f"    let {result_var}: {ret_type} = undefined!;")
+        rv = result_var if (has_if or needs_guard) else None
+        seen_conditional_assign = False
         for stmt in fn["body"]:
-            lines.append(f"    {_emit_stmt(stmt, ret_type, structs, async_fns, result_var=result_var if has_if else None)}")
+            code = _emit_stmt(stmt, ret_type, structs, async_fns, result_var=rv)
+            if needs_guard and _assigns_result_ts(stmt, result_var):
+                if seen_conditional_assign:
+                    lines.append(f"    if ({result_var} === undefined) {{")
+                    lines.append(f"        {code}")
+                    lines.append(f"    }}")
+                else:
+                    lines.append(f"    {code}")
+                    if stmt.get("kind") == "if_block":
+                        seen_conditional_assign = True
+            else:
+                lines.append(f"    {code}")
         lines.append(f"    return {result_var};")
     else:
         lines = [f"{prefix} {name}({params}): void {{"]

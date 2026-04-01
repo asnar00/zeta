@@ -327,6 +327,61 @@ def _compile(ext: str, files: list[str]):
             sys.exit(1)
 
 
+def _find_feature_file(name: str, search_dir: str) -> str:
+    """Find a feature's .zero.md file by name, searching common locations."""
+    import glob
+    # if it's already a full path, use it
+    if name.endswith(".zero.md") and os.path.exists(name):
+        return name
+    candidates = [
+        f"{name}.zero.md",
+        os.path.join(name, f"{name}.zero.md"),
+        os.path.join(search_dir, f"{name}.zero.md"),
+        os.path.join(search_dir, name, f"{name}.zero.md"),
+    ]
+    # also search subdirectories
+    for pattern in [f"*/{name}.zero.md", f"**/{name}.zero.md"]:
+        candidates.extend(glob.glob(pattern, recursive=True))
+    for c in candidates:
+        if os.path.exists(c):
+            return c
+    return None
+
+
+def _parse_feature_list(features_path: str) -> list[dict]:
+    """Parse a features.md file into feature entries.
+    Each line: name [dynamic] [key=value ...]
+    Or legacy: path/to/file.zero.md"""
+    search_dir = os.path.dirname(features_path) or "."
+    entries = []
+    for line in open(features_path).read().strip().split("\n"):
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        parts = line.split()
+        name = parts[0]
+        dynamic = "dynamic" in parts[1:]
+        config = {}
+        for p in parts[1:]:
+            if "=" in p:
+                k, v = p.split("=", 1)
+                config[k] = v
+        # find the file
+        path = _find_feature_file(name, search_dir)
+        if path is None:
+            print(f"Error: cannot find feature '{name}' (searched from {search_dir})")
+            sys.exit(1)
+        # derive clean name from the feature file
+        clean_name = os.path.basename(path).replace(".zero.md", "").replace("-", "_")
+        entries.append({
+            "name": clean_name,
+            "path": path,
+            "dynamic": dynamic,
+            "config": config,
+        })
+    return entries
+
+
 def _build_features(features_path: str, output_dir: str, flags: set):
     """Build per-feature output files from a features.md listing."""
     from feature_parser import parse_features
@@ -346,25 +401,42 @@ def _build_features(features_path: str, output_dir: str, flags: set):
 
     # read feature list
     with log.section("read features"):
-        feature_lines = open(features_path).read().strip().split("\n")
-        input_paths = [line.strip() for line in feature_lines if line.strip()]
-        log.log(f"{len(input_paths)} features")
+        feature_entries = _parse_feature_list(features_path)
+        input_paths = [e["path"] for e in feature_entries]
+        log.log(f"{len(feature_entries)} features")
+        for e in feature_entries:
+            flags = []
+            if e["dynamic"]:
+                flags.append("dynamic")
+            if e["config"]:
+                flags.append(str(e["config"]))
+            log.log(f"  {e['name']}" + (f" ({', '.join(flags)})" if flags else ""))
 
     # read and extract code from each feature file
     with log.section("read source"):
         code_parts = []
-        for path in input_paths:
-            src = open(path).read()
-            log.log(f"{len(src)} chars from {path}")
+        for entry in feature_entries:
+            src = open(entry["path"]).read()
+            log.log(f"{len(src)} chars from {entry['path']}")
             if _is_markdown(src):
                 src, _ = _extract_code(src)
+            # inject config overrides as variable assignments
+            for key, val in entry["config"].items():
+                src += f"\n{key} = {val}\n"
             code_parts.append(src)
 
+    # inject _enabled variables into the base (first) feature's source
+    # so they're accessible where the composed extensions run
+    for entry in feature_entries:
+        if entry["dynamic"]:
+            code_parts[0] += f"\nbool {entry['name']}_enabled = true\n"
+
     # parse features and compose per-feature
+    dynamic_set = {e["name"] for e in feature_entries if e["dynamic"]}
     with log.section("compose features"):
         combined = "\n".join(code_parts)
         features = parse_features(combined)
-        per_feature = compose_per_feature(features)
+        per_feature = compose_per_feature(features, dynamic_set)
         for name, source in per_feature.items():
             log.log(f"{name}: {len(source)} chars")
 
@@ -411,7 +483,7 @@ def _build_features(features_path: str, output_dir: str, flags: set):
 
     # parse ALL composed source together (so all signatures are visible)
     from composer import compose
-    full_composed = compose(features)
+    full_composed = compose(features, dynamic_set)
     full_source = plat_code + "\n" + full_composed
 
     with log.section("parse"):
@@ -557,8 +629,14 @@ def _build_features(features_path: str, output_dir: str, flags: set):
                         elif ext == ".ts":
                             code = f"import {{ register_tests }} from './_runtime.js';\n\n" + code
                     if ext == ".ts":
-                        code = code.replace("function ", "export function ")
-                        code = code.replace("function* ", "export function* ")
+                        # add export to all function declarations
+                        lines = code.split('\n')
+                        for li, ln in enumerate(lines):
+                            stripped = ln.lstrip()
+                            if stripped.startswith(('function ', 'function* ', 'async function ', 'async function* ')):
+                                indent = ln[:len(ln) - len(stripped)]
+                                lines[li] = indent + 'export ' + stripped
+                        code = '\n'.join(lines)
 
                 # root feature gets platform code, imports, harness
                 if feat_name == root_name:

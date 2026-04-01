@@ -711,15 +711,48 @@ def _emit_function(fn: dict) -> str:
         result_var = fn["result"]["name"]
         if result_var.endswith("$"):
             result_var = result_var.replace("$", "_arr")
+        needs_guard = _result_needs_guard(fn["body"], result_var)
         lines = [f"def {name}({params}) -> {ret_type}:"]
+        if needs_guard:
+            lines.append(f"    {result_var} = None")
+        seen_conditional_assign = False
         for stmt in fn["body"]:
-            lines.extend(_indent(_emit_expr(stmt), "    "))
+            code = _emit_expr(stmt)
+            if needs_guard and _assigns_result(stmt, result_var):
+                if seen_conditional_assign:
+                    lines.extend(_indent(f"if {result_var} is None:\n    {code}", "    "))
+                else:
+                    lines.extend(_indent(code, "    "))
+                    if stmt.get("kind") == "if_block":
+                        seen_conditional_assign = True
+            else:
+                lines.extend(_indent(code, "    "))
         lines.append(f"    return {result_var}")
     else:
         lines = [f"def {name}({params}):"]
         for stmt in fn["body"]:
             lines.extend(_indent(_emit_expr(stmt), "    "))
     return "\n".join(lines)
+
+
+def _assigns_result(stmt: dict, result_var: str) -> bool:
+    """Check if a statement assigns to the result variable."""
+    if stmt.get("kind") == "assign" and stmt.get("target") == result_var:
+        return True
+    if stmt.get("kind") == "if_block":
+        for branch in stmt.get("branches", []):
+            for s in branch.get("body", []):
+                if _assigns_result(s, result_var):
+                    return True
+    return False
+
+
+def _result_needs_guard(body: list[dict], result_var: str) -> bool:
+    """Check if a function body has multiple assignments to the result variable,
+    where at least one is inside a conditional (requiring early-out semantics)."""
+    assign_count = sum(1 for s in body if _assigns_result(s, result_var))
+    has_conditional = any(s.get("kind") == "if_block" and _assigns_result(s, result_var) for s in body)
+    return assign_count > 1 and has_conditional
 
 
 def _indent(text: str, prefix: str) -> list[str]:

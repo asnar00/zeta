@@ -1,1 +1,3 @@
-website/website.zero.md
+website port=8084
+not-found
+landing-page dynamic
