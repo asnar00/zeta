@@ -209,7 +209,6 @@ class _Ctx_background {
 
 class _Ctx_landing_page {
     enabled: boolean = true;
-    background: string = "#34988b";
 }
 
 class _Context {
@@ -277,7 +276,7 @@ export function user(args: Partial<user> = {}): user {
     return { name: args.name ?? "", phone: args.phone ?? "", role: args.role ?? "" };
 }
 
-// @zero on (string body) = not found; website/not-found.zero.md:146
+// @zero on (string body) = not found; website/not-found.zero.md:145
 export function fn_not_found(): string {
     const body: string = "not found";
     return body;

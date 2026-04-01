@@ -606,7 +606,6 @@ class _Context:
         colour: str = "#34988b"
     class landing_page:
         enabled: bool = True
-        background: str = "#34988b"
     def __init__(self):
         self.background = _Context.background()
         self.landing_page = _Context.landing_page()
@@ -657,7 +656,7 @@ class user(NamedTuple):
     phone: str = ""
     role: str = ""
 
-# @zero on (string code) = request login (string phone); website/login.zero.md:149
+# @zero on (string code) = request login (string phone); website/login.zero.md:148
 def fn_request_login__string(phone: str) -> str:
     code = None
     found = next((x for x in users_arr if x.phone == phone), type(users_arr[0])() if users_arr else None)
@@ -668,7 +667,7 @@ def fn_request_login__string(phone: str) -> str:
         code = "unknown"
     return code if code is not None else ""
 
-# @zero on (user result) = verify login (string phone) (string code); website/login.zero.md:157
+# @zero on (user result) = verify login (string phone) (string code); website/login.zero.md:156
 def fn_verify_login__string__string(phone: str, code: str) -> user:
     result = None
     stored = pending_codes_arr[phone]
@@ -677,7 +676,7 @@ def fn_verify_login__string__string(phone: str, code: str) -> user:
         result = next((x for x in users_arr if x.phone == phone), type(users_arr[0])() if users_arr else None)
     return result if result is not None else user()
 
-# @zero on (string token) = login (string phone) (string code); website/login.zero.md:163
+# @zero on (string token) = login (string phone) (string code); website/login.zero.md:162
 def fn_login__string__string(phone: str, code: str) -> str:
     token = None
     found = fn_verify_login__string__string(phone, code)
@@ -687,7 +686,7 @@ def fn_login__string__string(phone: str, code: str) -> str:
         token = "invalid"
     return token if token is not None else ""
 
-# @zero on (string code) = generate code (user u); website/login.zero.md:170
+# @zero on (string code) = generate code (user u); website/login.zero.md:169
 def fn_generate_code__user(u: user) -> str:
     code = None
     if u.name == "_alice":

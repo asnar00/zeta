@@ -607,7 +607,6 @@ class _Context:
         colour: str = "#34988b"
     class landing_page:
         enabled: bool = True
-        background: str = "#34988b"
     def __init__(self):
         self.background = _Context.background()
         self.landing_page = _Context.landing_page()
@@ -652,7 +651,7 @@ class user(NamedTuple):
     phone: str = ""
     role: str = ""
 
-# @zero on (string body) = landing page; website/landing-page.zero.md:178
+# @zero on (string body) = landing page; website/landing-page.zero.md:177
 def fn_landing_page() -> str:
     body = fn_read_file__string("website/index.html")
     body = fn_replace__string_in__string_with__string("#34988b", body, _get_ctx().background.colour)

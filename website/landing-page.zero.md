@@ -18,12 +18,17 @@ After composition, root path returns the landing page, other paths fall through:
 
     feature landing-page extends website
 
+Per-user toggle — when disabled, the landing page is skipped and the request falls through to the next handler:
+
     user bool enabled = true
-    user string background = "#34988b"
+
+Intercept the root path and serve the landing page, if enabled for this user:
 
     before (string body) = handle request (http-request request)
         if (landing-page.enabled and request.path == "/")
             body = landing page ()
+
+Load the landing page HTML from file:
 
     on (string body) = landing page ()
         body = read file ("website/index.html")

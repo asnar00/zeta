@@ -218,7 +218,6 @@ class _Ctx_background {
 
 class _Ctx_landing_page {
     enabled: boolean = true;
-    background: string = "#34988b";
 }
 
 class _Context {
@@ -373,7 +372,7 @@ export function user(args: Partial<user> = {}): user {
 const port: number = 8084;
 const logo: string = "ᕦ(ツ)ᕤ";
 
-// @zero on main (string args$); website/website.zero.md:127
+// @zero on main (string args$); website/website.zero.md:126
 export async function task_main__string(args_arr: readonly string[]): Promise<void> {
     _push_terminal_out(logo);
     const request_arr = task_serve_http__int(port);
@@ -384,7 +383,7 @@ export async function task_main__string(args_arr: readonly string[]): Promise<vo
     }
 }
 
-// @zero on (string body) = handle request (http-request request); website/website.zero.md:135
+// @zero on (string body) = handle request (http-request request); website/website.zero.md:134
 export function fn_handle_request__http_request(request: http_request): string {
     let body: string = undefined!;
     if (_get_ctx().landing_page.enabled && request.path == "/") {
@@ -402,7 +401,7 @@ export function fn_handle_request__http_request(request: http_request): string {
     return body;
 }
 
-// @zero on stop; website/website.zero.md:143
+// @zero on stop; website/website.zero.md:142
 export function fn_stop(): void {
     fn_print__string("stopping");
 }

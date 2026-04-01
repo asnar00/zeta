@@ -209,7 +209,6 @@ class _Ctx_background {
 
 class _Ctx_landing_page {
     enabled: boolean = true;
-    background: string = "#34988b";
 }
 
 class _Context {
@@ -270,7 +269,7 @@ export function user(args: Partial<user> = {}): user {
     return { name: args.name ?? "", phone: args.phone ?? "", role: args.role ?? "" };
 }
 
-// @zero on (string body) = landing page; website/landing-page.zero.md:178
+// @zero on (string body) = landing page; website/landing-page.zero.md:177
 export function fn_landing_page(): string {
     const body: string = fn_read_file__string("website/index.html");
     const body: string = fn_replace__string_in__string_with__string("#34988b", body, _get_ctx().background.colour);

@@ -208,7 +208,6 @@ class _Ctx_background {
 
 class _Ctx_landing_page {
     enabled: boolean = true;
-    background: string = "#34988b";
 }
 
 class _Context {
@@ -279,7 +278,7 @@ export function user(args: Partial<user> = {}): user {
 const users_arr: readonly user[] = [user({ name: "_alice", phone: "+440001", role: "admin" }), user({ name: "_bob", phone: "+440002", role: "user" })];
 const pending_codes_arr: Map<string, string> = new Map();
 
-// @zero on (string code) = request login (string phone); website/login.zero.md:149
+// @zero on (string code) = request login (string phone); website/login.zero.md:148
 export function fn_request_login__string(phone: string): string {
     let code: string = undefined!;
     const found = users_arr.find(x => x.phone == phone);
@@ -292,7 +291,7 @@ export function fn_request_login__string(phone: string): string {
     return code;
 }
 
-// @zero on (user result) = verify login (string phone) (string code); website/login.zero.md:157
+// @zero on (user result) = verify login (string phone) (string code); website/login.zero.md:156
 export function fn_verify_login__string__string(phone: string, code: string): user {
     let result: user = undefined!;
     const stored = pending_codes_arr[phone];
@@ -303,7 +302,7 @@ export function fn_verify_login__string__string(phone: string, code: string): us
     return result;
 }
 
-// @zero on (string token) = login (string phone) (string code); website/login.zero.md:163
+// @zero on (string token) = login (string phone) (string code); website/login.zero.md:162
 export function fn_login__string__string(phone: string, code: string): string {
     let token: string = undefined!;
     const found = fn_verify_login__string__string(phone, code);
@@ -315,7 +314,7 @@ export function fn_login__string__string(phone: string, code: string): string {
     return token;
 }
 
-// @zero on (string code) = generate code (user u); website/login.zero.md:170
+// @zero on (string code) = generate code (user u); website/login.zero.md:169
 export function fn_generate_code__user(u: user): string {
     let code: string = undefined!;
     if (u.name == "_alice") {

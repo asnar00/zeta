@@ -604,7 +604,6 @@ class _Context:
         colour: str = "#34988b"
     class landing_page:
         enabled: bool = True
-        background: str = "#34988b"
     def __init__(self):
         self.background = _Context.background()
         self.landing_page = _Context.landing_page()

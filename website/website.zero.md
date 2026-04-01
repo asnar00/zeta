@@ -18,11 +18,17 @@ The `stop` function is a lifecycle hook for cleanup before shutdown.
 
     feature website
 
+Bind platform streams for terminal output and HTTP:
+
     use terminal.out$
     use http.request$, http.response$
 
+Server configuration and branding:
+
     shared int port = 8084
     shared string logo = "ᕦ(ツ)ᕤ"
+
+The main entry point: print the logo, start the HTTP server, and process requests in a loop:
 
     on main (string args$)
         out$ <- logo
@@ -32,8 +38,12 @@ The `stop` function is a lifecycle hook for cleanup before shutdown.
             string body = handle request (request)
             response$ <- http-response(request, body)
 
+Default request handler — returns the logo for all paths. Other features override this via `replace` or `before`:
+
     on (string body) = handle request (http-request request)
         body = logo
+
+Lifecycle hook called before shutdown. Features can extend this to clean up resources:
 
     on stop ()
         print ("stopping")

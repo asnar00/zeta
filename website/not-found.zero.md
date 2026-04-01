@@ -20,8 +20,12 @@ After composition, all paths return "not found":
 
     feature not-found extends website
 
+Replace the default request handler to delegate to `not found` for all paths:
+
     replace (string body) = handle request (http-request request)
         body = not found ()
+
+The default 404 response body:
 
     on (string body) = not found ()
         body = "not found"

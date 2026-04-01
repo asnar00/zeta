@@ -611,7 +611,6 @@ class _Context:
         colour: str = "#34988b"
     class landing_page:
         enabled: bool = True
-        background: str = "#34988b"
     def __init__(self):
         self.background = _Context.background()
         self.landing_page = _Context.landing_page()
@@ -734,7 +733,7 @@ class user(NamedTuple):
     phone: str = ""
     role: str = ""
 
-# @zero on main (string args$); website/website.zero.md:127
+# @zero on main (string args$); website/website.zero.md:126
 def task_main__string(args_arr: str):
     _push_terminal_out(logo)
     request_arr = task_serve_http__int(port)
@@ -743,7 +742,7 @@ def task_main__string(args_arr: str):
         body = fn_handle_request__http_request(request)
         _push_http_response(http_response(request, body))
 
-# @zero on (string body) = handle request (http-request request); website/website.zero.md:135
+# @zero on (string body) = handle request (http-request request); website/website.zero.md:134
 def fn_handle_request__http_request(request: http_request) -> str:
     body = None
     if _get_ctx().landing_page.enabled and request.path == "/":
@@ -756,7 +755,7 @@ def fn_handle_request__http_request(request: http_request) -> str:
         body = not_found.fn_not_found()
     return body if body is not None else ""
 
-# @zero on stop; website/website.zero.md:143
+# @zero on stop; website/website.zero.md:142
 def fn_stop():
     fn_print__string("stopping")
 

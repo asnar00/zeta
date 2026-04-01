@@ -208,7 +208,6 @@ class _Ctx_background {
 
 class _Ctx_landing_page {
     enabled: boolean = true;
-    background: string = "#34988b";
 }
 
 class _Context {

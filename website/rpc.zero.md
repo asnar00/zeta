@@ -25,6 +25,8 @@ Call a function:
 
     feature rpc extends website
 
+Intercept `/@rpc/` paths before the default handler. Extract the expression from the URL and evaluate it:
+
     before (string body) = handle request (http-request request)
         if ((request.path) starts with ("/@rpc/"))
             string expr = substring of (request.path) from (6)
