@@ -1,12 +1,20 @@
 # runtime
-*feature variable management*
+*feature variable management and RPC*
 
 ## specification
 
-Runtime platform for reading and writing feature-scoped variables. Used by the admin interface to toggle dynamic features at runtime.
+Runtime platform for introspecting and modifying the running system. Provides RPC evaluation of zero expressions and a directory listing of available features, variables, and functions.
 
 ## interface
 
-    on exit process ()
+Evaluate a zero expression at runtime (get/set variables, call functions):
+
     on (string result) = rpc eval (string expr)
+
+List all available features, variables, and functions:
+
     on (string result) = directory ()
+
+Terminate the process (with a short delay for response delivery):
+
+    on exit process ()

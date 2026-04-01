@@ -3,7 +3,7 @@
 
 ## specification
 
-Basic file I/O operations for reading and writing text files.
+Basic file I/O operations for reading and writing text files, and printing to standard output.
 
 ## interface
 

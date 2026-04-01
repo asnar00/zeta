@@ -541,12 +541,20 @@ def _build_features(features_path: str, output_dir: str, flags: set):
     # parse and assign tests per feature
     from parser import parse_tests
     features_with_tests = []
+    # platform tests from the main IR go to the root feature
+    if ir.get("tests"):
+        ir_by_feature[root_name].setdefault("tests", []).extend(ir["tests"])
+        if root_name not in features_with_tests:
+            features_with_tests.append(root_name)
+        log.log(f"platform: {len(ir['tests'])} tests")
+        del ir["tests"]  # prevent re-emission in child modules
     for f in features:
         if f.get("tests"):
             parsed = parse_tests(f["tests"], full_source)
             if parsed:
-                ir_by_feature[f["name"]]["tests"] = parsed
-                features_with_tests.append(f["name"])
+                ir_by_feature[f["name"]].setdefault("tests", []).extend(parsed)
+                if f["name"] not in features_with_tests:
+                    features_with_tests.append(f["name"])
             log.log(f"{f['name']}: {len(parsed)} tests")
 
     # build module map: emitted_function_name → feature_name

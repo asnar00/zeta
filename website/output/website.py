@@ -466,6 +466,80 @@ def terminal_in():
 
 from typing import NamedTuple
 
+def test_website_0():
+    '''trim ("  hello  ") => "hello"'''
+    _result = fn_trim__string("  hello  ")
+    _expected = "hello"
+    assert _result == _expected, f"expected {_expected}, got {_result}"
+
+def test_website_1():
+    '''trim ("already") => "already"'''
+    _result = fn_trim__string("already")
+    _expected = "already"
+    assert _result == _expected, f"expected {_expected}, got {_result}"
+
+def test_website_2():
+    '''char (0) of ("hello") => "h"'''
+    _result = fn_char__int_of__string(0, "hello")
+    _expected = "h"
+    assert _result == _expected, f"expected {_expected}, got {_result}"
+
+def test_website_3():
+    '''char (4) of ("hello") => "o"'''
+    _result = fn_char__int_of__string(4, "hello")
+    _expected = "o"
+    assert _result == _expected, f"expected {_expected}, got {_result}"
+
+def test_website_4():
+    '''("hello world") starts with ("hello") => true'''
+    _result = fn__string_starts_with__string("hello world", "hello")
+    _expected = True
+    assert _result == _expected, f"expected {_expected}, got {_result}"
+
+def test_website_5():
+    '''("hello world") starts with ("world") => false'''
+    _result = fn__string_starts_with__string("hello world", "world")
+    _expected = False
+    assert _result == _expected, f"expected {_expected}, got {_result}"
+
+def test_website_6():
+    '''split ("a/b/c") by ("/") => ["a", "b", "c"]'''
+    _result = fn_split__string_by__string("a/b/c", "/")
+    _expected = ["a", "b", "c"]
+    assert _result == _expected, f"expected {_expected}, got {_result}"
+
+def test_website_7():
+    '''split ("hello") by ("/") => ["hello"]'''
+    _result = fn_split__string_by__string("hello", "/")
+    _expected = ["hello"]
+    assert _result == _expected, f"expected {_expected}, got {_result}"
+
+def test_website_8():
+    '''length of ("hello") => 5'''
+    _result = fn_length_of__string("hello")
+    _expected = 5
+    assert _result == _expected, f"expected {_expected}, got {_result}"
+
+def test_website_9():
+    '''length of ("") => 0'''
+    _result = fn_length_of__string("")
+    _expected = 0
+    assert _result == _expected, f"expected {_expected}, got {_result}"
+
+def test_website_10():
+    '''substring of ("hello world") from (6) => "world"'''
+    _result = fn_substring_of__string_from__int("hello world", 6)
+    _expected = "world"
+    assert _result == _expected, f"expected {_expected}, got {_result}"
+
+def test_website_11():
+    '''substring of ("abc") from (0) => "abc"'''
+    _result = fn_substring_of__string_from__int("abc", 0)
+    _expected = "abc"
+    assert _result == _expected, f"expected {_expected}, got {_result}"
+
+register_tests('website', [(test_website_0, 'trim ("  hello  ") => "hello"'), (test_website_1, 'trim ("already") => "already"'), (test_website_2, 'char (0) of ("hello") => "h"'), (test_website_3, 'char (4) of ("hello") => "o"'), (test_website_4, '("hello world") starts with ("hello") => true'), (test_website_5, '("hello world") starts with ("world") => false'), (test_website_6, 'split ("a/b/c") by ("/") => ["a", "b", "c"]'), (test_website_7, 'split ("hello") by ("/") => ["hello"]'), (test_website_8, 'length of ("hello") => 5'), (test_website_9, 'length of ("") => 0'), (test_website_10, 'substring of ("hello world") from (6) => "world"'), (test_website_11, 'substring of ("abc") from (0) => "abc"')])
+
 class http_request(NamedTuple):
     path: str = ""
     method: str = ""
@@ -474,7 +548,7 @@ class http_response(NamedTuple):
     request: http_request = 0
     body: str = ""
 
-# @zero on main (string args$); website/website.zero.md:80
+# @zero on main (string args$); website/website.zero.md:103
 def task_main__string(args_arr: str):
     _push_terminal_out(logo)
     request_arr = task_serve_http__int(port)
@@ -483,7 +557,7 @@ def task_main__string(args_arr: str):
         body = fn_handle_request__http_request(request)
         _push_http_response(http_response(request, body))
 
-# @zero on (string body) = handle request (http-request request); website/website.zero.md:88
+# @zero on (string body) = handle request (http-request request); website/website.zero.md:111
 def fn_handle_request__http_request(request: http_request) -> str:
     body = None
     if landing_page_enabled and request.path == "/":
@@ -496,7 +570,7 @@ def fn_handle_request__http_request(request: http_request) -> str:
         body = not_found.fn_not_found()
     return body
 
-# @zero on stop; website/website.zero.md:96
+# @zero on stop; website/website.zero.md:119
 def fn_stop():
     fn_print__string("stopping")
 
