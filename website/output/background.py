@@ -659,16 +659,16 @@ def _get_ctx() -> '_Context':
 
 from typing import NamedTuple
 
-class http_request(NamedTuple):
+class Http_Request(NamedTuple):
     path: str = ""
     method: str = ""
     token: str = ""
 
-class http_response(NamedTuple):
-    request: http_request = 0
+class Http_Response(NamedTuple):
+    request: Http_Request = 0
     body: str = ""
 
-class user(NamedTuple):
+class User(NamedTuple):
     name: str = ""
     phone: str = ""
     role: str = ""

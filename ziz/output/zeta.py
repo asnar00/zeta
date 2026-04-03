@@ -457,12 +457,51 @@ def _build_directory(mod):
     return "\n".join(lines) if lines else "empty"
 
 
-# @zero on (string result) = directory ()
-def fn_directory() -> str:
+# @zero on (string result) = functions ()
+def fn_functions() -> str:
     mod = _find_root_module()
     if mod is None:
         return "error: no root module"
     return _build_directory(mod)
+
+
+def _build_feature_tree(tree):
+    """Build a feature tree with box-drawing characters from _FEATURE_TREE data."""
+    # tree is [(name, summary, extends), ...]
+    children = {}  # parent -> [child entries]
+    root = None
+    for name, summary, extends in tree:
+        if extends is None:
+            root = (name, summary)
+        else:
+            children.setdefault(extends, []).append((name, summary))
+    if root is None:
+        return "no root feature"
+    lines = [f"{root[0]} \u2014 {root[1]}"]
+    _render_children(lines, root[0], children, "")
+    return "\n".join(lines)
+
+
+def _render_children(lines, parent, children, prefix):
+    """Recursively render child features with box-drawing connectors."""
+    kids = children.get(parent, [])
+    for i, (name, summary) in enumerate(kids):
+        is_last = (i == len(kids) - 1)
+        connector = "\u2514\u2500 " if is_last else "\u251c\u2500 "
+        lines.append(f"{prefix}{connector}{name} \u2014 {summary}")
+        child_prefix = prefix + ("   " if is_last else "\u2502  ")
+        _render_children(lines, name, children, child_prefix)
+
+
+# @zero on (string result) = features ()
+def fn_features() -> str:
+    mod = _find_root_module()
+    if mod is None:
+        return "error: no root module"
+    tree = getattr(mod, '_FEATURE_TREE', None)
+    if not tree:
+        return "no feature tree available"
+    return _build_feature_tree(tree)
 
 
 # @zero on (string result) = rpc eval (string expr)
@@ -472,9 +511,9 @@ def fn_rpc_eval__string(expr: str) -> str:
     if mod is None:
         return "error: no root module"
 
-    # empty expression: return directory
+    # empty expression: return features + functions
     if not expr:
-        return fn_directory()
+        return fn_features() + "\n\n" + fn_functions()
 
     # assignment: feature.var = value  or  var = value
     assign_match = re.match(r'^([\w.-]+)\s*=\s*(.+)$', expr)
@@ -688,16 +727,16 @@ def test_zeta_13():
 
 register_tests('zeta', [(test_zeta_0, 'trim ("  hello  ") => "hello"'), (test_zeta_1, 'trim ("already") => "already"'), (test_zeta_2, 'char (0) of ("hello") => "h"'), (test_zeta_3, 'char (4) of ("hello") => "o"'), (test_zeta_4, '("hello world") starts with ("hello") => true'), (test_zeta_5, '("hello world") starts with ("world") => false'), (test_zeta_6, 'split ("a/b/c") by ("/") => ["a", "b", "c"]'), (test_zeta_7, 'split ("hello") by ("/") => ["hello"]'), (test_zeta_8, 'length of ("hello") => 5'), (test_zeta_9, 'length of ("") => 0'), (test_zeta_10, 'replace ("world") in ("hello world") with ("zero") => "hello zero"'), (test_zeta_11, 'substring of ("hello world") from (6) => "world"'), (test_zeta_12, 'substring of ("abc") from (0) => "abc"'), (test_zeta_13, 'main(["input.zero.md", "output.py"]) => "ᕦ(ツ)ᕤ"')])
 
-class http_request(NamedTuple):
+class Http_Request(NamedTuple):
     path: str = ""
     method: str = ""
     token: str = ""
 
-class http_response(NamedTuple):
-    request: http_request = 0
+class Http_Response(NamedTuple):
+    request: Http_Request = 0
     body: str = ""
 
-# @zero on (string out$) <- main (string args$); ziz/zeta.zero.md:112
+# @zero on (string out$) <- main (string args$); ziz/zeta.zero.md:115
 def task_main__string(args_arr: str):
     yield logo
 
@@ -716,3 +755,5 @@ if __name__ == '__main__':
                 print(line)
     except NameError:
         pass  # no main task defined
+
+_FEATURE_TREE = [("zeta", "zero translator", None), ("parser", "zero language processor — translated from parser.py", 'zeta')]

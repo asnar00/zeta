@@ -17,7 +17,7 @@ The `main` task takes command-line arguments and produces output lines:
 
 The zeta logo:
 
-    string logo = "ᕦ(ツ)ᕤ"
+    shared string logo = "ᕦ(ツ)ᕤ"
 
 The main entry point takes command-line arguments and produces output:
 

@@ -663,34 +663,34 @@ def _get_ctx() -> '_Context':
 from typing import NamedTuple
 
 def test_landing_page_0():
-    '''handle request (http-request(path="/")) => read file ("website/index.html")'''
-    _result = website.fn_handle_request__http_request(http_request(path="/"))
+    '''handle request (Http-Request(path="/")) => read file ("website/index.html")'''
+    _result = website.fn_handle_request__Http_Request(Http_Request(path="/"))
     _expected = fn_read_file__string("website/index.html")
     assert _result == _expected, f"expected {_expected}, got {_result}"
 
 def test_landing_page_1():
-    '''handle request (http-request(path="/nope")) => "not found"'''
-    _result = website.fn_handle_request__http_request(http_request(path="/nope"))
+    '''handle request (Http-Request(path="/nope")) => "not found"'''
+    _result = website.fn_handle_request__Http_Request(Http_Request(path="/nope"))
     _expected = "not found"
     assert _result == _expected, f"expected {_expected}, got {_result}"
 
-register_tests('landing-page', [(test_landing_page_0, 'handle request (http-request(path="/")) => read file ("website/index.html")'), (test_landing_page_1, 'handle request (http-request(path="/nope")) => "not found"')])
+register_tests('landing-page', [(test_landing_page_0, 'handle request (Http-Request(path="/")) => read file ("website/index.html")'), (test_landing_page_1, 'handle request (Http-Request(path="/nope")) => "not found"')])
 
-class http_request(NamedTuple):
+class Http_Request(NamedTuple):
     path: str = ""
     method: str = ""
     token: str = ""
 
-class http_response(NamedTuple):
-    request: http_request = 0
+class Http_Response(NamedTuple):
+    request: Http_Request = 0
     body: str = ""
 
-class user(NamedTuple):
+class User(NamedTuple):
     name: str = ""
     phone: str = ""
     role: str = ""
 
-# @zero on (string body) = landing page; website/landing-page/landing-page.zero.md:180
+# @zero on (string body) = landing page; website/landing-page/landing-page.zero.md:181
 def fn_landing_page() -> str:
     body = fn_read_file__string("website/index.html")
     body = fn_replace__string_in__string_with__string("#34988b", body, _get_ctx().background.colour)

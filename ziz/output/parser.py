@@ -456,12 +456,51 @@ def _build_directory(mod):
     return "\n".join(lines) if lines else "empty"
 
 
-# @zero on (string result) = directory ()
-def fn_directory() -> str:
+# @zero on (string result) = functions ()
+def fn_functions() -> str:
     mod = _find_root_module()
     if mod is None:
         return "error: no root module"
     return _build_directory(mod)
+
+
+def _build_feature_tree(tree):
+    """Build a feature tree with box-drawing characters from _FEATURE_TREE data."""
+    # tree is [(name, summary, extends), ...]
+    children = {}  # parent -> [child entries]
+    root = None
+    for name, summary, extends in tree:
+        if extends is None:
+            root = (name, summary)
+        else:
+            children.setdefault(extends, []).append((name, summary))
+    if root is None:
+        return "no root feature"
+    lines = [f"{root[0]} \u2014 {root[1]}"]
+    _render_children(lines, root[0], children, "")
+    return "\n".join(lines)
+
+
+def _render_children(lines, parent, children, prefix):
+    """Recursively render child features with box-drawing connectors."""
+    kids = children.get(parent, [])
+    for i, (name, summary) in enumerate(kids):
+        is_last = (i == len(kids) - 1)
+        connector = "\u2514\u2500 " if is_last else "\u251c\u2500 "
+        lines.append(f"{prefix}{connector}{name} \u2014 {summary}")
+        child_prefix = prefix + ("   " if is_last else "\u2502  ")
+        _render_children(lines, name, children, child_prefix)
+
+
+# @zero on (string result) = features ()
+def fn_features() -> str:
+    mod = _find_root_module()
+    if mod is None:
+        return "error: no root module"
+    tree = getattr(mod, '_FEATURE_TREE', None)
+    if not tree:
+        return "no feature tree available"
+    return _build_feature_tree(tree)
 
 
 # @zero on (string result) = rpc eval (string expr)
@@ -471,9 +510,9 @@ def fn_rpc_eval__string(expr: str) -> str:
     if mod is None:
         return "error: no root module"
 
-    # empty expression: return directory
+    # empty expression: return features + functions
     if not expr:
-        return fn_directory()
+        return fn_features() + "\n\n" + fn_functions()
 
     # assignment: feature.var = value  or  var = value
     assign_match = re.match(r'^([\w.-]+)\s*=\s*(.+)$', expr)
@@ -633,16 +672,16 @@ def test_parser_4():
 
 register_tests('parser', [(test_parser_0, 'matching ("()") in ("ᕦ(ツ)ᕤ") after (1) => 3'), (test_parser_1, 'matching ("[]") in ("a[b[c]d]e") after (1) => 7'), (test_parser_2, 'split stream parts ("1 <- 2 <- 3") => ["1", "2", "3"]'), (test_parser_3, 'split stream parts ("1 <- (a <- b) <- 3") => ["1", "(a <- b)", "3"]'), (test_parser_4, 'split stream parts ("hello") => ["hello"]')])
 
-class http_request(NamedTuple):
+class Http_Request(NamedTuple):
     path: str = ""
     method: str = ""
     token: str = ""
 
-class http_response(NamedTuple):
-    request: http_request = 0
+class Http_Response(NamedTuple):
+    request: Http_Request = 0
     body: str = ""
 
-# @zero on (int depth$) <- bracket depth of matching (string s) (string pair); ziz/parser.zero.md:115
+# @zero on (int depth$) <- bracket depth of matching (string s) (string pair); ziz/parser.zero.md:118
 def task_bracket_depth_of_matching__string__string(s: str, pair: str):
     d = 0
     for c in list(s):
@@ -652,14 +691,14 @@ def task_bracket_depth_of_matching__string__string(s: str, pair: str):
             d = d - 1
         yield d
 
-# @zero on (int pos) = matching (string pair) in (string s) after (int start); ziz/parser.zero.md:124
+# @zero on (int pos) = matching (string pair) in (string s) after (int start); ziz/parser.zero.md:127
 def fn_matching__string_in__string_after__int(pair: str, s: str, start: int) -> int:
     sub = s[start:]
     depth_arr = list(task_bracket_depth_of_matching__string__string(sub, pair))
     pos = start + next(i for i, x in enumerate(depth_arr) if x == 0)
     return pos
 
-# @zero on (string part$) = split stream parts (string s); ziz/parser.zero.md:129
+# @zero on (string part$) = split stream parts (string s); ziz/parser.zero.md:132
 def fn_split_stream_parts__string(s: str) -> str:
     padded = s + "<-"
     depth_arr = list(task_bracket_depth_of_matching__string__string(padded, "()"))

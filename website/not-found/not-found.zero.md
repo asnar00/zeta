@@ -13,8 +13,8 @@ The `not found` function returns the default 404 body:
 
 After composition, all paths return "not found":
 
-    handle request (http-request(path="/")) => "not found"
-    handle request (http-request(path="/nope")) => "not found"
+    handle request (Http-Request(path="/")) => "not found"
+    handle request (Http-Request(path="/nope")) => "not found"
 
 ## definition
 
@@ -22,7 +22,7 @@ After composition, all paths return "not found":
 
 Replace the default request handler to delegate to `not found` for all paths:
 
-    replace (string body) = handle request (http-request request)
+    replace (string body) = handle request (Http-Request request)
         body = not found ()
 
 The default 404 response body:

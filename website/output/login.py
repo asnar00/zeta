@@ -662,71 +662,72 @@ def _get_ctx() -> '_Context':
 from typing import NamedTuple
 
 def test_login_0():
-    '''request login ("+440001") => "1234"'''
-    _result = fn_request_login__string("+440001")
+    '''request login ("_alice") => "1234"'''
+    _result = fn_request_login__string("_alice")
     _expected = "1234"
     assert _result == _expected, f"expected {_expected}, got {_result}"
 
 def test_login_1():
-    '''request login ("+449999") => "unknown"'''
-    _result = fn_request_login__string("+449999")
+    '''request login ("nobody") => "unknown"'''
+    _result = fn_request_login__string("nobody")
     _expected = "unknown"
     assert _result == _expected, f"expected {_expected}, got {_result}"
 
 def test_login_2():
-    '''verify login ("+440001") ("0000") => user()'''
-    _result = fn_verify_login__string__string("+440001", "0000")
-    _expected = user()
+    '''verify login ("_alice") ("0000") => User()'''
+    _result = fn_verify_login__string__string("_alice", "0000")
+    _expected = User()
     assert _result == _expected, f"expected {_expected}, got {_result}"
 
-register_tests('login', [(test_login_0, 'request login ("+440001") => "1234"'), (test_login_1, 'request login ("+449999") => "unknown"'), (test_login_2, 'verify login ("+440001") ("0000") => user()')])
+register_tests('login', [(test_login_0, 'request login ("_alice") => "1234"'), (test_login_1, 'request login ("nobody") => "unknown"'), (test_login_2, 'verify login ("_alice") ("0000") => User()')])
 
-class http_request(NamedTuple):
+class Http_Request(NamedTuple):
     path: str = ""
     method: str = ""
     token: str = ""
 
-class http_response(NamedTuple):
-    request: http_request = 0
+class Http_Response(NamedTuple):
+    request: Http_Request = 0
     body: str = ""
 
-class user(NamedTuple):
+class User(NamedTuple):
     name: str = ""
     phone: str = ""
     role: str = ""
 
-# @zero on (string code) = request login (string phone); website/login/login.zero.md:151
-def fn_request_login__string(phone: str) -> str:
+# @zero on (string code) = request login (string name); website/login/login.zero.md:151
+def fn_request_login__string(name: str) -> str:
     code = None
-    found = next((x for x in users_arr if x.phone == phone), type(users_arr[0])() if users_arr else None)
-    if found.phone == phone:
-        code = fn_generate_code__user(found)
-        pending_codes_arr[phone] = code
+    found = next((x for x in users_arr if x.name == name), type(users_arr[0])() if users_arr else None)
+    if found.name == name:
+        code = fn_generate_code__User(found)
+        pending_codes_arr[found.phone] = code
     else:
         code = "unknown"
     return code if code is not None else ""
 
-# @zero on (user result) = verify login (string phone) (string code); website/login/login.zero.md:159
-def fn_verify_login__string__string(phone: str, code: str) -> user:
+# @zero on (User result) = verify login (string name) (string code); website/login/login.zero.md:159
+def fn_verify_login__string__string(name: str, code: str) -> User:
     result = None
-    stored = pending_codes_arr[phone]
-    if stored == code and stored != "":
-        pending_codes_arr[phone] = ""
-        result = next((x for x in users_arr if x.phone == phone), type(users_arr[0])() if users_arr else None)
-    return result if result is not None else user()
+    found = next((x for x in users_arr if x.name == name), type(users_arr[0])() if users_arr else None)
+    stored = pending_codes_arr[found.phone]
+    if found.name == name and stored == code and stored != "":
+        pending_codes_arr[found.phone] = ""
+        result = found
+    return result if result is not None else User()
 
-# @zero on (string token) = login (string phone) (string code); website/login/login.zero.md:165
-def fn_login__string__string(phone: str, code: str) -> str:
+# @zero on (string token) = login (string name) (string code); website/login/login.zero.md:166
+def fn_login__string__string(name: str, code: str) -> str:
     token = None
-    found = fn_verify_login__string__string(phone, code)
-    if found.phone == phone:
+    found = fn_verify_login__string__string(name, code)
+    if found.name != "":
         token = fn_create_session()
     else:
         token = "invalid"
     return token if token is not None else ""
 
-# @zero on (string code) = generate code (user u); website/login/login.zero.md:172
-def fn_generate_code__user(u: user) -> str:
+# @zero on (string code) = generate code (User u); website/login/login.zero.md:173
+def fn_generate_code__User(u: User) -> str:
     code = None
     if u.name == "_alice":
         code = "1234"
@@ -736,5 +737,5 @@ def fn_generate_code__user(u: user) -> str:
         code = "1234"
     return code if code is not None else ""
 
-users_arr: list[user] = [user(name="_alice", phone="+440001", role="admin"), user(name="_bob", phone="+440002", role="user")]
+users_arr: list[User] = [User(name="_alice", phone="+440001", role="admin"), User(name="_bob", phone="+440002", role="user")]
 pending_codes_arr: dict[str, str] = {}

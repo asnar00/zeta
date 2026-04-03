@@ -304,26 +304,26 @@ register_tests('zeta', [[test_zeta_0, 'trim ("  hello  ") => "hello"'], [test_ze
 
 const logo: string = "ᕦ(ツ)ᕤ";
 
-interface http_request {
+interface Http_Request {
     readonly path: string;
     readonly method: string;
     readonly token: string;
 }
 
-export function http_request(args: Partial<http_request> = {}): http_request {
+export function Http_Request(args: Partial<Http_Request> = {}): Http_Request {
     return { path: args.path ?? "", method: args.method ?? "", token: args.token ?? "" };
 }
 
-interface http_response {
-    readonly request: http_request;
+interface Http_Response {
+    readonly request: Http_Request;
     readonly body: string;
 }
 
-export function http_response(args: Partial<http_response> = {}): http_response {
-    return { request: args.request ?? http_request(), body: args.body ?? "" };
+export function Http_Response(args: Partial<Http_Response> = {}): Http_Response {
+    return { request: args.request ?? Http_Request(), body: args.body ?? "" };
 }
 
-// @zero on (string out$) <- main (string args$); ziz/zeta.zero.md:112
+// @zero on (string out$) <- main (string args$); ziz/zeta.zero.md:115
 export function* task_main__string(args_arr: readonly string[]): Generator<string> {
     yield logo;
 }
@@ -350,3 +350,5 @@ try {
     // no main task defined
 }
 }
+
+const _FEATURE_TREE: [string, string, string | null][] = [["zeta", "zero translator", null], ["parser", "zero language processor — translated from parser.py", "zeta"]];

@@ -225,53 +225,54 @@ export function _get_ctx(): _Context {
 
 
 export function test_landing_page_0(): void {
-    // handle request (http-request(path="/")) => read file ("website/index.html")
-    const _result = website.fn_handle_request__http_request(http_request({ path: "/" }));
+    // handle request (Http-Request(path="/")) => read file ("website/index.html")
+    const _result = website.fn_handle_request__Http_Request(Http_Request({ path: "/" }));
     const _expected = fn_read_file__string("website/index.html");
     if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
 }
 
 export function test_landing_page_1(): void {
-    // handle request (http-request(path="/nope")) => "not found"
-    const _result = website.fn_handle_request__http_request(http_request({ path: "/nope" }));
+    // handle request (Http-Request(path="/nope")) => "not found"
+    const _result = website.fn_handle_request__Http_Request(Http_Request({ path: "/nope" }));
     const _expected = "not found";
     if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
 }
 
-register_tests('landing-page', [[test_landing_page_0, 'handle request (http-request(path="/")) => read file ("website/index.html")'], [test_landing_page_1, 'handle request (http-request(path="/nope")) => "not found"']]);
+register_tests('landing-page', [[test_landing_page_0, 'handle request (Http-Request(path="/")) => read file ("website/index.html")'], [test_landing_page_1, 'handle request (Http-Request(path="/nope")) => "not found"']]);
 
-interface http_request {
+interface Http_Request {
     readonly path: string;
     readonly method: string;
     readonly token: string;
 }
 
-export function http_request(args: Partial<http_request> = {}): http_request {
+export function Http_Request(args: Partial<Http_Request> = {}): Http_Request {
     return { path: args.path ?? "", method: args.method ?? "", token: args.token ?? "" };
 }
 
-interface http_response {
-    readonly request: http_request;
+interface Http_Response {
+    readonly request: Http_Request;
     readonly body: string;
 }
 
-export function http_response(args: Partial<http_response> = {}): http_response {
-    return { request: args.request ?? http_request(), body: args.body ?? "" };
+export function Http_Response(args: Partial<Http_Response> = {}): Http_Response {
+    return { request: args.request ?? Http_Request(), body: args.body ?? "" };
 }
 
-interface user {
+interface User {
     readonly name: string;
     readonly phone: string;
     readonly role: string;
 }
 
-export function user(args: Partial<user> = {}): user {
+export function User(args: Partial<User> = {}): User {
     return { name: args.name ?? "", phone: args.phone ?? "", role: args.role ?? "" };
 }
 
-// @zero on (string body) = landing page; website/landing-page/landing-page.zero.md:180
+// @zero on (string body) = landing page; website/landing-page/landing-page.zero.md:181
 export function fn_landing_page(): string {
-    const body: string = fn_read_file__string("website/index.html");
-    const body: string = fn_replace__string_in__string_with__string("#34988b", body, _get_ctx().background.colour);
+    let body: string = undefined!;
+    body = fn_read_file__string("website/index.html");
+    body = fn_replace__string_in__string_with__string("#34988b", body, _get_ctx().background.colour);
     return body;
 }

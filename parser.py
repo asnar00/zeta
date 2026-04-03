@@ -1562,12 +1562,15 @@ def _parse_expression(line: str, fn_signatures: list = None, task_signatures: li
 
 
 def _looks_like_type(s: str) -> bool:
-    """Return True if s looks like a type name (not a variable name)."""
+    """Return True if s looks like a type name (not a variable name).
+    Built-in types are lowercase keywords; user-defined types start with uppercase."""
     if re.match(r"(int|uint|float)\d*$", s):
         return True
-    if s in ("number", "string", "bool"):
+    if s in ("number", "string", "bool", "char"):
         return True
-    return True  # conservative: treat as type, let downstream handle it
+    if s[0:1].isupper():
+        return True
+    return False
 
 
 def _find_assignment_eq(line: str) -> int | None:

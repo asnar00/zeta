@@ -232,47 +232,47 @@ export function test_not_found_0(): void {
 }
 
 export function test_not_found_1(): void {
-    // handle request (http-request(path="/")) => "not found"
-    const _result = website.fn_handle_request__http_request(http_request({ path: "/" }));
+    // handle request (Http-Request(path="/")) => "not found"
+    const _result = website.fn_handle_request__Http_Request(Http_Request({ path: "/" }));
     const _expected = "not found";
     if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
 }
 
 export function test_not_found_2(): void {
-    // handle request (http-request(path="/nope")) => "not found"
-    const _result = website.fn_handle_request__http_request(http_request({ path: "/nope" }));
+    // handle request (Http-Request(path="/nope")) => "not found"
+    const _result = website.fn_handle_request__Http_Request(Http_Request({ path: "/nope" }));
     const _expected = "not found";
     if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
 }
 
-register_tests('not-found', [[test_not_found_0, 'not found () => "not found"'], [test_not_found_1, 'handle request (http-request(path="/")) => "not found"'], [test_not_found_2, 'handle request (http-request(path="/nope")) => "not found"']]);
+register_tests('not-found', [[test_not_found_0, 'not found () => "not found"'], [test_not_found_1, 'handle request (Http-Request(path="/")) => "not found"'], [test_not_found_2, 'handle request (Http-Request(path="/nope")) => "not found"']]);
 
-interface http_request {
+interface Http_Request {
     readonly path: string;
     readonly method: string;
     readonly token: string;
 }
 
-export function http_request(args: Partial<http_request> = {}): http_request {
+export function Http_Request(args: Partial<Http_Request> = {}): Http_Request {
     return { path: args.path ?? "", method: args.method ?? "", token: args.token ?? "" };
 }
 
-interface http_response {
-    readonly request: http_request;
+interface Http_Response {
+    readonly request: Http_Request;
     readonly body: string;
 }
 
-export function http_response(args: Partial<http_response> = {}): http_response {
-    return { request: args.request ?? http_request(), body: args.body ?? "" };
+export function Http_Response(args: Partial<Http_Response> = {}): Http_Response {
+    return { request: args.request ?? Http_Request(), body: args.body ?? "" };
 }
 
-interface user {
+interface User {
     readonly name: string;
     readonly phone: string;
     readonly role: string;
 }
 
-export function user(args: Partial<user> = {}): user {
+export function User(args: Partial<User> = {}): User {
     return { name: args.name ?? "", phone: args.phone ?? "", role: args.role ?? "" };
 }
 

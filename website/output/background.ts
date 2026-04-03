@@ -221,31 +221,31 @@ export function _get_ctx(): _Context {
 }
 
 
-interface http_request {
+interface Http_Request {
     readonly path: string;
     readonly method: string;
     readonly token: string;
 }
 
-export function http_request(args: Partial<http_request> = {}): http_request {
+export function Http_Request(args: Partial<Http_Request> = {}): Http_Request {
     return { path: args.path ?? "", method: args.method ?? "", token: args.token ?? "" };
 }
 
-interface http_response {
-    readonly request: http_request;
+interface Http_Response {
+    readonly request: Http_Request;
     readonly body: string;
 }
 
-export function http_response(args: Partial<http_response> = {}): http_response {
-    return { request: args.request ?? http_request(), body: args.body ?? "" };
+export function Http_Response(args: Partial<Http_Response> = {}): Http_Response {
+    return { request: args.request ?? Http_Request(), body: args.body ?? "" };
 }
 
-interface user {
+interface User {
     readonly name: string;
     readonly phone: string;
     readonly role: string;
 }
 
-export function user(args: Partial<user> = {}): user {
+export function User(args: Partial<User> = {}): User {
     return { name: args.name ?? "", phone: args.phone ?? "", role: args.role ?? "" };
 }

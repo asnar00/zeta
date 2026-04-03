@@ -7,15 +7,15 @@ HTTP server platform. `serve http` listens on a port and produces a stream of re
 
 ## interface
 
-    type http-request
+    type Http-Request
         string path = ""
         string method = ""
         string token = ""
 
-    type http-response
-        http-request request
+    type Http-Response
+        Http-Request request
         string body = ""
 
-    http-response response$
+    Http-Response response$
 
-    on (http-request request$) <- serve http (int port)
+    on (Http-Request request$) <- serve http (int port)

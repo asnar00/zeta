@@ -745,29 +745,29 @@ def test_website_12():
     assert _result == _expected, f"expected {_expected}, got {_result}"
 
 def test_website_13():
-    '''handle request (http-request(path="/")) => "ᕦ(ツ)ᕤ"'''
-    _result = fn_handle_request__http_request(http_request(path="/"))
+    '''handle request (Http-Request(path="/")) => "ᕦ(ツ)ᕤ"'''
+    _result = fn_handle_request__Http_Request(Http_Request(path="/"))
     _expected = "ᕦ(ツ)ᕤ"
     assert _result == _expected, f"expected {_expected}, got {_result}"
 
 def test_website_14():
-    '''handle request (http-request(path="/nope")) => "ᕦ(ツ)ᕤ"'''
-    _result = fn_handle_request__http_request(http_request(path="/nope"))
+    '''handle request (Http-Request(path="/nope")) => "ᕦ(ツ)ᕤ"'''
+    _result = fn_handle_request__Http_Request(Http_Request(path="/nope"))
     _expected = "ᕦ(ツ)ᕤ"
     assert _result == _expected, f"expected {_expected}, got {_result}"
 
-register_tests('website', [(test_website_0, 'trim ("  hello  ") => "hello"'), (test_website_1, 'trim ("already") => "already"'), (test_website_2, 'char (0) of ("hello") => "h"'), (test_website_3, 'char (4) of ("hello") => "o"'), (test_website_4, '("hello world") starts with ("hello") => true'), (test_website_5, '("hello world") starts with ("world") => false'), (test_website_6, 'split ("a/b/c") by ("/") => ["a", "b", "c"]'), (test_website_7, 'split ("hello") by ("/") => ["hello"]'), (test_website_8, 'length of ("hello") => 5'), (test_website_9, 'length of ("") => 0'), (test_website_10, 'replace ("world") in ("hello world") with ("zero") => "hello zero"'), (test_website_11, 'substring of ("hello world") from (6) => "world"'), (test_website_12, 'substring of ("abc") from (0) => "abc"'), (test_website_13, 'handle request (http-request(path="/")) => "ᕦ(ツ)ᕤ"'), (test_website_14, 'handle request (http-request(path="/nope")) => "ᕦ(ツ)ᕤ"')])
+register_tests('website', [(test_website_0, 'trim ("  hello  ") => "hello"'), (test_website_1, 'trim ("already") => "already"'), (test_website_2, 'char (0) of ("hello") => "h"'), (test_website_3, 'char (4) of ("hello") => "o"'), (test_website_4, '("hello world") starts with ("hello") => true'), (test_website_5, '("hello world") starts with ("world") => false'), (test_website_6, 'split ("a/b/c") by ("/") => ["a", "b", "c"]'), (test_website_7, 'split ("hello") by ("/") => ["hello"]'), (test_website_8, 'length of ("hello") => 5'), (test_website_9, 'length of ("") => 0'), (test_website_10, 'replace ("world") in ("hello world") with ("zero") => "hello zero"'), (test_website_11, 'substring of ("hello world") from (6) => "world"'), (test_website_12, 'substring of ("abc") from (0) => "abc"'), (test_website_13, 'handle request (Http-Request(path="/")) => "ᕦ(ツ)ᕤ"'), (test_website_14, 'handle request (Http-Request(path="/nope")) => "ᕦ(ツ)ᕤ"')])
 
-class http_request(NamedTuple):
+class Http_Request(NamedTuple):
     path: str = ""
     method: str = ""
     token: str = ""
 
-class http_response(NamedTuple):
-    request: http_request = 0
+class Http_Response(NamedTuple):
+    request: Http_Request = 0
     body: str = ""
 
-class user(NamedTuple):
+class User(NamedTuple):
     name: str = ""
     phone: str = ""
     role: str = ""
@@ -778,11 +778,11 @@ def task_main__string(args_arr: str):
     request_arr = task_serve_http__int(port)
     for request in request_arr:
         _push_terminal_out(request.path)
-        body = fn_handle_request__http_request(request)
-        _push_http_response(http_response(request, body))
+        body = fn_handle_request__Http_Request(request)
+        _push_http_response(Http_Response(request, body))
 
-# @zero on (string body) = handle request (http-request request); website/website.zero.md:137
-def fn_handle_request__http_request(request: http_request) -> str:
+# @zero on (string body) = handle request (Http-Request request); website/website.zero.md:137
+def fn_handle_request__Http_Request(request: Http_Request) -> str:
     body = None
     if _get_ctx().landing_page.enabled and request.path == "/":
         body = landing_page.fn_landing_page()

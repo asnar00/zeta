@@ -7,10 +7,10 @@ Serves the nøøb logo on the test domain. Prints the logo on startup, logs each
 
 ## interface
 
-The `handle request` function takes an http-request and returns a response body. Without other features composed, it returns the logo for all paths:
+The `handle request` function takes an Http-Request and returns a response body. Without other features composed, it returns the logo for all paths:
 
-    handle request (http-request(path="/")) => "ᕦ(ツ)ᕤ"
-    handle request (http-request(path="/nope")) => "ᕦ(ツ)ᕤ"
+    handle request (Http-Request(path="/")) => "ᕦ(ツ)ᕤ"
+    handle request (Http-Request(path="/nope")) => "ᕦ(ツ)ᕤ"
 
 The `stop` function is a lifecycle hook for cleanup before shutdown.
 
@@ -32,15 +32,15 @@ The main entry point: print the logo, start the HTTP server, and process request
 
     on main (string args$)
         out$ <- logo
-        http-request request$ <- serve http (port)
+        Http-Request request$ <- serve http (port)
         for each (request) in (request$)
             out$ <- request.path
             string body = handle request (request)
-            response$ <- http-response(request, body)
+            response$ <- Http-Response(request, body)
 
 Default request handler — returns the logo for all paths. Other features override this via `replace` or `before`:
 
-    on (string body) = handle request (http-request request)
+    on (string body) = handle request (Http-Request request)
         body = logo
 
 Lifecycle hook called before shutdown. Features can extend this to clean up resources:

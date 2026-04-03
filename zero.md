@@ -58,43 +58,45 @@ In general, you can use any combination eg. `int8`, `float16`, as appropriate.
     type number = int | float
     type bool = ... true or false
 
+User-defined types start with an uppercase letter, distinguishing them from variables and built-in types:
+
 *enumerations* are types which take one of a range of values, each specified by a single word:
 
-    type tri-state = no | yes | maybe
+    type Tri-State = no | yes | maybe
 
 Finally, *structure types* are bundles of values, each of which may be either a concrete or an abstract type, and allow a default value to be declared:
 
-    type vector = 
+    type Vector = 
         number x, y, z = 0
 
 ## type composition
 
 A type can be defined as the composition of an existing type plus additional fields using `+`:
 
-    type animal
+    type Animal
 
-    type dog = animal +
+    type Dog = Animal +
         string breed
 
-    type cat = animal +
+    type Cat = Animal +
         int lives = 9
 
-Here, `dog` and `cat` are both subtypes of `animal`. A type with no fields (like `animal`) is an abstract base type.
+Here, `Dog` and `Cat` are both subtypes of `Animal`. A type with no fields (like `Animal`) is an abstract base type.
 
 Multiple types can be composed together:
 
-    type pet = animal + named +
+    type Pet = Animal + Named +
         string owner
 
 When a function has multiple definitions for different subtypes, the most specific version is called:
 
-    on (string s) = describe (animal a)
+    on (string s) = describe (Animal a)
         s = "an animal"
 
-    on (string s) = describe (dog d)
+    on (string s) = describe (Dog d)
         s = "a dog, breed: " + d.breed
 
-Calling `describe` with a `dog` uses the specific version; calling it with a `cat` or any other `animal` subtype uses the fallback.
+Calling `describe` with a `Dog` uses the specific version; calling it with a `Cat` or any other `Animal` subtype uses the fallback.
 
 ## variables
 
@@ -105,28 +107,26 @@ zero is strongly typed; variables are declared using C-style `type name` pairs f
 
 Structure types are initialised using C-style constructors, but these don't have to be declared separately; they also support named members out of order.
 
-    vector v = vector()                 # x=0, y=0, z=0
-    vector v = vector(1, 2, 3)          # x=1, y=2, z=3
-    vector v = vector(z=2, x=1)         # x=1, y=0, z=2
+    Vector v = Vector()                 # x=0, y=0, z=0
+    Vector v = Vector(1, 2, 3)          # x=1, y=2, z=3
+    Vector v = Vector(z=2, x=1)         # x=1, y=0, z=2
 
 ## variable scoping
 
-Feature-scoped variables have two kinds of scope:
+Feature-scoped variables are **per-user** by default. Each user session gets its own copy, initialised from the defaults, and values can be changed at runtime per-user:
+
+    bool enabled = true
+    string theme = "teal"
+    string font-size = "32pt"
 
 **shared** variables have one value for the entire application. They are set at deploy time and don't vary between users or sessions:
 
     shared int port = 8084
     shared string logo = "ᕦ(ツ)ᕤ"
 
-**user** variables have one value per user session. Each user gets their own copy, initialised from the defaults. They can be changed at runtime per-user:
+The distinction matters for multi-user applications: `shared` variables live on the module (one copy), per-user variables live on the *context* — an implicit per-session object that the runtime threads through all function calls. Functions never explicitly receive or pass the context; the compiler handles it.
 
-    user bool enabled = true
-    user string theme = "teal"
-    user string font-size = "32pt"
-
-The distinction matters for multi-user applications: `shared` variables live on the module (one copy), `user` variables live on the *context* — an implicit per-session object that the runtime threads through all function calls. Functions never explicitly receive or pass the context; the compiler handles it.
-
-Within a feature, `user` variables are accessed by name. Across features, they're namespaced by feature: `landing-page.enabled`, `theme.font-size`. The context object mirrors the feature structure, with one section per feature.
+Within a feature, per-user variables are accessed by name. Across features, they're namespaced by feature: `landing-page.enabled`, `theme.font-size`. The context object mirrors the feature structure, with one section per feature.
 
 For single-user applications (desktop, CLI), there is one context. For multi-user applications (web server), each session has its own context. The zero source code is the same in both cases — the deployment decides how many contexts exist.
 
@@ -138,8 +138,8 @@ Also, functions use a *named result* pattern - instead of a `return` keyword, we
 
 The following are legal zero function definitions:
 
-    on (vector v) = (vector a) + (vector b)
-        v = vector(a.x + b.x, a.y + b.y, a.z + b.z)
+    on (Vector v) = (Vector a) + (Vector b)
+        v = Vector(a.x + b.x, a.y + b.y, a.z + b.z)
 
     on (number n) = smaller of (number a) and (number b)
         n = (a) if (a < b) else (b)
@@ -221,16 +221,16 @@ Out-of-bounds index references return the default value for the type (0 for numb
 
 The `where` keyword filters an array by a condition on its elements:
 
-    type person =
+    type Person =
         string name
         int age = 0
 
-    person people$ = [...]
-    person adults$ = [people$] where (_.age >= 18)
-    person bob$ = [people$] where (_.name == "bob")
-    person first bob = first of [people$] where (_.name == "bob")
-    bool has minors = any of [people$] where (_.age < 18)
-    int adult count = count of [people$] where (_.age >= 18)
+    Person people$ = [...]
+    Person adults$ = [people$] where (_.age >= 18)
+    Person bob$ = [people$] where (_.name == "bob")
+    Person first-bob = first of [people$] where (_.name == "bob")
+    bool has-minors = any of [people$] where (_.age < 18)
+    int adult-count = count of [people$] where (_.age >= 18)
 
 Inside the `where` clause, `_` refers to the current element being tested.
 
@@ -242,12 +242,12 @@ The `sort` array function sorts an array. For simple arrays, no key is needed:
 
 For structs, use `by` with an expression using `_` for the current element:
 
-    person sorted$ = sort [people$] by (_.age)
-    person sorted$ = sort [people$] by (_.age) descending
+    Person sorted$ = sort [people$] by (_.age)
+    Person sorted$ = sort [people$] by (_.age) descending
 
 The sort key can be any expression, including function calls:
 
-    vector nearest$ = sort [vectors$] by (distance from (_) to (origin))
+    Vector nearest$ = sort [vectors$] by (distance from (_) to (origin))
 
 ## array slicing
 
@@ -343,7 +343,7 @@ A feature can define itself to be an extension of any existing feature using the
 
 A feature can extend the type definition of any existing type using `+=`:
 
-    type colour +=
+    type Colour +=
         number alpha = 1
 
 A feature can also extend the definition of any function using the keywords `in`, `replace`, `before` and `after`:

@@ -669,29 +669,29 @@ def test_not_found_0():
     assert _result == _expected, f"expected {_expected}, got {_result}"
 
 def test_not_found_1():
-    '''handle request (http-request(path="/")) => "not found"'''
-    _result = website.fn_handle_request__http_request(http_request(path="/"))
+    '''handle request (Http-Request(path="/")) => "not found"'''
+    _result = website.fn_handle_request__Http_Request(Http_Request(path="/"))
     _expected = "not found"
     assert _result == _expected, f"expected {_expected}, got {_result}"
 
 def test_not_found_2():
-    '''handle request (http-request(path="/nope")) => "not found"'''
-    _result = website.fn_handle_request__http_request(http_request(path="/nope"))
+    '''handle request (Http-Request(path="/nope")) => "not found"'''
+    _result = website.fn_handle_request__Http_Request(Http_Request(path="/nope"))
     _expected = "not found"
     assert _result == _expected, f"expected {_expected}, got {_result}"
 
-register_tests('not-found', [(test_not_found_0, 'not found () => "not found"'), (test_not_found_1, 'handle request (http-request(path="/")) => "not found"'), (test_not_found_2, 'handle request (http-request(path="/nope")) => "not found"')])
+register_tests('not-found', [(test_not_found_0, 'not found () => "not found"'), (test_not_found_1, 'handle request (Http-Request(path="/")) => "not found"'), (test_not_found_2, 'handle request (Http-Request(path="/nope")) => "not found"')])
 
-class http_request(NamedTuple):
+class Http_Request(NamedTuple):
     path: str = ""
     method: str = ""
     token: str = ""
 
-class http_response(NamedTuple):
-    request: http_request = 0
+class Http_Response(NamedTuple):
+    request: Http_Request = 0
     body: str = ""
 
-class user(NamedTuple):
+class User(NamedTuple):
     name: str = ""
     phone: str = ""
     role: str = ""

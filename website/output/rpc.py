@@ -693,16 +693,16 @@ def test_rpc_4():
 
 register_tests('rpc', [(test_rpc_0, 'rpc eval ("port") => "8084"'), (test_rpc_1, 'rpc eval ("logo = hi") => "logo = hi"'), (test_rpc_2, 'rpc eval ("not found ()") => "not found"'), (test_rpc_3, 'rpc eval ("trim (\\"  hello  \\")") => "hello"'), (test_rpc_4, 'rpc eval ("length of (\\"test\\")") => "4"')])
 
-class http_request(NamedTuple):
+class Http_Request(NamedTuple):
     path: str = ""
     method: str = ""
     token: str = ""
 
-class http_response(NamedTuple):
-    request: http_request = 0
+class Http_Response(NamedTuple):
+    request: Http_Request = 0
     body: str = ""
 
-class user(NamedTuple):
+class User(NamedTuple):
     name: str = ""
     phone: str = ""
     role: str = ""

@@ -237,26 +237,26 @@ export function test_parser_4(): void {
 
 register_tests('parser', [[test_parser_0, 'matching ("()") in ("ᕦ(ツ)ᕤ") after (1) => 3'], [test_parser_1, 'matching ("[]") in ("a[b[c]d]e") after (1) => 7'], [test_parser_2, 'split stream parts ("1 <- 2 <- 3") => ["1", "2", "3"]'], [test_parser_3, 'split stream parts ("1 <- (a <- b) <- 3") => ["1", "(a <- b)", "3"]'], [test_parser_4, 'split stream parts ("hello") => ["hello"]']]);
 
-interface http_request {
+interface Http_Request {
     readonly path: string;
     readonly method: string;
     readonly token: string;
 }
 
-export function http_request(args: Partial<http_request> = {}): http_request {
+export function Http_Request(args: Partial<Http_Request> = {}): Http_Request {
     return { path: args.path ?? "", method: args.method ?? "", token: args.token ?? "" };
 }
 
-interface http_response {
-    readonly request: http_request;
+interface Http_Response {
+    readonly request: Http_Request;
     readonly body: string;
 }
 
-export function http_response(args: Partial<http_response> = {}): http_response {
-    return { request: args.request ?? http_request(), body: args.body ?? "" };
+export function Http_Response(args: Partial<Http_Response> = {}): Http_Response {
+    return { request: args.request ?? Http_Request(), body: args.body ?? "" };
 }
 
-// @zero on (int depth$) <- bracket depth of matching (string s) (string pair); ziz/parser.zero.md:115
+// @zero on (int depth$) <- bracket depth of matching (string s) (string pair); ziz/parser.zero.md:118
 export function* task_bracket_depth_of_matching__string__string(s: string, pair: string): Generator<number> {
     let d = 0;
     for (const c of [...s]) {
@@ -269,7 +269,7 @@ export function* task_bracket_depth_of_matching__string__string(s: string, pair:
     }
 }
 
-// @zero on (int pos) = matching (string pair) in (string s) after (int start); ziz/parser.zero.md:124
+// @zero on (int pos) = matching (string pair) in (string s) after (int start); ziz/parser.zero.md:127
 export function fn_matching__string_in__string_after__int(pair: string, s: string, start: number): number {
     const sub = s.slice(start);
     const depth_arr = [...task_bracket_depth_of_matching__string__string(sub, pair)];
@@ -277,7 +277,7 @@ export function fn_matching__string_in__string_after__int(pair: string, s: strin
     return pos;
 }
 
-// @zero on (string part$) = split stream parts (string s); ziz/parser.zero.md:129
+// @zero on (string part$) = split stream parts (string s); ziz/parser.zero.md:132
 export function fn_split_stream_parts__string(s: string): string[] {
     const padded = s + "<-";
     const depth_arr = [...task_bracket_depth_of_matching__string__string(padded, "()")];

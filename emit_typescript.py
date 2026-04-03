@@ -29,6 +29,9 @@ _enum_values = {}  # populated by emit(), maps value -> "type.value"
 # set of feature names that have per-user variables (for context access detection)
 _context_features_ts = set()
 
+# set of variable names that are keyed collections (Maps)
+_map_vars_ts = set()
+
 
 _CONCURRENTLY_HELPER_TS = """\
 async function _concurrently(...fns: (() => any)[]) {
@@ -40,7 +43,7 @@ async function _concurrently(...fns: (() => any)[]) {
 
 def _init_globals_ts(ir: dict) -> tuple:
     """Initialize module-level state from IR. Returns (structs, enums)."""
-    global _enum_values, _context_features_ts
+    global _enum_values, _context_features_ts, _map_vars_ts
     _context_features_ts = set()
     var_owners = ir.get("_var_owners", {})
     all_user = ir.get("_all_user_vars", [])
@@ -53,6 +56,7 @@ def _init_globals_ts(ir: dict) -> tuple:
         ts_name = _ts_name(ename)
         for val in edata["values"]:
             _enum_values[val] = f"{ts_name}.{val}"
+    _map_vars_ts = {_safe(v["name"] + "_arr") for v in ir["variables"] if v.get("map")}
     return structs, enums
 
 
@@ -919,7 +923,8 @@ def _result_needs_guard_ts(body: list[dict], result_var: str) -> bool:
 def _emit_guarded_body_ts(fn_body, result_var, ret_type, needs_guard, structs, async_fns) -> list[str]:
     """Emit function body with result-assignment guards (TypeScript)."""
     lines = []
-    rv = result_var if needs_guard or any(
+    multi_assign = sum(1 for s in fn_body if _assigns_result_ts(s, result_var)) > 1
+    rv = result_var if needs_guard or multi_assign or any(
         isinstance(s, dict) and s.get("kind") == "if_block" for s in fn_body
     ) else None
     seen_conditional = False
@@ -943,8 +948,9 @@ def _emit_result_function_ts(fn, name, params, ret_type, result_var, prefix, str
     """Emit a function that returns a result (TypeScript)."""
     has_if = any(isinstance(s, dict) and s.get("kind") == "if_block" for s in fn["body"])
     needs_guard = _result_needs_guard_ts(fn["body"], result_var)
+    multi_assign = sum(1 for s in fn["body"] if _assigns_result_ts(s, result_var)) > 1
     lines = [f"{prefix} {name}({params}): {ret_type} {{"]
-    if has_if or needs_guard:
+    if has_if or needs_guard or multi_assign:
         lines.append(f"    let {result_var}: {ret_type} = undefined!;")
     lines.extend(_emit_guarded_body_ts(fn["body"], result_var, ret_type, needs_guard, structs, async_fns))
     lines.append(f"    return {result_var};")
@@ -1011,6 +1017,8 @@ def _emit_stmt(node: dict, result_type: str, structs: dict, async_fns: set[str] 
     if node["kind"] == "concurrently":
         return _emit_concurrently_ts(node, structs)
     if node["kind"] == "assign":
+        if "$[" in node["target"]:
+            return _emit_assign_expr_ts(node, structs) + ";"
         value = _emit_expr(node["value"], structs)
         if result_var and node["target"] == result_var:
             return f"{node['target']} = {value};"
@@ -1076,7 +1084,7 @@ def _emit_filter_expr_ts(node: dict, structs: dict) -> str:
     if kind == "where":
         return f"{arr}.filter(x => {cond})"
     if kind == "first_where":
-        return f"{arr}.find(x => {cond})"
+        return f"{arr}.find(x => {cond})!"
     if kind == "index_of_first_where":
         return f"{arr}.findIndex(x => {cond})"
     return f"{arr}.map((x, i) => ({cond}) ? i : -1).filter(i => i >= 0)"
@@ -1210,7 +1218,11 @@ def _emit_simple_expr_ts(node: dict, structs: dict) -> str | None:
     if kind == "task_call":
         return _emit_task_call_expr_ts(node)
     if kind == "index":
-        return f"{_emit_expr(node['array'], structs)}[{_emit_expr(node['index'], structs)}]"
+        arr = _emit_expr(node['array'], structs)
+        idx = _emit_expr(node['index'], structs)
+        if arr in _map_vars_ts:
+            return f"{arr}.get({idx}) ?? \"\""
+        return f"{arr}[{idx}]"
     if kind == "ternary":
         return f"({_emit_expr(node['condition'], structs)}) ? ({_emit_expr(node['true'], structs)}) : ({_emit_expr(node['false'], structs)})"
     if kind == "raw":

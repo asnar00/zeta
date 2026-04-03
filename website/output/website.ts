@@ -325,50 +325,50 @@ export function test_website_12(): void {
 }
 
 export function test_website_13(): void {
-    // handle request (http-request(path="/")) => "ᕦ(ツ)ᕤ"
-    const _result = fn_handle_request__http_request(http_request({ path: "/" }));
+    // handle request (Http-Request(path="/")) => "ᕦ(ツ)ᕤ"
+    const _result = fn_handle_request__Http_Request(Http_Request({ path: "/" }));
     const _expected = "ᕦ(ツ)ᕤ";
     if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
 }
 
 export function test_website_14(): void {
-    // handle request (http-request(path="/nope")) => "ᕦ(ツ)ᕤ"
-    const _result = fn_handle_request__http_request(http_request({ path: "/nope" }));
+    // handle request (Http-Request(path="/nope")) => "ᕦ(ツ)ᕤ"
+    const _result = fn_handle_request__Http_Request(Http_Request({ path: "/nope" }));
     const _expected = "ᕦ(ツ)ᕤ";
     if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
 }
 
-register_tests('website', [[test_website_0, 'trim ("  hello  ") => "hello"'], [test_website_1, 'trim ("already") => "already"'], [test_website_2, 'char (0) of ("hello") => "h"'], [test_website_3, 'char (4) of ("hello") => "o"'], [test_website_4, '("hello world") starts with ("hello") => true'], [test_website_5, '("hello world") starts with ("world") => false'], [test_website_6, 'split ("a/b/c") by ("/") => ["a", "b", "c"]'], [test_website_7, 'split ("hello") by ("/") => ["hello"]'], [test_website_8, 'length of ("hello") => 5'], [test_website_9, 'length of ("") => 0'], [test_website_10, 'replace ("world") in ("hello world") with ("zero") => "hello zero"'], [test_website_11, 'substring of ("hello world") from (6) => "world"'], [test_website_12, 'substring of ("abc") from (0) => "abc"'], [test_website_13, 'handle request (http-request(path="/")) => "ᕦ(ツ)ᕤ"'], [test_website_14, 'handle request (http-request(path="/nope")) => "ᕦ(ツ)ᕤ"']]);
+register_tests('website', [[test_website_0, 'trim ("  hello  ") => "hello"'], [test_website_1, 'trim ("already") => "already"'], [test_website_2, 'char (0) of ("hello") => "h"'], [test_website_3, 'char (4) of ("hello") => "o"'], [test_website_4, '("hello world") starts with ("hello") => true'], [test_website_5, '("hello world") starts with ("world") => false'], [test_website_6, 'split ("a/b/c") by ("/") => ["a", "b", "c"]'], [test_website_7, 'split ("hello") by ("/") => ["hello"]'], [test_website_8, 'length of ("hello") => 5'], [test_website_9, 'length of ("") => 0'], [test_website_10, 'replace ("world") in ("hello world") with ("zero") => "hello zero"'], [test_website_11, 'substring of ("hello world") from (6) => "world"'], [test_website_12, 'substring of ("abc") from (0) => "abc"'], [test_website_13, 'handle request (Http-Request(path="/")) => "ᕦ(ツ)ᕤ"'], [test_website_14, 'handle request (Http-Request(path="/nope")) => "ᕦ(ツ)ᕤ"']]);
 
 const port: number = 8084;
 const logo: string = "ᕦ(ツ)ᕤ";
 
-interface http_request {
+interface Http_Request {
     readonly path: string;
     readonly method: string;
     readonly token: string;
 }
 
-export function http_request(args: Partial<http_request> = {}): http_request {
+export function Http_Request(args: Partial<Http_Request> = {}): Http_Request {
     return { path: args.path ?? "", method: args.method ?? "", token: args.token ?? "" };
 }
 
-interface http_response {
-    readonly request: http_request;
+interface Http_Response {
+    readonly request: Http_Request;
     readonly body: string;
 }
 
-export function http_response(args: Partial<http_response> = {}): http_response {
-    return { request: args.request ?? http_request(), body: args.body ?? "" };
+export function Http_Response(args: Partial<Http_Response> = {}): Http_Response {
+    return { request: args.request ?? Http_Request(), body: args.body ?? "" };
 }
 
-interface user {
+interface User {
     readonly name: string;
     readonly phone: string;
     readonly role: string;
 }
 
-export function user(args: Partial<user> = {}): user {
+export function User(args: Partial<User> = {}): User {
     return { name: args.name ?? "", phone: args.phone ?? "", role: args.role ?? "" };
 }
 
@@ -378,13 +378,13 @@ export async function task_main__string(args_arr: readonly string[]): Promise<vo
     const request_arr = task_serve_http__int(port);
     for await (const request of request_arr) {
         _push_terminal_out(request.path);
-        const body = fn_handle_request__http_request(request);
-        _push_http_response(http_response({ request: request, body: body }));
+        const body = fn_handle_request__Http_Request(request);
+        _push_http_response(Http_Response({ request: request, body: body }));
     }
 }
 
-// @zero on (string body) = handle request (http-request request); website/website.zero.md:137
-export function fn_handle_request__http_request(request: http_request): string {
+// @zero on (string body) = handle request (Http-Request request); website/website.zero.md:137
+export function fn_handle_request__Http_Request(request: Http_Request): string {
     let body: string = undefined!;
     if (_get_ctx().landing_page.enabled && request.path == "/") {
     body = landing_page.fn_landing_page();

@@ -224,89 +224,90 @@ export function _get_ctx(): _Context {
 
 
 export function test_login_0(): void {
-    // request login ("+440001") => "1234"
-    const _result = fn_request_login__string("+440001");
+    // request login ("_alice") => "1234"
+    const _result = fn_request_login__string("_alice");
     const _expected = "1234";
     if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
 }
 
 export function test_login_1(): void {
-    // request login ("+449999") => "unknown"
-    const _result = fn_request_login__string("+449999");
+    // request login ("nobody") => "unknown"
+    const _result = fn_request_login__string("nobody");
     const _expected = "unknown";
     if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
 }
 
 export function test_login_2(): void {
-    // verify login ("+440001") ("0000") => user()
-    const _result = fn_verify_login__string__string("+440001", "0000");
-    const _expected = user({  });
+    // verify login ("_alice") ("0000") => User()
+    const _result = fn_verify_login__string__string("_alice", "0000");
+    const _expected = User({  });
     if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
 }
 
-register_tests('login', [[test_login_0, 'request login ("+440001") => "1234"'], [test_login_1, 'request login ("+449999") => "unknown"'], [test_login_2, 'verify login ("+440001") ("0000") => user()']]);
+register_tests('login', [[test_login_0, 'request login ("_alice") => "1234"'], [test_login_1, 'request login ("nobody") => "unknown"'], [test_login_2, 'verify login ("_alice") ("0000") => User()']]);
 
-const users_arr: readonly user[] = [user({ name: "_alice", phone: "+440001", role: "admin" }), user({ name: "_bob", phone: "+440002", role: "user" })];
+const users_arr: readonly User[] = [User({ name: "_alice", phone: "+440001", role: "admin" }), User({ name: "_bob", phone: "+440002", role: "user" })];
 const pending_codes_arr: Map<string, string> = new Map();
 
-interface http_request {
+interface Http_Request {
     readonly path: string;
     readonly method: string;
     readonly token: string;
 }
 
-export function http_request(args: Partial<http_request> = {}): http_request {
+export function Http_Request(args: Partial<Http_Request> = {}): Http_Request {
     return { path: args.path ?? "", method: args.method ?? "", token: args.token ?? "" };
 }
 
-interface http_response {
-    readonly request: http_request;
+interface Http_Response {
+    readonly request: Http_Request;
     readonly body: string;
 }
 
-export function http_response(args: Partial<http_response> = {}): http_response {
-    return { request: args.request ?? http_request(), body: args.body ?? "" };
+export function Http_Response(args: Partial<Http_Response> = {}): Http_Response {
+    return { request: args.request ?? Http_Request(), body: args.body ?? "" };
 }
 
-interface user {
+interface User {
     readonly name: string;
     readonly phone: string;
     readonly role: string;
 }
 
-export function user(args: Partial<user> = {}): user {
+export function User(args: Partial<User> = {}): User {
     return { name: args.name ?? "", phone: args.phone ?? "", role: args.role ?? "" };
 }
 
-// @zero on (string code) = request login (string phone); website/login/login.zero.md:151
-export function fn_request_login__string(phone: string): string {
+// @zero on (string code) = request login (string name); website/login/login.zero.md:151
+export function fn_request_login__string(name: string): string {
     let code: string = undefined!;
-    const found = users_arr.find(x => x.phone == phone);
-    if (found.phone == phone) {
-    code = fn_generate_code__user(found);
-    const pending-codes$[phone]: string = code;
+    const found = users_arr.find(x => x.name == name)!;
+    if (found.name == name) {
+    code = fn_generate_code__User(found);
+    pending_codes_arr.set(found.phone, code);
 } else {
     code = "unknown";
 }
     return code;
 }
 
-// @zero on (user result) = verify login (string phone) (string code); website/login/login.zero.md:159
-export function fn_verify_login__string__string(phone: string, code: string): user {
-    let result: user = undefined!;
-    const stored = pending_codes_arr[phone];
-    if (stored == code && stored != "") {
-    const pending-codes$[phone]: user = "";
-    result = users_arr.find(x => x.phone == phone);
+// @zero on (User result) = verify login (string name) (string code); website/login/login.zero.md:159
+export function fn_verify_login__string__string(name: string, code: string): User {
+    let result: User = undefined!;
+    const found = users_arr.find(x => x.name == name)!;
+    const stored = pending_codes_arr.get(found.phone) ?? "";
+    if (found.name == name && stored == code && stored != "") {
+    pending_codes_arr.set(found.phone, "");
+    result = found;
 }
     return result;
 }
 
-// @zero on (string token) = login (string phone) (string code); website/login/login.zero.md:165
-export function fn_login__string__string(phone: string, code: string): string {
+// @zero on (string token) = login (string name) (string code); website/login/login.zero.md:166
+export function fn_login__string__string(name: string, code: string): string {
     let token: string = undefined!;
-    const found = fn_verify_login__string__string(phone, code);
-    if (found.phone == phone) {
+    const found = fn_verify_login__string__string(name, code);
+    if (found.name != "") {
     token = fn_create_session();
 } else {
     token = "invalid";
@@ -314,8 +315,8 @@ export function fn_login__string__string(phone: string, code: string): string {
     return token;
 }
 
-// @zero on (string code) = generate code (user u); website/login/login.zero.md:172
-export function fn_generate_code__user(u: user): string {
+// @zero on (string code) = generate code (User u); website/login/login.zero.md:173
+export function fn_generate_code__User(u: User): string {
     let code: string = undefined!;
     if (u.name == "_alice") {
     code = "1234";
