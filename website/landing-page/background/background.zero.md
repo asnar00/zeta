@@ -11,7 +11,7 @@ Adds a per-user background colour to the landing page. Uses `after` to post-proc
 
 Each user can have their own background colour, defaulting to teal:
 
-    user string colour = "#34988b"
+    string colour = "#34988b"
 
 After the landing page HTML is generated, swap the default teal for this user's colour:
 

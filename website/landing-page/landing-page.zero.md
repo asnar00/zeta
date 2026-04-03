@@ -20,7 +20,7 @@ After composition, root path returns the landing page, other paths fall through:
 
 Per-user toggle — when disabled, the landing page is skipped and the request falls through to the next handler:
 
-    user bool enabled = true
+    bool enabled = true
 
 Intercept the root path and serve the landing page, if enabled for this user:
 

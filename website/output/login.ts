@@ -246,6 +246,9 @@ export function test_login_2(): void {
 
 register_tests('login', [[test_login_0, 'request login ("+440001") => "1234"'], [test_login_1, 'request login ("+449999") => "unknown"'], [test_login_2, 'verify login ("+440001") ("0000") => user()']]);
 
+const users_arr: readonly user[] = [user({ name: "_alice", phone: "+440001", role: "admin" }), user({ name: "_bob", phone: "+440002", role: "user" })];
+const pending_codes_arr: Map<string, string> = new Map();
+
 interface http_request {
     readonly path: string;
     readonly method: string;
@@ -275,10 +278,7 @@ export function user(args: Partial<user> = {}): user {
     return { name: args.name ?? "", phone: args.phone ?? "", role: args.role ?? "" };
 }
 
-const users_arr: readonly user[] = [user({ name: "_alice", phone: "+440001", role: "admin" }), user({ name: "_bob", phone: "+440002", role: "user" })];
-const pending_codes_arr: Map<string, string> = new Map();
-
-// @zero on (string code) = request login (string phone); website/login.zero.md:148
+// @zero on (string code) = request login (string phone); website/login/login.zero.md:151
 export function fn_request_login__string(phone: string): string {
     let code: string = undefined!;
     const found = users_arr.find(x => x.phone == phone);
@@ -291,7 +291,7 @@ export function fn_request_login__string(phone: string): string {
     return code;
 }
 
-// @zero on (user result) = verify login (string phone) (string code); website/login.zero.md:156
+// @zero on (user result) = verify login (string phone) (string code); website/login/login.zero.md:159
 export function fn_verify_login__string__string(phone: string, code: string): user {
     let result: user = undefined!;
     const stored = pending_codes_arr[phone];
@@ -302,7 +302,7 @@ export function fn_verify_login__string__string(phone: string, code: string): us
     return result;
 }
 
-// @zero on (string token) = login (string phone) (string code); website/login.zero.md:162
+// @zero on (string token) = login (string phone) (string code); website/login/login.zero.md:165
 export function fn_login__string__string(phone: string, code: string): string {
     let token: string = undefined!;
     const found = fn_verify_login__string__string(phone, code);
@@ -314,7 +314,7 @@ export function fn_login__string__string(phone: string, code: string): string {
     return token;
 }
 
-// @zero on (string code) = generate code (user u); website/login.zero.md:169
+// @zero on (string code) = generate code (user u); website/login/login.zero.md:172
 export function fn_generate_code__user(u: user): string {
     let code: string = undefined!;
     if (u.name == "_alice") {

@@ -728,7 +728,8 @@ def _build_feat_ir(feat_name, ctx, input_paths):
     feat_ir["module_map"] = ctx["module_map"]
     feat_ir["current_module"] = feat_name.replace("-", "_")
     feat_ir["_var_owners"] = ctx["ir_var_owners"]
-    feat_ir["_all_user_vars"] = [v for v in ir["variables"] if v.get("scope") == "user"]
+    feat_ir["_all_user_vars"] = [v for v in ir["variables"]
+                                  if v.get("scope") != "shared" and not v.get("_platform")]
     if ir_by_feature[feat_name].get("tests"):
         feat_ir["tests"] = ir_by_feature[feat_name]["tests"]
         feat_ir["test_feature"] = feat_name
@@ -801,8 +802,49 @@ def _finalize_feature_code(code, feat_name, ext, ctx, platform_append):
     return code
 
 
+def _read_feature_summary(path):
+    """Read the one-line summary from a .zero.md file (the *...* line)."""
+    try:
+        with open(path) as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith("*") and line.endswith("*") and len(line) > 2:
+                    return line[1:-1]
+    except OSError:
+        pass
+    return ""
+
+
+def _build_feature_tree_data(features, input_paths):
+    """Build a list of (name, summary, extends) tuples for the feature tree."""
+    path_by_name = {}
+    for p in input_paths:
+        name = os.path.basename(p).replace(".zero.md", "")
+        path_by_name[name] = p
+    tree = []
+    for f in features:
+        summary = _read_feature_summary(path_by_name.get(f["name"], ""))
+        tree.append((f["name"], summary, f["extends"]))
+    return tree
+
+
+def _emit_feature_tree_const(tree_data, ext):
+    """Emit the _FEATURE_TREE constant for the root module."""
+    if ext == ".py":
+        entries = ", ".join(f'("{n}", "{s}", {repr(e)})' for n, s, e in tree_data)
+        return f"\n_FEATURE_TREE = [{entries}]\n"
+    elif ext == ".ts":
+        entries = ", ".join(
+            f'["{n}", "{s}", {f"{chr(34)}{e}{chr(34)}" if e else "null"}]'
+            for n, s, e in tree_data
+        )
+        return f"\nconst _FEATURE_TREE: [string, string, string | null][] = [{entries}];\n"
+    return ""
+
+
 def _emit_all_features(per_feature, ctx, input_paths,
-                       platform_prepend, platform_append, output_dir):
+                       platform_prepend, platform_append, output_dir,
+                       feature_tree_data=None):
     """Emit per-feature output files for each target language."""
     for ext in _EMITTERS:
         emitter_module = __import__(_EMITTERS[ext])
@@ -817,6 +859,8 @@ def _emit_all_features(per_feature, ctx, input_paths,
                 code = _finalize_feature_code(
                     code, feat_name, ext, ctx, platform_append
                 )
+                if feat_name == ctx["root_name"] and feature_tree_data:
+                    code += _emit_feature_tree_const(feature_tree_data, ext)
                 safe_name = feat_name.replace("-", "_")
                 out_path = os.path.join(output_dir, f"{safe_name}{pext}")
                 with open(out_path, "w") as f:
@@ -890,12 +934,14 @@ def _build_features(features_path, output_dir, flags):
     plat_code = _load_platform_interface_code()
 
     ctx = _build_feature_context(features, dynamic_set, plat_code, input_paths)
+    feature_tree_data = _build_feature_tree_data(features, input_paths)
 
     _ensure_package_json(output_dir)
     _write_runtime_files(ctx["features_with_tests"], output_dir)
     _emit_all_features(
         per_feature, ctx, input_paths,
-        platform_prepend, platform_append, output_dir
+        platform_prepend, platform_append, output_dir,
+        feature_tree_data=feature_tree_data,
     )
     _compile_all_outputs(output_dir)
     print(f"built {len(per_feature)} features -> {output_dir}")

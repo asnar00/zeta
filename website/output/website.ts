@@ -340,6 +340,9 @@ export function test_website_14(): void {
 
 register_tests('website', [[test_website_0, 'trim ("  hello  ") => "hello"'], [test_website_1, 'trim ("already") => "already"'], [test_website_2, 'char (0) of ("hello") => "h"'], [test_website_3, 'char (4) of ("hello") => "o"'], [test_website_4, '("hello world") starts with ("hello") => true'], [test_website_5, '("hello world") starts with ("world") => false'], [test_website_6, 'split ("a/b/c") by ("/") => ["a", "b", "c"]'], [test_website_7, 'split ("hello") by ("/") => ["hello"]'], [test_website_8, 'length of ("hello") => 5'], [test_website_9, 'length of ("") => 0'], [test_website_10, 'replace ("world") in ("hello world") with ("zero") => "hello zero"'], [test_website_11, 'substring of ("hello world") from (6) => "world"'], [test_website_12, 'substring of ("abc") from (0) => "abc"'], [test_website_13, 'handle request (http-request(path="/")) => "ᕦ(ツ)ᕤ"'], [test_website_14, 'handle request (http-request(path="/nope")) => "ᕦ(ツ)ᕤ"']]);
 
+const port: number = 8084;
+const logo: string = "ᕦ(ツ)ᕤ";
+
 interface http_request {
     readonly path: string;
     readonly method: string;
@@ -369,10 +372,7 @@ export function user(args: Partial<user> = {}): user {
     return { name: args.name ?? "", phone: args.phone ?? "", role: args.role ?? "" };
 }
 
-const port: number = 8084;
-const logo: string = "ᕦ(ツ)ᕤ";
-
-// @zero on main (string args$); website/website.zero.md:126
+// @zero on main (string args$); website/website.zero.md:129
 export async function task_main__string(args_arr: readonly string[]): Promise<void> {
     _push_terminal_out(logo);
     const request_arr = task_serve_http__int(port);
@@ -383,7 +383,7 @@ export async function task_main__string(args_arr: readonly string[]): Promise<vo
     }
 }
 
-// @zero on (string body) = handle request (http-request request); website/website.zero.md:134
+// @zero on (string body) = handle request (http-request request); website/website.zero.md:137
 export function fn_handle_request__http_request(request: http_request): string {
     let body: string = undefined!;
     if (_get_ctx().landing_page.enabled && request.path == "/") {
@@ -401,7 +401,7 @@ export function fn_handle_request__http_request(request: http_request): string {
     return body;
 }
 
-// @zero on stop; website/website.zero.md:142
+// @zero on stop; website/website.zero.md:145
 export function fn_stop(): void {
     fn_print__string("stopping");
 }
@@ -428,3 +428,5 @@ try {
     // no main task defined
 }
 }
+
+const _FEATURE_TREE: [string, string, string | null][] = [["website", "the nøøb website", null], ["not-found", "default 404 response", "website"], ["login", "SMS code authentication", "website"], ["rpc", "RPC endpoint for runtime evaluation", "website"], ["landing-page", "serves the noob landing page at root", "website"], ["background", "per-user background colour", "landing-page"]];

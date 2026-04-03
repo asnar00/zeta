@@ -563,11 +563,9 @@ def _parse_struct_fields(line: str) -> list[dict]:
 
 
 def _extract_scope_prefix(line):
-    """Extract optional scope prefix (shared/user) from a line."""
+    """Extract optional scope prefix (shared) from a line."""
     if line.startswith("shared "):
         return "shared", line[7:]
-    if line.startswith("user "):
-        return "user", line[5:]
     return None, line
 
 

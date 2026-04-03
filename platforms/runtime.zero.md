@@ -11,9 +11,13 @@ Evaluate a zero expression at runtime (get/set variables, call functions):
 
     on (string result) = rpc eval (string expr)
 
-List all available features, variables, and functions:
+List all available variables and functions:
 
-    on (string result) = directory ()
+    on (string result) = functions ()
+
+Show the feature tree with one-line summaries:
+
+    on (string result) = features ()
 
 Run all tests, or tests for a specific feature:
 

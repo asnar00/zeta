@@ -461,12 +461,51 @@ def _build_directory(mod):
     return "\n".join(lines) if lines else "empty"
 
 
-# @zero on (string result) = directory ()
-def fn_directory() -> str:
+# @zero on (string result) = functions ()
+def fn_functions() -> str:
     mod = _find_root_module()
     if mod is None:
         return "error: no root module"
     return _build_directory(mod)
+
+
+def _build_feature_tree(tree):
+    """Build a feature tree with box-drawing characters from _FEATURE_TREE data."""
+    # tree is [(name, summary, extends), ...]
+    children = {}  # parent -> [child entries]
+    root = None
+    for name, summary, extends in tree:
+        if extends is None:
+            root = (name, summary)
+        else:
+            children.setdefault(extends, []).append((name, summary))
+    if root is None:
+        return "no root feature"
+    lines = [f"{root[0]} \u2014 {root[1]}"]
+    _render_children(lines, root[0], children, "")
+    return "\n".join(lines)
+
+
+def _render_children(lines, parent, children, prefix):
+    """Recursively render child features with box-drawing connectors."""
+    kids = children.get(parent, [])
+    for i, (name, summary) in enumerate(kids):
+        is_last = (i == len(kids) - 1)
+        connector = "\u2514\u2500 " if is_last else "\u251c\u2500 "
+        lines.append(f"{prefix}{connector}{name} \u2014 {summary}")
+        child_prefix = prefix + ("   " if is_last else "\u2502  ")
+        _render_children(lines, name, children, child_prefix)
+
+
+# @zero on (string result) = features ()
+def fn_features() -> str:
+    mod = _find_root_module()
+    if mod is None:
+        return "error: no root module"
+    tree = getattr(mod, '_FEATURE_TREE', None)
+    if not tree:
+        return "no feature tree available"
+    return _build_feature_tree(tree)
 
 
 # @zero on (string result) = rpc eval (string expr)
@@ -476,9 +515,9 @@ def fn_rpc_eval__string(expr: str) -> str:
     if mod is None:
         return "error: no root module"
 
-    # empty expression: return directory
+    # empty expression: return features + functions
     if not expr:
-        return fn_directory()
+        return fn_features() + "\n\n" + fn_functions()
 
     # assignment: feature.var = value  or  var = value
     assign_match = re.match(r'^([\w.-]+)\s*=\s*(.+)$', expr)
@@ -733,7 +772,7 @@ class user(NamedTuple):
     phone: str = ""
     role: str = ""
 
-# @zero on main (string args$); website/website.zero.md:126
+# @zero on main (string args$); website/website.zero.md:129
 def task_main__string(args_arr: str):
     _push_terminal_out(logo)
     request_arr = task_serve_http__int(port)
@@ -742,7 +781,7 @@ def task_main__string(args_arr: str):
         body = fn_handle_request__http_request(request)
         _push_http_response(http_response(request, body))
 
-# @zero on (string body) = handle request (http-request request); website/website.zero.md:134
+# @zero on (string body) = handle request (http-request request); website/website.zero.md:137
 def fn_handle_request__http_request(request: http_request) -> str:
     body = None
     if _get_ctx().landing_page.enabled and request.path == "/":
@@ -755,7 +794,7 @@ def fn_handle_request__http_request(request: http_request) -> str:
         body = not_found.fn_not_found()
     return body if body is not None else ""
 
-# @zero on stop; website/website.zero.md:142
+# @zero on stop; website/website.zero.md:145
 def fn_stop():
     fn_print__string("stopping")
 
@@ -775,3 +814,5 @@ if __name__ == '__main__':
                 print(line)
     except NameError:
         pass  # no main task defined
+
+_FEATURE_TREE = [("website", "the nøøb website", None), ("not-found", "default 404 response", 'website'), ("login", "SMS code authentication", 'website'), ("rpc", "RPC endpoint for runtime evaluation", 'website'), ("landing-page", "serves the noob landing page at root", 'website'), ("background", "per-user background colour", 'landing-page')]

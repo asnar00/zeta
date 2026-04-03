@@ -26,7 +26,7 @@ _TS_NUMERIC = {"int": "number", "float": "number", "int | float": "number", "cha
 
 _enum_values = {}  # populated by emit(), maps value -> "type.value"
 
-# set of feature names that have user-scoped variables (for context access detection)
+# set of feature names that have per-user variables (for context access detection)
 _context_features_ts = set()
 
 
@@ -43,7 +43,7 @@ def _init_globals_ts(ir: dict) -> tuple:
     global _enum_values, _context_features_ts
     _context_features_ts = set()
     var_owners = ir.get("_var_owners", {})
-    all_user = ir.get("_all_user_vars", [v for v in ir["variables"] if v.get("scope") == "user"])
+    all_user = ir.get("_all_user_vars", [])
     for v in all_user:
         _context_features_ts.add(var_owners.get(v["name"], "default"))
     structs = {t["name"]: t for t in ir["types"] if t["kind"] == "struct"}
@@ -82,9 +82,10 @@ def _emit_tests_sections_ts(ir: dict, structs: dict) -> list[str]:
 def _emit_variables_section_ts(ir: dict, structs: dict) -> list[str]:
     """Emit variable declarations and bare statements."""
     platform_stream_names = {u["name"].replace("$", "") for u in ir.get("uses", [])}
+    user_var_names = {v["name"] for v in ir.get("_all_user_vars", [])}
     var_lines = []
     for var in ir["variables"]:
-        if var.get("scope") == "user":
+        if var["name"] in user_var_names:
             continue
         if var["name"] in platform_stream_names and var.get("array") and var.get("value") is None:
             continue
@@ -126,8 +127,8 @@ def _apply_module_prefixes_ts(result: str, ir: dict) -> str:
 
 
 def _maybe_prepend_context(sections: list[str], ir: dict):
-    """Prepend context class if there are user-scoped variables."""
-    user_vars = ir.get("_all_user_vars", [v for v in ir["variables"] if v.get("scope") == "user"])
+    """Prepend context class if there are per-user variables."""
+    user_vars = ir.get("_all_user_vars", [])
     if user_vars:
         sections.insert(0, _emit_context_class_ts(user_vars, ir))
 
@@ -343,7 +344,7 @@ def _emit_context_wrapper(by_feature: dict) -> list[str]:
 
 
 def _emit_context_class_ts(user_vars: list[dict], ir: dict) -> str:
-    """Generate a _Context class from user-scoped variables, plus AsyncLocalStorage setup."""
+    """Generate a _Context class from per-user variables, plus AsyncLocalStorage setup."""
     var_owners = ir.get("_var_owners", {})
     by_feature = {}
     for v in user_vars:

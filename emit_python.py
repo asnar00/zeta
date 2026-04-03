@@ -28,7 +28,7 @@ _PY_TYPE_MAP = {"string": "str", "char": "str"}
 
 _enum_values = {}  # populated by emit(), maps value -> "type.value"
 
-# set of feature names that have user-scoped variables (for context access detection)
+# set of feature names that have per-user variables (for context access detection)
 _context_features = set()
 
 
@@ -37,7 +37,7 @@ def _init_globals(ir: dict) -> dict:
     global _enum_values, _context_features
     _context_features = set()
     var_owners = ir.get("_var_owners", {})
-    all_user = ir.get("_all_user_vars", [v for v in ir["variables"] if v.get("scope") == "user"])
+    all_user = ir.get("_all_user_vars", [])
     for v in all_user:
         _context_features.add(var_owners.get(v["name"], "default"))
     enums = {t["name"]: t for t in ir["types"] if t["kind"] == "enum"}
@@ -91,9 +91,10 @@ def _emit_definitions(ir: dict, enums: dict) -> list[str]:
 def _emit_variables_section(ir: dict) -> list[str]:
     """Emit variable declarations and bare statements."""
     platform_stream_names = {u["name"].replace("$", "") for u in ir.get("uses", [])}
+    user_var_names = {v["name"] for v in ir.get("_all_user_vars", [])}
     var_lines = []
     for var in ir["variables"]:
-        if var.get("scope") == "user":
+        if var["name"] in user_var_names:
             continue
         if var["name"] in platform_stream_names and var.get("array") and var.get("value") is None:
             continue
@@ -138,7 +139,7 @@ def emit(ir: dict) -> str:
     concrete_fns = [fn for fn in ir["functions"] if not fn.get("abstract")]
     dispatch_sections = _generate_dispatchers(concrete_fns, ir.get("types", []))
 
-    user_vars = ir.get("_all_user_vars", [v for v in ir["variables"] if v.get("scope") == "user"])
+    user_vars = ir.get("_all_user_vars", [])
     if user_vars:
         sections.insert(0, _emit_context_class(user_vars, ir))
 
@@ -397,7 +398,7 @@ def _emit_context_accessor() -> list[str]:
 
 
 def _emit_context_class(user_vars: list[dict], ir: dict) -> str:
-    """Generate a _Context class from user-scoped variables, plus contextvars setup."""
+    """Generate a _Context class from per-user variables, plus contextvars setup."""
     lines = ["import contextvars", ""]
     lines.extend(_emit_context_fields(user_vars, ir))
     lines.append("")
