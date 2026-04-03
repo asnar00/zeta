@@ -25,12 +25,38 @@ feature sources (.md)
 ## modules
 
 - **`parser.py`** — parses zero source into an IR dict. Handles types, variables, function signatures, tasks, and expression parsing (body strings → ASTs).
+- **`emit_base.py`** — shared emitter infrastructure: function naming, type dispatch grouping, array ref rewriting, source comments. Used by both target emitters.
 - **`emit_python.py`** — emits Python 3.12+. Checks IR version and feature compatibility.
 - **`emit_typescript.py`** — emits TypeScript. Checks IR version and feature compatibility.
 - **`feature_parser.py`** — parses feature declarations, extensions, and type extensions from zero source.
 - **`composer.py`** — combines feature nubs into composed zero source with before/after/on/replace.
-- **`zeta.py`** — CLI entry point: `python3 zeta.py input.md output.py|ts`.
+- **`zeta.py`** — CLI entry point: `python3 zeta.py input.md output.py|ts`. Orchestrates the pipeline for both single-file and feature-modular builds.
 - **`probe.py`** — systematic feature-combination tester.
+
+## code structure
+
+All `.py` files follow a strict rule: **every function is 25 lines or fewer** (one screen of code). Commented code blocks are extracted into named functions, so the code reads as a sequence of clear steps rather than a wall of inline logic.
+
+### zeta.py — pipeline orchestrator
+
+`main()` reads as a short sequence of named steps: parse args, load emitter, read sources, compose, prepend platform interfaces, parse, emit, assemble output, write and compile. The feature-modular path (`_build_features`) follows the same pattern: read inputs, compose per-feature, build a context (IR mapped to features), emit all features, compile.
+
+Helper functions group naturally: arg parsing, safety checks, source reading, platform loading, IR mapping (functions/tasks/variables to features), module map construction, and per-feature code generation with imports/exports/harness.
+
+### emit_base.py — shared emitter logic
+
+Function naming (`make_function_name`), type dispatch grouping (`compute_dispatch_groups` with `_type_depth` for inheritance-aware specificity sorting), array ref rewriting, underscore replacement, and source comment generation. Both emitters import these rather than duplicating logic.
+
+### emit_python.py / emit_typescript.py — target emitters
+
+Both emitters follow the same internal structure:
+
+1. **Globals setup** — `_init_globals` / `_init_globals_ts` populates enum value maps and context feature sets from the IR.
+2. **Orchestrator** — `emit()` calls phase functions in order: preamble (imports/helpers), tests, definitions (types/tasks/functions), context class, variables, dispatchers. Ends with cross-module prefix rewriting.
+3. **Section emitters** — each IR element kind has its own emitter: `_emit_type` → `_emit_struct_type`, `_emit_task` → `_emit_task_header` + `_emit_task_body_node` + per-kind handlers, `_emit_function` → `_emit_result_function` + `_emit_guarded_body`.
+4. **Expression dispatch** — `_emit_expr` is a flat dispatch that delegates to per-kind handlers: `_emit_call_expr`, `_emit_var_decl_expr`, `_emit_filter_expr`, `_emit_slice_expr`, `_emit_simple_expr` (for one-liner kinds like binop, index, ternary, raw), and `_emit_leaf_expr` (member, name, literal).
+
+The two emitters make consistent decisions — same function naming patterns, same decomposition strategy, same grouping of expression kinds — so navigating one teaches you the other.
 
 ## IR format
 
@@ -157,3 +183,4 @@ Built via `python3 zeta.py ziz/features.md ziz/output/`. Output includes per-fea
 7. **Modular by language feature** — each construct is handled independently, easy to add new features.
 8. **Safety catch** — zeta refuses to write output into its own source directory.
 9. **Decomposed streams over imperative loops** — the preferred zero style decomposes loop accumulators into parallel array streams, avoiding mutable state. See `split stream parts` in `atoz.md`.
+10. **25-line function limit** — every function fits on one screen. Commented code blocks become named functions. This keeps the code navigable and talkable — you can refer to `_emit_task_for_each` instead of "lines 740–780 of emit_python.py".

@@ -141,6 +141,34 @@ def replace_underscore(node: dict, replacement: str) -> dict:
     return result
 
 
+def _build_type_parents(types: list[dict]) -> dict:
+    """Build a map from type name to its parent type names."""
+    return {t["name"]: t.get("parents", [])
+            for t in types if t["kind"] == "struct"}
+
+
+def _type_depth(param_type: str, type_parents: dict) -> int:
+    """Count inheritance depth via BFS over parent types."""
+    depth = 0
+    visited = set()
+    to_check = list(type_parents.get(param_type, []))
+    while to_check:
+        p = to_check.pop(0)
+        if p not in visited:
+            visited.add(p)
+            depth += 1
+            to_check.extend(type_parents.get(p, []))
+    return depth
+
+
+def _sort_by_specificity(fns: list[dict], type_parents: dict) -> list[dict]:
+    """Sort functions most-specific-type first."""
+    def key(fn):
+        param_type = fn["params"][0]["type"] if fn["params"] else ""
+        return -_type_depth(param_type, type_parents)
+    return sorted(fns, key=key)
+
+
 def compute_dispatch_groups(functions: list[dict], types: list[dict]) -> dict:
     """Group functions by base name and sort by type specificity.
     Returns {base_name: [sorted_fns]} for groups with multiple definitions."""
@@ -151,33 +179,9 @@ def compute_dispatch_groups(functions: list[dict], types: list[dict]) -> dict:
             groups[base] = []
         groups[base].append(fn)
 
-    type_parents = {}
-    for t in types:
-        if t["kind"] == "struct":
-            type_parents[t["name"]] = t.get("parents", [])
-
-    result = {}
-    for base, fns in groups.items():
-        if len(fns) <= 1:
-            continue
-
-        def _specificity(fn):
-            param_type = fn["params"][0]["type"] if fn["params"] else ""
-            parents = type_parents.get(param_type, [])
-            depth = 0
-            visited = set()
-            to_check = list(parents)
-            while to_check:
-                p = to_check.pop(0)
-                if p not in visited:
-                    visited.add(p)
-                    depth += 1
-                    to_check.extend(type_parents.get(p, []))
-            return -depth
-
-        result[base] = sorted(fns, key=_specificity)
-
-    return result
+    type_parents = _build_type_parents(types)
+    return {base: _sort_by_specificity(fns, type_parents)
+            for base, fns in groups.items() if len(fns) > 1}
 
 
 def make_task_fn_name(task: dict) -> str:

@@ -28,82 +28,68 @@ _PY_TYPE_MAP = {"string": "str", "char": "str"}
 
 _enum_values = {}  # populated by emit(), maps value -> "type.value"
 
+# set of feature names that have user-scoped variables (for context access detection)
+_context_features = set()
 
-def emit(ir: dict) -> str:
-    """Emit Python source code from a zero IR dict."""
-    _check_compatibility(ir)
-    global _enum_values
-    sections = []
 
-    # populate context feature set for user-var access detection
-    global _context_features
+def _init_globals(ir: dict) -> dict:
+    """Initialize module-level enum values and context features. Returns enums dict."""
+    global _enum_values, _context_features
     _context_features = set()
     var_owners = ir.get("_var_owners", {})
     all_user = ir.get("_all_user_vars", [v for v in ir["variables"] if v.get("scope") == "user"])
     for v in all_user:
-        feat = var_owners.get(v["name"], "default")
-        _context_features.add(feat)
-
-    # collect enum names for qualifying default values and expression references
+        _context_features.add(var_owners.get(v["name"], "default"))
     enums = {t["name"]: t for t in ir["types"] if t["kind"] == "enum"}
     _enum_values = {}
     for ename, edata in enums.items():
         py_name = _py_name(ename)
         for val in edata["values"]:
             _enum_values[val] = f"{py_name}.{val}"
+    return enums
 
-    imports = _collect_imports(ir)
-    if imports:
-        sections.append("\n".join(imports))
 
-    has_concurrently = any(
+def _has_concurrently(ir: dict) -> bool:
+    """Check if any function uses concurrently blocks."""
+    return any(
         any(stmt.get("kind") == "concurrently" for stmt in fn.get("body", []))
         for fn in ir["functions"]
     )
-    if has_concurrently:
-        sections.append(_CONCURRENTLY_HELPER)
 
-    # emit test functions at the top, grouped by feature
+
+def _emit_tests_sections(ir: dict) -> list[str]:
+    """Emit test sections grouped by feature."""
     tests = ir.get("tests", [])
-    if tests:
-        # group tests by feature
-        by_feature = {}
-        for t in tests:
-            feat = t.get("feature", ir.get("test_feature", "test"))
-            by_feature.setdefault(feat, []).append(t)
-        for feat_name, feat_tests in by_feature.items():
-            sections.append(_emit_test_section(feat_tests, feat_name))
+    if not tests:
+        return []
+    by_feature = {}
+    for t in tests:
+        feat = t.get("feature", ir.get("test_feature", "test"))
+        by_feature.setdefault(feat, []).append(t)
+    return [_emit_test_section(feat_tests, feat_name)
+            for feat_name, feat_tests in by_feature.items()]
 
-    # build type lookup for parent field resolution
+
+def _emit_definitions(ir: dict, enums: dict) -> list[str]:
+    """Emit type declarations, tasks, and functions."""
+    sections = []
     all_types = {t["name"]: t for t in ir["types"]}
-
     for typ in ir["types"]:
         code = _emit_type(typ, enums, all_types)
         if code:
             sections.append(code)
-
     src = ir.get("source_file")
-
     for task in ir.get("tasks", []):
-        if task.get("abstract"):
-            continue
-        sections.append(source_comment(task, src, "#") + "\n" + _emit_task(task, ir.get("uses", [])))
-
+        if not task.get("abstract"):
+            sections.append(source_comment(task, src, "#") + "\n" + _emit_task(task, ir.get("uses", [])))
     for fn in ir["functions"]:
         if not fn.get("abstract"):
             sections.append(source_comment(fn, src, "#") + "\n" + _emit_function(fn))
+    return sections
 
-    # generate dispatch functions for multiple dispatch groups
-    concrete_fns = [fn for fn in ir["functions"] if not fn.get("abstract")]
-    dispatch_sections = _generate_dispatchers(concrete_fns, ir.get("types", []))
 
-    # generate context class from user-scoped variables (all features, not just current)
-    user_vars = ir.get("_all_user_vars", [v for v in ir["variables"] if v.get("scope") == "user"])
-    if user_vars:
-        sections.insert(0, _emit_context_class(user_vars, ir))
-
-    # variables last — they may reference functions and tasks
-    # skip platform stream declarations and user-scoped vars (handled by context)
+def _emit_variables_section(ir: dict) -> list[str]:
+    """Emit variable declarations and bare statements."""
     platform_stream_names = {u["name"].replace("$", "") for u in ir.get("uses", [])}
     var_lines = []
     for var in ir["variables"]:
@@ -114,81 +100,141 @@ def emit(ir: dict) -> str:
         if var.get("_platform") and var.get("array") and var.get("value") is None:
             continue
         var_lines.append(_emit_variable(var))
-    # bare function call statements
     for stmt in ir.get("statements", []):
         var_lines.append(_emit_expr(stmt))
-    if var_lines:
-        sections.append("\n".join(var_lines))
-    sections.extend(dispatch_sections)
+    return var_lines
 
-    result = "\n\n".join(sections) + "\n" if sections else ""
 
-    # prefix cross-module function calls if module_map is provided
+def _apply_module_prefixes(result: str, ir: dict) -> str:
+    """Prefix cross-module function calls with their module name."""
     module_map = ir.get("module_map")
     current_module = ir.get("current_module")
     if module_map and current_module:
         for fn_name, mod_name in module_map.items():
             if mod_name != current_module:
                 result = result.replace(f"{fn_name}(", f"{mod_name}.{fn_name}(")
-
     return result
+
+
+def _emit_preamble(ir: dict) -> list[str]:
+    """Emit imports and concurrently helper if needed."""
+    sections = []
+    imports = _collect_imports(ir)
+    if imports:
+        sections.append("\n".join(imports))
+    if _has_concurrently(ir):
+        sections.append(_CONCURRENTLY_HELPER)
+    return sections
+
+
+def emit(ir: dict) -> str:
+    """Emit Python source code from a zero IR dict."""
+    _check_compatibility(ir)
+    enums = _init_globals(ir)
+    sections = _emit_preamble(ir)
+    sections.extend(_emit_tests_sections(ir))
+    sections.extend(_emit_definitions(ir, enums))
+
+    concrete_fns = [fn for fn in ir["functions"] if not fn.get("abstract")]
+    dispatch_sections = _generate_dispatchers(concrete_fns, ir.get("types", []))
+
+    user_vars = ir.get("_all_user_vars", [v for v in ir["variables"] if v.get("scope") == "user"])
+    if user_vars:
+        sections.insert(0, _emit_context_class(user_vars, ir))
+
+    var_lines = _emit_variables_section(ir)
+    if var_lines:
+        sections.append("\n".join(var_lines))
+    sections.extend(dispatch_sections)
+
+    result = "\n\n".join(sections) + "\n" if sections else ""
+    return _apply_module_prefixes(result, ir)
+
+
+# --- tests ---
+
+def _emit_single_test(test: dict, feature_name: str, index: int) -> tuple:
+    """Emit a single test function. Returns (lines, name, desc)."""
+    name = f"test_{feature_name.replace('-', '_')}_{index}"
+    call_code = _emit_expr(test["call"])
+    expected_code = _emit_expr(test["expected"]) if isinstance(test["expected"], dict) else repr(test["expected"])
+    is_task = test["call"].get("kind") == "task_call"
+    expected_is_array = (test["expected"].get("kind") == "array_lit" or
+                         (test["expected"].get("kind") == "raw" and test["expected"].get("value", "").startswith("[")))
+    if is_task and not expected_is_array:
+        expected_code = f"[{expected_code}]"
+    desc = test.get("source_text", "")
+    lines = [
+        f"def {name}():",
+        f"    '''{desc}'''",
+        f"    _result = {call_code}",
+        f"    _expected = {expected_code}",
+        f'    assert _result == _expected, f"expected {{_expected}}, got {{_result}}"',
+        "",
+    ]
+    return lines, name, desc
 
 
 def _emit_test_section(tests: list[dict], feature_name: str) -> str:
     """Emit test functions and register them for a feature."""
     lines = []
-    test_entries = []  # (name, desc)
+    test_entries = []
     for i, test in enumerate(tests):
-        name = f"test_{feature_name.replace('-', '_')}_{i}"
-        call_code = _emit_expr(test["call"])
-        expected_code = _emit_expr(test["expected"]) if isinstance(test["expected"], dict) else repr(test["expected"])
-        is_task = test["call"].get("kind") == "task_call"
-        expected_is_array = (test["expected"].get("kind") == "array_lit" or
-                             (test["expected"].get("kind") == "raw" and test["expected"].get("value", "").startswith("[")))
-        if is_task and not expected_is_array:
-            expected_code = f"[{expected_code}]"
-        desc = test.get("source_text", "")
+        test_lines, name, desc = _emit_single_test(test, feature_name, i)
+        lines.extend(test_lines)
         test_entries.append((name, desc))
-        lines.append(f"def {name}():")
-        lines.append(f"    '''{desc}'''")
-        lines.append(f"    _result = {call_code}")
-        lines.append(f"    _expected = {expected_code}")
-        lines.append(f'    assert _result == _expected, f"expected {{_expected}}, got {{_result}}"')
-        lines.append("")
-
-    # register tests
     entries = ", ".join(f"({n}, {repr(d)})" for n, d in test_entries)
     lines.append(f"register_tests({repr(feature_name)}, [{entries}])")
+    return "\n".join(lines)
 
+
+# --- dispatchers ---
+
+def _emit_single_dispatcher(base: str, sorted_fns: list[dict]) -> str:
+    """Generate a single dispatch function for a group of overloaded functions."""
+    dispatcher_name = "fn_" + base
+    param_names = [p["name"] for p in sorted_fns[0]["params"]]
+    params_str = ", ".join(param_names)
+    ret_type = sorted_fns[0]["result"]["type"] if sorted_fns[0].get("result") else None
+    ret_ann = f" -> {_py_type_ann(ret_type)}" if ret_type else ""
+    lines = [f"def {dispatcher_name}({params_str}){ret_ann}:"]
+    for i, fn in enumerate(sorted_fns):
+        specific_name = _make_function_name(fn["signature_parts"])
+        param_type = fn["params"][0]["type"] if fn["params"] else None
+        if param_type:
+            keyword = "if" if i == 0 else "elif"
+            lines.append(f"    {keyword} isinstance({param_names[0]}, {param_type}):")
+            lines.append(f"        return {specific_name}({params_str})")
+    last_name = _make_function_name(sorted_fns[-1]["signature_parts"])
+    lines.append(f"    return {last_name}({params_str})")
     return "\n".join(lines)
 
 
 def _generate_dispatchers(functions: list[dict], types: list[dict]) -> list[str]:
     """Generate dispatch functions for function groups with multiple definitions."""
     dispatch_groups = compute_dispatch_groups(functions, types)
-    sections = []
-    for base, sorted_fns in dispatch_groups.items():
-        dispatcher_name = "fn_" + base
-        param_names = [p["name"] for p in sorted_fns[0]["params"]]
-        params_str = ", ".join(param_names)
+    return [_emit_single_dispatcher(base, sorted_fns)
+            for base, sorted_fns in dispatch_groups.items()]
 
-        ret_type = sorted_fns[0]["result"]["type"] if sorted_fns[0].get("result") else None
-        ret_ann = f" -> {_py_type_ann(ret_type)}" if ret_type else ""
 
-        lines = [f"def {dispatcher_name}({params_str}){ret_ann}:"]
-        for i, fn in enumerate(sorted_fns):
-            specific_name = _make_function_name(fn["signature_parts"])
-            param_type = fn["params"][0]["type"] if fn["params"] else None
-            if param_type:
-                keyword = "if" if i == 0 else "elif"
-                lines.append(f"    {keyword} isinstance({param_names[0]}, {param_type}):")
-                lines.append(f"        return {specific_name}({params_str})")
-        last_name = _make_function_name(sorted_fns[-1]["signature_parts"])
-        lines.append(f"    return {last_name}({params_str})")
+# --- imports ---
 
-        sections.append("\n".join(lines))
+def _needs_reduce(ir: dict) -> bool:
+    """Check if the IR uses reduce expressions."""
+    if any(isinstance(v.get("value"), dict) and v["value"].get("kind") == "reduce"
+           for v in ir["variables"]):
+        return True
+    return any(any(isinstance(s, dict) and s.get("kind") == "assign"
+                   and isinstance(s.get("value"), dict) and s["value"].get("kind") == "reduce"
+                   for s in fn.get("body", []))
+               for fn in ir["functions"])
 
-    return sections
+
+def _needs_zip_longest(ir: dict) -> bool:
+    """Check if the IR uses multi-array binop expressions."""
+    return any(isinstance(v.get("value"), dict) and v["value"].get("kind") == "binop"
+               and v.get("array") and len(_collect_array_refs(v["value"])) > 1
+               for v in ir["variables"])
 
 
 def _collect_imports(ir: dict) -> list[str]:
@@ -196,24 +242,11 @@ def _collect_imports(ir: dict) -> list[str]:
     imports = []
     has_enum = any(t["kind"] == "enum" for t in ir["types"])
     has_struct = any(t["kind"] == "struct" for t in ir["types"])
-    has_reduce = (any(isinstance(v.get("value"), dict) and v["value"].get("kind") == "reduce"
-                      for v in ir["variables"])
-                  or any(any(isinstance(s, dict) and s.get("kind") == "assign"
-                             and isinstance(s.get("value"), dict) and s["value"].get("kind") == "reduce"
-                             for s in fn.get("body", []))
-                         for fn in ir["functions"]))
-    has_zip_longest = any(isinstance(v.get("value"), dict) and v["value"].get("kind") == "binop"
-                          and v.get("array") and len(_collect_array_refs(v["value"])) > 1
-                          for v in ir["variables"])
-    has_concurrently = any(
-        any(stmt.get("kind") == "concurrently" for stmt in fn.get("body", []))
-        for fn in ir["functions"]
-    )
-    if has_reduce:
+    if _needs_reduce(ir):
         imports.append("import functools")
-    if has_concurrently:
+    if _has_concurrently(ir):
         imports.append("import threading")
-    if has_zip_longest:
+    if _needs_zip_longest(ir):
         imports.append("from itertools import zip_longest")
     if has_enum:
         imports.append("from enum import Enum")
@@ -231,54 +264,11 @@ def _concurrently(*fns):
         t.join()"""
 
 
+# --- naming helpers ---
+
 def _py_name(name: str) -> str:
     """Convert a zero name to a valid Python identifier (hyphens to underscores)."""
     return name.replace("-", "_")
-
-
-def _emit_type(typ: dict, enums: dict = None, all_types: dict = None) -> str | None:
-    """Emit a single type declaration."""
-    enums = enums or {}
-    all_types = all_types or {}
-
-    if typ["kind"] == "numeric":
-        if typ["name"] in _BUILTINS:
-            return None
-        return f"type {typ['name']} = {typ['base']}"
-
-    elif typ["kind"] == "enum":
-        py_name = _py_name(typ["name"])
-        lines = [f"class {py_name}(Enum):"]
-        for val in typ["values"]:
-            lines.append(f'    {val} = "{val}"')
-        return "\n".join(lines)
-
-    elif typ["kind"] == "struct":
-        py_name = _py_name(typ["name"])
-        lines = [f"class {py_name}(NamedTuple):"]
-        # collect all fields: parent fields first, then own fields
-        all_fields = _collect_all_fields(typ, all_types)
-        for field in all_fields:
-            default = _qualify_default(field, enums)
-            lines.append(f"    {field['name']}: {_py_type_ann(field['type'])}{default}")
-        if not all_fields:
-            lines.append("    pass")
-        return "\n".join(lines)
-
-
-
-def _qualify_default(field: dict, enums: dict) -> str:
-    """Qualify a field default with its enum type name if needed."""
-    if field["default"] is None:
-        return ""
-    default_val = field["default"]
-    # check if the field's type is an enum and the default is one of its values
-    if field["type"] in enums:
-        enum = enums[field["type"]]
-        if str(default_val) in enum["values"]:
-            py_name = _py_name(field["type"])
-            return f" = {py_name}.{default_val}"
-    return f" = {default_val}"
 
 
 def _py_type_ann(zero_type: str) -> str:
@@ -287,10 +277,6 @@ def _py_type_ann(zero_type: str) -> str:
     if mapped:
         return mapped
     return zero_type.replace("-", "_")
-
-
-# set of feature names that have user-scoped variables (for context access detection)
-_context_features = set()
 
 
 def _is_context_access(object_name: str) -> bool:
@@ -304,7 +290,6 @@ def _py_default_for_type(zero_type: str) -> str:
                 "number": "0", "bool": "False", "char": '""'}
     if zero_type in defaults:
         return defaults[zero_type]
-    # struct type: call default constructor
     return f"{_safe(zero_type)}()"
 
 
@@ -316,31 +301,72 @@ def _safe(name: str) -> str:
 def _safe_target(target: str) -> str:
     """Convert a zero assignment target to Python-safe form.
     Handles: name, name$[key], name.field"""
-    # indexed: codes$[phone] → codes_arr[phone]
     if "$[" in target:
         parts = target.split("$[", 1)
         arr_name = _safe(parts[0]) + "_arr"
         key = _safe(parts[1].rstrip("]"))
         return f"{arr_name}[{key}]"
-    # array: name$ → name_arr
     if target.endswith("$"):
         return _safe(target.replace("$", "_arr"))
     return _safe(target)
 
 
-def _emit_context_class(user_vars: list[dict], ir: dict) -> str:
-    """Generate a _Context class from user-scoped variables, plus contextvars setup."""
-    lines = ["import contextvars", ""]
+# --- types ---
 
-    # group user vars by feature (from ir's feature ownership info)
+def _qualify_default(field: dict, enums: dict) -> str:
+    """Qualify a field default with its enum type name if needed."""
+    if field["default"] is None:
+        return ""
+    default_val = field["default"]
+    if field["type"] in enums:
+        enum = enums[field["type"]]
+        if str(default_val) in enum["values"]:
+            py_name = _py_name(field["type"])
+            return f" = {py_name}.{default_val}"
+    return f" = {default_val}"
+
+
+def _emit_struct_type(typ: dict, enums: dict, all_types: dict) -> str:
+    """Emit a struct as a NamedTuple class."""
+    py_name = _py_name(typ["name"])
+    lines = [f"class {py_name}(NamedTuple):"]
+    all_fields = _collect_all_fields(typ, all_types)
+    for field in all_fields:
+        default = _qualify_default(field, enums)
+        lines.append(f"    {field['name']}: {_py_type_ann(field['type'])}{default}")
+    if not all_fields:
+        lines.append("    pass")
+    return "\n".join(lines)
+
+
+def _emit_type(typ: dict, enums: dict = None, all_types: dict = None) -> str | None:
+    """Emit a single type declaration."""
+    enums = enums or {}
+    all_types = all_types or {}
+    if typ["kind"] == "numeric":
+        if typ["name"] in _BUILTINS:
+            return None
+        return f"type {typ['name']} = {typ['base']}"
+    elif typ["kind"] == "enum":
+        py_name = _py_name(typ["name"])
+        lines = [f"class {py_name}(Enum):"]
+        for val in typ["values"]:
+            lines.append(f'    {val} = "{val}"')
+        return "\n".join(lines)
+    elif typ["kind"] == "struct":
+        return _emit_struct_type(typ, enums, all_types)
+
+
+# --- context class ---
+
+def _emit_context_fields(user_vars: list[dict], ir: dict) -> list[str]:
+    """Generate _Context class with per-feature nested classes."""
     var_owners = ir.get("_var_owners", {})
     by_feature = {}
     for v in user_vars:
         feature = var_owners.get(v["name"], "default")
         by_feature.setdefault(feature, []).append(v)
-
-    # generate nested classes per feature
-    lines.append("class _Context:")
+    lines = ["class _Context:"]
     for feat_name in sorted(by_feature):
         safe_feat = _safe(feat_name)
         lines.append(f"    class {safe_feat}:")
@@ -352,27 +378,39 @@ def _emit_context_class(user_vars: list[dict], ir: dict) -> str:
     for feat_name in sorted(by_feature):
         safe_feat = _safe(feat_name)
         lines.append(f"        self.{safe_feat} = _Context.{safe_feat}()")
-    lines.append("")
+    return lines
 
-    # contextvars setup
-    lines.append("_ctx_var: contextvars.ContextVar['_Context'] = contextvars.ContextVar('_ctx', default=_Context())")
-    lines.append("")
-    lines.append("def _get_ctx() -> '_Context':")
-    lines.append("    import sys")
-    lines.append("    _main = sys.modules.get('__main__')")
-    lines.append("    if _main and hasattr(_main, '_ctx_var'):")
-    lines.append("        return _main._ctx_var.get()")
-    lines.append("    return _ctx_var.get()")
-    lines.append("")
 
+def _emit_context_accessor() -> list[str]:
+    """Generate contextvars infrastructure for user-context access."""
+    return [
+        "_ctx_var: contextvars.ContextVar['_Context'] = contextvars.ContextVar('_ctx', default=_Context())",
+        "",
+        "def _get_ctx() -> '_Context':",
+        "    import sys",
+        "    _main = sys.modules.get('__main__')",
+        "    if _main and hasattr(_main, '_ctx_var'):",
+        "        return _main._ctx_var.get()",
+        "    return _ctx_var.get()",
+        "",
+    ]
+
+
+def _emit_context_class(user_vars: list[dict], ir: dict) -> str:
+    """Generate a _Context class from user-scoped variables, plus contextvars setup."""
+    lines = ["import contextvars", ""]
+    lines.extend(_emit_context_fields(user_vars, ir))
+    lines.append("")
+    lines.extend(_emit_context_accessor())
     return "\n".join(lines)
 
+
+# --- variables ---
 
 def _emit_variable(var: dict) -> str:
     """Emit a variable declaration."""
     name = _safe(var["name"] + "_arr" if var["array"] else var["name"])
     type_ann = _py_type_ann(var["type"])
-
     if var["array"]:
         return _emit_array_variable(name, type_ann, var)
     else:
@@ -380,16 +418,31 @@ def _emit_variable(var: dict) -> str:
         return f"{name}: {type_ann} = {value_str}"
 
 
+def _emit_dict_array_variable(name: str, type_ann: str, val: dict) -> str | None:
+    """Emit array variable when value is a dict (expressions, streams, etc.)."""
+    if "range" in val:
+        return f"{name}: list[{type_ann}] = {_emit_range(val)}"
+    kind = val.get("kind")
+    if kind == "stream":
+        return _emit_stream(name, val)
+    if kind == "task_call":
+        return _emit_task_call(name, type_ann, val)
+    if kind == "where":
+        return f"{name} = {_emit_expr(val)}"
+    if kind == "sort":
+        return f"{name} = {_emit_sort(val)}"
+    if "kind" in val:
+        return f"{name}: list[{type_ann}] = {_emit_array_map_expr(val)}"
+    return None
+
+
 def _emit_array_variable(name: str, type_ann: str, var: dict) -> str:
     """Emit an array variable declaration."""
-    # keyed collection (map)
     if var.get("map"):
         key_type = _py_type_ann(var["key_type"])
         return f"{name}: dict[{key_type}, {type_ann}] = {{}}"
-
     val = var["value"]
     size = var["size"]
-
     if val is None and size is None:
         return f"{name}: list[{type_ann}] = []"
     elif val is None and size is not None:
@@ -399,21 +452,30 @@ def _emit_array_variable(name: str, type_ann: str, var: dict) -> str:
     elif isinstance(val, list):
         items = ", ".join(_emit_element(v) for v in val)
         return f"{name}: list[{type_ann}] = [{items}]"
-    elif isinstance(val, dict) and "range" in val:
-        return f"{name}: list[{type_ann}] = {_emit_range(val)}"
-    elif isinstance(val, dict) and val.get("kind") == "stream":
-        return _emit_stream(name, val)
-    elif isinstance(val, dict) and val.get("kind") == "task_call":
-        return _emit_task_call(name, type_ann, val)
-    elif isinstance(val, dict) and val.get("kind") == "where":
-        return f"{name} = {_emit_expr(val)}"
-    elif isinstance(val, dict) and val.get("kind") == "sort":
-        return f"{name} = {_emit_sort(val)}"
-    elif isinstance(val, dict) and "kind" in val:
-        # mapped expression over arrays
-        return f"{name}: list[{type_ann}] = {_emit_array_map_expr(val)}"
-
+    elif isinstance(val, dict):
+        result = _emit_dict_array_variable(name, type_ann, val)
+        if result:
+            return result
     return f"{name}: list[{type_ann}] = {val}"
+
+
+# --- streams ---
+
+def _emit_stream_loop(name: str, steps: list, terminate: dict, emit_fn) -> list[str]:
+    """Emit the loop portion of a streaming expression."""
+    lines = []
+    for step in steps[1:-1]:
+        lines.append(f"{name}.append({emit_fn(step)})")
+    repeat_expr = emit_fn(steps[-1])
+    if terminate["kind"] == "until":
+        cond = emit_fn(terminate["condition"])
+        lines.append(f"while not ({cond}):")
+        lines.append(f"    {name}.append({repeat_expr})")
+    elif terminate["kind"] == "while":
+        cond = emit_fn(terminate["condition"])
+        lines.append(f"while {cond}:")
+        lines.append(f"    {name}.append({repeat_expr})")
+    return lines
 
 
 def _emit_stream(name: str, stream: dict) -> str:
@@ -422,37 +484,19 @@ def _emit_stream(name: str, stream: dict) -> str:
     terminate = stream["terminate"]
 
     def _emit_stream_expr(node):
-        """Emit an expression, replacing __last__ with array[-1]."""
         s = _emit_expr(node)
         return s.replace("__last__", f"{name}[-1]")
 
-    # if no terminator and all steps are simple literals, just emit a list
     if terminate is None and all(s.get("kind") == "literal" for s in steps):
         items = ", ".join(str(s["value"]) for s in steps)
         return f"{name} = [{items}]"
-
-    # first step is always the seed
     lines = [f"{name} = [{_emit_stream_expr(steps[0])}]"]
-
     if len(steps) > 1:
         if terminate is None:
-            # no loop — just append each remaining step once
             for step in steps[1:]:
                 lines.append(f"{name}.append({_emit_stream_expr(step)})")
         else:
-            # with a terminator: steps[1:-1] are extra seeds, steps[-1] is repeat
-            for step in steps[1:-1]:
-                lines.append(f"{name}.append({_emit_stream_expr(step)})")
-            repeat_expr = _emit_stream_expr(steps[-1])
-            if terminate["kind"] == "until":
-                cond = _emit_stream_expr(terminate["condition"])
-                lines.append(f"while not ({cond}):")
-                lines.append(f"    {name}.append({repeat_expr})")
-            elif terminate["kind"] == "while":
-                cond = _emit_stream_expr(terminate["condition"])
-                lines.append(f"while {cond}:")
-                lines.append(f"    {name}.append({repeat_expr})")
-
+            lines.extend(_emit_stream_loop(name, steps, terminate, _emit_stream_expr))
     return "\n".join(lines)
 
 
@@ -483,6 +527,8 @@ def _emit_range(val: dict) -> str:
         return f"list(range({start}, {end}))"
 
 
+# --- array mapping ---
+
 def _has_index_underscore(node: dict) -> bool:
     """Check if an expression contains _ used as a position reference."""
     return _contains_name(node, "_")
@@ -502,15 +548,12 @@ def _contains_name(node, name: str) -> bool:
 def _emit_indexed_map_expr(node: dict) -> str:
     """Emit index-based array mapping for expressions using _-relative indexing."""
     array_refs = list(dict.fromkeys(_collect_array_refs(node)))
-
     if array_refs:
         len_src = array_refs[0].replace("$", "_arr")
     else:
-        # no array refs — find any name arg to use for length (e.g. string length)
         len_src = _find_length_source(node)
         if not len_src:
             return _emit_expr(node)
-
     rewritten = _rewrite_for_indexed(node)
     expr = _emit_expr(rewritten)
     return f"[{expr} for _i in range(len({len_src}))]"
@@ -520,7 +563,6 @@ def _find_length_source(node: dict) -> str | None:
     """Find a variable name suitable for determining length in indexed mapping."""
     if not isinstance(node, dict):
         return None
-    # fn_call args: look for plain name args (not _)
     if node.get("kind") in ("fn_call", "array_fn_call"):
         for arg in node.get("args", []):
             if isinstance(arg, dict) and arg.get("kind") == "name" and arg["value"] != "_":
@@ -539,38 +581,34 @@ def _find_length_source(node: dict) -> str | None:
     return None
 
 
+def _rewrite_index_with_underscore(node: dict) -> dict:
+    """Rewrite arr$[_ - 1] to a bounds-checked index expression."""
+    arr_node = node["array"]
+    if arr_node.get("kind") == "name" and arr_node["value"].endswith("$"):
+        arr_str = arr_node["value"].replace("$", "_arr")
+    else:
+        arr_str = _emit_expr(arr_node)
+    idx = _rewrite_for_indexed(node["index"])
+    idx_str = _emit_expr(idx)
+    return {"kind": "raw", "value": f"({arr_str}[{idx_str}] if {idx_str} >= 0 else 0)"}
+
+
 def _rewrite_for_indexed(node: dict) -> dict:
     """Rewrite an expression for index-based iteration.
-    - array$  → array_arr[_i]
-    - array$[_ - N]  → array_arr[_i - N] with bounds check
-    - bare _  → _i (in index expressions)
+    - array$  -> array_arr[_i]
+    - array$[_ - N]  -> array_arr[_i - N] with bounds check
+    - bare _  -> _i (in index expressions)
     """
     if not isinstance(node, dict):
         return node
     kind = node.get("kind")
-
-    # index with _ reference: arr$[_ - 1] → (arr_arr[_i - 1] if _i - 1 >= 0 else default)
     if kind == "index" and _contains_name(node.get("index", {}), "_"):
-        # emit the array name directly (not rewritten to arr[_i])
-        arr_node = node["array"]
-        if arr_node.get("kind") == "name" and arr_node["value"].endswith("$"):
-            arr_str = arr_node["value"].replace("$", "_arr")
-        else:
-            arr_str = _emit_expr(arr_node)
-        idx = _rewrite_for_indexed(node["index"])
-        idx_str = _emit_expr(idx)
-        return {"kind": "raw", "value": f"({arr_str}[{idx_str}] if {idx_str} >= 0 else 0)"}
-
-    # bare array ref: arr$ → arr_arr[_i]
+        return _rewrite_index_with_underscore(node)
     if kind == "name" and node.get("value", "").endswith("$"):
         py_name = node["value"].replace("$", "_arr")
         return {"kind": "raw", "value": f"{py_name}[_i]"}
-
-    # _ in index context → _i
     if kind == "name" and node.get("value") == "_":
         return {"kind": "raw", "value": "_i"}
-
-    # recurse
     result = {}
     for key, val in node.items():
         if isinstance(val, dict):
@@ -594,34 +632,35 @@ def _coerce_task_arg_py(arg: str, param_type: str) -> str:
     return arg
 
 
+def _emit_multi_array_map(node: dict, array_refs: list[str]) -> str:
+    """Emit zip_longest-based comprehension for multi-array expressions."""
+    py_arrs = [a.replace("$", "_arr") for a in array_refs]
+    loop_vars = [chr(ord("a") + i) for i in range(len(array_refs))]
+    rewritten = node
+    for arr, var in zip(array_refs, loop_vars):
+        rewritten = _rewrite_array_ref(rewritten, arr, var)
+    expr = _emit_expr(rewritten)
+    vars_str = ", ".join(loop_vars)
+    arrs_str = ", ".join(py_arrs)
+    return f"[{expr} for {vars_str} in zip_longest({arrs_str}, fillvalue=0)]"
+
+
 def _emit_array_map_expr(node: dict) -> str:
     """Emit a list comprehension for array-mapped expressions."""
-    # if expression uses _ as an index reference, use index-based iteration
     if _has_index_underscore(node):
         return _emit_indexed_map_expr(node)
-
     array_refs = list(dict.fromkeys(_collect_array_refs(node)))  # deduplicate, preserve order
     if len(array_refs) == 0:
         return _emit_expr(node)
     if len(array_refs) == 1:
-        # single array: [expr for x in arr]
         arr_name = array_refs[0]
         py_arr = arr_name.replace("$", "_arr")
         expr = _emit_expr(_rewrite_array_ref(node, arr_name, "x"))
         return f"[{expr} for x in {py_arr}]"
-    else:
-        # multiple arrays: [expr for a, b in zip_longest(arr1, arr2, fillvalue=0)]
-        py_arrs = [a.replace("$", "_arr") for a in array_refs]
-        loop_vars = [chr(ord("a") + i) for i in range(len(array_refs))]
-        rewritten = node
-        for arr, var in zip(array_refs, loop_vars):
-            rewritten = _rewrite_array_ref(rewritten, arr, var)
-        expr = _emit_expr(rewritten)
-        vars_str = ", ".join(loop_vars)
-        arrs_str = ", ".join(py_arrs)
-        return f"[{expr} for {vars_str} in zip_longest({arrs_str}, fillvalue=0)]"
+    return _emit_multi_array_map(node, array_refs)
 
 
+# --- values ---
 
 def _emit_value(value, zero_type: str) -> str:
     """Emit a value expression."""
@@ -640,10 +679,8 @@ def _emit_reduce(node: dict, zero_type: str) -> str:
     if "op" in node:
         return f"functools.reduce(lambda a, b: a {node['op']} b, {arr})"
     else:
-        # function reduce — build function name from fn_parts
         fn_name = _make_function_name_from_reduce(node["fn_parts"], zero_type)
         return f"functools.reduce({fn_name}, {arr})"
-
 
 
 def _emit_call_value(call: dict) -> str:
@@ -652,14 +689,11 @@ def _emit_call_value(call: dict) -> str:
     if not call["args"]:
         return f"{name}()"
     if isinstance(call["args"][0], dict) and "name" in call["args"][0]:
-        # named args
         parts = [f"{a['name']}={a['value']}" for a in call["args"]]
     else:
         parts = [str(a) for a in call["args"]]
     return f"{name}({', '.join(parts)})"
 
-
-# --- functions ---
 
 def _emit_sort(node: dict) -> str:
     """Emit a sort expression."""
@@ -674,6 +708,7 @@ def _emit_sort(node: dict) -> str:
     return result
 
 
+# --- control flow ---
 
 def _emit_if_block(node: dict, is_task: bool = False) -> str:
     """Emit an if/else if/else block."""
@@ -706,94 +741,146 @@ def _platform_stream_fn(stream_name: str, uses: list[dict]) -> str:
     return f"_push_{stream_name.replace('$', '')}"
 
 
-def _emit_task(task: dict, uses: list[dict] = None) -> str:
-    """Emit a task as a Python generator function (or plain function for void tasks)."""
-    uses = uses or []
-    name_parts = task["name_parts"]
+# --- tasks ---
+
+def _emit_task_header(task: dict) -> tuple:
+    """Build function name and parameter string for a task. Returns (fn_name, params_str)."""
     all_params = task.get("input_streams", []) + task.get("params", [])
     param_strs = []
     for p in all_params:
         pname = p["name"] + "_arr" if p in task.get("input_streams", []) else p["name"]
         param_strs.append(f"{pname}: {_py_type_ann(p['type'])}")
-    params_str = ", ".join(param_strs)
-
-    # build function name from name parts + param types
-    fn_name = "task_" + "_".join(name_parts)
+    fn_name = "task_" + "_".join(task["name_parts"])
     for p in all_params:
         fn_name += f"__{p['type']}"
+    return fn_name, ", ".join(param_strs)
 
-    is_void = task["output"] is None
-    output_stream_name = None if is_void else task["output"]["name"] + "$"
 
+def _emit_task_for_each(node: dict, uses: list, base_indent: str, extra_indent: str) -> list[str]:
+    """Emit a for_each block inside a task."""
+    lines = []
+    iter_expr = _emit_expr(node["iter"])
+    lines.append(f"{base_indent}{extra_indent}for {node['name']} in {iter_expr}:")
+    loop_indent = base_indent + extra_indent + "    "
+    for body_node in node["body"]:
+        bk = body_node.get("kind", "")
+        if bk == "emit":
+            lines.append(f"{loop_indent}yield {_emit_expr(body_node['value'])}")
+        elif bk == "emit_external":
+            handler = _platform_stream_fn(body_node["stream"], uses)
+            lines.append(f"{loop_indent}{handler}({_emit_expr(body_node['value'])})")
+        elif bk == "if_block":
+            for bl in _emit_if_block(body_node, is_task=True).split("\n"):
+                lines.append(f"{loop_indent}{bl}")
+        else:
+            lines.extend(_indent(_emit_expr(body_node), loop_indent))
+    return lines
+
+
+def _emit_task_consume(node: dict, base_indent: str) -> str:
+    """Emit a consume or consume_call loop header."""
+    kind = node.get("kind")
+    if kind == "consume":
+        stream_name = node["stream"].replace("$", "_arr")
+        return f"{base_indent}for {node['name']} in {stream_name}:"
+    call = node["call"]
+    if call.get("kind") == "task_call":
+        call_fn = make_task_call_fn_name(call)
+        args = ", ".join(a.replace("$", "_arr") for a in call["args"])
+        return f"{base_indent}for {node['name']} in {call_fn}({args}):"
+    return f"{base_indent}for {node['name']} in {_emit_expr(call)}:"
+
+
+def _is_task_inner_call(node: dict) -> bool:
+    """Check if node is a task call inside a task body."""
+    return (node.get("kind") == "var_decl" and node.get("array")
+            and isinstance(node.get("value"), dict) and node["value"].get("kind") == "task_call")
+
+
+def _emit_task_inner_call(node: dict, base_indent: str, extra_indent: str) -> str:
+    """Emit a task call assignment inside a task body."""
+    call = node["value"]
+    call_fn = make_task_call_fn_name(call)
+    args = ", ".join(a.replace("$", "_arr") for a in call["args"])
+    name = node["name"] + "_arr"
+    return f"{base_indent}{extra_indent}{name} = {call_fn}({args})"
+
+
+def _emit_task_body_node(node, uses, base_indent, extra_indent):
+    """Emit a single task body node. Returns (lines, new_extra_indent)."""
+    kind = node.get("kind")
+    if kind == "for_each":
+        return _emit_task_for_each(node, uses, base_indent, extra_indent), extra_indent
+    if kind in ("consume", "consume_call"):
+        return [_emit_task_consume(node, base_indent)], "    "
+    if kind == "emit":
+        return [f"{base_indent}{extra_indent}yield {_emit_expr(node['value'])}"], extra_indent
+    if kind == "emit_external":
+        handler = _platform_stream_fn(node["stream"], uses)
+        return [f"{base_indent}{extra_indent}{handler}({_emit_expr(node['value'])})"], extra_indent
+    if kind == "if_block":
+        block_lines = [f"{base_indent}{extra_indent}{bl}"
+                       for bl in _emit_if_block(node, is_task=True).split("\n")]
+        return block_lines, extra_indent
+    if _is_task_inner_call(node):
+        return [_emit_task_inner_call(node, base_indent, extra_indent)], extra_indent
+    return [f"{base_indent}{extra_indent}{_emit_expr(node)}"], extra_indent
+
+
+def _emit_task(task: dict, uses: list[dict] = None) -> str:
+    """Emit a task as a Python generator function (or plain function for void tasks)."""
+    uses = uses or []
+    fn_name, params_str = _emit_task_header(task)
     lines = [f"def {fn_name}({params_str}):"]
-
-    # translate body lines with indent tracking
     base_indent = "    "
     extra_indent = ""
-
     for node in task["body"]:
         if isinstance(node, str):
             lines.append(f"{base_indent}{extra_indent}{node}")
             continue
+        new_lines, extra_indent = _emit_task_body_node(node, uses, base_indent, extra_indent)
+        lines.extend(new_lines)
+    return "\n".join(lines)
 
-        kind = node.get("kind")
 
-        if kind == "for_each":
-            iter_expr = _emit_expr(node["iter"])
-            lines.append(f"{base_indent}{extra_indent}for {node['name']} in {iter_expr}:")
-            loop_indent = base_indent + extra_indent + "    "
-            for body_node in node["body"]:
-                bk = body_node.get("kind", "")
-                if bk == "emit":
-                    lines.append(f"{loop_indent}yield {_emit_expr(body_node['value'])}")
-                elif bk == "emit_external":
-                    handler = _platform_stream_fn(body_node["stream"], uses)
-                    lines.append(f"{loop_indent}{handler}({_emit_expr(body_node['value'])})")
-                elif bk == "if_block":
-                    for bl in _emit_if_block(body_node, is_task=True).split("\n"):
-                        lines.append(f"{loop_indent}{bl}")
-                else:
-                    lines.extend(_indent(_emit_expr(body_node), loop_indent))
+# --- functions ---
 
-        elif kind == "consume":
-            stream_name = node["stream"].replace("$", "_arr")
-            lines.append(f"{base_indent}for {node['name']} in {stream_name}:")
-            extra_indent = "    "
-
-        elif kind == "consume_call":
-            call = node["call"]
-            if call.get("kind") == "task_call":
-                call_fn = make_task_call_fn_name(call)
-                args = ", ".join(a.replace("$", "_arr") for a in call["args"])
-                lines.append(f"{base_indent}for {node['name']} in {call_fn}({args}):")
+def _emit_guarded_body(fn_body: list[dict], result_var: str, needs_guard: bool) -> list[str]:
+    """Emit function body with result-assignment guards."""
+    lines = []
+    seen_conditional = False
+    for stmt in fn_body:
+        code = _emit_expr(stmt)
+        if needs_guard and _assigns_result(stmt, result_var):
+            if seen_conditional:
+                lines.extend(_indent(f"if {result_var} is None:", "    "))
+                lines.extend(_indent(code, "        "))
             else:
-                lines.append(f"{base_indent}for {node['name']} in {_emit_expr(call)}:")
-            extra_indent = "    "
-
-        elif kind == "emit":
-            lines.append(f"{base_indent}{extra_indent}yield {_emit_expr(node['value'])}")
-
-        elif kind == "emit_external":
-            handler = _platform_stream_fn(node["stream"], uses)
-            lines.append(f"{base_indent}{extra_indent}{handler}({_emit_expr(node['value'])})")
-
-        elif kind == "if_block":
-            block_code = _emit_if_block(node, is_task=True)
-            for bl in block_code.split("\n"):
-                lines.append(f"{base_indent}{extra_indent}{bl}")
-
-        elif kind == "var_decl" and node.get("array") and isinstance(node.get("value"), dict) and node["value"].get("kind") == "task_call":
-            # task call inside a task body: assign the generator lazily, don't materialise
-            call = node["value"]
-            call_fn = make_task_call_fn_name(call)
-            args = ", ".join(a.replace("$", "_arr") for a in call["args"])
-            name = node["name"] + "_arr"
-            lines.append(f"{base_indent}{extra_indent}{name} = {call_fn}({args})")
-
+                lines.extend(_indent(code, "    "))
+                if stmt.get("kind") == "if_block":
+                    seen_conditional = True
         else:
-            # parsed expression node (var_decl, assign, fn_call, etc.)
-            lines.append(f"{base_indent}{extra_indent}{_emit_expr(node)}")
+            lines.extend(_indent(code, "    "))
+    return lines
 
+
+def _emit_result_function(fn: dict, name: str, params: str) -> str:
+    """Emit a function that returns a result value."""
+    ret_type = _py_type_ann(fn["result"]["type"])
+    result_var = fn["result"]["name"]
+    if result_var.endswith("$"):
+        result_var = result_var.replace("$", "_arr")
+    needs_guard = _result_needs_guard(fn["body"], result_var)
+    has_cond = any(s.get("kind") == "if_block" and _assigns_result(s, result_var) for s in fn["body"])
+    lines = [f"def {name}({params}) -> {ret_type}:"]
+    if needs_guard or has_cond:
+        lines.append(f"    {result_var} = None")
+    lines.extend(_emit_guarded_body(fn["body"], result_var, needs_guard))
+    if has_cond:
+        default_val = _py_default_for_type(fn["result"]["type"])
+        lines.append(f"    return {result_var} if {result_var} is not None else {default_val}")
+    else:
+        lines.append(f"    return {result_var}")
     return "\n".join(lines)
 
 
@@ -808,41 +895,11 @@ def _emit_function(fn: dict) -> str:
         else:
             param_strs.append(pname)
     params = ", ".join(param_strs)
-
     if fn["result"] is not None:
-        ret_type = _py_type_ann(fn["result"]["type"])
-        result_var = fn["result"]["name"]
-        if result_var.endswith("$"):
-            result_var = result_var.replace("$", "_arr")
-        needs_guard = _result_needs_guard(fn["body"], result_var)
-        has_conditional_assign = any(s.get("kind") == "if_block" and _assigns_result(s, result_var) for s in fn["body"])
-        lines = [f"def {name}({params}) -> {ret_type}:"]
-        if needs_guard or has_conditional_assign:
-            # use None as sentinel for "not yet assigned"
-            lines.append(f"    {result_var} = None")
-        seen_conditional_assign = False
-        for stmt in fn["body"]:
-            code = _emit_expr(stmt)
-            if needs_guard and _assigns_result(stmt, result_var):
-                if seen_conditional_assign:
-                    guard_line = f"if {result_var} is None:"
-                    lines.extend(_indent(guard_line, "    "))
-                    lines.extend(_indent(code, "        "))
-                else:
-                    lines.extend(_indent(code, "    "))
-                    if stmt.get("kind") == "if_block":
-                        seen_conditional_assign = True
-            else:
-                lines.extend(_indent(code, "    "))
-        if has_conditional_assign:
-            default_val = _py_default_for_type(fn["result"]["type"])
-            lines.append(f"    return {result_var} if {result_var} is not None else {default_val}")
-        else:
-            lines.append(f"    return {result_var}")
-    else:
-        lines = [f"def {name}({params}):"]
-        for stmt in fn["body"]:
-            lines.extend(_indent(_emit_expr(stmt), "    "))
+        return _emit_result_function(fn, name, params)
+    lines = [f"def {name}({params}):"]
+    for stmt in fn["body"]:
+        lines.extend(_indent(_emit_expr(stmt), "    "))
     return "\n".join(lines)
 
 
@@ -871,167 +928,171 @@ def _indent(text: str, prefix: str) -> list[str]:
     return [prefix + line for line in text.split("\n")]
 
 
-
 # --- expression emitter ---
+
+def _emit_concurrently_expr(node: dict) -> str:
+    """Emit a concurrently block as threaded lambda calls."""
+    block_calls = []
+    for block in node["blocks"]:
+        if len(block) == 1:
+            block_calls.append(f"lambda: {block[0]}")
+        else:
+            stmts = "; ".join(block)
+            block_calls.append(f"lambda: ({stmts})")
+    return f"_concurrently({', '.join(block_calls)})"
+
+
+def _emit_reduce_expr(node: dict) -> str:
+    """Emit a reduce expression."""
+    arr = node["array"].replace("$", "_arr")
+    if "op" in node:
+        return f"functools.reduce(lambda a, b: a {node['op']} b, {arr})"
+    fn_name = _make_function_name_from_reduce(node["fn_parts"], "int")
+    return f"functools.reduce({fn_name}, {arr})"
+
+
+def _emit_var_decl_array(name: str, node: dict) -> str:
+    """Emit an array variable declaration inside an expression context."""
+    val = node["value"]
+    if isinstance(val, list):
+        items = ", ".join(_emit_element(v) for v in val)
+        return f"{name} = [{items}]"
+    if isinstance(val, dict) and "range" in val:
+        return f"{name} = {_emit_range(val)}"
+    if isinstance(val, dict) and val.get("kind") == "task_call":
+        fn_name = make_task_call_fn_name(val)
+        args = ", ".join(_coerce_task_arg_py(a, t)
+                         for a, t in zip(val["args"], _task_call_param_types_py(val)))
+        return f"{name} = list({fn_name}({args}))"
+    if isinstance(val, dict) and val.get("kind") == "stream" \
+            and len(val.get("steps", [])) == 1 and val.get("terminate") is None:
+        return f"{name} = {_emit_array_map_expr(val['steps'][0])}"
+    if isinstance(val, dict) and val.get("kind") == "fn_call" \
+            and any(isinstance(a, dict) and a.get("kind") == "array_fn_call" for a in val.get("args", [])):
+        fn_name = _make_function_name(val["signature_parts"])
+        inner = _emit_expr(val["args"][0])
+        return f"{name} = [{fn_name}(x) for x in {inner}]"
+    if isinstance(val, dict) and "kind" in val:
+        return f"{name} = {_emit_array_map_expr(val)}"
+    return f"{name} = {val}"
+
+
+def _emit_var_decl_expr(node: dict) -> str:
+    """Emit a var_decl expression."""
+    name = _safe(node["name"]) + "_arr" if node.get("array") else _safe(node["name"])
+    if node.get("map"):
+        key_type = _py_type_ann(node["key_type"])
+        val_type = _py_type_ann(node["type"])
+        return f"{name}: dict[{key_type}, {val_type}] = {{}}"
+    if node.get("array"):
+        return _emit_var_decl_array(name, node)
+    return f"{name} = {_emit_expr(node['value'])}"
+
+
+def _emit_slice_expr(node: dict) -> str:
+    """Emit a slice expression."""
+    arr = _emit_expr(node["array"])
+    start = _emit_expr(node["start"]) if node["start"] is not None else ""
+    end = ""
+    if node["end"] is not None:
+        end = _emit_expr(node["end"])
+        if node["inclusive"]:
+            if isinstance(node["end"].get("value"), int):
+                end = str(node["end"]["value"] + 1)
+            else:
+                end = f"{end} + 1"
+    return f"{arr}[{start}:{end}]"
+
+
+def _emit_filter_expr(node: dict) -> str:
+    """Emit where/first_where/index_of_first_where/indices_where."""
+    kind = node["kind"]
+    arr = _emit_expr(node["array"])
+    cond = _emit_expr(_replace_underscore(node["condition"], "x"))
+    if kind == "where":
+        return f"[x for x in {arr} if {cond}]"
+    if kind == "first_where":
+        return f"next((x for x in {arr} if {cond}), type({arr}[0])() if {arr} else None)"
+    if kind == "index_of_first_where":
+        return f"next(i for i, x in enumerate({arr}) if {cond})"
+    return f"[i for i, x in enumerate({arr}) if {cond}]"
+
+
+def _emit_array_fn_expr(node: dict) -> str:
+    """Emit an array function expression."""
+    if node["name"] == "length_of":
+        return f"len({_emit_expr(node['args'][0])})"
+    return str(node)
+
+
+def _emit_member_expr(node: dict) -> str:
+    """Emit a member access expression."""
+    if node["field"] == "char$":
+        return f"list({_safe(node['object'])})"
+    if _is_context_access(node["object"]):
+        return f"_get_ctx().{_safe(node['object'])}.{_safe(node['field'])}"
+    return f"{_safe(node['object'])}.{_safe(node['field'])}"
+
+
+def _emit_name_expr(node: dict) -> str:
+    """Emit a name reference."""
+    val = node["value"]
+    if val in _enum_values:
+        return _enum_values[val]
+    if val.endswith("$"):
+        return _safe(val.replace("$", "_arr"))
+    return _safe(val)
+
+
+def _emit_simple_expr(node: dict) -> str | None:
+    """Handle expression kinds that need minimal logic. Returns None if unhandled."""
+    kind = node["kind"]
+    if kind == "assign":
+        return f"{_safe_target(node['target'])} = {_emit_expr(node['value'])}"
+    if kind == "call":
+        return f"{_safe(node['name'])}({', '.join(_emit_expr(a) for a in node['args'])})"
+    if kind in ("fn_call", "array_fn_call"):
+        return f"{_make_function_name(node['signature_parts'])}({', '.join(_emit_expr(a) for a in node['args'])})"
+    if kind == "task_call":
+        return f"list({make_task_call_fn_name(node)}({', '.join(a.replace('$', '_arr') for a in node['args'])}))"
+    if kind == "binop":
+        return f"{_emit_expr(node['left'])} {node['op']} {_emit_expr(node['right'])}"
+    if kind == "index":
+        return f"{_emit_expr(node['array'])}[{_emit_expr(node['index'])}]"
+    if kind == "literal":
+        return str(node["value"])
+    if kind == "ternary":
+        return f"({_emit_expr(node['true'])}) if ({_emit_expr(node['condition'])}) else ({_emit_expr(node['false'])})"
+    if kind == "raw":
+        return node["value"]
+    return None
+
 
 def _emit_expr(node: dict) -> str:
     """Emit a Python expression from an AST node."""
     kind = node["kind"]
-
     if kind == "if_block":
         return _emit_if_block(node)
-
-    elif kind == "emit":
+    if kind == "emit":
         return f"yield {_emit_expr(node['value'])}"
-
-    elif kind == "concurrently":
-        block_calls = []
-        for block in node["blocks"]:
-            if len(block) == 1:
-                block_calls.append(f"lambda: {block[0]}")
-            else:
-                stmts = "; ".join(block)
-                block_calls.append(f"lambda: ({stmts})")
-        args = ", ".join(block_calls)
-        return f"_concurrently({args})"
-
-    elif kind == "reduce":
-        arr = node["array"].replace("$", "_arr")
-        if "op" in node:
-            return f"functools.reduce(lambda a, b: a {node['op']} b, {arr})"
-        fn_name = _make_function_name_from_reduce(node["fn_parts"], "int")
-        return f"functools.reduce({fn_name}, {arr})"
-
-    elif kind == "var_decl":
-        name = _safe(node["name"]) + "_arr" if node.get("array") else _safe(node["name"])
-        if node.get("map"):
-            key_type = _py_type_ann(node["key_type"])
-            val_type = _py_type_ann(node["type"])
-            return f"{name}: dict[{key_type}, {val_type}] = {{}}"
-        if node.get("array"):
-            val = node["value"]
-            # reuse array variable emission logic
-            if isinstance(val, list):
-                items = ", ".join(_emit_element(v) for v in val)
-                return f"{name} = [{items}]"
-            elif isinstance(val, dict) and "range" in val:
-                return f"{name} = {_emit_range(val)}"
-            elif isinstance(val, dict) and val.get("kind") == "task_call":
-                fn_name = make_task_call_fn_name(val)
-                args = ", ".join(_coerce_task_arg_py(a, t) for a, t in
-                                 zip(val["args"], _task_call_param_types_py(val)))
-                return f"{name} = list({fn_name}({args}))"
-            elif isinstance(val, dict) and val.get("kind") == "stream" and len(val.get("steps", [])) == 1 and val.get("terminate") is None:
-                # single-step stream without terminator = array-mapped expression
-                return f"{name} = {_emit_array_map_expr(val['steps'][0])}"
-            elif isinstance(val, dict) and val.get("kind") == "fn_call" and \
-                    any(isinstance(a, dict) and a.get("kind") == "array_fn_call" for a in val.get("args", [])):
-                # scalar function wrapping array function = map the scalar over results
-                fn_name = _make_function_name(val["signature_parts"])
-                inner = _emit_expr(val["args"][0])
-                return f"{name} = [{fn_name}(x) for x in {inner}]"
-            elif isinstance(val, dict) and "kind" in val:
-                return f"{name} = {_emit_array_map_expr(val)}"
-            return f"{name} = {val}"
-        return f"{name} = {_emit_expr(node['value'])}"
-
-    elif kind == "assign":
-        target = _safe_target(node['target'])
-        return f"{target} = {_emit_expr(node['value'])}"
-
-    elif kind == "call":
-        name = _safe(node["name"])
-        args = ", ".join(_emit_expr(a) for a in node["args"])
-        return f"{name}({args})"
-
-    elif kind in ("fn_call", "array_fn_call"):
-        fn_name = _make_function_name(node["signature_parts"])
-        args = ", ".join(_emit_expr(a) for a in node["args"])
-        return f"{fn_name}({args})"
-
-    elif kind == "task_call":
-        fn_name = make_task_call_fn_name(node)
-        args = ", ".join(a.replace("$", "_arr") for a in node["args"])
-        return f"list({fn_name}({args}))"
-
-    elif kind == "binop":
-        left = _emit_expr(node["left"])
-        right = _emit_expr(node["right"])
-        return f"{left} {node['op']} {right}"
-
-    elif kind == "array_fn":
-        if node["name"] == "length_of":
-            arg = _emit_expr(node["args"][0])
-            return f"len({arg})"
-
-    elif kind == "where":
-        arr = _emit_expr(node["array"])
-        cond = _emit_expr(_replace_underscore(node["condition"], "x"))
-        return f"[x for x in {arr} if {cond}]"
-
-    elif kind == "first_where":
-        arr = _emit_expr(node["array"])
-        cond = _emit_expr(_replace_underscore(node["condition"], "x"))
-        return f"next((x for x in {arr} if {cond}), type({arr}[0])() if {arr} else None)"
-
-    elif kind == "index_of_first_where":
-        arr = _emit_expr(node["array"])
-        cond = _emit_expr(_replace_underscore(node["condition"], "x"))
-        return f"next(i for i, x in enumerate({arr}) if {cond})"
-
-    elif kind == "indices_where":
-        arr = _emit_expr(node["array"])
-        cond = _emit_expr(_replace_underscore(node["condition"], "x"))
-        return f"[i for i, x in enumerate({arr}) if {cond}]"
-
-    elif kind == "index":
-        arr = _emit_expr(node["array"])
-        idx = _emit_expr(node["index"])
-        return f"{arr}[{idx}]"
-
-    elif kind == "slice":
-        arr = _emit_expr(node["array"])
-        start = _emit_expr(node["start"]) if node["start"] is not None else ""
-        end = ""
-        if node["end"] is not None:
-            end = _emit_expr(node["end"])
-            if node["inclusive"]:
-                if isinstance(node["end"].get("value"), int):
-                    end = str(node["end"]["value"] + 1)
-                else:
-                    end = f"{end} + 1"
-        return f"{arr}[{start}:{end}]"
-
-    elif kind == "member":
-        if node["field"] == "char$":
-            return f"list({_safe(node['object'])})"
-        # check if this is a user-context variable access (feature.var)
-        if _is_context_access(node["object"]):
-            return f"_get_ctx().{_safe(node['object'])}.{_safe(node['field'])}"
-        return f"{_safe(node['object'])}.{_safe(node['field'])}"
-
-    elif kind == "name":
-        val = node["value"]
-        if val in _enum_values:
-            return _enum_values[val]
-        if val.endswith("$"):
-            return _safe(val.replace("$", "_arr"))
-        return _safe(val)
-
-
-    elif kind == "literal":
-        return str(node["value"])
-
-    elif kind == "ternary":
-        true = _emit_expr(node["true"])
-        cond = _emit_expr(node["condition"])
-        false = _emit_expr(node["false"])
-        return f"({true}) if ({cond}) else ({false})"
-
-    elif kind == "raw":
-        return node["value"]
-
-    return str(node)
+    if kind == "concurrently":
+        return _emit_concurrently_expr(node)
+    if kind == "reduce":
+        return _emit_reduce_expr(node)
+    if kind == "var_decl":
+        return _emit_var_decl_expr(node)
+    if kind == "array_fn":
+        return _emit_array_fn_expr(node)
+    if kind in ("where", "first_where", "index_of_first_where", "indices_where"):
+        return _emit_filter_expr(node)
+    if kind == "slice":
+        return _emit_slice_expr(node)
+    if kind == "member":
+        return _emit_member_expr(node)
+    if kind == "name":
+        return _emit_name_expr(node)
+    result = _emit_simple_expr(node)
+    return result if result is not None else str(node)
 
 
 # --- CLI ---

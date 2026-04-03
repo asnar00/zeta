@@ -23,20 +23,206 @@ _PLATFORM_EXT = {
 }
 
 
-def main():
-    args = [a for a in sys.argv[1:] if not a.startswith("--")]
-    flags = {a for a in sys.argv[1:] if a.startswith("--")}
+def _print_usage():
+    print("Usage: python3 zeta.py [--verbose] input.md [input2.md ...] output.ext")
+    print("       python3 zeta.py [--verbose] features.md output_dir/")
+    print("Supported extensions:", ", ".join(_EMITTERS))
 
-    if "--verbose" in flags:
-        log.enable()
 
-    if len(args) < 2:
-        print("Usage: python3 zeta.py [--verbose] input.md [input2.md ...] output.ext")
-        print("       python3 zeta.py [--verbose] features.md output_dir/")
-        print("Supported extensions:", ", ".join(_EMITTERS))
+def _reject_zeta_output(out_dir):
+    """Exit if the output directory is the zeta source directory."""
+    zeta_dir = os.path.dirname(os.path.abspath(__file__))
+    if os.path.normpath(os.path.abspath(out_dir)) == os.path.normpath(zeta_dir):
+        print(f"Error: refusing to write output to the zeta source directory ({zeta_dir})")
+        print("Use a subdirectory or different path for output files.")
         sys.exit(1)
 
-    # check if first arg is a features.md file and second is a directory
+
+def _load_emitter(output_path):
+    """Import the emitter module for the given output file extension."""
+    ext = "." + output_path.rsplit(".", 1)[-1] if "." in output_path else ""
+    if ext not in _EMITTERS:
+        print(f"Unsupported output format: {ext}")
+        print("Supported extensions:", ", ".join(_EMITTERS))
+        sys.exit(1)
+    module = __import__(_EMITTERS[ext])
+    return ext, module.emit
+
+
+def _read_sources(input_paths):
+    """Read all input files and return their contents."""
+    with log.section("read source"):
+        sources = []
+        for path in input_paths:
+            src = open(path).read()
+            log.log(f"{len(src)} chars from {path}")
+            sources.append(src)
+    return sources
+
+
+def _compose_sources(input_paths, sources):
+    """If multiple inputs, compose them; otherwise return the single source."""
+    if len(input_paths) == 1:
+        return sources[0], {}
+
+    from feature_parser import parse_features
+    from composer import compose
+
+    with log.section("compose features"):
+        code_parts = [_extract_code(s)[0] if _is_markdown(s) else s for s in sources]
+        combined = "\n".join(code_parts)
+        features = parse_features(combined)
+        for f in features:
+            log.log(f"feature: {f['name']}" + (f" extends {f['extends']}" if f['extends'] else ""))
+        feature_tests = {f["name"]: f["tests"] for f in features if f.get("tests")}
+        source = compose(features)
+        log.log(f"{len(source)} chars composed")
+    return source, feature_tests
+
+
+def _platform_dir():
+    return os.path.join(os.path.dirname(__file__), "platforms")
+
+
+def _prepend_platform_interfaces(source):
+    """Load platform .zero.md signatures and prepend them to source."""
+    pdir = _platform_dir()
+    if not os.path.isdir(pdir):
+        return source
+    with log.section("load platform interfaces"):
+        for fname in sorted(os.listdir(pdir)):
+            if fname.endswith(".zero.md"):
+                log.log(fname)
+                with open(os.path.join(pdir, fname)) as pf:
+                    plat_src = pf.read()
+                    if _is_markdown(plat_src):
+                        plat_src, _ = _extract_code(plat_src)
+                    source = plat_src + "\n" + source
+    return source
+
+
+def _log_ir_summary(ir):
+    log.log(f"{len(ir['types'])} types, {len(ir['functions'])} functions, "
+            f"{len(ir.get('tasks', []))} tasks, {len(ir['variables'])} variables")
+    log.log(f"features: {', '.join(sorted(ir['features']))}")
+
+
+def _parse_feature_tests_into_ir(ir, feature_tests, source):
+    """Parse feature tests and merge them into the IR."""
+    if not feature_tests:
+        return
+    from parser import parse_tests
+    all_tests = []
+    for feat_name, tests in feature_tests.items():
+        parsed = parse_tests(tests, source)
+        for t in parsed:
+            t["feature"] = feat_name
+        all_tests.extend(parsed)
+        log.log(f"{feat_name}: {len(parsed)} tests")
+    if all_tests:
+        ir["tests"] = all_tests
+
+
+def _log_ir_diagnostics(ir):
+    if ir.get("tests"):
+        log.log(f"{len(ir['tests'])} tests total")
+    if ir.get("errors"):
+        for e in ir["errors"]:
+            log.log(f"error: {e.format()}")
+    if ir.get("warnings"):
+        for w in ir["warnings"]:
+            log.log(f"warning: {w}")
+
+
+def _parse_and_log(source, input_paths, feature_tests):
+    """Parse source into IR, parse feature tests, log results."""
+    with log.section("parse"):
+        source_label = " + ".join(input_paths)
+        ir = process(source, source_file=source_label)
+        _log_ir_summary(ir)
+        _parse_feature_tests_into_ir(ir, feature_tests, source)
+        _log_ir_diagnostics(ir)
+    return ir
+
+
+def _collect_platform_code(ext):
+    """Collect platform prepend/append code for the given extension."""
+    pdir = _platform_dir()
+    platform_ext = _PLATFORM_EXT.get(ext, "")
+    main_ext = ".main" + platform_ext
+    prepend = []
+    append = []
+    if not os.path.isdir(pdir):
+        return prepend, append
+    with log.section("platform code"):
+        for fname in sorted(os.listdir(pdir)):
+            if fname.endswith(".zero.md"):
+                continue
+            path = os.path.join(pdir, fname)
+            if fname.endswith(main_ext):
+                log.log(f"{fname} (append)")
+                append.append(open(path).read())
+            elif fname.endswith(platform_ext):
+                log.log(f"{fname} (prepend)")
+                prepend.append(open(path).read())
+    return prepend, append
+
+
+def _write_runtime(ir, ext, output_path):
+    """Write the test runtime file if tests exist. Returns has_tests."""
+    has_tests = bool(ir.get("tests"))
+    if not has_tests:
+        return False
+    runtime = _RUNTIME_PY if ext == ".py" else _RUNTIME_TS
+    runtime_path = os.path.join(os.path.dirname(output_path) or ".", f"_runtime{ext}")
+    with open(runtime_path, "w") as f:
+        f.write(runtime)
+    return True
+
+
+def _prepend_runtime_import(output, ext):
+    """Prepend the runtime import statement for test support."""
+    if ext == ".py":
+        return "from _runtime import register_tests, run_tests\n\n" + output
+    elif ext == ".ts":
+        return "import { register_tests, run_tests } from './_runtime.js';\n\n" + output
+    return output
+
+
+def _assemble_output(output, prepend, append, has_tests, ext):
+    """Combine platform code, runtime imports, and harness into final output."""
+    if prepend:
+        output = "\n\n".join(prepend) + "\n\n" + output
+    if has_tests:
+        output = _prepend_runtime_import(output, ext)
+    harness = "\n\n".join(append) if append else ""
+    output += _main_entry_point(harness, has_tests, ext)
+    return output
+
+
+def _parse_args():
+    """Parse command-line arguments into (args, flags)."""
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    flags = {a for a in sys.argv[1:] if a.startswith("--")}
+    if "--verbose" in flags:
+        log.enable()
+    if len(args) < 2:
+        _print_usage()
+        sys.exit(1)
+    return args, flags
+
+
+def _write_and_compile(output, output_path, ext, input_paths):
+    """Write output file, compile-check it, and print summary."""
+    with open(output_path, "w") as f:
+        f.write(output)
+    _compile(ext, [output_path])
+    print(f"{' + '.join(input_paths)} -> {output_path}")
+
+
+def main():
+    args, flags = _parse_args()
+
     if len(args) == 2 and args[0].endswith("features.md") and args[1].endswith("/"):
         _build_features(args[0], args[1], flags)
         return
@@ -44,149 +230,21 @@ def main():
     input_paths = args[:-1]
     output_path = args[-1]
 
-    # safety: don't write output into the zeta source directory
-    zeta_dir = os.path.dirname(os.path.abspath(__file__))
-    out_dir = os.path.dirname(os.path.abspath(output_path)) or zeta_dir
-    if os.path.normpath(out_dir) == os.path.normpath(zeta_dir):
-        print(f"Error: refusing to write output to the zeta source directory ({zeta_dir})")
-        print("Use a subdirectory or different path for output files.")
-        sys.exit(1)
-
-    # determine emitter from output extension
-    ext = "." + output_path.rsplit(".", 1)[-1] if "." in output_path else ""
-    if ext not in _EMITTERS:
-        print(f"Unsupported output format: {ext}")
-        print("Supported extensions:", ", ".join(_EMITTERS))
-        sys.exit(1)
-
-    # import the right emitter
-    module = __import__(_EMITTERS[ext])
-    emit = module.emit
-
-    # read all input files
-    with log.section("read source"):
-        sources = []
-        for path in input_paths:
-            src = open(path).read()
-            log.log(f"{len(src)} chars from {path}")
-            sources.append(src)
-
-    # if multiple inputs, use feature composition
-    if len(input_paths) > 1:
-        from feature_parser import parse_features
-        from composer import compose
-
-        with log.section("compose features"):
-            # extract code from markdown for each source
-            code_parts = []
-            for src in sources:
-                if _is_markdown(src):
-                    src, _ = _extract_code(src)
-                code_parts.append(src)
-            combined = "\n".join(code_parts)
-            features = parse_features(combined)
-            for f in features:
-                log.log(f"feature: {f['name']}" + (f" extends {f['extends']}" if f['extends'] else ""))
-            # collect feature tests before composing (compose doesn't include tests)
-            _feature_tests = {f["name"]: f["tests"] for f in features if f.get("tests")}
-            source = compose(features)
-            log.log(f"{len(source)} chars composed")
-    else:
-        source = sources[0]
-        _feature_tests = {}
-
-    # collect platform signatures so the parser knows about them
-    platform_dir = os.path.join(os.path.dirname(__file__), "platforms")
-    if os.path.isdir(platform_dir):
-        with log.section("load platform interfaces"):
-            for fname in sorted(os.listdir(platform_dir)):
-                if fname.endswith(".zero.md"):
-                    log.log(fname)
-                    with open(os.path.join(platform_dir, fname)) as pf:
-                        plat_src = pf.read()
-                        # extract code from platform markdown
-                        if _is_markdown(plat_src):
-                            plat_src, _ = _extract_code(plat_src)
-                        source = plat_src + "\n" + source
-
-    with log.section("parse"):
-        source_label = " + ".join(input_paths)
-        ir = process(source, source_file=source_label)
-        log.log(f"{len(ir['types'])} types, {len(ir['functions'])} functions, "
-                f"{len(ir.get('tasks', []))} tasks, {len(ir['variables'])} variables")
-        log.log(f"features: {', '.join(sorted(ir['features']))}")
-        # parse feature tests (from feature_parser) against full source signatures
-        _test_features = []
-        if _feature_tests:
-            from parser import parse_tests
-            all_tests = []
-            for feat_name, tests in _feature_tests.items():
-                parsed = parse_tests(tests, source)
-                for t in parsed:
-                    t["feature"] = feat_name
-                all_tests.extend(parsed)
-                if parsed:
-                    _test_features.append(feat_name)
-                log.log(f"{feat_name}: {len(parsed)} tests")
-            if all_tests:
-                ir["tests"] = all_tests
-        if ir.get("tests"):
-            log.log(f"{len(ir['tests'])} tests total")
-        if ir.get("errors"):
-            for e in ir["errors"]:
-                log.log(f"error: {e.format()}")
-        if ir.get("warnings"):
-            for w in ir["warnings"]:
-                log.log(f"warning: {w}")
+    _reject_zeta_output(os.path.dirname(os.path.abspath(output_path)))
+    ext, emit = _load_emitter(output_path)
+    sources = _read_sources(input_paths)
+    source, feature_tests = _compose_sources(input_paths, sources)
+    source = _prepend_platform_interfaces(source)
+    ir = _parse_and_log(source, input_paths, feature_tests)
 
     with log.section(f"emit {ext}"):
         output = emit(ir)
         log.log(f"{len(output)} chars, {output.count(chr(10))} lines")
 
-    # prepend platform implementations, append platform entry points
-    platform_ext = _PLATFORM_EXT.get(ext, "")
-    main_ext = ".main" + platform_ext  # e.g. ".main.py", ".main.ts"
-    if os.path.isdir(platform_dir):
-        with log.section("platform code"):
-            prepend = []
-            append = []
-            for fname in sorted(os.listdir(platform_dir)):
-                if fname.endswith(".zero.md"):
-                    continue
-                if fname.endswith(main_ext):
-                    log.log(f"{fname} (append)")
-                    with open(os.path.join(platform_dir, fname)) as pf:
-                        append.append(pf.read())
-                elif fname.endswith(platform_ext):
-                    log.log(f"{fname} (prepend)")
-                    with open(os.path.join(platform_dir, fname)) as pf:
-                        prepend.append(pf.read())
-            if prepend:
-                output = "\n\n".join(prepend) + "\n\n" + output
-
-    # write _runtime and add import if there are tests
-    has_tests = bool(ir.get("tests"))
-    if has_tests:
-        runtime = _RUNTIME_PY if ext == ".py" else _RUNTIME_TS
-        runtime_path = os.path.join(os.path.dirname(output_path) or ".", f"_runtime{ext}")
-        with open(runtime_path, "w") as f:
-            f.write(runtime)
-        if ext == ".py":
-            output = "from _runtime import register_tests, run_tests\n\n" + output
-        elif ext == ".ts":
-            output = "import { register_tests, run_tests } from './_runtime.js';\n\n" + output
-
-    # combine platform harness and test runner into one entry point
-    harness = "\n\n".join(append) if append else ""
-    output += _main_entry_point(harness, has_tests, ext)
-
-    with open(output_path, "w") as f:
-        f.write(output)
-
-    # compile/validate output
-    _compile(ext, [output_path])
-
-    print(f"{' + '.join(input_paths)} -> {output_path}")
+    prepend, append = _collect_platform_code(ext)
+    has_tests = _write_runtime(ir, ext, output_path)
+    output = _assemble_output(output, prepend, append, has_tests, ext)
+    _write_and_compile(output, output_path, ext, input_paths)
 
 
 _RUNTIME_PY = '''\
@@ -291,35 +349,43 @@ def _main_entry_point(harness: str, has_tests: bool, ext: str) -> str:
     if not harness and not has_tests:
         return ""
     if ext == ".py":
-        lines = ["\n\nimport sys"]
-        lines.append("if __name__ == '__main__':")
-        if has_tests:
-            lines.append("    if '--test' in sys.argv:")
-            lines.append("        _names = [a for a in sys.argv[1:] if a != '--test'] or None")
-            lines.append("        sys.exit(1 if run_tests(_names) else 0)")
+        return _main_entry_point_py(harness, has_tests)
+    elif ext == ".ts":
+        return _main_entry_point_ts(harness, has_tests)
+    return ""
+
+
+def _main_entry_point_py(harness: str, has_tests: bool) -> str:
+    lines = ["\n\nimport sys"]
+    lines.append("if __name__ == '__main__':")
+    if has_tests:
+        lines.append("    if '--test' in sys.argv:")
+        lines.append("        _names = [a for a in sys.argv[1:] if a != '--test'] or None")
+        lines.append("        sys.exit(1 if run_tests(_names) else 0)")
+    if harness:
+        harness_body = _extract_harness_body(harness)
+        if harness_body:
+            lines.append(harness_body)
+    return "\n".join(lines) + "\n"
+
+
+def _main_entry_point_ts(harness: str, has_tests: bool) -> str:
+    lines = []
+    if has_tests:
+        lines.append("\n\nif (process.argv.includes('--test')) {")
+        lines.append("    const _names = process.argv.slice(2).filter(a => a !== '--test');")
+        lines.append("    process.exit(run_tests(_names.length ? _names : undefined) ? 1 : 0);")
         if harness:
+            lines.append("} else {")
             harness_body = _extract_harness_body(harness)
             if harness_body:
                 lines.append(harness_body)
-        return "\n".join(lines) + "\n"
-    elif ext == ".ts":
-        lines = []
-        if has_tests:
-            lines.append("\n\nif (process.argv.includes('--test')) {")
-            lines.append("    const _names = process.argv.slice(2).filter(a => a !== '--test');")
-            lines.append("    process.exit(run_tests(_names.length ? _names : undefined) ? 1 : 0);")
-            if harness:
-                lines.append("} else {")
-                harness_body = _extract_harness_body(harness)
-                if harness_body:
-                    lines.append(harness_body)
-                lines.append("}")
-            else:
-                lines.append("}")
-        elif harness:
-            lines.append("\n\n" + harness)
-        return "\n".join(lines) + "\n"
-    return ""
+            lines.append("}")
+        else:
+            lines.append("}")
+    elif harness:
+        lines.append("\n\n" + harness)
+    return "\n".join(lines) + "\n"
 
 
 def _extract_harness_body(harness: str) -> str:
@@ -369,7 +435,6 @@ def _compile(ext: str, files: list[str]):
 def _find_feature_file(name: str, search_dir: str) -> str:
     """Find a feature's .zero.md file by name, searching common locations."""
     import glob
-    # if it's already a full path, use it
     if name.endswith(".zero.md") and os.path.exists(name):
         return name
     candidates = [
@@ -378,7 +443,6 @@ def _find_feature_file(name: str, search_dir: str) -> str:
         os.path.join(search_dir, f"{name}.zero.md"),
         os.path.join(search_dir, name, f"{name}.zero.md"),
     ]
-    # also search subdirectories
     for pattern in [f"*/{name}.zero.md", f"**/{name}.zero.md"]:
         candidates.extend(glob.glob(pattern, recursive=True))
     for c in candidates:
@@ -387,71 +451,53 @@ def _find_feature_file(name: str, search_dir: str) -> str:
     return None
 
 
+def _parse_feature_entry(line, search_dir):
+    """Parse a single line from features.md into a feature entry dict."""
+    parts = line.split()
+    name = parts[0]
+    dynamic = "dynamic" in parts[1:]
+    config = {}
+    for p in parts[1:]:
+        if "=" in p:
+            k, v = p.split("=", 1)
+            config[k] = v
+    path = _find_feature_file(name, search_dir)
+    if path is None:
+        print(f"Error: cannot find feature '{name}' (searched from {search_dir})")
+        sys.exit(1)
+    clean_name = os.path.basename(path).replace(".zero.md", "")
+    return {"name": clean_name, "path": path, "dynamic": dynamic, "config": config}
+
+
 def _parse_feature_list(features_path: str) -> list[dict]:
-    """Parse a features.md file into feature entries.
-    Each line: name [dynamic] [key=value ...]
-    Or legacy: path/to/file.zero.md"""
+    """Parse a features.md file into feature entries."""
     search_dir = os.path.dirname(features_path) or "."
     entries = []
     for line in open(features_path).read().strip().split("\n"):
         line = line.strip()
         if not line or line.startswith("#"):
             continue
-        parts = line.split()
-        name = parts[0]
-        dynamic = "dynamic" in parts[1:]
-        config = {}
-        for p in parts[1:]:
-            if "=" in p:
-                k, v = p.split("=", 1)
-                config[k] = v
-        # find the file
-        path = _find_feature_file(name, search_dir)
-        if path is None:
-            print(f"Error: cannot find feature '{name}' (searched from {search_dir})")
-            sys.exit(1)
-        # derive clean name from the feature file (keep hyphens — zero supports them)
-        clean_name = os.path.basename(path).replace(".zero.md", "")
-        entries.append({
-            "name": clean_name,
-            "path": path,
-            "dynamic": dynamic,
-            "config": config,
-        })
+        entries.append(_parse_feature_entry(line, search_dir))
     return entries
 
 
-def _build_features(features_path: str, output_dir: str, flags: set):
-    """Build per-feature output files from a features.md listing."""
-    from feature_parser import parse_features
-    from composer import compose_per_feature
-
-    if "--verbose" in flags:
-        log.enable()
-
-    # safety: don't write output into the zeta source directory
-    zeta_dir = os.path.dirname(os.path.abspath(__file__))
-    if os.path.normpath(os.path.abspath(output_dir)) == os.path.normpath(zeta_dir):
-        print(f"Error: refusing to write output to the zeta source directory ({zeta_dir})")
-        print("Use a subdirectory or different path for output files.")
-        sys.exit(1)
-
-    os.makedirs(output_dir, exist_ok=True)
-
-    # read feature list
+def _read_feature_list(features_path):
+    """Read the feature list and log it."""
     with log.section("read features"):
-        feature_entries = _parse_feature_list(features_path)
-        input_paths = [e["path"] for e in feature_entries]
-        log.log(f"{len(feature_entries)} features")
-        for e in feature_entries:
-            flags = []
+        entries = _parse_feature_list(features_path)
+        log.log(f"{len(entries)} features")
+        for e in entries:
+            flags_list = []
             if e["dynamic"]:
-                flags.append("dynamic")
+                flags_list.append("dynamic")
             if e["config"]:
-                flags.append(str(e["config"]))
-            log.log(f"  {e['name']}" + (f" ({', '.join(flags)})" if flags else ""))
+                flags_list.append(str(e["config"]))
+            log.log(f"  {e['name']}" + (f" ({', '.join(flags_list)})" if flags_list else ""))
+    return entries
 
-    # read and extract code from each feature file
+
+def _read_feature_sources(feature_entries):
+    """Read and extract code from each feature file."""
     with log.section("read source"):
         code_parts = []
         for entry in feature_entries:
@@ -459,96 +505,118 @@ def _build_features(features_path: str, output_dir: str, flags: set):
             log.log(f"{len(src)} chars from {entry['path']}")
             if _is_markdown(src):
                 src, _ = _extract_code(src)
-            # inject config overrides as variable assignments
             for key, val in entry["config"].items():
                 src += f"\n{key} = {val}\n"
             code_parts.append(src)
+    return code_parts
 
-    # note: dynamic feature _enabled variables are now declared as 'user bool enabled'
-    # in each feature's .zero.md source — no injection needed here
 
-    # parse features and compose per-feature
-    dynamic_set = {e["name"] for e in feature_entries if e["dynamic"]}
+def _compose_feature_set(code_parts, dynamic_set):
+    """Parse and compose features from code parts."""
+    from feature_parser import parse_features
+    from composer import compose_per_feature
     with log.section("compose features"):
         combined = "\n".join(code_parts)
         features = parse_features(combined)
         per_feature = compose_per_feature(features, dynamic_set)
         for name, source in per_feature.items():
             log.log(f"{name}: {len(source)} chars")
+    return features, per_feature
 
-    # load platform interface code (for prepending to source before parsing)
-    platform_dir = os.path.join(os.path.dirname(__file__), "platforms")
+
+def _load_platform_interface_code():
+    """Load all platform .zero.md files and extract their code."""
+    pdir = _platform_dir()
     plat_code = ""
-    if os.path.isdir(platform_dir):
-        for fname in sorted(os.listdir(platform_dir)):
-            if fname.endswith(".zero.md"):
-                with open(os.path.join(platform_dir, fname)) as pf:
-                    plat_src = pf.read()
-                    if _is_markdown(plat_src):
-                        plat_src, _ = _extract_code(plat_src)
-                    plat_code = plat_src + "\n" + plat_code
+    if not os.path.isdir(pdir):
+        return plat_code
+    for fname in sorted(os.listdir(pdir)):
+        if fname.endswith(".zero.md"):
+            with open(os.path.join(pdir, fname)) as pf:
+                plat_src = pf.read()
+                if _is_markdown(plat_src):
+                    plat_src, _ = _extract_code(plat_src)
+                plat_code = plat_src + "\n" + plat_code
+    return plat_code
 
-    # load platform implementation files
-    platform_prepend = {ext: [] for ext in _PLATFORM_EXT}
-    platform_append = {ext: [] for ext in _PLATFORM_EXT}
-    if os.path.isdir(platform_dir):
-        for fname in sorted(os.listdir(platform_dir)):
-            if fname.endswith(".zero.md"):
-                continue
-            for ext, pext in _PLATFORM_EXT.items():
-                main_ext = ".main" + pext
-                if fname.endswith(main_ext):
-                    with open(os.path.join(platform_dir, fname)) as pf:
-                        platform_append[ext].append(pf.read())
-                elif fname.endswith(pext):
-                    with open(os.path.join(platform_dir, fname)) as pf:
-                        platform_prepend[ext].append(pf.read())
 
-    # find the root feature (the one nothing extends)
-    root_name = None
+def _load_platform_implementations():
+    """Load platform implementation files, split into prepend and append groups."""
+    pdir = _platform_dir()
+    prepend = {ext: [] for ext in _PLATFORM_EXT}
+    append = {ext: [] for ext in _PLATFORM_EXT}
+    if not os.path.isdir(pdir):
+        return prepend, append
+    for fname in sorted(os.listdir(pdir)):
+        if fname.endswith(".zero.md"):
+            continue
+        for ext, pext in _PLATFORM_EXT.items():
+            main_ext = ".main" + pext
+            path = os.path.join(pdir, fname)
+            if fname.endswith(main_ext):
+                append[ext].append(open(path).read())
+            elif fname.endswith(pext):
+                prepend[ext].append(open(path).read())
+    return prepend, append
+
+
+def _find_root_feature(features):
+    """Find the feature that nothing extends (the root)."""
     for f in features:
         if f["extends"] is None:
-            root_name = f["name"]
-            break
+            return f["name"]
+    return None
 
-    # build function ownership map: fn_name -> feature_name
+
+def _build_fn_ownership(features):
+    """Build a map from function name to owning feature name."""
     fn_owner = {}
     for f in features:
         for fn_name in f.get("functions", {}):
             fn_owner[fn_name] = f["name"]
+    return fn_owner
 
-    # parse ALL composed source together (so all signatures are visible)
-    from composer import compose
-    full_composed = compose(features, dynamic_set)
-    full_source = plat_code + "\n" + full_composed
 
+def _parse_full_source(full_source):
+    """Parse composed source and log summary."""
     with log.section("parse"):
         ir = process(full_source, source_file="composed")
         log.log(f"{len(ir['types'])} types, {len(ir['functions'])} functions, "
                 f"{len(ir.get('tasks', []))} tasks, {len(ir['variables'])} variables")
+    return ir
 
-    # map IR functions/tasks to their owning feature
-    # function names in IR use signature_parts; match against feature fn names
+
+def _init_ir_by_feature(features):
+    """Initialize empty IR buckets for each feature."""
+    return {f["name"]: {"types": [], "variables": [], "functions": [], "tasks": []}
+            for f in features}
+
+
+def _find_fn_owner(base_name, fn_owner):
+    """Match a function's base name against feature function names."""
+    for feat_fn_name, feat_name in fn_owner.items():
+        normalized_feat = "_".join(feat_fn_name.split())
+        if (base_name == normalized_feat or
+                base_name.startswith(normalized_feat + "_") or
+                base_name.startswith(normalized_feat + "__")):
+            return feat_name
+    return None
+
+
+def _map_functions_to_features(ir, fn_owner, ir_by_feature, root_name):
+    """Assign each IR function to its owning feature."""
     from emit_base import get_base_name
-    ir_by_feature = {f["name"]: {"types": [], "variables": [], "functions": [], "tasks": []}
-                     for f in features}
-
     for fn in ir["functions"]:
         base = get_base_name(fn["signature_parts"])
-        # find owner by matching against feature function names
-        owner = None
-        for feat_fn_name, feat_name in fn_owner.items():
-            # normalize to underscore-separated words for comparison
-            normalized_feat = "_".join(feat_fn_name.split())
-            # prefix match: feature name may be shorter than full signature
-            if base == normalized_feat or base.startswith(normalized_feat + "_") or base.startswith(normalized_feat + "__"):
-                owner = feat_name
-                break
+        owner = _find_fn_owner(base, fn_owner)
         if owner is None:
-            owner = root_name  # default to root
-            fn["_platform"] = True  # mark as platform function
+            owner = root_name
+            fn["_platform"] = True
         ir_by_feature[owner]["functions"].append(fn)
 
+
+def _map_tasks_to_features(ir, fn_owner, ir_by_feature, root_name):
+    """Assign each IR task to its owning feature."""
     for task in ir.get("tasks", []):
         task_name = " ".join(task["name_parts"])
         owner = None
@@ -560,14 +628,15 @@ def _build_features(features_path: str, output_dir: str, flags: set):
             owner = root_name
         ir_by_feature[owner]["tasks"].append(task)
 
-    # variables go to the feature that defined them
+
+def _map_variables_to_features(ir, features, ir_by_feature, root_name):
+    """Assign each IR variable to its owning feature. Returns var_owners map."""
     var_owners = {}
     for f in features:
         for v in f.get("variables", []):
             var_owners[v] = f["name"]
-    ir_var_owners = {}  # var_name -> feature_name (for context class generation)
+    ir_var_owners = {}
     for var in ir["variables"]:
-        # match by name
         owner = root_name
         for var_line, feat_name in var_owners.items():
             if var["name"] in var_line:
@@ -575,18 +644,18 @@ def _build_features(features_path: str, output_dir: str, flags: set):
                 break
         ir_by_feature[owner]["variables"].append(var)
         ir_var_owners[var["name"]] = owner
-    ir["_var_owners"] = ir_var_owners
+    return ir_var_owners
 
-    # parse and assign tests per feature
+
+def _assign_tests_to_features(ir, features, ir_by_feature, root_name, full_source):
+    """Parse and assign tests to their owning features."""
     from parser import parse_tests
     features_with_tests = []
-    # platform tests from the main IR go to the root feature
     if ir.get("tests"):
         ir_by_feature[root_name].setdefault("tests", []).extend(ir["tests"])
-        if root_name not in features_with_tests:
-            features_with_tests.append(root_name)
+        features_with_tests.append(root_name)
         log.log(f"platform: {len(ir['tests'])} tests")
-        del ir["tests"]  # prevent re-emission in child modules
+        del ir["tests"]
     for f in features:
         if f.get("tests"):
             parsed = parse_tests(f["tests"], full_source)
@@ -595,152 +664,240 @@ def _build_features(features_path: str, output_dir: str, flags: set):
                 if f["name"] not in features_with_tests:
                     features_with_tests.append(f["name"])
             log.log(f"{f['name']}: {len(parsed)} tests")
+    return features_with_tests
 
-    # build module map: emitted_function_name → feature_name
-    from emit_base import make_function_name, make_task_fn_name as _make_task_fn_name
+
+def _build_module_map(ir_by_feature):
+    """Build map from emitted function name to feature module name."""
+    from emit_base import make_function_name, make_task_fn_name
     module_map = {}
     for feat_name, feat_ir_data in ir_by_feature.items():
         safe_name = feat_name.replace("-", "_")
         for fn in feat_ir_data["functions"]:
             if fn.get("_platform"):
-                continue  # platform functions are available directly, not via module
+                continue
             emitted_name = make_function_name(fn["signature_parts"])
             module_map[emitted_name] = safe_name
         for task in feat_ir_data["tasks"]:
-            emitted_name = _make_task_fn_name(task)
+            emitted_name = make_task_fn_name(task)
             module_map[emitted_name] = safe_name
+    return module_map
 
-    # figure out dependency order
-    feature_deps = {}
-    for f in features:
-        feature_deps[f["name"]] = f["extends"]
-    dep_order = []
-    for f in features:
-        if f["extends"] is None:
-            continue
-        if f["name"] not in dep_order:
-            dep_order.append(f["name"])
 
-    # write package.json for ESM support (needed for tsx to resolve .js → .ts)
+def _compute_dep_order(features):
+    """Return the dependency order of non-root features."""
+    return [f["name"] for f in features if f["extends"] is not None]
+
+
+def _ensure_package_json(output_dir):
+    """Write package.json for ESM support if it doesn't exist."""
     pkg_path = os.path.join(output_dir, "package.json")
     if not os.path.exists(pkg_path):
         with open(pkg_path, "w") as f:
             f.write('{ "type": "module" }\n')
 
-    # write _runtime files if any features have tests
-    if features_with_tests:
-        for ext, pext in _PLATFORM_EXT.items():
-            runtime = _RUNTIME_PY if ext == ".py" else _RUNTIME_TS
-            runtime_path = os.path.join(output_dir, f"_runtime{ext}")
-            with open(runtime_path, "w") as f:
-                f.write(runtime)
 
-    # emit per-feature output for each target
+def _write_runtime_files(features_with_tests, output_dir):
+    """Write _runtime files for each target if any features have tests."""
+    if not features_with_tests:
+        return
+    for ext in _PLATFORM_EXT:
+        runtime = _RUNTIME_PY if ext == ".py" else _RUNTIME_TS
+        runtime_path = os.path.join(output_dir, f"_runtime{ext}")
+        with open(runtime_path, "w") as f:
+            f.write(runtime)
+
+
+def _find_feat_source_file(feat_name, input_paths):
+    """Find the source file path for a feature by name."""
+    for p in input_paths:
+        if feat_name in p:
+            return p
+    return f"{feat_name}.zero.md"
+
+
+def _build_feat_ir(feat_name, ctx, input_paths):
+    """Build the IR dict for a single feature."""
+    ir = ctx["ir"]
+    ir_by_feature = ctx["ir_by_feature"]
+    feat_ir = dict(ir)
+    feat_ir["functions"] = ir_by_feature[feat_name]["functions"]
+    feat_ir["tasks"] = ir_by_feature[feat_name]["tasks"]
+    feat_ir["variables"] = ir_by_feature[feat_name]["variables"]
+    feat_ir["source_file"] = _find_feat_source_file(feat_name, input_paths)
+    feat_ir["module_map"] = ctx["module_map"]
+    feat_ir["current_module"] = feat_name.replace("-", "_")
+    feat_ir["_var_owners"] = ctx["ir_var_owners"]
+    feat_ir["_all_user_vars"] = [v for v in ir["variables"] if v.get("scope") == "user"]
+    if ir_by_feature[feat_name].get("tests"):
+        feat_ir["tests"] = ir_by_feature[feat_name]["tests"]
+        feat_ir["test_feature"] = feat_name
+    return feat_ir
+
+
+def _add_child_imports(code, feat_name, ext, ctx):
+    """Add imports for non-root features (runtime, cross-module)."""
+    ir_by_feature = ctx["ir_by_feature"]
+    module_map = ctx["module_map"]
+    imports = []
+    if ir_by_feature[feat_name].get("tests"):
+        if ext == ".py":
+            imports.append("from _runtime import register_tests")
+        elif ext == ".ts":
+            imports.append("import { register_tests } from './_runtime.js';")
+    for mod_name in set(module_map.values()):
+        if mod_name != feat_name and f"{mod_name}." in code:
+            if ext == ".py":
+                imports.append(f"import {mod_name}")
+            elif ext == ".ts":
+                imports.append(f"import * as {mod_name} from './{mod_name}.js';")
+    if imports:
+        code = "\n".join(imports) + "\n\n" + code
+    return code
+
+
+def _add_ts_exports(code):
+    """Add 'export' keyword to all top-level function declarations."""
+    lines = code.split('\n')
+    for i, line in enumerate(lines):
+        stripped = line.lstrip()
+        if stripped.startswith(('function ', 'function* ', 'async function ', 'async function* ')):
+            indent = line[:len(line) - len(stripped)]
+            lines[i] = indent + 'export ' + stripped
+    return '\n'.join(lines)
+
+
+def _add_root_preamble(code, ext, ctx, platform_append):
+    """Add imports, child module imports, and harness to root feature code."""
+    imports = []
+    has_tests = bool(ctx["features_with_tests"])
+    if has_tests and ext == ".py":
+        imports.append("from _runtime import register_tests, run_tests")
+    elif has_tests and ext == ".ts":
+        imports.append("import { register_tests, run_tests } from './_runtime.js';")
+    for dep in ctx["dep_order"]:
+        safe_dep = dep.replace("-", "_")
+        if ext == ".py":
+            imports.append(f"import {safe_dep}")
+        elif ext == ".ts":
+            imports.append(f"import './{safe_dep}.js';")
+            imports.append(f"import * as {safe_dep} from './{safe_dep}.js';")
+    if imports:
+        code = "\n".join(imports) + "\n\n" + code
+    harness = "\n\n".join(platform_append[ext]) if platform_append[ext] else ""
+    code += _main_entry_point(harness, has_tests, ext)
+    return code
+
+
+def _finalize_feature_code(code, feat_name, ext, ctx, platform_append):
+    """Add imports, exports, and harness to feature code."""
+    root_name = ctx["root_name"]
+    if feat_name != root_name:
+        code = _add_child_imports(code, feat_name, ext, ctx)
+    if ext == ".ts":
+        code = _add_ts_exports(code)
+    if feat_name == root_name:
+        code = _add_root_preamble(code, ext, ctx, platform_append)
+    return code
+
+
+def _emit_all_features(per_feature, ctx, input_paths,
+                       platform_prepend, platform_append, output_dir):
+    """Emit per-feature output files for each target language."""
     for ext in _EMITTERS:
         emitter_module = __import__(_EMITTERS[ext])
         emit = emitter_module.emit
         pext = _PLATFORM_EXT[ext]
-
         with log.section(f"emit {ext}"):
             for feat_name in per_feature:
-                feat_ir = dict(ir)  # copy base IR
-                feat_ir["functions"] = ir_by_feature[feat_name]["functions"]
-                feat_ir["tasks"] = ir_by_feature[feat_name]["tasks"]
-                feat_ir["variables"] = ir_by_feature[feat_name]["variables"]
-                # find the source file for this feature
-                feat_source_file = None
-                for p in input_paths:
-                    if feat_name in p:
-                        feat_source_file = p
-                        break
-                feat_ir["source_file"] = feat_source_file or f"{feat_name}.zero.md"
-                # pass module_map so emitter can prefix cross-module calls
-                feat_ir["module_map"] = module_map
-                feat_ir["current_module"] = feat_name.replace("-", "_")
-                feat_ir["_var_owners"] = ir_var_owners
-                # pass ALL user vars so every feature can generate/access the context
-                feat_ir["_all_user_vars"] = [v for v in ir["variables"] if v.get("scope") == "user"]
-                # add tests for this feature
-                if ir_by_feature[feat_name].get("tests"):
-                    feat_ir["tests"] = ir_by_feature[feat_name]["tests"]
-                    feat_ir["test_feature"] = feat_name
-
+                feat_ir = _build_feat_ir(feat_name, ctx, input_paths)
                 code = emit(feat_ir)
-
-                # prepend platform implementations to all features
                 if platform_prepend[ext]:
                     code = "\n\n".join(platform_prepend[ext]) + "\n\n" + code
-
-                # non-root features
-                if feat_name != root_name:
-                    child_imports = []
-                    # child features with tests import from _runtime
-                    if ir_by_feature[feat_name].get("tests"):
-                        if ext == ".py":
-                            child_imports.append("from _runtime import register_tests")
-                        elif ext == ".ts":
-                            child_imports.append("import { register_tests } from './_runtime.js';")
-                    # add imports for any cross-module references
-                    for mod_name in set(module_map.values()):
-                        if mod_name != feat_name and f"{mod_name}." in code:
-                            if ext == ".py":
-                                child_imports.append(f"import {mod_name}")
-                            elif ext == ".ts":
-                                child_imports.append(f"import * as {mod_name} from './{mod_name}.js';")
-                    if child_imports:
-                        code = "\n".join(child_imports) + "\n\n" + code
-                    if ext == ".ts":
-                        # add export to all function declarations
-                        lines = code.split('\n')
-                        for li, ln in enumerate(lines):
-                            stripped = ln.lstrip()
-                            if stripped.startswith(('function ', 'function* ', 'async function ', 'async function* ')):
-                                indent = ln[:len(ln) - len(stripped)]
-                                lines[li] = indent + 'export ' + stripped
-                        code = '\n'.join(lines)
-
-                # root feature: export functions in TS (child features may import them)
-                if feat_name == root_name and ext == ".ts":
-                    lines = code.split('\n')
-                    for li, ln in enumerate(lines):
-                        stripped = ln.lstrip()
-                        if stripped.startswith(('function ', 'function* ', 'async function ', 'async function* ')):
-                            indent = ln[:len(ln) - len(stripped)]
-                            lines[li] = indent + 'export ' + stripped
-                    code = '\n'.join(lines)
-
-                # root feature gets platform code, imports, harness
-                if feat_name == root_name:
-                    imports = []
-                    has_tests = bool(features_with_tests)
-                    if has_tests and ext == ".py":
-                        imports.append("from _runtime import register_tests, run_tests")
-                    elif has_tests and ext == ".ts":
-                        imports.append("import { register_tests, run_tests } from './_runtime.js';")
-                    for dep in dep_order:
-                        safe_dep = dep.replace("-", "_")
-                        if ext == ".py":
-                            imports.append(f"import {safe_dep}")
-                        elif ext == ".ts":
-                            imports.append(f"import './{safe_dep}.js';")
-                            imports.append(f"import * as {safe_dep} from './{safe_dep}.js';")
-                    if imports:
-                        code = "\n".join(imports) + "\n\n" + code
-                    harness = "\n\n".join(platform_append[ext]) if platform_append[ext] else ""
-                    code += _main_entry_point(harness, has_tests, ext)
-
+                code = _finalize_feature_code(
+                    code, feat_name, ext, ctx, platform_append
+                )
                 safe_name = feat_name.replace("-", "_")
                 out_path = os.path.join(output_dir, f"{safe_name}{pext}")
                 with open(out_path, "w") as f:
                     f.write(code)
                 log.log(f"{feat_name} -> {out_path}")
 
-    # compile/validate all output files
+
+def _compile_all_outputs(output_dir):
+    """Compile/validate all output files in the output directory."""
     for ext, pext in _PLATFORM_EXT.items():
-        files = [os.path.join(output_dir, f) for f in os.listdir(output_dir) if f.endswith(pext)]
+        files = [os.path.join(output_dir, f)
+                 for f in os.listdir(output_dir) if f.endswith(pext)]
         if files:
             _compile(ext, files)
 
+
+def _map_ir_to_features(ir, features, fn_owner, root_name, full_source):
+    """Map IR elements to features and return the per-feature IR data."""
+    ir_by_feature = _init_ir_by_feature(features)
+    _map_functions_to_features(ir, fn_owner, ir_by_feature, root_name)
+    _map_tasks_to_features(ir, fn_owner, ir_by_feature, root_name)
+    ir_var_owners = _map_variables_to_features(ir, features, ir_by_feature, root_name)
+    ir["_var_owners"] = ir_var_owners
+    features_with_tests = _assign_tests_to_features(
+        ir, features, ir_by_feature, root_name, full_source
+    )
+    return ir_by_feature, ir_var_owners, features_with_tests
+
+
+def _build_feature_context(features, dynamic_set, plat_code, input_paths):
+    """Parse composed source and map IR elements to features."""
+    from composer import compose
+
+    root_name = _find_root_feature(features)
+    fn_owner = _build_fn_ownership(features)
+    full_source = plat_code + "\n" + compose(features, dynamic_set)
+    ir = _parse_full_source(full_source)
+
+    ir_by_feature, ir_var_owners, features_with_tests = _map_ir_to_features(
+        ir, features, fn_owner, root_name, full_source
+    )
+
+    return {
+        "ir": ir, "ir_by_feature": ir_by_feature, "ir_var_owners": ir_var_owners,
+        "features_with_tests": features_with_tests,
+        "module_map": _build_module_map(ir_by_feature),
+        "dep_order": _compute_dep_order(features), "root_name": root_name,
+    }
+
+
+def _read_feature_inputs(features_path):
+    """Read feature list and source code, return entries, code, paths, dynamic set."""
+    feature_entries = _read_feature_list(features_path)
+    code_parts = _read_feature_sources(feature_entries)
+    input_paths = [e["path"] for e in feature_entries]
+    dynamic_set = {e["name"] for e in feature_entries if e["dynamic"]}
+    return feature_entries, code_parts, input_paths, dynamic_set
+
+
+def _build_features(features_path, output_dir, flags):
+    """Build per-feature output files from a features.md listing."""
+    if "--verbose" in flags:
+        log.enable()
+
+    _reject_zeta_output(output_dir)
+    os.makedirs(output_dir, exist_ok=True)
+
+    _, code_parts, input_paths, dynamic_set = _read_feature_inputs(features_path)
+    features, per_feature = _compose_feature_set(code_parts, dynamic_set)
+    platform_prepend, platform_append = _load_platform_implementations()
+    plat_code = _load_platform_interface_code()
+
+    ctx = _build_feature_context(features, dynamic_set, plat_code, input_paths)
+
+    _ensure_package_json(output_dir)
+    _write_runtime_files(ctx["features_with_tests"], output_dir)
+    _emit_all_features(
+        per_feature, ctx, input_paths,
+        platform_prepend, platform_append, output_dir
+    )
+    _compile_all_outputs(output_dir)
     print(f"built {len(per_feature)} features -> {output_dir}")
 
 
