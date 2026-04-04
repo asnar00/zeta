@@ -53,6 +53,27 @@ def _try_parse_extension_directive(stripped):
     )
 
 
+def _try_parse_handler_binding(stripped):
+    """Try to match 'in fn (), on handler (type args)'. Returns (target_fn, handler_name, params) or None."""
+    m = re.match(
+        rf"in\s+({W}[\w\s]*?)\s*\(\),\s*on\s+({W}[\w\s]*?)(?:\s*\(([^)]*)\))?\s*$",
+        stripped
+    )
+    if not m:
+        return None
+    target_fn = m.group(1).strip()
+    handler_name = m.group(2).strip()
+    params_str = m.group(3) or ""
+    params = []
+    if params_str.strip():
+        for p in params_str.split(","):
+            p = p.strip()
+            parts = p.split()
+            if len(parts) == 2:
+                params.append({"type": parts[0], "name": parts[1]})
+    return target_fn, handler_name, params
+
+
 def _parse_extension(lines, i, stripped, current):
     """Parse an extension directive with its body. Returns lines consumed or None."""
     ext_match = _try_parse_extension_directive(stripped)
@@ -67,6 +88,20 @@ def _parse_extension(lines, i, stripped, current):
         })
         return 1 + consumed
     return None
+
+
+def _parse_handler_binding(lines, i, stripped, current):
+    """Parse 'in X (), on Y (args)' handler binding. Returns lines consumed or None."""
+    result = _try_parse_handler_binding(stripped)
+    if not result:
+        return None
+    target_fn, handler_name, params = result
+    current.setdefault("handlers", []).append({
+        "target_fn": target_fn,
+        "handler_name": handler_name,
+        "params": params,
+    })
+    return 1
 
 
 def _parse_function_def(lines, i, stripped, current):
@@ -130,6 +165,9 @@ def _parse_feature_line(lines, i, current):
     if _parse_use_line(stripped, current):
         return i + 1
     consumed = _parse_extension(lines, i, stripped, current)
+    if consumed is not None:
+        return i + consumed
+    consumed = _parse_handler_binding(lines, i, stripped, current)
     if consumed is not None:
         return i + consumed
     consumed = _parse_function_def(lines, i, stripped, current)

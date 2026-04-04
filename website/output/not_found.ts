@@ -1,6 +1,6 @@
 import { register_tests } from './_runtime.js';
-import * as website from './website.js';
 import * as login from './login.js';
+import * as website from './website.js';
 
 // Platform implementation: gui (TypeScript/web)
 // Implements the functions declared in gui.zero.md
@@ -250,6 +250,16 @@ export function _get_ctx(): _Context {
     return _ctx_storage.getStore() ?? _default_ctx;
 }
 
+
+class _ZeroRaise extends Error {
+    zeroName: string;
+    argsList: any[];
+    constructor(name: string, args: any[] = []) {
+        super(`${name}(${args.join(', ')})`);
+        this.zeroName = name;
+        this.argsList = args;
+    }
+}
 
 export function test_not_found_0(): void {
     // not found () => "not found"

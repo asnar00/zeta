@@ -39,6 +39,19 @@ The interactive login flow — input name, request a code, input code, log in:
         set cookie of ("session") to (token)
         reload page ()
 
+Handle errors — these are regular functions, called when a raise occurs inside login:
+
+    on unknown user (string name)
+        print ("unknown user")
+
+    on invalid code (string code)
+        print ("invalid code")
+
+Catch raises inside login and dispatch to the handlers:
+
+    in login (), on unknown user (string name)
+    in login (), on invalid code (string code)
+
 Request a login code by name. Looks up the user, generates a code, and stores it:
 
     on (string code) = request login (string name)

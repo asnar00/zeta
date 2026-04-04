@@ -250,6 +250,16 @@ export function _get_ctx(): _Context {
 }
 
 
+class _ZeroRaise extends Error {
+    zeroName: string;
+    argsList: any[];
+    constructor(name: string, args: any[] = []) {
+        super(`${name}(${args.join(', ')})`);
+        this.zeroName = name;
+        this.argsList = args;
+    }
+}
+
 export function test_rpc_0(): void {
     // rpc eval ("port") => "8084"
     const _result = fn_rpc_eval__string("port");

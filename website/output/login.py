@@ -701,14 +701,30 @@ class User(NamedTuple):
 
 # @zero on login; website/login/login.zero.md:165
 def fn_login():
-    name = fn_input__string("name")
-    code = fn_request_login__string(name)
-    entered = fn_input__string("code")
-    token = fn_complete_login__string__string(name, entered)
-    fn_set_cookie_of__string_to__string("session", token)
-    fn_reload_page()
+    try:
+        name = fn_input__string("name")
+        code = fn_request_login__string(name)
+        entered = fn_input__string("code")
+        token = fn_complete_login__string__string(name, entered)
+        fn_set_cookie_of__string_to__string("session", token)
+        fn_reload_page()
+    except _ZeroRaise as _e:
+        if _e.name == 'unknown user':
+            fn_unknown_user__string(*_e.args_list)
+        elif _e.name == 'invalid code':
+            fn_invalid_code__string(*_e.args_list)
+        else:
+            raise
 
-# @zero on (string code) = request login (string name); website/login/login.zero.md:173
+# @zero on unknown user (string name); website/login/login.zero.md:173
+def fn_unknown_user__string(name: str):
+    fn_print__string("unknown user")
+
+# @zero on invalid code (string code); website/login/login.zero.md:176
+def fn_invalid_code__string(code: str):
+    fn_print__string("invalid code")
+
+# @zero on (string code) = request login (string name); website/login/login.zero.md:179
 def fn_request_login__string(name: str) -> str:
     found = next((x for x in users_arr if x.name == name), type(users_arr[0])() if users_arr else None)
     if found.name != name:
@@ -718,7 +734,7 @@ def fn_request_login__string(name: str) -> str:
     pending_codes_arr[found.phone] = code
     return code
 
-# @zero on (User result) = verify login (string name) (string code); website/login/login.zero.md:181
+# @zero on (User result) = verify login (string name) (string code); website/login/login.zero.md:187
 def fn_verify_login__string__string(name: str, code: str) -> User:
     found = next((x for x in users_arr if x.name == name), type(users_arr[0])() if users_arr else None)
     stored = pending_codes_arr[found.phone]
@@ -728,13 +744,13 @@ def fn_verify_login__string__string(name: str, code: str) -> User:
     result = found
     return result
 
-# @zero on (string token) = complete login (string name) (string code); website/login/login.zero.md:189
+# @zero on (string token) = complete login (string name) (string code); website/login/login.zero.md:195
 def fn_complete_login__string__string(name: str, code: str) -> str:
     found = fn_verify_login__string__string(name, code)
     token = fn_create_session()
     return token
 
-# @zero on (string code) = generate code (User u); website/login/login.zero.md:193
+# @zero on (string code) = generate code (User u); website/login/login.zero.md:199
 def fn_generate_code__User(u: User) -> str:
     code = None
     if u.name == "_alice":
@@ -745,7 +761,7 @@ def fn_generate_code__User(u: User) -> str:
         code = "1234"
     return code if code is not None else ""
 
-# @zero on logo clicked; website/login/login.zero.md:201
+# @zero on logo clicked; website/login/login.zero.md:207
 def fn_logo_clicked():
     fn_login()
 

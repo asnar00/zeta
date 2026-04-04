@@ -925,6 +925,15 @@ def _map_ir_to_features(ir, features, fn_owner, root_name, full_source):
     return ir_by_feature, ir_var_owners, features_with_tests
 
 
+def _collect_handlers(features):
+    """Collect all handler bindings from features."""
+    handlers = []
+    for f in features:
+        for h in f.get("handlers", []):
+            handlers.append(h)
+    return handlers
+
+
 def _build_feature_context(features, dynamic_set, plat_code, input_paths):
     """Parse composed source and map IR elements to features."""
     from composer import compose
@@ -937,6 +946,7 @@ def _build_feature_context(features, dynamic_set, plat_code, input_paths):
     ir_by_feature, ir_var_owners, features_with_tests = _map_ir_to_features(
         ir, features, fn_owner, root_name, full_source
     )
+    ir["handlers"] = _collect_handlers(features)
 
     return {
         "ir": ir, "ir_by_feature": ir_by_feature, "ir_var_owners": ir_var_owners,

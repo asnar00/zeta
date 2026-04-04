@@ -84,7 +84,7 @@ def _emit_definitions(ir: dict, enums: dict) -> list[str]:
             sections.append(source_comment(task, src, "#") + "\n" + _emit_task(task, ir.get("uses", [])))
     for fn in ir["functions"]:
         if not fn.get("abstract"):
-            sections.append(source_comment(fn, src, "#") + "\n" + _emit_function(fn))
+            sections.append(source_comment(fn, src, "#") + "\n" + _emit_function(fn, ir))
     return sections
 
 
@@ -130,7 +130,9 @@ class _ZeroRaise(Exception):
 
 
 def _has_raise(ir: dict) -> bool:
-    """Check if any function body contains a raise node."""
+    """Check if any function body contains a raise node or handlers are defined."""
+    if ir.get("handlers"):
+        return True
     for fn in ir["functions"]:
         if _walk_has_kind(fn.get("body", []), "raise"):
             return True
@@ -902,7 +904,7 @@ def _emit_guarded_body(fn_body: list[dict], result_var: str, needs_guard: bool) 
     return lines
 
 
-def _emit_result_function(fn: dict, name: str, params: str) -> str:
+def _emit_result_function(fn: dict, name: str, params: str, handlers: list = None) -> str:
     """Emit a function that returns a result value."""
     ret_type = _py_type_ann(fn["result"]["type"])
     result_var = fn["result"]["name"]
@@ -913,17 +915,50 @@ def _emit_result_function(fn: dict, name: str, params: str) -> str:
     lines = [f"def {name}({params}) -> {ret_type}:"]
     if needs_guard or has_cond:
         lines.append(f"    {result_var} = None")
-    lines.extend(_emit_guarded_body(fn["body"], result_var, needs_guard))
+    body_lines = _emit_guarded_body(fn["body"], result_var, needs_guard)
     if has_cond:
         default_val = _py_default_for_type(fn["result"]["type"])
-        lines.append(f"    return {result_var} if {result_var} is not None else {default_val}")
+        body_lines.append(f"    return {result_var} if {result_var} is not None else {default_val}")
     else:
-        lines.append(f"    return {result_var}")
+        body_lines.append(f"    return {result_var}")
+    lines.extend(_wrap_with_handlers(body_lines, handlers or []))
     return "\n".join(lines)
 
 
-def _emit_function(fn: dict) -> str:
+def _get_handlers_for(fn_name: str, handlers: list) -> list:
+    """Get handler bindings for a function by matching its word parts."""
+    fn_words = fn_name.replace("fn_", "", 1).split("__")[0]
+    result = []
+    for h in handlers:
+        target = h["target_fn"].replace(" ", "_")
+        if fn_words == target:
+            result.append(h)
+    return result
+
+
+def _wrap_with_handlers(body_lines: list[str], handlers: list) -> list[str]:
+    """Wrap function body lines in try/except for handler bindings."""
+    if not handlers:
+        return body_lines
+    wrapped = ["    try:"]
+    for line in body_lines:
+        wrapped.append("    " + line)
+    wrapped.append("    except _ZeroRaise as _e:")
+    for i, h in enumerate(handlers):
+        handler_fn = "fn_" + h["handler_name"].replace(" ", "_")
+        for p in h["params"]:
+            handler_fn += f"__{_safe(p['type'])}"
+        keyword = "if" if i == 0 else "elif"
+        wrapped.append(f'        {keyword} _e.name == {repr(h["handler_name"])}:')
+        wrapped.append(f"            {handler_fn}(*_e.args_list)")
+    wrapped.append("        else:")
+    wrapped.append("            raise")
+    return wrapped
+
+
+def _emit_function(fn: dict, ir: dict = None) -> str:
     """Emit a function definition."""
+    ir = ir or {}
     name = _make_function_name(fn["signature_parts"])
     param_strs = []
     for p in fn["params"]:
@@ -933,11 +968,14 @@ def _emit_function(fn: dict) -> str:
         else:
             param_strs.append(pname)
     params = ", ".join(param_strs)
+    handlers = _get_handlers_for(name, ir.get("handlers", []))
     if fn["result"] is not None:
-        return _emit_result_function(fn, name, params)
+        return _emit_result_function(fn, name, params, handlers)
     lines = [f"def {name}({params}):"]
+    body_lines = []
     for stmt in fn["body"]:
-        lines.extend(_indent(_emit_expr(stmt), "    "))
+        body_lines.extend(_indent(_emit_expr(stmt), "    "))
+    lines.extend(_wrap_with_handlers(body_lines, handlers))
     return "\n".join(lines)
 
 

@@ -681,6 +681,12 @@ def _get_ctx() -> '_Context':
 
 from typing import NamedTuple
 
+class _ZeroRaise(Exception):
+    def __init__(self, name, args=None):
+        self.name = name
+        self.args_list = args or []
+        super().__init__(f"{name}({', '.join(str(a) for a in self.args_list)})")
+
 class Http_Request(NamedTuple):
     path: str = ""
     method: str = ""

@@ -1,6 +1,6 @@
 from _runtime import register_tests
-import website
 import login
+import website
 
 # Platform implementation: gui (Python)
 # Implements the functions declared in gui.zero.md
@@ -683,6 +683,12 @@ def _get_ctx() -> '_Context':
 
 from typing import NamedTuple
 
+class _ZeroRaise(Exception):
+    def __init__(self, name, args=None):
+        self.name = name
+        self.args_list = args or []
+        super().__init__(f"{name}({', '.join(str(a) for a in self.args_list)})")
+
 def test_landing_page_0():
     '''handle request (Http-Request(path="/")) => read file ("website/index.html")'''
     _result = website.fn_handle_request__Http_Request(Http_Request(path="/"))
@@ -711,7 +717,7 @@ class User(NamedTuple):
     phone: str = ""
     role: str = ""
 
-# @zero on (string body) = landing page; website/landing-page/landing-page.zero.md:204
+# @zero on (string body) = landing page; website/landing-page/landing-page.zero.md:210
 def fn_landing_page() -> str:
     body = fn_read_file__string("website/index.html")
     body = fn_replace__string_in__string_with__string("#34988b", body, _get_ctx().background.colour)

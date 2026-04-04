@@ -1,6 +1,6 @@
 from _runtime import register_tests
-import website
 import login
+import website
 
 # Platform implementation: gui (Python)
 # Implements the functions declared in gui.zero.md
@@ -682,6 +682,12 @@ def _get_ctx() -> '_Context':
 
 
 from typing import NamedTuple
+
+class _ZeroRaise(Exception):
+    def __init__(self, name, args=None):
+        self.name = name
+        self.args_list = args or []
+        super().__init__(f"{name}({', '.join(str(a) for a in self.args_list)})")
 
 def test_not_found_0():
     '''not found () => "not found"'''

@@ -682,6 +682,12 @@ def _get_ctx() -> '_Context':
 
 from typing import NamedTuple
 
+class _ZeroRaise(Exception):
+    def __init__(self, name, args=None):
+        self.name = name
+        self.args_list = args or []
+        super().__init__(f"{name}({', '.join(str(a) for a in self.args_list)})")
+
 def test_rpc_0():
     '''rpc eval ("port") => "8084"'''
     _result = fn_rpc_eval__string("port")

@@ -259,6 +259,16 @@ export function _get_ctx(): _Context {
 }
 
 
+class _ZeroRaise extends Error {
+    zeroName: string;
+    argsList: any[];
+    constructor(name: string, args: any[] = []) {
+        super(`${name}(${args.join(', ')})`);
+        this.zeroName = name;
+        this.argsList = args;
+    }
+}
+
 export function test_website_0(): void {
     // trim ("  hello  ") => "hello"
     const _result = fn_trim__string("  hello  ");

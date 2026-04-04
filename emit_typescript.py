@@ -115,7 +115,7 @@ def _emit_definitions_ts(ir: dict, structs: dict, enums: dict) -> list[str]:
     async_fns = _compute_async_fns(ir["functions"])
     for fn in ir["functions"]:
         if not fn.get("abstract"):
-            sections.append(source_comment(fn, src, "//") + "\n" + _emit_function(fn, structs, async_fns))
+            sections.append(source_comment(fn, src, "//") + "\n" + _emit_function(fn, structs, async_fns, ir))
     return sections
 
 
@@ -155,7 +155,9 @@ class _ZeroRaise extends Error {
 
 
 def _has_raise(ir: dict) -> bool:
-    """Check if any function body contains a raise node."""
+    """Check if any function body contains a raise node or handlers are defined."""
+    if ir.get("handlers"):
+        return True
     for fn in ir["functions"]:
         if _walk_has_kind(fn.get("body", []), "raise"):
             return True
@@ -986,7 +988,7 @@ def _emit_guarded_body_ts(fn_body, result_var, ret_type, needs_guard, structs, a
     return lines
 
 
-def _emit_result_function_ts(fn, name, params, ret_type, result_var, prefix, structs, async_fns) -> str:
+def _emit_result_function_ts(fn, name, params, ret_type, result_var, prefix, structs, async_fns, handlers=None) -> str:
     """Emit a function that returns a result (TypeScript)."""
     has_if = any(isinstance(s, dict) and s.get("kind") == "if_block" for s in fn["body"])
     needs_guard = _result_needs_guard_ts(fn["body"], result_var)
@@ -994,8 +996,9 @@ def _emit_result_function_ts(fn, name, params, ret_type, result_var, prefix, str
     lines = [f"{prefix} {name}({params}): {ret_type} {{"]
     if has_if or needs_guard or multi_assign:
         lines.append(f"    let {result_var}: {ret_type} = undefined!;")
-    lines.extend(_emit_guarded_body_ts(fn["body"], result_var, ret_type, needs_guard, structs, async_fns))
-    lines.append(f"    return {result_var};")
+    body_lines = _emit_guarded_body_ts(fn["body"], result_var, ret_type, needs_guard, structs, async_fns)
+    body_lines.append(f"    return {result_var};")
+    lines.extend(_wrap_with_handlers_ts(body_lines, handlers or []))
     lines.append("}")
     return "\n".join(lines)
 
@@ -1012,22 +1015,60 @@ def _build_fn_params_ts(fn: dict) -> str:
     return ", ".join(param_strs)
 
 
-def _emit_function(fn: dict, structs: dict, async_fns: set[str] = None) -> str:
+def _get_handlers_for_ts(fn_name: str, handlers: list) -> list:
+    """Get handler bindings for a function by matching its word parts."""
+    fn_words = fn_name.replace("fn_", "", 1).split("__")[0]
+    result = []
+    for h in handlers:
+        target = h["target_fn"].replace(" ", "_")
+        if fn_words == target:
+            result.append(h)
+    return result
+
+
+def _wrap_with_handlers_ts(body_lines: list[str], handlers: list) -> list[str]:
+    """Wrap function body lines in try/catch for handler bindings (TypeScript)."""
+    if not handlers:
+        return body_lines
+    wrapped = ["    try {"]
+    for line in body_lines:
+        wrapped.append("    " + line)
+    wrapped.append("    } catch (_e) {")
+    wrapped.append("        if (_e instanceof _ZeroRaise) {")
+    for i, h in enumerate(handlers):
+        handler_fn = "fn_" + h["handler_name"].replace(" ", "_")
+        for p in h["params"]:
+            handler_fn += f"__{_safe(p['type'])}"
+        args = ", ".join(f"_e.argsList[{j}]" for j in range(len(h["params"])))
+        keyword = "if" if i == 0 else "} else if"
+        wrapped.append(f'            {keyword} (_e.zeroName === {repr(h["handler_name"])}) {{')
+        wrapped.append(f"                {handler_fn}({args});")
+    wrapped.append("            } else { throw _e; }")
+    wrapped.append("        } else { throw _e; }")
+    wrapped.append("    }")
+    return wrapped
+
+
+def _emit_function(fn: dict, structs: dict, async_fns: set[str] = None, ir: dict = None) -> str:
     """Emit a function definition."""
     async_fns = async_fns or set()
+    ir = ir or {}
     name = _make_function_name(fn["signature_parts"])
     params = _build_fn_params_ts(fn)
     prefix = "async function" if name in async_fns else "function"
+    handlers = _get_handlers_for_ts(name, ir.get("handlers", []))
     if fn["result"] is not None:
         ret_type = _ts_type(fn["result"]["type"])
         result_var = fn["result"]["name"]
         if result_var.endswith("$"):
             result_var = result_var.replace("$", "_arr")
             ret_type = f"{ret_type}[]"
-        return _emit_result_function_ts(fn, name, params, ret_type, result_var, prefix, structs, async_fns)
+        return _emit_result_function_ts(fn, name, params, ret_type, result_var, prefix, structs, async_fns, handlers)
     lines = [f"{prefix} {name}({params}): void {{"]
+    body_lines = []
     for stmt in fn["body"]:
-        lines.append(f"    {_emit_stmt(stmt, 'void', structs, async_fns)}")
+        body_lines.append(f"    {_emit_stmt(stmt, 'void', structs, async_fns)}")
+    lines.extend(_wrap_with_handlers_ts(body_lines, handlers))
     lines.append("}")
     return "\n".join(lines)
 
