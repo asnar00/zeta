@@ -1,5 +1,4 @@
 from _runtime import register_tests
-import login
 import website
 
 # Platform implementation: gui (Python)
@@ -717,10 +716,8 @@ class User(NamedTuple):
     phone: str = ""
     role: str = ""
 
-# @zero on (string body) = landing page; website/landing-page/landing-page.zero.md:210
+# @zero on (string body) = landing page; website/landing-page/landing-page.zero.md:197
 def fn_landing_page() -> str:
     body = fn_read_file__string("website/index.html")
     body = fn_replace__string_in__string_with__string("#34988b", body, _get_ctx().background.colour)
     return body
-
-login.fn_login()

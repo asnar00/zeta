@@ -1,5 +1,4 @@
 from _runtime import register_tests
-import login
 
 # Platform implementation: gui (Python)
 # Implements the functions declared in gui.zero.md
@@ -733,5 +732,3 @@ class User(NamedTuple):
     name: str = ""
     phone: str = ""
     role: str = ""
-
-login.fn_login()

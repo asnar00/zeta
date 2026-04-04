@@ -1,5 +1,3 @@
-import * as login from './login.js';
-
 // Platform implementation: gui (TypeScript/web)
 // Implements the functions declared in gui.zero.md
 
@@ -258,8 +256,6 @@ class _ZeroRaise extends Error {
         this.argsList = args;
     }
 }
-
-login.fn_login();
 
 interface Http_Request {
     readonly path: string;

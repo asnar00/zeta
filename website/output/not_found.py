@@ -1,5 +1,4 @@
 from _runtime import register_tests
-import login
 import website
 
 # Platform implementation: gui (Python)
@@ -723,9 +722,7 @@ class User(NamedTuple):
     phone: str = ""
     role: str = ""
 
-# @zero on (string body) = not found; website/not-found/not-found.zero.md:162
+# @zero on (string body) = not found; website/not-found/not-found.zero.md:149
 def fn_not_found() -> str:
     body = "not found"
     return body
-
-login.fn_login()

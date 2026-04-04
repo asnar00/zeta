@@ -1,5 +1,3 @@
-import login
-
 # Platform implementation: gui (Python)
 # Implements the functions declared in gui.zero.md
 # Server-side fallback — in production, these run on the client.
@@ -700,5 +698,3 @@ class User(NamedTuple):
     name: str = ""
     phone: str = ""
     role: str = ""
-
-login.fn_login()

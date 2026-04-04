@@ -39,13 +39,29 @@ def _is_markdown(source: str) -> bool:
     return False
 
 
-def _extract_code_line(line, in_fence, code_lines, line_map, orig_line):
+# Sections that contain zero code (indented blocks or fenced blocks are extracted)
+_CODE_SECTIONS = {"interface", "definition", "tests"}
+
+
+def _update_section(line):
+    """Check if a line is a ## section header and return the section name, or None."""
+    stripped = line.strip()
+    if stripped.startswith("## "):
+        return stripped[3:].strip().lower()
+    return None
+
+
+def _extract_code_line(line, in_fence, code_lines, line_map, orig_line, in_code_section):
     """Process a single line during markdown code extraction."""
     if line.strip().startswith("```"):
-        return not in_fence
-    if in_fence:
+        if in_code_section:
+            return not in_fence
+        return in_fence
+    if in_fence and in_code_section:
         code_lines.append(line)
         line_map.append(orig_line)
+        return in_fence
+    if not in_code_section:
         return in_fence
     if line.startswith("    ") or line.startswith("\t"):
         code_lines.append(line)
@@ -58,15 +74,21 @@ def _extract_code_line(line, in_fence, code_lines, line_map, orig_line):
 
 def _extract_code(source: str) -> tuple[str, list[int]]:
     """Extract code from markdown source.
-    Collects indented lines (removing 4-space indent) and fenced code blocks.
+    Collects indented lines and fenced code blocks from code-bearing sections
+    (## interface, ## definition, ## tests). Other sections are skipped.
     Returns (code_string, line_map) where line_map[i] is the 1-based source line
     number for code line i."""
     lines = source.split("\n")
     code_lines = []
     line_map = []
     in_fence = False
+    in_code_section = True  # before any section header, treat as code
     for idx, line in enumerate(lines):
-        in_fence = _extract_code_line(line, in_fence, code_lines, line_map, idx + 1)
+        section = _update_section(line)
+        if section is not None:
+            in_code_section = section in _CODE_SECTIONS
+            continue
+        in_fence = _extract_code_line(line, in_fence, code_lines, line_map, idx + 1, in_code_section)
     return "\n".join(code_lines), line_map
 
 

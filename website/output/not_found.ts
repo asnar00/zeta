@@ -1,5 +1,4 @@
 import { register_tests } from './_runtime.js';
-import * as login from './login.js';
 import * as website from './website.js';
 
 // Platform implementation: gui (TypeScript/web)
@@ -284,8 +283,6 @@ export function test_not_found_2(): void {
 
 register_tests('not-found', [[test_not_found_0, 'not found () => "not found"'], [test_not_found_1, 'handle request (Http-Request(path="/")) => "not found"'], [test_not_found_2, 'handle request (Http-Request(path="/nope")) => "not found"']]);
 
-login.fn_login();
-
 interface Http_Request {
     readonly path: string;
     readonly method: string;
@@ -315,7 +312,7 @@ export function User(args: Partial<User> = {}): User {
     return { name: args.name ?? "", phone: args.phone ?? "", role: args.role ?? "" };
 }
 
-// @zero on (string body) = not found; website/not-found/not-found.zero.md:162
+// @zero on (string body) = not found; website/not-found/not-found.zero.md:149
 export function fn_not_found(): string {
     const body: string = "not found";
     return body;

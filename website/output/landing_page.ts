@@ -1,5 +1,4 @@
 import { register_tests } from './_runtime.js';
-import * as login from './login.js';
 import * as website from './website.js';
 
 // Platform implementation: gui (TypeScript/web)
@@ -277,8 +276,6 @@ export function test_landing_page_1(): void {
 
 register_tests('landing-page', [[test_landing_page_0, 'handle request (Http-Request(path="/")) => read file ("website/index.html")'], [test_landing_page_1, 'handle request (Http-Request(path="/nope")) => "not found"']]);
 
-login.fn_login();
-
 interface Http_Request {
     readonly path: string;
     readonly method: string;
@@ -308,7 +305,7 @@ export function User(args: Partial<User> = {}): User {
     return { name: args.name ?? "", phone: args.phone ?? "", role: args.role ?? "" };
 }
 
-// @zero on (string body) = landing page; website/landing-page/landing-page.zero.md:210
+// @zero on (string body) = landing page; website/landing-page/landing-page.zero.md:197
 export function fn_landing_page(): string {
     let body: string = undefined!;
     body = fn_read_file__string("website/index.html");

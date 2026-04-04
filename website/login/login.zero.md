@@ -5,13 +5,11 @@
 
 Adds user authentication to the website. The user clicks the logo, enters their name, receives a verification code, and enters the code to log in. On success, a session is created and the page reloads with the user's per-session context (background colour, feature flags, etc.).
 
-The login flow is two-step: first request a code (looked up by name from a shared user database), then verify the code. Codes are stored in a keyed collection and cleared after use. For testing, code generation is deterministic — `_alice` always gets `1234`, `_bob` always gets `4321`.
+The login flow is two-step: first request a code (looked up by name from a shared user database), then verify the code. Codes are stored in a keyed collection and cleared after use.
 
 ## interface
 
-The `login` function runs the interactive login flow — inputs for a name, requests a code, inputs for the code, and creates a session on success:
-
-    login ()
+The `login` function runs the interactive login flow — inputs for a name, requests a code, inputs for the code, and creates a session on success.
 
 ## definition
 
@@ -92,3 +90,52 @@ Wire login into the landing page — when the logo is clicked, start the login f
 
     on logo clicked ()
         login ()
+
+## integration tests
+
+Three browser tabs, three users, three background colours.
+
+Open a default tab (no login). It should show the landing page with the default teal background (#34988b):
+
+    open tab "default"
+    navigate to "/"
+    check background colour is "#34988b"
+
+Open a second tab. Click the logo, log in as _alice, set her background to red:
+
+    open tab "alice"
+    navigate to "/"
+    click logo
+    type "_alice" into input
+    submit
+    type "1234" into input
+    submit
+    set background colour to "#ff0000"
+    check background colour is "#ff0000"
+
+Open a third tab. Click the logo, log in as _bob, set his background to blue:
+
+    open tab "bob"
+    navigate to "/"
+    click logo
+    type "_bob" into input
+    submit
+    type "4321" into input
+    submit
+    set background colour to "#0000ff"
+    check background colour is "#0000ff"
+
+Switch back to the default tab. It should still be teal:
+
+    switch to tab "default"
+    check background colour is "#34988b"
+
+Switch to alice's tab. It should still be red:
+
+    switch to tab "alice"
+    check background colour is "#ff0000"
+
+Switch to bob's tab. It should still be blue:
+
+    switch to tab "bob"
+    check background colour is "#0000ff"
