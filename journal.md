@@ -462,7 +462,20 @@ When client-side `login()` calls `request login(name)`, that crosses the boundar
 2. Server-side function calls from client code compile to `fetch` calls to the existing RPC bridge
 3. Each browser context has its own session cookie, so the RPC bridge routes to the right per-user context
 
-Data placement (`@server`/`@client`) was discussed but deferred — for now, the compiler can infer placement from what platform functions each function calls. Functions touching gui platform → client. Functions touching shared data → server. Pure functions → wherever their caller is.
+### cross-component RPC — implemented
+
+Data placement is inferred from platform annotations. The gui platform is marked `@client` in gui.zero.md. The compiler:
+
+1. **Classifies functions:** walks the IR, checks which platform functions each function calls. Direct callers of `@client` platform functions are client-side. Propagates transitively (logo_clicked calls login which calls input → both are client).
+2. **Builds a client IR:** extracts client functions, identifies server functions they call as RPC targets.
+3. **Emits client.js:** uses the TS emitter with `_rpc_targets` set — server calls become `await _rpc("...")` using the existing `/@rpc/` bridge. All client functions are async.
+4. **Serves client.js:** HTTP handler serves `/@client/` files from the output directory. Landing page HTML includes `<script src="/@client/client.js">`.
+
+The gui platform has two implementations: `gui.ts` (sync, server fallback using `window.prompt`) and the client bundle which has async DOM-based implementations (creates styled input elements, waits for Enter key).
+
+Key insight: `window.prompt()` blocks the event loop and can't coexist with `async/await fetch()` in headless Chrome. The DOM-based input implementation (creates an element, returns a Promise) works correctly with async flows.
+
+The integration test now uses actual browser interactions: Playwright clicks the logo, types into DOM input elements, presses Enter, and verifies the page reloads with the correct session cookie and background colour.
 
 ### commits
 - `c2f0dab` Extract named functions: 25-line limit across all pipeline .py files
@@ -472,3 +485,4 @@ Data placement (`@server`/`@client`) was discussed but deferred — for now, the
 - `c95752d` raise, ... placeholders, gui platform, happy-path login
 - `5c27d3a` Exception handlers: in X(), on Y() wraps function body in try/catch
 - `1c94114` Integration test passes: 3 tabs, 3 users, 3 background colours
+- `0860c81` Client-side JS emission: browser login with DOM inputs, cross-component RPC
