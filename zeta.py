@@ -9,7 +9,7 @@ Run generated output with --test [names] to execute tests.
 import os
 import sys
 from parser import process
-from parser import _is_markdown, _extract_code
+from parser import _is_markdown, _extract_code, _collect_signatures
 import log
 
 _EMITTERS = {
@@ -524,20 +524,45 @@ def _compose_feature_set(code_parts, dynamic_set):
     return features, per_feature
 
 
+def _detect_platform_component(source):
+    """Detect @client or @server annotation in a platform source file."""
+    for line in source.split("\n"):
+        stripped = line.strip()
+        if stripped == "@client":
+            return "client"
+        if stripped == "@server":
+            return "server"
+    return "server"  # default: server
+
+
+def _collect_platform_signatures(code, plat_name):
+    """Extract function signature base names from platform code."""
+    from emit_base import get_base_name
+    sigs = _collect_signatures(code.split("\n"))
+    return {get_base_name(s["signature_parts"]) for s in sigs}
+
+
 def _load_platform_interface_code():
-    """Load all platform .zero.md files and extract their code."""
+    """Load all platform .zero.md files and extract their code.
+    Returns (plat_code, client_fn_bases) where client_fn_bases is a set of
+    function base names that belong to @client platforms."""
     pdir = _platform_dir()
     plat_code = ""
+    client_fn_bases = set()
     if not os.path.isdir(pdir):
-        return plat_code
+        return plat_code, client_fn_bases
     for fname in sorted(os.listdir(pdir)):
         if fname.endswith(".zero.md"):
             with open(os.path.join(pdir, fname)) as pf:
                 plat_src = pf.read()
+                plat_name = fname.replace(".zero.md", "")
+                component = _detect_platform_component(plat_src)
                 if _is_markdown(plat_src):
                     plat_src, _ = _extract_code(plat_src)
+                if component == "client":
+                    client_fn_bases |= _collect_platform_signatures(plat_src, plat_name)
                 plat_code = plat_src + "\n" + plat_code
-    return plat_code
+    return plat_code, client_fn_bases
 
 
 def _load_platform_implementations():
@@ -903,6 +928,202 @@ def _walk_placeholders(node, result):
                 _walk_placeholders(s, result)
 
 
+_CLIENT_RPC_HELPER = """\
+async function _rpc(expr) {
+    const resp = await fetch("/@rpc/" + expr);
+    return await resp.text();
+}
+"""
+
+_CLIENT_ZERO_RAISE = """\
+class _ZeroRaise extends Error {
+    constructor(name, args) {
+        super(name + "(" + args.join(", ") + ")");
+        this.zeroName = name;
+        this.argsList = args || [];
+    }
+}
+"""
+
+
+def _build_client_ir(ctx):
+    """Build an IR containing only client-side functions, with RPC targets set."""
+    from emit_base import get_base_name
+    ir = ctx["ir"]
+    placement = ir.get("_placement", {})
+    client_fns = [fn for fn in ir["functions"]
+                  if not fn.get("abstract")
+                  and placement.get(get_base_name(fn["signature_parts"])) == "client"]
+    # server functions called by client code become RPC targets
+    rpc_targets = set()
+    for fn in client_fns:
+        _collect_server_calls(fn.get("body", []), placement, rpc_targets)
+    client_ir = dict(ir)
+    client_ir["functions"] = client_fns
+    client_ir["variables"] = []
+    client_ir["tasks"] = []
+    client_ir["types"] = [t for t in ir["types"] if t["kind"] != "struct" or
+                          _type_used_by(t["name"], client_fns)]
+    client_ir["_rpc_targets"] = rpc_targets
+    client_ir["_force_async_all"] = True  # all client functions are async
+    # gui platform functions are also async in client context (DOM-based)
+    from emit_base import make_function_name
+    client_fn_bases = ir.get("_client_fn_bases", set())
+    client_async = set()
+    for fn in ir["functions"]:
+        if fn.get("abstract"):
+            base = get_base_name(fn["signature_parts"])
+            if base in client_fn_bases:
+                client_async.add(make_function_name(fn["signature_parts"]))
+    client_ir["_client_async_fns"] = client_async
+    client_ir["tests"] = []
+    return client_ir
+
+
+def _type_used_by(type_name, functions):
+    """Check if a type is referenced by any of the given functions."""
+    for fn in functions:
+        for p in fn.get("params", []):
+            if p.get("type") == type_name:
+                return True
+        if fn.get("result") and fn["result"].get("type") == type_name:
+            return True
+    return False
+
+
+def _collect_server_calls(body, placement, rpc_targets):
+    """Collect function names of server functions called from client code."""
+    for stmt in body:
+        if not isinstance(stmt, dict):
+            continue
+        _walk_for_server_calls(stmt, placement, rpc_targets)
+
+
+def _walk_for_server_calls(node, placement, rpc_targets):
+    """Recursively walk an AST node collecting server fn_call targets."""
+    from emit_base import get_base_name, make_function_name
+    if not isinstance(node, dict):
+        return
+    if node.get("kind") == "fn_call":
+        base = get_base_name(node["signature_parts"])
+        if placement.get(base) == "server":
+            rpc_targets.add(make_function_name(node["signature_parts"]))
+    for key in ("value", "left", "right", "condition", "true", "false"):
+        child = node.get(key)
+        if isinstance(child, dict):
+            _walk_for_server_calls(child, placement, rpc_targets)
+    for arg in node.get("args", []):
+        if isinstance(arg, dict):
+            _walk_for_server_calls(arg, placement, rpc_targets)
+    for branch in node.get("branches", []):
+        if isinstance(branch, dict):
+            for s in branch.get("body", []):
+                _walk_for_server_calls(s, placement, rpc_targets)
+
+
+def _read_gui_platform_js():
+    """Read the gui platform TypeScript implementation."""
+    gui_path = os.path.join(_platform_dir(), "gui.ts")
+    if os.path.exists(gui_path):
+        return open(gui_path).read()
+    return ""
+
+
+def _emit_client_bundle(ctx, output_dir):
+    """Emit a client.js bundle containing client-side functions with RPC stubs."""
+    import emit_typescript
+    client_ir = _build_client_ir(ctx)
+    if not client_ir["functions"]:
+        return
+    # suppress the emitter's _ZeroRaise (we provide our own JS version)
+    client_ir["_suppress_zero_raise"] = True
+    code = emit_typescript.emit(client_ir)
+    # strip TypeScript type annotations for plain JS
+    code = _strip_ts_types(code)
+    # build the bundle
+    parts = []
+    parts.append("// client.js — generated by zeta")
+    parts.append("'use strict';")
+    parts.append(_CLIENT_ZERO_RAISE)
+    parts.append(_CLIENT_RPC_HELPER)
+    parts.append(_CLIENT_GUI)
+    parts.append(code)
+    parts.append(_CLIENT_WIRING)
+    bundle = "\n".join(parts)
+    out_path = os.path.join(output_dir, "client.js")
+    with open(out_path, "w") as f:
+        f.write(bundle)
+    log.log(f"client bundle -> {out_path}")
+
+
+_CLIENT_GUI = """\
+// gui platform (browser DOM implementation)
+async function fn_input__string(prompt) {
+    return new Promise((resolve) => {
+        const container = document.createElement("div");
+        container.style.cssText = "text-align:center; margin-top:20px;";
+        const label = document.createElement("div");
+        label.textContent = prompt;
+        label.style.cssText = "color:#1a1a1a; font-family:'Switzer',sans-serif; font-size:14pt; margin-bottom:8px;";
+        const input = document.createElement("input");
+        input.type = "text";
+        input.style.cssText = "font-family:'Switzer',sans-serif; font-size:14pt; padding:8px; text-align:center; border:1px solid #1a1a1a; outline:none; background:transparent;";
+        container.appendChild(label);
+        container.appendChild(input);
+        document.body.appendChild(container);
+        input.focus();
+        input.addEventListener("keydown", (e) => {
+            if (e.key === "Enter") {
+                const value = input.value;
+                container.remove();
+                resolve(value);
+            }
+        });
+    });
+}
+
+function fn_show_message__string(text) {
+    alert(text);
+}
+
+function fn_set_cookie_of__string_to__string(name, value) {
+    document.cookie = name + "=" + value + "; path=/; SameSite=Strict";
+}
+
+function fn_reload_page() {
+    location.reload();
+}
+"""
+
+_CLIENT_WIRING = """\
+// wire up DOM events
+document.addEventListener("DOMContentLoaded", () => {
+    const logo = document.querySelector(".logo");
+    if (logo) {
+        logo.style.cursor = "pointer";
+        logo.addEventListener("click", () => fn_logo_clicked());
+    }
+});
+"""
+
+
+def _strip_ts_types(code):
+    """Strip TypeScript type annotations to produce valid JavaScript."""
+    import re
+    # remove : type annotations from function params and return types
+    # (type): -> ):
+    code = re.sub(r':\s*(?:readonly\s+)?[\w\[\]|<>,\s!]+(?=\s*[,)\{=])', '', code)
+    # remove ': type' after let/const declarations
+    code = re.sub(r'((?:let|const)\s+\w+)\s*:\s*[\w\[\]|<>,\s!]+\s*=', r'\1 =', code)
+    # remove 'as any' casts
+    code = re.sub(r'\s+as\s+\w+', '', code)
+    # remove export keyword
+    code = re.sub(r'^export\s+', '', code, flags=re.MULTILINE)
+    # remove interface/type declarations (standalone lines)
+    code = re.sub(r'^(?:interface|type)\s+.*\{[^}]*\}\s*$', '', code, flags=re.MULTILINE | re.DOTALL)
+    return code
+
+
 def _compile_all_outputs(output_dir):
     """Compile/validate all output files in the output directory."""
     for ext, pext in _PLATFORM_EXT.items():
@@ -934,9 +1155,68 @@ def _collect_handlers(features):
     return handlers
 
 
-def _build_feature_context(features, dynamic_set, plat_code, input_paths):
+def _classify_function_placement(ir, client_fn_bases):
+    """Classify each function as 'client' or 'server' based on platform calls.
+    A function is client-side if it directly calls any @client platform function.
+    Propagation: if a non-platform function calls a client function, it's also client."""
+    from emit_base import get_base_name
+
+    # first pass: direct client callers
+    placement = {}
+    for fn in ir["functions"]:
+        if fn.get("abstract"):
+            continue
+        base = get_base_name(fn["signature_parts"])
+        if _body_calls_any(fn.get("body", []), client_fn_bases):
+            placement[base] = "client"
+        else:
+            placement[base] = "server"
+
+    # propagate: if a server function calls a client function, it becomes client
+    changed = True
+    client_bases = {b for b, p in placement.items() if p == "client"}
+    while changed:
+        changed = False
+        for fn in ir["functions"]:
+            if fn.get("abstract"):
+                continue
+            base = get_base_name(fn["signature_parts"])
+            if placement.get(base) == "client":
+                continue
+            if _body_calls_any(fn.get("body", []), client_bases):
+                placement[base] = "client"
+                client_bases.add(base)
+                changed = True
+
+    return placement
+
+
+def _body_calls_any(body, fn_bases):
+    """Check if any statement in the body calls a function in fn_bases."""
+    from emit_base import get_base_name, make_function_name
+    for stmt in body:
+        if not isinstance(stmt, dict):
+            continue
+        if stmt.get("kind") == "fn_call":
+            base = get_base_name(stmt["signature_parts"])
+            if base in fn_bases:
+                return True
+        if stmt.get("kind") == "call":
+            name = stmt.get("name", "").replace("-", "_")
+            if name in fn_bases:
+                return True
+        # recurse into if blocks
+        for branch in stmt.get("branches", []):
+            if isinstance(branch, dict):
+                if _body_calls_any(branch.get("body", []), fn_bases):
+                    return True
+    return False
+
+
+def _build_feature_context(features, dynamic_set, plat_code, input_paths, client_fn_bases=None):
     """Parse composed source and map IR elements to features."""
     from composer import compose
+    client_fn_bases = client_fn_bases or set()
 
     root_name = _find_root_feature(features)
     fn_owner = _build_fn_ownership(features)
@@ -947,12 +1227,15 @@ def _build_feature_context(features, dynamic_set, plat_code, input_paths):
         ir, features, fn_owner, root_name, full_source
     )
     ir["handlers"] = _collect_handlers(features)
+    ir["_placement"] = _classify_function_placement(ir, client_fn_bases)
+    ir["_client_fn_bases"] = client_fn_bases
 
     return {
         "ir": ir, "ir_by_feature": ir_by_feature, "ir_var_owners": ir_var_owners,
         "features_with_tests": features_with_tests,
         "module_map": _build_module_map(ir_by_feature),
         "dep_order": _compute_dep_order(features), "root_name": root_name,
+        "client_fn_bases": client_fn_bases,
     }
 
 
@@ -976,9 +1259,9 @@ def _build_features(features_path, output_dir, flags):
     _, code_parts, input_paths, dynamic_set = _read_feature_inputs(features_path)
     features, per_feature = _compose_feature_set(code_parts, dynamic_set)
     platform_prepend, platform_append = _load_platform_implementations()
-    plat_code = _load_platform_interface_code()
+    plat_code, client_fn_bases = _load_platform_interface_code()
 
-    ctx = _build_feature_context(features, dynamic_set, plat_code, input_paths)
+    ctx = _build_feature_context(features, dynamic_set, plat_code, input_paths, client_fn_bases)
     feature_tree_data = _build_feature_tree_data(features, input_paths)
 
     _ensure_package_json(output_dir)
@@ -989,6 +1272,8 @@ def _build_features(features_path, output_dir, flags):
         feature_tree_data=feature_tree_data,
     )
     _compile_all_outputs(output_dir)
+    if ctx.get("client_fn_bases"):
+        _emit_client_bundle(ctx, output_dir)
     print(f"built {len(per_feature)} features -> {output_dir}")
     _report_errors(ctx["ir"])
 

@@ -6,10 +6,16 @@ import * as website from './website.js';
 
 // @zero on (string result) = input (string prompt)
 export function fn_input__string(prompt: string): string {
-    // For now, use window.prompt — a proper implementation would
-    // create a styled input element in the DOM and await submission
-    const result = (globalThis as any).prompt?.(prompt) ?? "";
-    return result;
+    return (globalThis as any).prompt?.(prompt) ?? "";
+}
+
+// @zero on show message (string text)
+export function fn_show_message__string(text: string): void {
+    if (typeof alert !== "undefined") {
+        alert(text);
+    } else {
+        console.log(text);
+    }
 }
 
 // @zero on set cookie of (string name) to (string value)
@@ -312,7 +318,7 @@ export function User(args: Partial<User> = {}): User {
     return { name: args.name ?? "", phone: args.phone ?? "", role: args.role ?? "" };
 }
 
-// @zero on (string body) = not found; website/not-found/not-found.zero.md:149
+// @zero on (string body) = not found; website/not-found/not-found.zero.md:153
 export function fn_not_found(): string {
     const body: string = "not found";
     return body;

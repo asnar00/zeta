@@ -8,6 +8,11 @@ def fn_input__string(prompt: str) -> str:
     return input(f"{prompt}: ")
 
 
+# @zero on show message (string text)
+def fn_show_message__string(text: str):
+    print(text)  # server fallback: print to terminal
+
+
 # @zero on set cookie of (string name) to (string value)
 def fn_set_cookie_of__string_to__string(name: str, value: str):
     pass  # no-op on server — cookies are set by the HTTP response

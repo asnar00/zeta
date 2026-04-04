@@ -15,10 +15,16 @@ import * as background from './background.js';
 
 // @zero on (string result) = input (string prompt)
 export function fn_input__string(prompt: string): string {
-    // For now, use window.prompt — a proper implementation would
-    // create a styled input element in the DOM and await submission
-    const result = (globalThis as any).prompt?.(prompt) ?? "";
-    return result;
+    return (globalThis as any).prompt?.(prompt) ?? "";
+}
+
+// @zero on show message (string text)
+export function fn_show_message__string(text: string): void {
+    if (typeof alert !== "undefined") {
+        alert(text);
+    } else {
+        console.log(text);
+    }
 }
 
 // @zero on set cookie of (string name) to (string value)
@@ -408,7 +414,7 @@ export function User(args: Partial<User> = {}): User {
     return { name: args.name ?? "", phone: args.phone ?? "", role: args.role ?? "" };
 }
 
-// @zero on main (string args$); website/website.zero.md:130
+// @zero on main (string args$); website/website.zero.md:134
 export async function task_main__string(args_arr: readonly string[]): Promise<void> {
     _push_terminal_out(logo);
     const request_arr = task_serve_http__int(port);
@@ -419,7 +425,7 @@ export async function task_main__string(args_arr: readonly string[]): Promise<vo
     }
 }
 
-// @zero on (string body) = handle request (Http-Request request); website/website.zero.md:138
+// @zero on (string body) = handle request (Http-Request request); website/website.zero.md:142
 export function fn_handle_request__Http_Request(request: Http_Request): string {
     let body: string = undefined!;
     if (_get_ctx().landing_page.enabled && request.path == "/") {
@@ -437,7 +443,7 @@ export function fn_handle_request__Http_Request(request: Http_Request): string {
     return body;
 }
 
-// @zero on stop; website/website.zero.md:146
+// @zero on stop; website/website.zero.md:150
 export function fn_stop(): void {
     fn_print__string("stopping");
 }

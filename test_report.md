@@ -536,7 +536,7 @@ on hello()
 ```python
 # @zero on hello
 def fn_hello():
-    print "hello world"
+    _raise_undefined('print "hello world"')
 ```
 
 ## void function with params
@@ -553,7 +553,7 @@ on greet (string name)
 ```python
 # @zero on greet (string name)
 def fn_greet__string(name: str):
-    print name
+    _raise_undefined('print name')
 ```
 
 ## concurrently block
@@ -632,7 +632,7 @@ int i$ = [1, 2, 3, 4, 5, 6]
 
 ```python
 i_arr: list[int] = [1, 2, 3, 4, 5, 6]
-first_even: int = next(x for x in i_arr if x % 2 == 0)
+first_even: int = next((x for x in i_arr if x % 2 == 0), type(i_arr[0])() if i_arr else None)
 ```
 
 ## sort simple
@@ -957,11 +957,12 @@ on (string s) = describe (int n)
 ```python
 # @zero on (string s) = describe (int n)
 def fn_describe__int(n: int) -> str:
+    s = None
     if n > 0:
         s = "positive"
     else:
         s = "zero"
-    return s
+    return s if s is not None else ""
 ```
 
 ## if/else if/else block
@@ -983,13 +984,14 @@ on (string s) = describe (int n)
 ```python
 # @zero on (string s) = describe (int n)
 def fn_describe__int(n: int) -> str:
+    s = None
     if n > 0:
         s = "positive"
     elif n < 0:
         s = "negative"
     else:
         s = "zero"
-    return s
+    return s if s is not None else ""
 ```
 
 ## range with variable endpoint
@@ -2084,7 +2086,7 @@ int i$ = [1, 2, 3, 4, 5, 6]
 
 ```python
 const i_arr: readonly number[] = [1, 2, 3, 4, 5, 6];
-const first_even: number = i_arr.find(x => x % 2 == 0);
+const first_even: number = i_arr.find(x => x % 2 == 0)!;
 ```
 
 ## ts: sort simple
@@ -2117,6 +2119,9 @@ type person =
 ### python
 
 ```python
+const people_arr: readonly person[] = [...];
+const sorted_arr: person[] = [...people_arr].sort((a, b) => a.age - b.age);
+
 interface person {
     readonly age: number;
 }
@@ -2124,9 +2129,6 @@ interface person {
 function person(args: Partial<person> = {}): person {
     return { age: args.age ?? 0 };
 }
-
-const people_arr: readonly person[] = [...];
-const sorted_arr: person[] = [...people_arr].sort((a, b) => a.age - b.age);
 ```
 
 ## ts: array function call

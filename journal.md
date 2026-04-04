@@ -415,3 +415,60 @@ Added intro paragraphs before every code block in all six website feature files.
 - `99a3892` Journal: keyed collections, user vs session, persistence design
 - `af1fa32` Per-user background colour: login, after extension, cross-module context
 - `7105ad2` Literate style: add intro paragraphs to all website feature definitions
+- `34b820e` Journal: login, per-user background, after extension, cross-module context
+
+## 2026-04-03/04: refactoring, language evolution, integration test
+
+### 25-line function limit
+
+Refactored every `.py` file in the pipeline so all functions fit on one screen (≤25 lines). Commented code blocks become named functions. The codebase went from having dozens of 50-150 line functions to ~400 focused functions across 7 files. Documented as key decision #10 in zeta-architecture.md.
+
+### language changes
+
+**Uppercase types:** User-defined types now start with uppercase (`User`, `Http-Request`, `Vector`). Built-in types stay lowercase (`int`, `string`, `bool`). The parser's `_looks_like_type` now uses capitalisation instead of returning True for everything.
+
+**Per-user variable default:** Variables in feature scope are per-user by default. The `user` keyword is removed. `shared` prefix opts a variable into global/module scope. This matches the mental model: most state is per-user, shared state is the exception.
+
+**`raise` and exception handlers:** `raise unknown user (name)` throws a named exception. `in login (), on unknown user (string name)` wraps login's body in try/catch that dispatches to `on unknown user` — a regular extensible function. This lets the happy path read straight through with no conditionals.
+
+**`...` placeholders:** `... send (code) to (found)` compiles to a no-op and is reported by the build. Marks deliberate gaps for future implementation.
+
+**Section-aware markdown extraction:** `_extract_code` now tracks `##` sections and only extracts code from `## interface`, `## definition`, `## tests`. Other sections (`## specification`, `## integration tests`) are skipped.
+
+### feature tree and directory
+
+`directory()` split into `features()` (box-drawing tree with summaries) and `functions()` (the old directory listing). Zeta emits `_FEATURE_TREE` data into the root module at build time. Feature files reorganised into a tree matching the extension hierarchy.
+
+### gui platform
+
+New `platforms/gui.zero.md` with `input (string prompt)`, `set cookie of (string name) to (string value)`, `reload page ()`. Implemented for Python (server fallback) and TypeScript (DOM).
+
+### connector → just an extension
+
+The `## connector` section was proposed then removed. Wiring a feature into an app is just a regular extension in the `## definition` section. Adapters are a future topic.
+
+### integration test
+
+Playwright-based test in `test_integration_login.py` implements the spec from `login.zero.md ## integration tests`: three browser tabs, three users (default, alice, bob), three background colours. Currently passes using RPC-based login (HTTP calls to request login, complete login, set cookie). Next step: client-side JS emission so login() runs in the browser.
+
+### decisions for next phase: cross-component RPC
+
+The login flow needs to run across two components:
+- **Server:** `request login`, `verify login`, `complete login`, `create session` (access shared data)
+- **Client (browser):** `login`, `logo clicked` (call `input`, `set cookie of`, `reload page`)
+
+When client-side `login()` calls `request login(name)`, that crosses the boundary and becomes a `fetch("/@rpc/...")` call. The approach:
+1. Emit `login()` as JavaScript served in the HTML page
+2. Server-side function calls from client code compile to `fetch` calls to the existing RPC bridge
+3. Each browser context has its own session cookie, so the RPC bridge routes to the right per-user context
+
+Data placement (`@server`/`@client`) was discussed but deferred — for now, the compiler can infer placement from what platform functions each function calls. Functions touching gui platform → client. Functions touching shared data → server. Pure functions → wherever their caller is.
+
+### commits
+- `c2f0dab` Extract named functions: 25-line limit across all pipeline .py files
+- `6788540` Feature tree, features()/functions(), per-user variable default
+- `cd67437` Uppercase types, login-by-name, TS strict fixes, per-user variable default
+- `fac6bc3` Connector section, login entry point, undefined call handling, nested if fix
+- `c95752d` raise, ... placeholders, gui platform, happy-path login
+- `5c27d3a` Exception handlers: in X(), on Y() wraps function body in try/catch
+- `1c94114` Integration test passes: 3 tabs, 3 users, 3 background colours

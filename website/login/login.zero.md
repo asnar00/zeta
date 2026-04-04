@@ -40,10 +40,10 @@ The interactive login flow — input name, request a code, input code, log in:
 Handle errors — these are regular functions, called when a raise occurs inside login:
 
     on unknown user (string name)
-        print ("unknown user")
+        show message ("unknown user")
 
     on invalid code (string code)
-        print ("invalid code")
+        show message ("invalid code")
 
 Catch raises inside login and dispatch to the handlers:
 

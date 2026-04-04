@@ -8,6 +8,11 @@ def fn_input__string(prompt: str) -> str:
     return input(f"{prompt}: ")
 
 
+# @zero on show message (string text)
+def fn_show_message__string(text: str):
+    print(text)  # server fallback: print to terminal
+
+
 # @zero on set cookie of (string name) to (string value)
 def fn_set_cookie_of__string_to__string(name: str, value: str):
     pass  # no-op on server — cookies are set by the HTTP response
@@ -47,6 +52,10 @@ def task_serve_http__int(port):
 
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
+            # serve client-side files from /@client/
+            if self.path.startswith("/@client/"):
+                self._serve_client_file()
+                return
             # extract session token from cookie
             token = ""
             cookie_header = self.headers.get("Cookie", "")
@@ -61,6 +70,23 @@ def task_serve_http__int(port):
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.end_headers()
             self.wfile.write(body.encode("utf-8"))
+
+        def _serve_client_file(self):
+            """Serve a static file from the output directory."""
+            import os
+            filename = self.path[len("/@client/"):]
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            filepath = os.path.join(script_dir, filename)
+            if os.path.exists(filepath):
+                self.send_response(200)
+                ct = "application/javascript" if filename.endswith(".js") else "text/plain"
+                self.send_header("Content-Type", ct)
+                self.end_headers()
+                with open(filepath, "rb") as f:
+                    self.wfile.write(f.read())
+            else:
+                self.send_response(404)
+                self.end_headers()
 
         def log_message(self, format, *args):
             pass  # silence default logging
@@ -699,7 +725,7 @@ class User(NamedTuple):
     phone: str = ""
     role: str = ""
 
-# @zero on login; website/login/login.zero.md:152
+# @zero on login; website/login/login.zero.md:156
 def fn_login():
     try:
         name = fn_input__string("name")
@@ -716,15 +742,15 @@ def fn_login():
         else:
             raise
 
-# @zero on unknown user (string name); website/login/login.zero.md:160
+# @zero on unknown user (string name); website/login/login.zero.md:164
 def fn_unknown_user__string(name: str):
-    fn_print__string("unknown user")
+    fn_show_message__string("unknown user")
 
-# @zero on invalid code (string code); website/login/login.zero.md:163
+# @zero on invalid code (string code); website/login/login.zero.md:167
 def fn_invalid_code__string(code: str):
-    fn_print__string("invalid code")
+    fn_show_message__string("invalid code")
 
-# @zero on (string code) = request login (string name); website/login/login.zero.md:166
+# @zero on (string code) = request login (string name); website/login/login.zero.md:170
 def fn_request_login__string(name: str) -> str:
     found = next((x for x in users_arr if x.name == name), type(users_arr[0])() if users_arr else None)
     if found.name != name:
@@ -734,7 +760,7 @@ def fn_request_login__string(name: str) -> str:
     pending_codes_arr[found.phone] = code
     return code
 
-# @zero on (User result) = verify login (string name) (string code); website/login/login.zero.md:174
+# @zero on (User result) = verify login (string name) (string code); website/login/login.zero.md:178
 def fn_verify_login__string__string(name: str, code: str) -> User:
     found = next((x for x in users_arr if x.name == name), type(users_arr[0])() if users_arr else None)
     stored = pending_codes_arr[found.phone]
@@ -744,13 +770,13 @@ def fn_verify_login__string__string(name: str, code: str) -> User:
     result = found
     return result
 
-# @zero on (string token) = complete login (string name) (string code); website/login/login.zero.md:182
+# @zero on (string token) = complete login (string name) (string code); website/login/login.zero.md:186
 def fn_complete_login__string__string(name: str, code: str) -> str:
     found = fn_verify_login__string__string(name, code)
     token = fn_create_session()
     return token
 
-# @zero on (string code) = generate code (User u); website/login/login.zero.md:186
+# @zero on (string code) = generate code (User u); website/login/login.zero.md:190
 def fn_generate_code__User(u: User) -> str:
     code = None
     if u.name == "_alice":
@@ -761,7 +787,7 @@ def fn_generate_code__User(u: User) -> str:
         code = "1234"
     return code if code is not None else ""
 
-# @zero on logo clicked; website/login/login.zero.md:194
+# @zero on logo clicked; website/login/login.zero.md:198
 def fn_logo_clicked():
     fn_login()
 

@@ -27,6 +27,10 @@ def task_serve_http__int(port):
 
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
+            # serve client-side files from /@client/
+            if self.path.startswith("/@client/"):
+                self._serve_client_file()
+                return
             # extract session token from cookie
             token = ""
             cookie_header = self.headers.get("Cookie", "")
@@ -41,6 +45,23 @@ def task_serve_http__int(port):
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.end_headers()
             self.wfile.write(body.encode("utf-8"))
+
+        def _serve_client_file(self):
+            """Serve a static file from the output directory."""
+            import os
+            filename = self.path[len("/@client/"):]
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            filepath = os.path.join(script_dir, filename)
+            if os.path.exists(filepath):
+                self.send_response(200)
+                ct = "application/javascript" if filename.endswith(".js") else "text/plain"
+                self.send_header("Content-Type", ct)
+                self.end_headers()
+                with open(filepath, "rb") as f:
+                    self.wfile.write(f.read())
+            else:
+                self.send_response(404)
+                self.end_headers()
 
         def log_message(self, format, *args):
             pass  # silence default logging

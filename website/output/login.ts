@@ -3,10 +3,16 @@
 
 // @zero on (string result) = input (string prompt)
 export function fn_input__string(prompt: string): string {
-    // For now, use window.prompt — a proper implementation would
-    // create a styled input element in the DOM and await submission
-    const result = (globalThis as any).prompt?.(prompt) ?? "";
-    return result;
+    return (globalThis as any).prompt?.(prompt) ?? "";
+}
+
+// @zero on show message (string text)
+export function fn_show_message__string(text: string): void {
+    if (typeof alert !== "undefined") {
+        alert(text);
+    } else {
+        console.log(text);
+    }
 }
 
 // @zero on set cookie of (string name) to (string value)
@@ -289,7 +295,7 @@ export function User(args: Partial<User> = {}): User {
     return { name: args.name ?? "", phone: args.phone ?? "", role: args.role ?? "" };
 }
 
-// @zero on login; website/login/login.zero.md:152
+// @zero on login; website/login/login.zero.md:156
 export function fn_login(): void {
     try {
         const name = fn_input__string("name");
@@ -309,17 +315,17 @@ export function fn_login(): void {
     }
 }
 
-// @zero on unknown user (string name); website/login/login.zero.md:160
+// @zero on unknown user (string name); website/login/login.zero.md:164
 export function fn_unknown_user__string(name: string): void {
-    fn_print__string("unknown user");
+    fn_show_message__string("unknown user");
 }
 
-// @zero on invalid code (string code); website/login/login.zero.md:163
+// @zero on invalid code (string code); website/login/login.zero.md:167
 export function fn_invalid_code__string(code: string): void {
-    fn_print__string("invalid code");
+    fn_show_message__string("invalid code");
 }
 
-// @zero on (string code) = request login (string name); website/login/login.zero.md:166
+// @zero on (string code) = request login (string name); website/login/login.zero.md:170
 export function fn_request_login__string(name: string): string {
     let code: string = undefined!;
     const found = users_arr.find(x => x.name == name)!;
@@ -332,7 +338,7 @@ export function fn_request_login__string(name: string): string {
     return code;
 }
 
-// @zero on (User result) = verify login (string name) (string code); website/login/login.zero.md:174
+// @zero on (User result) = verify login (string name) (string code); website/login/login.zero.md:178
 export function fn_verify_login__string__string(name: string, code: string): User {
     let result: User = undefined!;
     const found = users_arr.find(x => x.name == name)!;
@@ -345,14 +351,14 @@ export function fn_verify_login__string__string(name: string, code: string): Use
     return result;
 }
 
-// @zero on (string token) = complete login (string name) (string code); website/login/login.zero.md:182
+// @zero on (string token) = complete login (string name) (string code); website/login/login.zero.md:186
 export function fn_complete_login__string__string(name: string, code: string): string {
     const found = fn_verify_login__string__string(name, code);
     const token: string = fn_create_session();
     return token;
 }
 
-// @zero on (string code) = generate code (User u); website/login/login.zero.md:186
+// @zero on (string code) = generate code (User u); website/login/login.zero.md:190
 export function fn_generate_code__User(u: User): string {
     let code: string = undefined!;
     if (u.name == "_alice") {
@@ -365,7 +371,7 @@ export function fn_generate_code__User(u: User): string {
     return code;
 }
 
-// @zero on logo clicked; website/login/login.zero.md:194
+// @zero on logo clicked; website/login/login.zero.md:198
 export function fn_logo_clicked(): void {
     fn_login();
 }

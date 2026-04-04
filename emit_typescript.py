@@ -32,6 +32,12 @@ _context_features_ts = set()
 # set of variable names that are keyed collections (Maps)
 _map_vars_ts = set()
 
+# set of function base names that should be emitted as RPC calls (client bundle only)
+_rpc_targets_ts = set()
+
+# set of function names that are async in client context (gui platform functions)
+_client_async_fns_ts = set()
+
 
 _CONCURRENTLY_HELPER_TS = """\
 async function _concurrently(...fns: (() => any)[]) {
@@ -43,7 +49,7 @@ async function _concurrently(...fns: (() => any)[]) {
 
 def _init_globals_ts(ir: dict) -> tuple:
     """Initialize module-level state from IR. Returns (structs, enums)."""
-    global _enum_values, _context_features_ts, _map_vars_ts
+    global _enum_values, _context_features_ts, _map_vars_ts, _rpc_targets_ts, _client_async_fns_ts
     _context_features_ts = set()
     var_owners = ir.get("_var_owners", {})
     all_user = ir.get("_all_user_vars", [])
@@ -57,6 +63,8 @@ def _init_globals_ts(ir: dict) -> tuple:
         for val in edata["values"]:
             _enum_values[val] = f"{ts_name}.{val}"
     _map_vars_ts = {_safe(v["name"] + "_arr") for v in ir["variables"] if v.get("map")}
+    _rpc_targets_ts = ir.get("_rpc_targets", set())
+    _client_async_fns_ts = ir.get("_client_async_fns", set())
     return structs, enums
 
 
@@ -113,6 +121,10 @@ def _emit_definitions_ts(ir: dict, structs: dict, enums: dict) -> list[str]:
         if not task.get("abstract"):
             sections.append(source_comment(task, src, "//") + "\n" + _emit_task_ts(task, structs, ir.get("uses", [])))
     async_fns = _compute_async_fns(ir["functions"])
+    if ir.get("_force_async_all"):
+        async_fns = {_make_function_name(fn["signature_parts"]) for fn in ir["functions"]
+                     if not fn.get("abstract")}
+        async_fns |= ir.get("_client_async_fns", set())
     for fn in ir["functions"]:
         if not fn.get("abstract"):
             sections.append(source_comment(fn, src, "//") + "\n" + _emit_function(fn, structs, async_fns, ir))
@@ -186,7 +198,7 @@ def emit(ir: dict) -> str:
         sections.append(_CONCURRENTLY_HELPER_TS)
     if ir.get("errors"):
         sections.append(_UNDEFINED_HELPER_TS)
-    if _has_raise(ir):
+    if _has_raise(ir) and not ir.get("_suppress_zero_raise"):
         sections.append(_ZERO_RAISE_HELPER_TS)
     sections.extend(_emit_tests_sections_ts(ir, structs))
     _maybe_prepend_context(sections, ir)
@@ -1264,12 +1276,26 @@ def _emit_var_decl_array_ts(name: str, node: dict, structs: dict) -> str:
     return f"const {name} = {val}"
 
 
+def _needs_await(value_node):
+    """Check if a value expression needs await (async gui platform call).
+    RPC targets are excluded — _emit_rpc_call already adds await."""
+    if not isinstance(value_node, dict):
+        return False
+    if value_node.get("kind") == "fn_call":
+        fn_name = _make_function_name(value_node["signature_parts"])
+        return fn_name in _client_async_fns_ts and fn_name not in _rpc_targets_ts
+    return False
+
+
 def _emit_var_decl_expr_ts(node: dict, structs: dict) -> str:
     """Emit a var_decl expression."""
     name = node["name"] + "_arr" if node.get("array") else node["name"]
     if node.get("array"):
         return _emit_var_decl_array_ts(name, node, structs)
-    return f"const {name} = {_emit_expr(node['value'], structs)}"
+    value_expr = _emit_expr(node['value'], structs)
+    if _needs_await(node.get('value')):
+        return f"const {name} = await {value_expr}"
+    return f"const {name} = {value_expr}"
 
 
 def _emit_assign_expr_ts(node: dict, structs: dict) -> str:
@@ -1292,12 +1318,33 @@ def _emit_task_call_expr_ts(node: dict) -> str:
     return f"[...{fn_name}({args})]"
 
 
+def _emit_rpc_call(node: dict, structs: dict) -> str:
+    """Emit a function call as an RPC fetch to /@rpc/."""
+    sig_parts = node["signature_parts"]
+    args = node["args"]
+    # build the zero-syntax call string: word (arg) word (arg) ...
+    rpc_parts = []
+    arg_idx = 0
+    for part in sig_parts:
+        if part.startswith("(") or part.startswith("["):
+            arg_expr = _emit_expr(args[arg_idx], structs)
+            rpc_parts.append(f'" + encodeURIComponent("(" + {arg_expr} + ")") + "')
+            arg_idx += 1
+        else:
+            rpc_parts.append(part)
+    rpc_expr = " ".join(rpc_parts)
+    return f'await _rpc("{rpc_expr}")'
+
+
 def _emit_simple_expr_ts(node: dict, structs: dict) -> str | None:
     """Handle expression kinds that need minimal logic. Returns None if unhandled."""
     kind = node["kind"]
     if kind in ("fn_call", "array_fn_call"):
+        fn_name = _make_function_name(node["signature_parts"])
+        if fn_name in _rpc_targets_ts:
+            return _emit_rpc_call(node, structs)
         args = ", ".join(_emit_expr(a, structs) for a in node["args"])
-        return f"{_make_function_name(node['signature_parts'])}({args})"
+        return f"{fn_name}({args})"
     if kind == "task_call":
         return _emit_task_call_expr_ts(node)
     if kind == "index":

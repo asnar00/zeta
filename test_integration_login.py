@@ -9,10 +9,8 @@ Usage: python3 test_integration_login.py [--headed]
 import subprocess
 import sys
 import time
-import signal
 import os
 
-# --- server management ---
 
 def build_website():
     """Build the website from features."""
@@ -30,14 +28,11 @@ def build_website():
 
 
 def start_server(port=8084):
-    """Start the website server on a test port, return the process."""
-    env = os.environ.copy()
+    """Start the website server, return the process."""
     proc = subprocess.Popen(
         [sys.executable, "website/output/website.py"],
         stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-        env=env
     )
-    # wait for server to be ready
     for _ in range(30):
         try:
             import urllib.request
@@ -46,6 +41,8 @@ def start_server(port=8084):
         except Exception:
             time.sleep(0.2)
     print("SERVER FAILED TO START")
+    if proc.poll() is not None:
+        print("STDERR:", proc.stderr.read().decode()[:500])
     proc.kill()
     return None
 
@@ -60,11 +57,9 @@ def stop_server(proc):
             proc.kill()
 
 
-# --- browser tests ---
-
 def get_background_colour(page):
     """Get the background colour of the page body as a hex string."""
-    rgb = page.evaluate("""
+    return page.evaluate("""
         () => {
             const bg = window.getComputedStyle(document.body).backgroundColor;
             const match = bg.match(/rgb\\((\\d+),\\s*(\\d+),\\s*(\\d+)\\)/);
@@ -75,29 +70,54 @@ def get_background_colour(page):
             return '#' + r + g + b;
         }
     """)
-    return rgb
 
 
-def set_background_via_rpc(page, session_cookie, colour, port=8084):
+def set_background_via_rpc(page, colour, port=8084):
     """Set background colour via RPC for the current session."""
     import urllib.parse
-    expr = f'background.colour = {colour}'
-    encoded = urllib.parse.quote(expr)
-    # use the session cookie
-    url = f"http://localhost:{port}/@rpc/{encoded}"
-    page.evaluate(f"""
-        () => fetch("{url}", {{ credentials: 'include' }})
-    """)
-    # reload to see the change
+    expr = urllib.parse.quote(f'background.colour = {colour}')
+    page.evaluate(f'() => fetch("http://localhost:{port}/@rpc/{expr}", {{ credentials: "include" }})')
     page.reload()
     page.wait_for_load_state("networkidle")
 
 
-def run_tests(headed=False):
+def login_via_browser(page, name, code, port=8084):
+    """Log in by clicking the logo and typing into DOM input elements.
+    The login flow: click logo -> input box appears (name) -> type + Enter ->
+    RPC to server -> input box appears (code) -> type + Enter ->
+    RPC to server -> cookie set -> page reloads."""
+    initial_url = page.url
+    # click the logo to start the login flow
+    page.click(".logo")
+    # wait for the name input to appear
+    try:
+        page.wait_for_selector("input", timeout=5000)
+    except Exception:
+        return False
+    # type the name and press Enter
+    input_el = page.query_selector("input")
+    input_el.fill(name)
+    input_el.press("Enter")
+    # the first input disappears, then the RPC completes, then the code input appears
+    # wait for the old input to be removed and a new one to appear
+    time.sleep(1)
+    try:
+        page.wait_for_selector("input", timeout=10000)
+    except Exception:
+        return False
+    # type the code and press Enter
+    input_el = page.query_selector("input")
+    input_el.fill(code)
+    input_el.press("Enter")
+    # wait for page reload (login success sets cookie and reloads)
+    time.sleep(2)
+    return True
+
+
+def run_tests(headed=False, port=8084):
     """Run the integration tests from login.zero.md."""
     from playwright.sync_api import sync_playwright
 
-    port = 8084
     results = []
 
     def check(name, actual, expected):
@@ -125,29 +145,10 @@ def run_tests(headed=False):
         page_alice = ctx_alice.new_page()
         page_alice.goto(f"http://localhost:{port}/")
         page_alice.wait_for_load_state("networkidle")
-
-        # login as alice via RPC (until we have client-side login UI)
-        page_alice.goto(f"http://localhost:{port}/@rpc/request%20login%20(%22_alice%22)")
-        page_alice.wait_for_load_state("networkidle")
-        code = page_alice.text_content("body").strip()
-        print(f"  alice code: {code}")
-
-        page_alice.goto(f"http://localhost:{port}/@rpc/complete%20login%20(%22_alice%22)%20(%22{code}%22)")
-        page_alice.wait_for_load_state("networkidle")
-        token = page_alice.text_content("body").strip()
-        print(f"  alice token: {token}")
-
-        if token and token != "invalid":
-            ctx_alice.add_cookies([{
-                "name": "session",
-                "value": token,
-                "url": f"http://localhost:{port}"
-            }])
-
+        logged_in = login_via_browser(page_alice, "_alice", "1234", port)
+        print(f"  alice logged in: {logged_in}")
         # set alice's background to red
-        page_alice.goto(f"http://localhost:{port}/")
-        page_alice.wait_for_load_state("networkidle")
-        set_background_via_rpc(page_alice, token, "#ff0000", port)
+        set_background_via_rpc(page_alice, "#ff0000", port)
         check("alice background is red",
               get_background_colour(page_alice), "#ff0000")
 
@@ -157,29 +158,10 @@ def run_tests(headed=False):
         page_bob = ctx_bob.new_page()
         page_bob.goto(f"http://localhost:{port}/")
         page_bob.wait_for_load_state("networkidle")
-
-        # login as bob via RPC
-        page_bob.goto(f"http://localhost:{port}/@rpc/request%20login%20(%22_bob%22)")
-        page_bob.wait_for_load_state("networkidle")
-        code = page_bob.text_content("body").strip()
-        print(f"  bob code: {code}")
-
-        page_bob.goto(f"http://localhost:{port}/@rpc/complete%20login%20(%22_bob%22)%20(%22{code}%22)")
-        page_bob.wait_for_load_state("networkidle")
-        token = page_bob.text_content("body").strip()
-        print(f"  bob token: {token}")
-
-        if token and token != "invalid":
-            ctx_bob.add_cookies([{
-                "name": "session",
-                "value": token,
-                "url": f"http://localhost:{port}"
-            }])
-
+        logged_in = login_via_browser(page_bob, "_bob", "4321", port)
+        print(f"  bob logged in: {logged_in}")
         # set bob's background to blue
-        page_bob.goto(f"http://localhost:{port}/")
-        page_bob.wait_for_load_state("networkidle")
-        set_background_via_rpc(page_bob, token, "#0000ff", port)
+        set_background_via_rpc(page_bob, "#0000ff", port)
         check("bob background is blue",
               get_background_colour(page_bob), "#0000ff")
 
@@ -202,7 +184,6 @@ def run_tests(headed=False):
 
         browser.close()
 
-    # summary
     passed = sum(1 for _, ok in results if ok)
     failed = sum(1 for _, ok in results if not ok)
     print(f"\n{passed} passed, {failed} failed")
