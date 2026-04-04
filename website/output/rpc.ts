@@ -1,4 +1,31 @@
 import { register_tests } from './_runtime.js';
+import * as login from './login.js';
+
+// Platform implementation: gui (TypeScript/web)
+// Implements the functions declared in gui.zero.md
+
+// @zero on (string result) = input (string prompt)
+export function fn_input__string(prompt: string): string {
+    // For now, use window.prompt — a proper implementation would
+    // create a styled input element in the DOM and await submission
+    const result = (globalThis as any).prompt?.(prompt) ?? "";
+    return result;
+}
+
+// @zero on set cookie of (string name) to (string value)
+export function fn_set_cookie_of__string_to__string(name: string, value: string): void {
+    if (typeof document !== "undefined") {
+        document.cookie = `${name}=${value}; path=/; SameSite=Strict`;
+    }
+}
+
+// @zero on reload page ()
+export function fn_reload_page(): void {
+    if (typeof location !== "undefined") {
+        location.reload();
+    }
+}
+
 
 // Platform implementation: http (TypeScript)
 // Implements the streams and tasks declared in http.zero.md
@@ -223,10 +250,6 @@ export function _get_ctx(): _Context {
 }
 
 
-export function _raise_undefined(name: string): never {
-    throw new Error(`function not defined: ${name}`);
-}
-
 export function test_rpc_0(): void {
     // rpc eval ("port") => "8084"
     const _result = fn_rpc_eval__string("port");
@@ -263,6 +286,8 @@ export function test_rpc_4(): void {
 }
 
 register_tests('rpc', [[test_rpc_0, 'rpc eval ("port") => "8084"'], [test_rpc_1, 'rpc eval ("logo = hi") => "logo = hi"'], [test_rpc_2, 'rpc eval ("not found ()") => "not found"'], [test_rpc_3, 'rpc eval ("trim (\\"  hello  \\")") => "hello"'], [test_rpc_4, 'rpc eval ("length of (\\"test\\")") => "4"']]);
+
+login.fn_login();
 
 interface Http_Request {
     readonly path: string;

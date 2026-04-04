@@ -1,5 +1,26 @@
 from _runtime import register_tests
 import website
+import login
+
+# Platform implementation: gui (Python)
+# Implements the functions declared in gui.zero.md
+# Server-side fallback — in production, these run on the client.
+
+
+# @zero on (string result) = input (string prompt)
+def fn_input__string(prompt: str) -> str:
+    return input(f"{prompt}: ")
+
+
+# @zero on set cookie of (string name) to (string value)
+def fn_set_cookie_of__string_to__string(name: str, value: str):
+    pass  # no-op on server — cookies are set by the HTTP response
+
+
+# @zero on reload page ()
+def fn_reload_page():
+    pass  # no-op on server
+
 
 # Platform implementation: http (Python)
 # Implements the streams and tasks declared in http.zero.md
@@ -662,9 +683,6 @@ def _get_ctx() -> '_Context':
 
 from typing import NamedTuple
 
-def _raise_undefined(name):
-    raise RuntimeError(f"function not defined: {name}")
-
 def test_landing_page_0():
     '''handle request (Http-Request(path="/")) => read file ("website/index.html")'''
     _result = website.fn_handle_request__Http_Request(Http_Request(path="/"))
@@ -693,8 +711,10 @@ class User(NamedTuple):
     phone: str = ""
     role: str = ""
 
-# @zero on (string body) = landing page; website/landing-page/landing-page.zero.md:194
+# @zero on (string body) = landing page; website/landing-page/landing-page.zero.md:204
 def fn_landing_page() -> str:
     body = fn_read_file__string("website/index.html")
     body = fn_replace__string_in__string_with__string("#34988b", body, _get_ctx().background.colour)
     return body
+
+login.fn_login()

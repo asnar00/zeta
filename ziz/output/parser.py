@@ -1,5 +1,25 @@
 from _runtime import register_tests
 
+# Platform implementation: gui (Python)
+# Implements the functions declared in gui.zero.md
+# Server-side fallback — in production, these run on the client.
+
+
+# @zero on (string result) = input (string prompt)
+def fn_input__string(prompt: str) -> str:
+    return input(f"{prompt}: ")
+
+
+# @zero on set cookie of (string name) to (string value)
+def fn_set_cookie_of__string_to__string(name: str, value: str):
+    pass  # no-op on server — cookies are set by the HTTP response
+
+
+# @zero on reload page ()
+def fn_reload_page():
+    pass  # no-op on server
+
+
 # Platform implementation: http (Python)
 # Implements the streams and tasks declared in http.zero.md
 
@@ -681,7 +701,7 @@ class Http_Response(NamedTuple):
     request: Http_Request = 0
     body: str = ""
 
-# @zero on (int depth$) <- bracket depth of matching (string s) (string pair); ziz/parser.zero.md:118
+# @zero on (int depth$) <- bracket depth of matching (string s) (string pair); ziz/parser.zero.md:131
 def task_bracket_depth_of_matching__string__string(s: str, pair: str):
     d = 0
     for c in list(s):
@@ -691,14 +711,14 @@ def task_bracket_depth_of_matching__string__string(s: str, pair: str):
             d = d - 1
         yield d
 
-# @zero on (int pos) = matching (string pair) in (string s) after (int start); ziz/parser.zero.md:127
+# @zero on (int pos) = matching (string pair) in (string s) after (int start); ziz/parser.zero.md:140
 def fn_matching__string_in__string_after__int(pair: str, s: str, start: int) -> int:
     sub = s[start:]
     depth_arr = list(task_bracket_depth_of_matching__string__string(sub, pair))
     pos = start + next(i for i, x in enumerate(depth_arr) if x == 0)
     return pos
 
-# @zero on (string part$) = split stream parts (string s); ziz/parser.zero.md:132
+# @zero on (string part$) = split stream parts (string s); ziz/parser.zero.md:145
 def fn_split_stream_parts__string(s: str) -> str:
     padded = s + "<-"
     depth_arr = list(task_bracket_depth_of_matching__string__string(padded, "()"))

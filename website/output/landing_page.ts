@@ -1,5 +1,32 @@
 import { register_tests } from './_runtime.js';
 import * as website from './website.js';
+import * as login from './login.js';
+
+// Platform implementation: gui (TypeScript/web)
+// Implements the functions declared in gui.zero.md
+
+// @zero on (string result) = input (string prompt)
+export function fn_input__string(prompt: string): string {
+    // For now, use window.prompt — a proper implementation would
+    // create a styled input element in the DOM and await submission
+    const result = (globalThis as any).prompt?.(prompt) ?? "";
+    return result;
+}
+
+// @zero on set cookie of (string name) to (string value)
+export function fn_set_cookie_of__string_to__string(name: string, value: string): void {
+    if (typeof document !== "undefined") {
+        document.cookie = `${name}=${value}; path=/; SameSite=Strict`;
+    }
+}
+
+// @zero on reload page ()
+export function fn_reload_page(): void {
+    if (typeof location !== "undefined") {
+        location.reload();
+    }
+}
+
 
 // Platform implementation: http (TypeScript)
 // Implements the streams and tasks declared in http.zero.md
@@ -224,10 +251,6 @@ export function _get_ctx(): _Context {
 }
 
 
-export function _raise_undefined(name: string): never {
-    throw new Error(`function not defined: ${name}`);
-}
-
 export function test_landing_page_0(): void {
     // handle request (Http-Request(path="/")) => read file ("website/index.html")
     const _result = website.fn_handle_request__Http_Request(Http_Request({ path: "/" }));
@@ -243,6 +266,8 @@ export function test_landing_page_1(): void {
 }
 
 register_tests('landing-page', [[test_landing_page_0, 'handle request (Http-Request(path="/")) => read file ("website/index.html")'], [test_landing_page_1, 'handle request (Http-Request(path="/nope")) => "not found"']]);
+
+login.fn_login();
 
 interface Http_Request {
     readonly path: string;
@@ -273,7 +298,7 @@ export function User(args: Partial<User> = {}): User {
     return { name: args.name ?? "", phone: args.phone ?? "", role: args.role ?? "" };
 }
 
-// @zero on (string body) = landing page; website/landing-page/landing-page.zero.md:194
+// @zero on (string body) = landing page; website/landing-page/landing-page.zero.md:204
 export function fn_landing_page(): string {
     let body: string = undefined!;
     body = fn_read_file__string("website/index.html");

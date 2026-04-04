@@ -869,13 +869,38 @@ def _emit_all_features(per_feature, ctx, input_paths,
 
 
 def _report_errors(ir):
-    """Print any parse errors collected during the build."""
+    """Print any parse errors and placeholders collected during the build."""
     errors = ir.get("errors", [])
-    if not errors:
+    if errors:
+        print(f"\n{len(errors)} error(s):")
+        for e in errors:
+            print(f"  {e.format()}")
+    placeholders = _collect_placeholders(ir)
+    if placeholders:
+        print(f"\n{len(placeholders)} placeholder(s):")
+        for p in placeholders:
+            print(f"  ... {p}")
+
+
+def _collect_placeholders(ir):
+    """Collect all placeholder texts from function bodies."""
+    result = []
+    for fn in ir.get("functions", []):
+        for stmt in fn.get("body", []):
+            _walk_placeholders(stmt, result)
+    return result
+
+
+def _walk_placeholders(node, result):
+    """Recursively collect placeholder texts from an AST node."""
+    if not isinstance(node, dict):
         return
-    print(f"\n{len(errors)} error(s):")
-    for e in errors:
-        print(f"  {e.format()}")
+    if node.get("kind") == "placeholder":
+        result.append(node["text"])
+    for branch in node.get("branches", []):
+        if isinstance(branch, dict):
+            for s in branch.get("body", []):
+                _walk_placeholders(s, result)
 
 
 def _compile_all_outputs(output_dir):

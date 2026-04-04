@@ -1,30 +1,17 @@
 # login
 *SMS code authentication*
 
-## connector
-
-Make the landing page logo clickable, triggering the login flow:
-
-    on logo clicked ()
-        login ()
-
 ## specification
 
-Two-step login: request a code for a user name, then verify the code. On success, creates a session and reloads the page. Codes are stored in a keyed collection. For testing, code generation is deterministic.
+Adds user authentication to the website. The user clicks the logo, enters their name, receives a verification code, and enters the code to log in. On success, a session is created and the page reloads with the user's per-session context (background colour, feature flags, etc.).
+
+The login flow is two-step: first request a code (looked up by name from a shared user database), then verify the code. Codes are stored in a keyed collection and cleared after use. For testing, code generation is deterministic — `_alice` always gets `1234`, `_bob` always gets `4321`.
 
 ## interface
 
-Request a code for a known user:
+The `login` function runs the interactive login flow — inputs for a name, requests a code, inputs for the code, and creates a session on success:
 
-    request login ("_alice") => "1234"
-
-Request a code for an unknown name:
-
-    request login ("nobody") => "unknown"
-
-Verify with the wrong code returns an empty user:
-
-    verify login ("_alice") ("0000") => User()
+    login ()
 
 ## definition
 
@@ -42,45 +29,41 @@ The user database and pending verification codes:
     shared User users$ = [User(name="_alice", phone="+440001", role="admin"), User(name="_bob", phone="+440002", role="user")]
     shared string pending-codes$[string]
 
-The interactive login flow — ask for name, request a code, ask for the code, log in:
+The interactive login flow — input name, request a code, input code, log in:
 
     on login ()
-        string name = ask ("name")
+        string name = input ("name")
         string code = request login (name)
-        if (code != "unknown")
-            string entered = ask ("code")
-            string token = complete login (name) (entered)
-            if (token != "invalid")
-                set cookie ("session", token)
-                reload ()
+        string entered = input ("code")
+        string token = complete login (name) (entered)
+        set cookie of ("session") to (token)
+        reload page ()
 
 Request a login code by name. Looks up the user, generates a code, and stores it:
 
     on (string code) = request login (string name)
         User found = first of [users$] where (_.name == name)
-        if (found.name == name)
-            code = generate code (found)
-            pending-codes$[found.phone] = code
-        else
-            code = "unknown"
+        if (found.name != name)
+            raise unknown user (name)
+        code = generate code (found)
+        ... send (code) to (found)
+        pending-codes$[found.phone] = code
 
-Verify a code against the stored one. Returns the user on success, or an empty user on failure:
+Verify a code against the stored one. Returns the user on success, raises on failure:
 
     on (User result) = verify login (string name) (string code)
         User found = first of [users$] where (_.name == name)
         string stored = pending-codes$[found.phone]
-        if (found.name == name and stored == code and stored != "")
-            pending-codes$[found.phone] = ""
-            result = found
+        if (found.name != name or stored != code or stored == "")
+            raise invalid code (code)
+        pending-codes$[found.phone] = ""
+        result = found
 
-Complete login: verify the code and create a session if valid. Returns a session token or "invalid":
+Complete login: verify the code and create a session:
 
     on (string token) = complete login (string name) (string code)
         User found = verify login (name) (code)
-        if (found.name != "")
-            token = create session ()
-        else
-            token = "invalid"
+        token = create session ()
 
 Generate a deterministic code per user (for testing):
 
@@ -91,3 +74,8 @@ Generate a deterministic code per user (for testing):
             code = "4321"
         else
             code = "1234"
+
+Wire login into the landing page — when the logo is clicked, start the login flow:
+
+    on logo clicked ()
+        login ()

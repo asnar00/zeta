@@ -1,4 +1,28 @@
-import { register_tests } from './_runtime.js';
+// Platform implementation: gui (TypeScript/web)
+// Implements the functions declared in gui.zero.md
+
+// @zero on (string result) = input (string prompt)
+export function fn_input__string(prompt: string): string {
+    // For now, use window.prompt — a proper implementation would
+    // create a styled input element in the DOM and await submission
+    const result = (globalThis as any).prompt?.(prompt) ?? "";
+    return result;
+}
+
+// @zero on set cookie of (string name) to (string value)
+export function fn_set_cookie_of__string_to__string(name: string, value: string): void {
+    if (typeof document !== "undefined") {
+        document.cookie = `${name}=${value}; path=/; SameSite=Strict`;
+    }
+}
+
+// @zero on reload page ()
+export function fn_reload_page(): void {
+    if (typeof location !== "undefined") {
+        location.reload();
+    }
+}
+
 
 // Platform implementation: http (TypeScript)
 // Implements the streams and tasks declared in http.zero.md
@@ -223,35 +247,19 @@ export function _get_ctx(): _Context {
 }
 
 
-export function _raise_undefined(name: string): never {
-    throw new Error(`function not defined: ${name}`);
+class _ZeroRaise extends Error {
+    zeroName: string;
+    argsList: any[];
+    constructor(name: string, args: any[] = []) {
+        super(`${name}(${args.join(', ')})`);
+        this.zeroName = name;
+        this.argsList = args;
+    }
 }
-
-export function test_login_0(): void {
-    // request login ("_alice") => "1234"
-    const _result = fn_request_login__string("_alice");
-    const _expected = "1234";
-    if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
-}
-
-export function test_login_1(): void {
-    // request login ("nobody") => "unknown"
-    const _result = fn_request_login__string("nobody");
-    const _expected = "unknown";
-    if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
-}
-
-export function test_login_2(): void {
-    // verify login ("_alice") ("0000") => User()
-    const _result = fn_verify_login__string__string("_alice", "0000");
-    const _expected = User({  });
-    if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
-}
-
-register_tests('login', [[test_login_0, 'request login ("_alice") => "1234"'], [test_login_1, 'request login ("nobody") => "unknown"'], [test_login_2, 'verify login ("_alice") ("0000") => User()']]);
 
 const users_arr: readonly User[] = [User({ name: "_alice", phone: "+440001", role: "admin" }), User({ name: "_bob", phone: "+440002", role: "user" })];
 const pending_codes_arr: Map<string, string> = new Map();
+fn_login();
 
 interface Http_Request {
     readonly path: string;
@@ -282,58 +290,50 @@ export function User(args: Partial<User> = {}): User {
     return { name: args.name ?? "", phone: args.phone ?? "", role: args.role ?? "" };
 }
 
-// @zero on login; website/login/login.zero.md:154
+// @zero on login; website/login/login.zero.md:165
 export function fn_login(): void {
-    const name = _raise_undefined('ask ("name")');
+    const name = fn_input__string("name");
     const code = fn_request_login__string(name);
-    if (code != "unknown") {
-    const entered = _raise_undefined('ask ("code")');
+    const entered = fn_input__string("code");
     const token = fn_complete_login__string__string(name, entered);
-    if (token != "invalid") {
-    _raise_undefined('set cookie ("session", token)');
-    _raise_undefined('reload ()');
-}
-}
+    fn_set_cookie_of__string_to__string("session", token);
+    fn_reload_page();
 }
 
-// @zero on (string code) = request login (string name); website/login/login.zero.md:164
+// @zero on (string code) = request login (string name); website/login/login.zero.md:173
 export function fn_request_login__string(name: string): string {
     let code: string = undefined!;
     const found = users_arr.find(x => x.name == name)!;
-    if (found.name == name) {
-    code = fn_generate_code__User(found);
-    pending_codes_arr.set(found.phone, code);
-} else {
-    code = "unknown";
+    if (found.name != name) {
+    throw new _ZeroRaise('unknown user', ['name']);
 }
+    code = fn_generate_code__User(found);
+    /* TODO: send (code) to (found) */;
+    pending_codes_arr.set(found.phone, code);
     return code;
 }
 
-// @zero on (User result) = verify login (string name) (string code); website/login/login.zero.md:172
+// @zero on (User result) = verify login (string name) (string code); website/login/login.zero.md:181
 export function fn_verify_login__string__string(name: string, code: string): User {
     let result: User = undefined!;
     const found = users_arr.find(x => x.name == name)!;
     const stored = pending_codes_arr.get(found.phone) ?? "";
-    if (found.name == name && stored == code && stored != "") {
+    if (found.name != name || stored != code || stored == "") {
+    throw new _ZeroRaise('invalid code', ['code']);
+}
     pending_codes_arr.set(found.phone, "");
     result = found;
-}
     return result;
 }
 
-// @zero on (string token) = complete login (string name) (string code); website/login/login.zero.md:179
+// @zero on (string token) = complete login (string name) (string code); website/login/login.zero.md:189
 export function fn_complete_login__string__string(name: string, code: string): string {
-    let token: string = undefined!;
     const found = fn_verify_login__string__string(name, code);
-    if (found.name != "") {
-    token = fn_create_session();
-} else {
-    token = "invalid";
-}
+    const token: string = fn_create_session();
     return token;
 }
 
-// @zero on (string code) = generate code (User u); website/login/login.zero.md:186
+// @zero on (string code) = generate code (User u); website/login/login.zero.md:193
 export function fn_generate_code__User(u: User): string {
     let code: string = undefined!;
     if (u.name == "_alice") {
@@ -344,4 +344,9 @@ export function fn_generate_code__User(u: User): string {
     code = "1234";
 }
     return code;
+}
+
+// @zero on logo clicked; website/login/login.zero.md:201
+export function fn_logo_clicked(): void {
+    fn_login();
 }

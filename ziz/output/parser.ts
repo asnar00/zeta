@@ -1,5 +1,31 @@
 import { register_tests } from './_runtime.js';
 
+// Platform implementation: gui (TypeScript/web)
+// Implements the functions declared in gui.zero.md
+
+// @zero on (string result) = input (string prompt)
+export function fn_input__string(prompt: string): string {
+    // For now, use window.prompt — a proper implementation would
+    // create a styled input element in the DOM and await submission
+    const result = (globalThis as any).prompt?.(prompt) ?? "";
+    return result;
+}
+
+// @zero on set cookie of (string name) to (string value)
+export function fn_set_cookie_of__string_to__string(name: string, value: string): void {
+    if (typeof document !== "undefined") {
+        document.cookie = `${name}=${value}; path=/; SameSite=Strict`;
+    }
+}
+
+// @zero on reload page ()
+export function fn_reload_page(): void {
+    if (typeof location !== "undefined") {
+        location.reload();
+    }
+}
+
+
 // Platform implementation: http (TypeScript)
 // Implements the streams and tasks declared in http.zero.md
 
@@ -256,7 +282,7 @@ export function Http_Response(args: Partial<Http_Response> = {}): Http_Response 
     return { request: args.request ?? Http_Request(), body: args.body ?? "" };
 }
 
-// @zero on (int depth$) <- bracket depth of matching (string s) (string pair); ziz/parser.zero.md:118
+// @zero on (int depth$) <- bracket depth of matching (string s) (string pair); ziz/parser.zero.md:131
 export function* task_bracket_depth_of_matching__string__string(s: string, pair: string): Generator<number> {
     let d = 0;
     for (const c of [...s]) {
@@ -269,7 +295,7 @@ export function* task_bracket_depth_of_matching__string__string(s: string, pair:
     }
 }
 
-// @zero on (int pos) = matching (string pair) in (string s) after (int start); ziz/parser.zero.md:127
+// @zero on (int pos) = matching (string pair) in (string s) after (int start); ziz/parser.zero.md:140
 export function fn_matching__string_in__string_after__int(pair: string, s: string, start: number): number {
     const sub = s.slice(start);
     const depth_arr = [...task_bracket_depth_of_matching__string__string(sub, pair)];
@@ -277,7 +303,7 @@ export function fn_matching__string_in__string_after__int(pair: string, s: strin
     return pos;
 }
 
-// @zero on (string part$) = split stream parts (string s); ziz/parser.zero.md:132
+// @zero on (string part$) = split stream parts (string s); ziz/parser.zero.md:145
 export function fn_split_stream_parts__string(s: string): string[] {
     const padded = s + "<-";
     const depth_arr = [...task_bracket_depth_of_matching__string__string(padded, "()")];

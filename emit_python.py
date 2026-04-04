@@ -121,6 +121,34 @@ _UNDEFINED_HELPER = """\
 def _raise_undefined(name):
     raise RuntimeError(f"function not defined: {name}")"""
 
+_ZERO_RAISE_HELPER = """\
+class _ZeroRaise(Exception):
+    def __init__(self, name, args=None):
+        self.name = name
+        self.args_list = args or []
+        super().__init__(f"{name}({', '.join(str(a) for a in self.args_list)})")"""
+
+
+def _has_raise(ir: dict) -> bool:
+    """Check if any function body contains a raise node."""
+    for fn in ir["functions"]:
+        if _walk_has_kind(fn.get("body", []), "raise"):
+            return True
+    return False
+
+
+def _walk_has_kind(stmts, kind):
+    """Recursively check if any statement in a list has the given kind."""
+    for stmt in stmts:
+        if not isinstance(stmt, dict):
+            continue
+        if stmt.get("kind") == kind:
+            return True
+        for branch in stmt.get("branches", []):
+            if isinstance(branch, dict) and _walk_has_kind(branch.get("body", []), kind):
+                return True
+    return False
+
 
 def _emit_preamble(ir: dict) -> list[str]:
     """Emit imports and concurrently helper if needed."""
@@ -132,6 +160,8 @@ def _emit_preamble(ir: dict) -> list[str]:
         sections.append(_CONCURRENTLY_HELPER)
     if ir.get("errors"):
         sections.append(_UNDEFINED_HELPER)
+    if _has_raise(ir):
+        sections.append(_ZERO_RAISE_HELPER)
     return sections
 
 
@@ -1082,6 +1112,11 @@ def _emit_simple_expr(node: dict) -> str | None:
 def _emit_expr(node: dict) -> str:
     """Emit a Python expression from an AST node."""
     kind = node["kind"]
+    if kind == "placeholder":
+        return f"pass  # TODO: {node['text']}"
+    if kind == "raise":
+        args = ", ".join(repr(a) for a in node["args"])
+        return f'raise _ZeroRaise({repr(node["name"])}, [{args}])'
     if kind == "if_block":
         return _emit_if_block(node)
     if kind == "emit":

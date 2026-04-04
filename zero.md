@@ -9,26 +9,10 @@ A zero feature is written in a `.md` file with the following layout:
 
 - a 1-3 word `# title`
 - a one-line `*summary*`
-- a `## connector` section showing how the feature wires into the host application (the part you're expected to customise)
 - a `## specification`, describing why the feature exists and what it does, in 500 words or less
 - an `## interface` describing the externally callable functions that the feature defines, using examples
 - a `## definition`, defining types, feature-scope variables, and functions, in a literate style
 - optionally, a `## tests` section defining tests
-
-### connector
-
-The connector is the first section after the summary. It shows how the feature plugs into the rest of the application — typically a single function call wired to a trigger point. This is the part the app author customises when integrating the feature:
-
-    ## connector
-
-    Wire login into the landing page:
-
-        on logo clicked ()
-            login ()
-
-The connector is deliberately small — usually one or two lines. The feature exposes a clean entry point (like `login ()`), and the connector just calls it from the right trigger. To change how the feature integrates, edit the connector; the feature logic stays untouched.
-
-Different apps wire the same feature differently. A web app might trigger login from a logo click; a mobile app from a menu item; an API server from an auth endpoint. The feature is the same, only the connector changes.
 
 ### interface
 

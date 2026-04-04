@@ -5,6 +5,26 @@ import rpc
 import landing_page
 import background
 
+# Platform implementation: gui (Python)
+# Implements the functions declared in gui.zero.md
+# Server-side fallback — in production, these run on the client.
+
+
+# @zero on (string result) = input (string prompt)
+def fn_input__string(prompt: str) -> str:
+    return input(f"{prompt}: ")
+
+
+# @zero on set cookie of (string name) to (string value)
+def fn_set_cookie_of__string_to__string(name: str, value: str):
+    pass  # no-op on server — cookies are set by the HTTP response
+
+
+# @zero on reload page ()
+def fn_reload_page():
+    pass  # no-op on server
+
+
 # Platform implementation: http (Python)
 # Implements the streams and tasks declared in http.zero.md
 
@@ -666,9 +686,6 @@ def _get_ctx() -> '_Context':
 
 from typing import NamedTuple
 
-def _raise_undefined(name):
-    raise RuntimeError(f"function not defined: {name}")
-
 def test_website_0():
     '''trim ("  hello  ") => "hello"'''
     _result = fn_trim__string("  hello  ")
@@ -775,7 +792,7 @@ class User(NamedTuple):
     phone: str = ""
     role: str = ""
 
-# @zero on main (string args$); website/website.zero.md:129
+# @zero on main (string args$); website/website.zero.md:143
 def task_main__string(args_arr: str):
     _push_terminal_out(logo)
     request_arr = task_serve_http__int(port)
@@ -784,7 +801,7 @@ def task_main__string(args_arr: str):
         body = fn_handle_request__Http_Request(request)
         _push_http_response(Http_Response(request, body))
 
-# @zero on (string body) = handle request (Http-Request request); website/website.zero.md:137
+# @zero on (string body) = handle request (Http-Request request); website/website.zero.md:151
 def fn_handle_request__Http_Request(request: Http_Request) -> str:
     body = None
     if _get_ctx().landing_page.enabled and request.path == "/":
@@ -797,12 +814,13 @@ def fn_handle_request__Http_Request(request: Http_Request) -> str:
         body = not_found.fn_not_found()
     return body if body is not None else ""
 
-# @zero on stop; website/website.zero.md:145
+# @zero on stop; website/website.zero.md:159
 def fn_stop():
     fn_print__string("stopping")
 
 port: int = 8084
 logo: str = "ᕦ(ツ)ᕤ"
+login.fn_login()
 
 
 import sys

@@ -10,6 +10,32 @@ import * as landing_page from './landing_page.js';
 import './background.js';
 import * as background from './background.js';
 
+// Platform implementation: gui (TypeScript/web)
+// Implements the functions declared in gui.zero.md
+
+// @zero on (string result) = input (string prompt)
+export function fn_input__string(prompt: string): string {
+    // For now, use window.prompt — a proper implementation would
+    // create a styled input element in the DOM and await submission
+    const result = (globalThis as any).prompt?.(prompt) ?? "";
+    return result;
+}
+
+// @zero on set cookie of (string name) to (string value)
+export function fn_set_cookie_of__string_to__string(name: string, value: string): void {
+    if (typeof document !== "undefined") {
+        document.cookie = `${name}=${value}; path=/; SameSite=Strict`;
+    }
+}
+
+// @zero on reload page ()
+export function fn_reload_page(): void {
+    if (typeof location !== "undefined") {
+        location.reload();
+    }
+}
+
+
 // Platform implementation: http (TypeScript)
 // Implements the streams and tasks declared in http.zero.md
 
@@ -233,10 +259,6 @@ export function _get_ctx(): _Context {
 }
 
 
-export function _raise_undefined(name: string): never {
-    throw new Error(`function not defined: ${name}`);
-}
-
 export function test_website_0(): void {
     // trim ("  hello  ") => "hello"
     const _result = fn_trim__string("  hello  ");
@@ -346,6 +368,7 @@ register_tests('website', [[test_website_0, 'trim ("  hello  ") => "hello"'], [t
 
 const port: number = 8084;
 const logo: string = "ᕦ(ツ)ᕤ";
+login.fn_login();
 
 interface Http_Request {
     readonly path: string;
@@ -376,7 +399,7 @@ export function User(args: Partial<User> = {}): User {
     return { name: args.name ?? "", phone: args.phone ?? "", role: args.role ?? "" };
 }
 
-// @zero on main (string args$); website/website.zero.md:129
+// @zero on main (string args$); website/website.zero.md:143
 export async function task_main__string(args_arr: readonly string[]): Promise<void> {
     _push_terminal_out(logo);
     const request_arr = task_serve_http__int(port);
@@ -387,7 +410,7 @@ export async function task_main__string(args_arr: readonly string[]): Promise<vo
     }
 }
 
-// @zero on (string body) = handle request (Http-Request request); website/website.zero.md:137
+// @zero on (string body) = handle request (Http-Request request); website/website.zero.md:151
 export function fn_handle_request__Http_Request(request: Http_Request): string {
     let body: string = undefined!;
     if (_get_ctx().landing_page.enabled && request.path == "/") {
@@ -405,7 +428,7 @@ export function fn_handle_request__Http_Request(request: Http_Request): string {
     return body;
 }
 
-// @zero on stop; website/website.zero.md:145
+// @zero on stop; website/website.zero.md:159
 export function fn_stop(): void {
     fn_print__string("stopping");
 }

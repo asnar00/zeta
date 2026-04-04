@@ -1591,8 +1591,26 @@ def _try_parse_assignment(line, fn_signatures):
     return {"kind": "assign", "target": target, "value": _parse_expr(value_str, fn_signatures)}
 
 
+def _parse_raise(line: str) -> dict:
+    """Parse 'raise name (args)' into a raise node."""
+    rest = line[6:].strip()
+    parts = re.findall(r"\([^)]*\)|\S+", rest)
+    name_parts = []
+    args = []
+    for part in parts:
+        if part.startswith("(") and part.endswith(")"):
+            args.append(part[1:-1].strip())
+        else:
+            name_parts.append(part)
+    return {"kind": "raise", "name": " ".join(name_parts), "args": args}
+
+
 def _parse_expression(line: str, fn_signatures: list = None, task_signatures: list = None) -> dict:
     """Parse a zero expression line into an AST node."""
+    if line.startswith("..."):
+        return {"kind": "placeholder", "text": line[3:].strip()}
+    if line.startswith("raise "):
+        return _parse_raise(line)
     result = _try_parse_task_var_decl(line, fn_signatures, task_signatures)
     if result:
         return result

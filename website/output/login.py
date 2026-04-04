@@ -1,4 +1,22 @@
-from _runtime import register_tests
+# Platform implementation: gui (Python)
+# Implements the functions declared in gui.zero.md
+# Server-side fallback — in production, these run on the client.
+
+
+# @zero on (string result) = input (string prompt)
+def fn_input__string(prompt: str) -> str:
+    return input(f"{prompt}: ")
+
+
+# @zero on set cookie of (string name) to (string value)
+def fn_set_cookie_of__string_to__string(name: str, value: str):
+    pass  # no-op on server — cookies are set by the HTTP response
+
+
+# @zero on reload page ()
+def fn_reload_page():
+    pass  # no-op on server
+
 
 # Platform implementation: http (Python)
 # Implements the streams and tasks declared in http.zero.md
@@ -661,28 +679,11 @@ def _get_ctx() -> '_Context':
 
 from typing import NamedTuple
 
-def _raise_undefined(name):
-    raise RuntimeError(f"function not defined: {name}")
-
-def test_login_0():
-    '''request login ("_alice") => "1234"'''
-    _result = fn_request_login__string("_alice")
-    _expected = "1234"
-    assert _result == _expected, f"expected {_expected}, got {_result}"
-
-def test_login_1():
-    '''request login ("nobody") => "unknown"'''
-    _result = fn_request_login__string("nobody")
-    _expected = "unknown"
-    assert _result == _expected, f"expected {_expected}, got {_result}"
-
-def test_login_2():
-    '''verify login ("_alice") ("0000") => User()'''
-    _result = fn_verify_login__string__string("_alice", "0000")
-    _expected = User()
-    assert _result == _expected, f"expected {_expected}, got {_result}"
-
-register_tests('login', [(test_login_0, 'request login ("_alice") => "1234"'), (test_login_1, 'request login ("nobody") => "unknown"'), (test_login_2, 'verify login ("_alice") ("0000") => User()')])
+class _ZeroRaise(Exception):
+    def __init__(self, name, args=None):
+        self.name = name
+        self.args_list = args or []
+        super().__init__(f"{name}({', '.join(str(a) for a in self.args_list)})")
 
 class Http_Request(NamedTuple):
     path: str = ""
@@ -698,49 +699,42 @@ class User(NamedTuple):
     phone: str = ""
     role: str = ""
 
-# @zero on login; website/login/login.zero.md:154
+# @zero on login; website/login/login.zero.md:165
 def fn_login():
-    name = _raise_undefined('ask ("name")')
+    name = fn_input__string("name")
     code = fn_request_login__string(name)
-    if code != "unknown":
-        entered = _raise_undefined('ask ("code")')
-        token = fn_complete_login__string__string(name, entered)
-        if token != "invalid":
-            _raise_undefined('set cookie ("session", token)')
-            _raise_undefined('reload ()')
+    entered = fn_input__string("code")
+    token = fn_complete_login__string__string(name, entered)
+    fn_set_cookie_of__string_to__string("session", token)
+    fn_reload_page()
 
-# @zero on (string code) = request login (string name); website/login/login.zero.md:164
+# @zero on (string code) = request login (string name); website/login/login.zero.md:173
 def fn_request_login__string(name: str) -> str:
-    code = None
     found = next((x for x in users_arr if x.name == name), type(users_arr[0])() if users_arr else None)
-    if found.name == name:
-        code = fn_generate_code__User(found)
-        pending_codes_arr[found.phone] = code
-    else:
-        code = "unknown"
-    return code if code is not None else ""
+    if found.name != name:
+        raise _ZeroRaise('unknown user', ['name'])
+    code = fn_generate_code__User(found)
+    pass  # TODO: send (code) to (found)
+    pending_codes_arr[found.phone] = code
+    return code
 
-# @zero on (User result) = verify login (string name) (string code); website/login/login.zero.md:172
+# @zero on (User result) = verify login (string name) (string code); website/login/login.zero.md:181
 def fn_verify_login__string__string(name: str, code: str) -> User:
-    result = None
     found = next((x for x in users_arr if x.name == name), type(users_arr[0])() if users_arr else None)
     stored = pending_codes_arr[found.phone]
-    if found.name == name and stored == code and stored != "":
-        pending_codes_arr[found.phone] = ""
-        result = found
-    return result if result is not None else User()
+    if found.name != name or stored != code or stored == "":
+        raise _ZeroRaise('invalid code', ['code'])
+    pending_codes_arr[found.phone] = ""
+    result = found
+    return result
 
-# @zero on (string token) = complete login (string name) (string code); website/login/login.zero.md:179
+# @zero on (string token) = complete login (string name) (string code); website/login/login.zero.md:189
 def fn_complete_login__string__string(name: str, code: str) -> str:
-    token = None
     found = fn_verify_login__string__string(name, code)
-    if found.name != "":
-        token = fn_create_session()
-    else:
-        token = "invalid"
-    return token if token is not None else ""
+    token = fn_create_session()
+    return token
 
-# @zero on (string code) = generate code (User u); website/login/login.zero.md:186
+# @zero on (string code) = generate code (User u); website/login/login.zero.md:193
 def fn_generate_code__User(u: User) -> str:
     code = None
     if u.name == "_alice":
@@ -751,5 +745,10 @@ def fn_generate_code__User(u: User) -> str:
         code = "1234"
     return code if code is not None else ""
 
+# @zero on logo clicked; website/login/login.zero.md:201
+def fn_logo_clicked():
+    fn_login()
+
 users_arr: list[User] = [User(name="_alice", phone="+440001", role="admin"), User(name="_bob", phone="+440002", role="user")]
 pending_codes_arr: dict[str, str] = {}
+fn_login()

@@ -230,6 +230,46 @@ But pure computational chains (no awaits, no I/O) don't need the overhead. The e
 
 This also clarifies the streaming vs map question: `j$ = i$ + 1` (map) could compile to a fused SIMD/parallel operation, while `j$ <- (i$ + 1)` (stream) implies sequential coroutine semantics. The optimiser decides.
 
+## raise / on: happy-path-only code with external error handling
+
+Zero code should describe the happy path. Error conditions are handled separately, by whoever is composing the feature into their application.
+
+**`raise`** signals a named error condition with arguments:
+
+    on (string code) = request login (string name)
+        User found = first of [users$] where (_.name == name)
+        code = generate code (found)
+        pending-codes$[found.phone] = code
+
+Here `first of ... where` raises `not found` internally if nothing matches. The feature author doesn't write error-handling code — they write what the function does when everything works.
+
+**`in X, on Y`** handles a named error within a specific call:
+
+    in login (), on not found ()
+        show message ("unknown user")
+
+    in login (), on invalid code (string code)
+        show message ("invalid code")
+
+The handler sits outside the call stack. It can:
+- **Abort** — show a message, don't resume (simplest, implemented first)
+- **Fix and resume** — correct the input, return to the raise point (future)
+- **Retry** — ask the user again, re-enter the call (future)
+- **Delegate to an agent** — let an AI figure out what to do (future)
+
+**Separation of concerns:**
+- Feature author writes the happy path
+- Platform functions raise when things go wrong
+- Integrator decides what to do about it (via `in X, on Y` handlers)
+
+**Implementation (v1):** `raise name (args)` compiles to throw/raise an exception carrying the handler name. `in X, on Y` compiles to try/catch around the call to X, matching by handler name. No resumption in v1.
+
+**`...` placeholders:** The `...` prefix marks a deliberate gap — a function call that doesn't exist yet:
+
+    ... send (code) to (found)
+
+Compiles to a no-op. The build reports placeholders separately from errors. A coding agent seeing `...` knows "this is where future work plugs in."
+
 ## emitter deduplication (PARTIALLY RESOLVED)
 
 `emit_base.py` now contains shared logic: function naming, array refs, dispatch groups, underscore replacement, field collection. Both emitters import from it. Further deduplication possible but diminishing returns until a third emitter is added.

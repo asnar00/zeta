@@ -142,6 +142,38 @@ function _raise_undefined(name: string): never {
     throw new Error(`function not defined: ${name}`);
 }"""
 
+_ZERO_RAISE_HELPER_TS = """\
+class _ZeroRaise extends Error {
+    zeroName: string;
+    argsList: any[];
+    constructor(name: string, args: any[] = []) {
+        super(`${name}(${args.join(', ')})`);
+        this.zeroName = name;
+        this.argsList = args;
+    }
+}"""
+
+
+def _has_raise(ir: dict) -> bool:
+    """Check if any function body contains a raise node."""
+    for fn in ir["functions"]:
+        if _walk_has_kind(fn.get("body", []), "raise"):
+            return True
+    return False
+
+
+def _walk_has_kind(stmts, kind):
+    """Recursively check if any statement in a list has the given kind."""
+    for stmt in stmts:
+        if not isinstance(stmt, dict):
+            continue
+        if stmt.get("kind") == kind:
+            return True
+        for branch in stmt.get("branches", []):
+            if isinstance(branch, dict) and _walk_has_kind(branch.get("body", []), kind):
+                return True
+    return False
+
 
 def emit(ir: dict) -> str:
     """Emit TypeScript source code from a zero IR dict."""
@@ -152,6 +184,8 @@ def emit(ir: dict) -> str:
         sections.append(_CONCURRENTLY_HELPER_TS)
     if ir.get("errors"):
         sections.append(_UNDEFINED_HELPER_TS)
+    if _has_raise(ir):
+        sections.append(_ZERO_RAISE_HELPER_TS)
     sections.extend(_emit_tests_sections_ts(ir, structs))
     _maybe_prepend_context(sections, ir)
     var_lines = _emit_variables_section_ts(ir, structs)
@@ -1283,6 +1317,11 @@ def _emit_leaf_expr_ts(node: dict) -> str | None:
 def _emit_expr(node: dict, structs: dict) -> str:
     """Emit a TypeScript expression from an AST node."""
     kind = node["kind"]
+    if kind == "placeholder":
+        return f"/* TODO: {node['text']} */"
+    if kind == "raise":
+        args = ", ".join(repr(a) for a in node["args"])
+        return f'throw new _ZeroRaise({repr(node["name"])}, [{args}])'
     if kind == "emit":
         return f"yield {_emit_expr(node['value'], structs)}"
     if kind == "call":
