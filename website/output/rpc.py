@@ -661,6 +661,9 @@ def _get_ctx() -> '_Context':
 
 from typing import NamedTuple
 
+def _raise_undefined(name):
+    raise RuntimeError(f"function not defined: {name}")
+
 def test_rpc_0():
     '''rpc eval ("port") => "8084"'''
     _result = fn_rpc_eval__string("port")

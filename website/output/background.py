@@ -659,6 +659,9 @@ def _get_ctx() -> '_Context':
 
 from typing import NamedTuple
 
+def _raise_undefined(name):
+    raise RuntimeError(f"function not defined: {name}")
+
 class Http_Request(NamedTuple):
     path: str = ""
     method: str = ""

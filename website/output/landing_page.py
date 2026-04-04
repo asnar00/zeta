@@ -662,6 +662,9 @@ def _get_ctx() -> '_Context':
 
 from typing import NamedTuple
 
+def _raise_undefined(name):
+    raise RuntimeError(f"function not defined: {name}")
+
 def test_landing_page_0():
     '''handle request (Http-Request(path="/")) => read file ("website/index.html")'''
     _result = website.fn_handle_request__Http_Request(Http_Request(path="/"))
@@ -690,7 +693,7 @@ class User(NamedTuple):
     phone: str = ""
     role: str = ""
 
-# @zero on (string body) = landing page; website/landing-page/landing-page.zero.md:181
+# @zero on (string body) = landing page; website/landing-page/landing-page.zero.md:194
 def fn_landing_page() -> str:
     body = fn_read_file__string("website/index.html")
     body = fn_replace__string_in__string_with__string("#34988b", body, _get_ctx().background.colour)

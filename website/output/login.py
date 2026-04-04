@@ -661,6 +661,9 @@ def _get_ctx() -> '_Context':
 
 from typing import NamedTuple
 
+def _raise_undefined(name):
+    raise RuntimeError(f"function not defined: {name}")
+
 def test_login_0():
     '''request login ("_alice") => "1234"'''
     _result = fn_request_login__string("_alice")
@@ -695,7 +698,18 @@ class User(NamedTuple):
     phone: str = ""
     role: str = ""
 
-# @zero on (string code) = request login (string name); website/login/login.zero.md:151
+# @zero on login; website/login/login.zero.md:154
+def fn_login():
+    name = _raise_undefined('ask ("name")')
+    code = fn_request_login__string(name)
+    if code != "unknown":
+        entered = _raise_undefined('ask ("code")')
+        token = fn_complete_login__string__string(name, entered)
+        if token != "invalid":
+            _raise_undefined('set cookie ("session", token)')
+            _raise_undefined('reload ()')
+
+# @zero on (string code) = request login (string name); website/login/login.zero.md:164
 def fn_request_login__string(name: str) -> str:
     code = None
     found = next((x for x in users_arr if x.name == name), type(users_arr[0])() if users_arr else None)
@@ -706,7 +720,7 @@ def fn_request_login__string(name: str) -> str:
         code = "unknown"
     return code if code is not None else ""
 
-# @zero on (User result) = verify login (string name) (string code); website/login/login.zero.md:159
+# @zero on (User result) = verify login (string name) (string code); website/login/login.zero.md:172
 def fn_verify_login__string__string(name: str, code: str) -> User:
     result = None
     found = next((x for x in users_arr if x.name == name), type(users_arr[0])() if users_arr else None)
@@ -716,8 +730,8 @@ def fn_verify_login__string__string(name: str, code: str) -> User:
         result = found
     return result if result is not None else User()
 
-# @zero on (string token) = login (string name) (string code); website/login/login.zero.md:166
-def fn_login__string__string(name: str, code: str) -> str:
+# @zero on (string token) = complete login (string name) (string code); website/login/login.zero.md:179
+def fn_complete_login__string__string(name: str, code: str) -> str:
     token = None
     found = fn_verify_login__string__string(name, code)
     if found.name != "":
@@ -726,7 +740,7 @@ def fn_login__string__string(name: str, code: str) -> str:
         token = "invalid"
     return token if token is not None else ""
 
-# @zero on (string code) = generate code (User u); website/login/login.zero.md:173
+# @zero on (string code) = generate code (User u); website/login/login.zero.md:186
 def fn_generate_code__User(u: User) -> str:
     code = None
     if u.name == "_alice":

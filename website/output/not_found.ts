@@ -1,5 +1,6 @@
 import { register_tests } from './_runtime.js';
 import * as website from './website.js';
+import * as login from './login.js';
 
 // Platform implementation: http (TypeScript)
 // Implements the streams and tasks declared in http.zero.md
@@ -224,6 +225,10 @@ export function _get_ctx(): _Context {
 }
 
 
+export function _raise_undefined(name: string): never {
+    throw new Error(`function not defined: ${name}`);
+}
+
 export function test_not_found_0(): void {
     // not found () => "not found"
     const _result = fn_not_found();
@@ -280,4 +285,9 @@ export function User(args: Partial<User> = {}): User {
 export function fn_not_found(): string {
     const body: string = "not found";
     return body;
+}
+
+// @zero on logo clicked; website/not-found/not-found.zero.md:151
+export function fn_logo_clicked(): void {
+    login.fn_login();
 }

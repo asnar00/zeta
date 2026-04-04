@@ -223,6 +223,10 @@ export function _get_ctx(): _Context {
 }
 
 
+export function _raise_undefined(name: string): never {
+    throw new Error(`function not defined: ${name}`);
+}
+
 export function test_login_0(): void {
     // request login ("_alice") => "1234"
     const _result = fn_request_login__string("_alice");
@@ -278,7 +282,21 @@ export function User(args: Partial<User> = {}): User {
     return { name: args.name ?? "", phone: args.phone ?? "", role: args.role ?? "" };
 }
 
-// @zero on (string code) = request login (string name); website/login/login.zero.md:151
+// @zero on login; website/login/login.zero.md:154
+export function fn_login(): void {
+    const name = _raise_undefined('ask ("name")');
+    const code = fn_request_login__string(name);
+    if (code != "unknown") {
+    const entered = _raise_undefined('ask ("code")');
+    const token = fn_complete_login__string__string(name, entered);
+    if (token != "invalid") {
+    _raise_undefined('set cookie ("session", token)');
+    _raise_undefined('reload ()');
+}
+}
+}
+
+// @zero on (string code) = request login (string name); website/login/login.zero.md:164
 export function fn_request_login__string(name: string): string {
     let code: string = undefined!;
     const found = users_arr.find(x => x.name == name)!;
@@ -291,7 +309,7 @@ export function fn_request_login__string(name: string): string {
     return code;
 }
 
-// @zero on (User result) = verify login (string name) (string code); website/login/login.zero.md:159
+// @zero on (User result) = verify login (string name) (string code); website/login/login.zero.md:172
 export function fn_verify_login__string__string(name: string, code: string): User {
     let result: User = undefined!;
     const found = users_arr.find(x => x.name == name)!;
@@ -303,8 +321,8 @@ export function fn_verify_login__string__string(name: string, code: string): Use
     return result;
 }
 
-// @zero on (string token) = login (string name) (string code); website/login/login.zero.md:166
-export function fn_login__string__string(name: string, code: string): string {
+// @zero on (string token) = complete login (string name) (string code); website/login/login.zero.md:179
+export function fn_complete_login__string__string(name: string, code: string): string {
     let token: string = undefined!;
     const found = fn_verify_login__string__string(name, code);
     if (found.name != "") {
@@ -315,7 +333,7 @@ export function fn_login__string__string(name: string, code: string): string {
     return token;
 }
 
-// @zero on (string code) = generate code (User u); website/login/login.zero.md:173
+// @zero on (string code) = generate code (User u); website/login/login.zero.md:186
 export function fn_generate_code__User(u: User): string {
     let code: string = undefined!;
     if (u.name == "_alice") {

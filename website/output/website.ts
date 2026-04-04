@@ -233,6 +233,10 @@ export function _get_ctx(): _Context {
 }
 
 
+export function _raise_undefined(name: string): never {
+    throw new Error(`function not defined: ${name}`);
+}
+
 export function test_website_0(): void {
     // trim ("  hello  ") => "hello"
     const _result = fn_trim__string("  hello  ");

@@ -155,6 +155,42 @@ def _mark_platform_streams(ir):
                 var["_platform"] = True
 
 
+def _looks_like_call(s: str) -> bool:
+    """Check if a string looks like an unresolved function call."""
+    if "(" not in s or ")" not in s:
+        return False
+    if "=" in s or s.startswith('"') or s.startswith("'"):
+        return False
+    return bool(re.match(rf"{W}\s*\(", s) or re.match(rf"{W}\s+{W}.*\(", s))
+
+
+def _check_undefined_calls(ir):
+    """Check for raw nodes that look like undefined function calls."""
+    for fn in ir["functions"]:
+        for stmt in fn.get("body", []):
+            _check_raw_calls(stmt, ir)
+
+
+def _check_raw_calls(node, ir):
+    """Recursively check for raw nodes that look like undefined function calls."""
+    if not isinstance(node, dict):
+        return
+    if node.get("kind") == "raw" and _looks_like_call(node["value"]):
+        ir.setdefault("errors", []).append(
+            ZeroParseError(f"function not defined: {node['value']}", 0, node["value"]))
+    for key in ("value", "left", "right", "condition", "true", "false"):
+        child = node.get(key)
+        if isinstance(child, dict):
+            _check_raw_calls(child, ir)
+    for arg in node.get("args", []):
+        if isinstance(arg, dict):
+            _check_raw_calls(arg, ir)
+    for branch in node.get("branches", []):
+        if isinstance(branch, dict):
+            for s in branch.get("body", []):
+                _check_raw_calls(s, ir)
+
+
 def _try_parse_task_line(line, lines, i, ir, fn_signatures, task_signatures, _src_line):
     """Try to parse a task or void task line. Returns new i or None."""
     if _is_task_def(line):
@@ -227,6 +263,7 @@ def process(source: str, recover: bool = False, source_file: str = None) -> dict
     if errors:
         ir["errors"] = errors
     _mark_platform_streams(ir)
+    _check_undefined_calls(ir)
     ir["features"] = _detect_features(ir)
     return ir
 
@@ -1074,15 +1111,25 @@ def _group_if_block(body_lines, raw_body_lines, start, fn_sigs=None):
 
 
 def _collect_indented(body_lines, raw_body_lines, start, parent_indent, fn_sigs=None):
-    """Collect lines indented more than parent_indent after start."""
-    body = []
+    """Collect lines indented more than parent_indent after start.
+    Groups nested if/else blocks before parsing."""
+    inner_lines = []
+    inner_raw = []
     i = start + 1
     while i < len(body_lines):
         line_indent = len(raw_body_lines[i]) - len(raw_body_lines[i].lstrip())
         if line_indent <= parent_indent:
             break
-        body.append(_parse_expression(body_lines[i], fn_sigs))
+        inner_lines.append(body_lines[i])
+        inner_raw.append(raw_body_lines[i])
         i += 1
+    grouped = _group_blocks(inner_lines, inner_raw, fn_sigs)
+    body = []
+    for item in grouped:
+        if isinstance(item, dict):
+            body.append(item)
+        else:
+            body.append(_parse_expression(item, fn_sigs))
     return body, i - start - 1
 
 
@@ -1707,6 +1754,15 @@ def _parse_expr_leaf(s, fn_sigs):
     if leaf:
         return leaf
     return {"kind": "raw", "value": s}
+
+
+def _looks_like_call(s: str) -> bool:
+    """Check if a string looks like an unresolved function call."""
+    if "(" not in s or ")" not in s:
+        return False
+    if "=" in s or s.startswith('"') or s.startswith("'"):
+        return False
+    return bool(re.match(rf"{W}\s*\(", s) or re.match(rf"{W}\s+{W}.*\(", s))
 
 
 def _try_parse_fn_call(s: str, fn_sigs: list) -> dict | None:

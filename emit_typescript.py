@@ -137,6 +137,12 @@ def _maybe_prepend_context(sections: list[str], ir: dict):
         sections.insert(0, _emit_context_class_ts(user_vars, ir))
 
 
+_UNDEFINED_HELPER_TS = """\
+function _raise_undefined(name: string): never {
+    throw new Error(`function not defined: ${name}`);
+}"""
+
+
 def emit(ir: dict) -> str:
     """Emit TypeScript source code from a zero IR dict."""
     _check_compatibility(ir)
@@ -144,6 +150,8 @@ def emit(ir: dict) -> str:
     sections = []
     if _has_concurrently(ir):
         sections.append(_CONCURRENTLY_HELPER_TS)
+    if ir.get("errors"):
+        sections.append(_UNDEFINED_HELPER_TS)
     sections.extend(_emit_tests_sections_ts(ir, structs))
     _maybe_prepend_context(sections, ir)
     var_lines = _emit_variables_section_ts(ir, structs)
@@ -1226,7 +1234,10 @@ def _emit_simple_expr_ts(node: dict, structs: dict) -> str | None:
     if kind == "ternary":
         return f"({_emit_expr(node['condition'], structs)}) ? ({_emit_expr(node['true'], structs)}) : ({_emit_expr(node['false'], structs)})"
     if kind == "raw":
-        return node["value"]
+        val = node["value"]
+        if re.match(r'[a-zA-Z_]\w*[\s(]', val):
+            return f'_raise_undefined({repr(val)})'
+        return val
     return None
 
 

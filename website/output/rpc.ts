@@ -223,6 +223,10 @@ export function _get_ctx(): _Context {
 }
 
 
+export function _raise_undefined(name: string): never {
+    throw new Error(`function not defined: ${name}`);
+}
+
 export function test_rpc_0(): void {
     // rpc eval ("port") => "8084"
     const _result = fn_rpc_eval__string("port");

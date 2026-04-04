@@ -868,6 +868,16 @@ def _emit_all_features(per_feature, ctx, input_paths,
                 log.log(f"{feat_name} -> {out_path}")
 
 
+def _report_errors(ir):
+    """Print any parse errors collected during the build."""
+    errors = ir.get("errors", [])
+    if not errors:
+        return
+    print(f"\n{len(errors)} error(s):")
+    for e in errors:
+        print(f"  {e.format()}")
+
+
 def _compile_all_outputs(output_dir):
     """Compile/validate all output files in the output directory."""
     for ext, pext in _PLATFORM_EXT.items():
@@ -945,6 +955,7 @@ def _build_features(features_path, output_dir, flags):
     )
     _compile_all_outputs(output_dir)
     print(f"built {len(per_feature)} features -> {output_dir}")
+    _report_errors(ctx["ir"])
 
 
 if __name__ == "__main__":

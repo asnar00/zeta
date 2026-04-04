@@ -1,5 +1,6 @@
 from _runtime import register_tests
 import website
+import login
 
 # Platform implementation: http (Python)
 # Implements the streams and tasks declared in http.zero.md
@@ -662,6 +663,9 @@ def _get_ctx() -> '_Context':
 
 from typing import NamedTuple
 
+def _raise_undefined(name):
+    raise RuntimeError(f"function not defined: {name}")
+
 def test_not_found_0():
     '''not found () => "not found"'''
     _result = fn_not_found()
@@ -700,3 +704,7 @@ class User(NamedTuple):
 def fn_not_found() -> str:
     body = "not found"
     return body
+
+# @zero on logo clicked; website/not-found/not-found.zero.md:151
+def fn_logo_clicked():
+    login.fn_login()

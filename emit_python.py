@@ -117,6 +117,11 @@ def _apply_module_prefixes(result: str, ir: dict) -> str:
     return result
 
 
+_UNDEFINED_HELPER = """\
+def _raise_undefined(name):
+    raise RuntimeError(f"function not defined: {name}")"""
+
+
 def _emit_preamble(ir: dict) -> list[str]:
     """Emit imports and concurrently helper if needed."""
     sections = []
@@ -125,6 +130,8 @@ def _emit_preamble(ir: dict) -> list[str]:
         sections.append("\n".join(imports))
     if _has_concurrently(ir):
         sections.append(_CONCURRENTLY_HELPER)
+    if ir.get("errors"):
+        sections.append(_UNDEFINED_HELPER)
     return sections
 
 
@@ -1065,7 +1072,10 @@ def _emit_simple_expr(node: dict) -> str | None:
     if kind == "ternary":
         return f"({_emit_expr(node['true'])}) if ({_emit_expr(node['condition'])}) else ({_emit_expr(node['false'])})"
     if kind == "raw":
-        return node["value"]
+        val = node["value"]
+        if re.match(r'[a-zA-Z_]\w*[\s(]', val):
+            return f"_raise_undefined({repr(val)})"
+        return val
     return None
 
 

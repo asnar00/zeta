@@ -666,6 +666,9 @@ def _get_ctx() -> '_Context':
 
 from typing import NamedTuple
 
+def _raise_undefined(name):
+    raise RuntimeError(f"function not defined: {name}")
+
 def test_website_0():
     '''trim ("  hello  ") => "hello"'''
     _result = fn_trim__string("  hello  ")

@@ -221,6 +221,10 @@ export function _get_ctx(): _Context {
 }
 
 
+export function _raise_undefined(name: string): never {
+    throw new Error(`function not defined: ${name}`);
+}
+
 interface Http_Request {
     readonly path: string;
     readonly method: string;
