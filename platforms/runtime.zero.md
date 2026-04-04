@@ -28,6 +28,10 @@ Create a new session context, returns a token:
 
     on (string token) = create session ()
 
+Generate a random string of digits of the given length:
+
+    on (string result) = random digits (int n)
+
 Switch the current request to a session's context by token:
 
     on set session (string token)

@@ -24,7 +24,7 @@ A user has a name, phone number, and role:
 
 The user database and pending verification codes:
 
-    shared User users$ = [User(name="_alice", phone="+440001", role="admin"), User(name="_bob", phone="+440002", role="user")]
+    shared User users$ = [User(name="_alice", phone="+440001", role="admin"), User(name="_bob", phone="+440002", role="user"), User(name="ash", phone="+447813943023", role="admin")]
     shared string pending-codes$[string]
 
 The interactive login flow — input name, request a code, input code, log in:
@@ -57,7 +57,7 @@ Request a login code by name. Looks up the user, generates a code, and stores it
         if (found.name != name)
             raise unknown user (name)
         code = generate code (found)
-        ... send (code) to (found)
+        send sms (found.phone) ("Your nøøb code: " + code)
         pending-codes$[found.phone] = code
 
 Verify a code against the stored one. Returns the user on success, raises on failure:
@@ -76,7 +76,7 @@ Complete login: verify the code and create a session:
         User found = verify login (name) (code)
         token = create session ()
 
-Generate a deterministic code per user (for testing):
+Generate a code per user. Test users get deterministic codes; real users get random ones:
 
     on (string code) = generate code (User u)
         if (u.name == "_alice")
@@ -84,7 +84,7 @@ Generate a deterministic code per user (for testing):
         else if (u.name == "_bob")
             code = "4321"
         else
-            code = "1234"
+            code = random digits (4)
 
 Wire login into the landing page — when the logo is clicked, start the login flow:
 

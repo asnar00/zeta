@@ -327,6 +327,12 @@ def fn_create_session() -> str:
     return token
 
 
+# @zero on (string result) = random digits (int n)
+def fn_random_digits__int(n: int) -> str:
+    import random
+    return "".join(str(random.randint(0, 9)) for _ in range(n))
+
+
 # @zero on set session (string token)
 def fn_set_session__string(token: str):
     mod = _find_root_module()
@@ -618,6 +624,75 @@ def fn_rpc_eval__string(expr: str) -> str:
         return f"error: {e}"
 
 
+# Platform implementation: sms (Python)
+# Implements the functions declared in sms.zero.md
+# Uses Vonage SMS API. Credentials from env vars or ../fieldnote/.env
+
+import os
+
+
+def _load_vonage_credentials():
+    """Load Vonage API credentials from environment or .env file."""
+    key = os.environ.get("VONAGE_API_KEY")
+    secret = os.environ.get("VONAGE_API_SECRET")
+    if key and secret:
+        return key, secret
+    # try loading from .env — check script directory and parent directories
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    for d in [script_dir, os.path.dirname(script_dir), os.path.dirname(os.path.dirname(script_dir))]:
+        env_path = os.path.join(d, "platforms", ".env")
+        if os.path.exists(env_path):
+            break
+        env_path = os.path.join(d, ".env")
+        if os.path.exists(env_path):
+            break
+    else:
+        env_path = None
+    if env_path:
+        for line in open(env_path):
+            line = line.strip()
+            if line.startswith("VONAGE_API_KEY="):
+                key = line.split("=", 1)[1]
+            elif line.startswith("VONAGE_API_SECRET="):
+                secret = line.split("=", 1)[1]
+    return key, secret
+
+
+# @zero on send sms (string to) (string message)
+def fn_send_sms__string__string(to: str, message: str):
+    import urllib.request
+    import urllib.parse
+    import json
+    key, secret = _load_vonage_credentials()
+    if not key or not secret:
+        print(f"sms: no credentials, would send to {to}: {message}")
+        return
+    # strip + prefix for Vonage
+    phone = to.lstrip("+")
+    data = json.dumps({
+        "from": "noob",
+        "text": message,
+        "to": phone,
+        "api_key": key,
+        "api_secret": secret,
+    }).encode("utf-8")
+    req = urllib.request.Request(
+        "https://rest.nexmo.com/sms/json",
+        data=data,
+        headers={"Content-Type": "application/json"},
+    )
+    try:
+        resp = urllib.request.urlopen(req, timeout=10)
+        result = json.loads(resp.read().decode())
+        status = result.get("messages", [{}])[0].get("status", "?")
+        if status == "0":
+            print(f"sms: sent to {to}")
+        else:
+            print(f"sms: failed to {to}: {result}")
+    except Exception as e:
+        print(f"sms: error sending to {to}: {e}")
+
+
 # Platform implementation: string (Python)
 # Implements the functions declared in string.zero.md
 
@@ -824,7 +899,7 @@ class User(NamedTuple):
     phone: str = ""
     role: str = ""
 
-# @zero on main (string args$); website/website.zero.md:134
+# @zero on main (string args$); website/website.zero.md:143
 def task_main__string(args_arr: str):
     _push_terminal_out(logo)
     request_arr = task_serve_http__int(port)
@@ -833,7 +908,7 @@ def task_main__string(args_arr: str):
         body = fn_handle_request__Http_Request(request)
         _push_http_response(Http_Response(request, body))
 
-# @zero on (string body) = handle request (Http-Request request); website/website.zero.md:142
+# @zero on (string body) = handle request (Http-Request request); website/website.zero.md:151
 def fn_handle_request__Http_Request(request: Http_Request) -> str:
     body = None
     if _get_ctx().landing_page.enabled and request.path == "/":
@@ -846,7 +921,7 @@ def fn_handle_request__Http_Request(request: Http_Request) -> str:
         body = not_found.fn_not_found()
     return body if body is not None else ""
 
-# @zero on stop; website/website.zero.md:150
+# @zero on stop; website/website.zero.md:159
 def fn_stop():
     fn_print__string("stopping")
 

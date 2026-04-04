@@ -133,6 +133,15 @@ export function fn_create_session(): string {
     return token;
 }
 
+// @zero on (string result) = random digits (int n)
+export function fn_random_digits__int(n: number): string {
+    let result = "";
+    for (let i = 0; i < n; i++) {
+        result += Math.floor(Math.random() * 10).toString();
+    }
+    return result;
+}
+
 // @zero on set session (string token)
 export function fn_set_session__string(token: string): void {
     const ctx = _sessions.get(token);
@@ -151,6 +160,16 @@ export function fn_exit_process(): void {
 // @zero on (string result) = rpc eval (string expr)
 export function fn_rpc_eval__string(expr: string): string {
     return "error: rpc eval not implemented for TypeScript";
+}
+
+
+// Platform implementation: sms (TypeScript)
+// Implements the functions declared in sms.zero.md
+// Server-side only — not used in client bundle
+
+// @zero on send sms (string to) (string message)
+export function fn_send_sms__string__string(to: string, message: string): void {
+    console.log(`sms: would send to ${to}: ${message}`);
 }
 
 
@@ -263,7 +282,7 @@ class _ZeroRaise extends Error {
     }
 }
 
-const users_arr: readonly User[] = [User({ name: "_alice", phone: "+440001", role: "admin" }), User({ name: "_bob", phone: "+440002", role: "user" })];
+const users_arr: readonly User[] = [User({ name: "_alice", phone: "+440001", role: "admin" }), User({ name: "_bob", phone: "+440002", role: "user" }), User({ name: "ash", phone: "+447813943023", role: "admin" })];
 const pending_codes_arr: Map<string, string> = new Map();
 
 interface Http_Request {
@@ -295,7 +314,7 @@ export function User(args: Partial<User> = {}): User {
     return { name: args.name ?? "", phone: args.phone ?? "", role: args.role ?? "" };
 }
 
-// @zero on login; website/login/login.zero.md:156
+// @zero on login; website/login/login.zero.md:165
 export function fn_login(): void {
     try {
         const name = fn_input__string("name");
@@ -315,17 +334,17 @@ export function fn_login(): void {
     }
 }
 
-// @zero on unknown user (string name); website/login/login.zero.md:164
+// @zero on unknown user (string name); website/login/login.zero.md:173
 export function fn_unknown_user__string(name: string): void {
     fn_show_message__string("unknown user");
 }
 
-// @zero on invalid code (string code); website/login/login.zero.md:167
+// @zero on invalid code (string code); website/login/login.zero.md:176
 export function fn_invalid_code__string(code: string): void {
     fn_show_message__string("invalid code");
 }
 
-// @zero on (string code) = request login (string name); website/login/login.zero.md:170
+// @zero on (string code) = request login (string name); website/login/login.zero.md:179
 export function fn_request_login__string(name: string): string {
     let code: string = undefined!;
     const found = users_arr.find(x => x.name == name)!;
@@ -333,12 +352,12 @@ export function fn_request_login__string(name: string): string {
     throw new _ZeroRaise('unknown user', ['name']);
 }
     code = fn_generate_code__User(found);
-    /* TODO: send (code) to (found) */;
+    fn_send_sms__string__string(found.phone, "Your nøøb code: " + code);
     pending_codes_arr.set(found.phone, code);
     return code;
 }
 
-// @zero on (User result) = verify login (string name) (string code); website/login/login.zero.md:178
+// @zero on (User result) = verify login (string name) (string code); website/login/login.zero.md:187
 export function fn_verify_login__string__string(name: string, code: string): User {
     let result: User = undefined!;
     const found = users_arr.find(x => x.name == name)!;
@@ -351,14 +370,14 @@ export function fn_verify_login__string__string(name: string, code: string): Use
     return result;
 }
 
-// @zero on (string token) = complete login (string name) (string code); website/login/login.zero.md:186
+// @zero on (string token) = complete login (string name) (string code); website/login/login.zero.md:195
 export function fn_complete_login__string__string(name: string, code: string): string {
     const found = fn_verify_login__string__string(name, code);
     const token: string = fn_create_session();
     return token;
 }
 
-// @zero on (string code) = generate code (User u); website/login/login.zero.md:190
+// @zero on (string code) = generate code (User u); website/login/login.zero.md:199
 export function fn_generate_code__User(u: User): string {
     let code: string = undefined!;
     if (u.name == "_alice") {
@@ -366,12 +385,12 @@ export function fn_generate_code__User(u: User): string {
 } else if (u.name == "_bob") {
     code = "4321";
 } else {
-    code = "1234";
+    code = fn_random_digits__int(4);
 }
     return code;
 }
 
-// @zero on logo clicked; website/login/login.zero.md:198
+// @zero on logo clicked; website/login/login.zero.md:207
 export function fn_logo_clicked(): void {
     fn_login();
 }

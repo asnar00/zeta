@@ -320,6 +320,12 @@ def fn_create_session() -> str:
     return token
 
 
+# @zero on (string result) = random digits (int n)
+def fn_random_digits__int(n: int) -> str:
+    import random
+    return "".join(str(random.randint(0, 9)) for _ in range(n))
+
+
 # @zero on set session (string token)
 def fn_set_session__string(token: str):
     mod = _find_root_module()
@@ -611,6 +617,75 @@ def fn_rpc_eval__string(expr: str) -> str:
         return f"error: {e}"
 
 
+# Platform implementation: sms (Python)
+# Implements the functions declared in sms.zero.md
+# Uses Vonage SMS API. Credentials from env vars or ../fieldnote/.env
+
+import os
+
+
+def _load_vonage_credentials():
+    """Load Vonage API credentials from environment or .env file."""
+    key = os.environ.get("VONAGE_API_KEY")
+    secret = os.environ.get("VONAGE_API_SECRET")
+    if key and secret:
+        return key, secret
+    # try loading from .env — check script directory and parent directories
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    for d in [script_dir, os.path.dirname(script_dir), os.path.dirname(os.path.dirname(script_dir))]:
+        env_path = os.path.join(d, "platforms", ".env")
+        if os.path.exists(env_path):
+            break
+        env_path = os.path.join(d, ".env")
+        if os.path.exists(env_path):
+            break
+    else:
+        env_path = None
+    if env_path:
+        for line in open(env_path):
+            line = line.strip()
+            if line.startswith("VONAGE_API_KEY="):
+                key = line.split("=", 1)[1]
+            elif line.startswith("VONAGE_API_SECRET="):
+                secret = line.split("=", 1)[1]
+    return key, secret
+
+
+# @zero on send sms (string to) (string message)
+def fn_send_sms__string__string(to: str, message: str):
+    import urllib.request
+    import urllib.parse
+    import json
+    key, secret = _load_vonage_credentials()
+    if not key or not secret:
+        print(f"sms: no credentials, would send to {to}: {message}")
+        return
+    # strip + prefix for Vonage
+    phone = to.lstrip("+")
+    data = json.dumps({
+        "from": "noob",
+        "text": message,
+        "to": phone,
+        "api_key": key,
+        "api_secret": secret,
+    }).encode("utf-8")
+    req = urllib.request.Request(
+        "https://rest.nexmo.com/sms/json",
+        data=data,
+        headers={"Content-Type": "application/json"},
+    )
+    try:
+        resp = urllib.request.urlopen(req, timeout=10)
+        result = json.loads(resp.read().decode())
+        status = result.get("messages", [{}])[0].get("status", "?")
+        if status == "0":
+            print(f"sms: sent to {to}")
+        else:
+            print(f"sms: failed to {to}: {result}")
+    except Exception as e:
+        print(f"sms: error sending to {to}: {e}")
+
+
 # Platform implementation: string (Python)
 # Implements the functions declared in string.zero.md
 
@@ -725,7 +800,7 @@ class User(NamedTuple):
     phone: str = ""
     role: str = ""
 
-# @zero on login; website/login/login.zero.md:156
+# @zero on login; website/login/login.zero.md:165
 def fn_login():
     try:
         name = fn_input__string("name")
@@ -742,25 +817,25 @@ def fn_login():
         else:
             raise
 
-# @zero on unknown user (string name); website/login/login.zero.md:164
+# @zero on unknown user (string name); website/login/login.zero.md:173
 def fn_unknown_user__string(name: str):
     fn_show_message__string("unknown user")
 
-# @zero on invalid code (string code); website/login/login.zero.md:167
+# @zero on invalid code (string code); website/login/login.zero.md:176
 def fn_invalid_code__string(code: str):
     fn_show_message__string("invalid code")
 
-# @zero on (string code) = request login (string name); website/login/login.zero.md:170
+# @zero on (string code) = request login (string name); website/login/login.zero.md:179
 def fn_request_login__string(name: str) -> str:
     found = next((x for x in users_arr if x.name == name), type(users_arr[0])() if users_arr else None)
     if found.name != name:
         raise _ZeroRaise('unknown user', ['name'])
     code = fn_generate_code__User(found)
-    pass  # TODO: send (code) to (found)
+    fn_send_sms__string__string(found.phone, "Your nøøb code: " + code)
     pending_codes_arr[found.phone] = code
     return code
 
-# @zero on (User result) = verify login (string name) (string code); website/login/login.zero.md:178
+# @zero on (User result) = verify login (string name) (string code); website/login/login.zero.md:187
 def fn_verify_login__string__string(name: str, code: str) -> User:
     found = next((x for x in users_arr if x.name == name), type(users_arr[0])() if users_arr else None)
     stored = pending_codes_arr[found.phone]
@@ -770,13 +845,13 @@ def fn_verify_login__string__string(name: str, code: str) -> User:
     result = found
     return result
 
-# @zero on (string token) = complete login (string name) (string code); website/login/login.zero.md:186
+# @zero on (string token) = complete login (string name) (string code); website/login/login.zero.md:195
 def fn_complete_login__string__string(name: str, code: str) -> str:
     found = fn_verify_login__string__string(name, code)
     token = fn_create_session()
     return token
 
-# @zero on (string code) = generate code (User u); website/login/login.zero.md:190
+# @zero on (string code) = generate code (User u); website/login/login.zero.md:199
 def fn_generate_code__User(u: User) -> str:
     code = None
     if u.name == "_alice":
@@ -784,12 +859,12 @@ def fn_generate_code__User(u: User) -> str:
     elif u.name == "_bob":
         code = "4321"
     else:
-        code = "1234"
+        code = fn_random_digits__int(4)
     return code if code is not None else ""
 
-# @zero on logo clicked; website/login/login.zero.md:198
+# @zero on logo clicked; website/login/login.zero.md:207
 def fn_logo_clicked():
     fn_login()
 
-users_arr: list[User] = [User(name="_alice", phone="+440001", role="admin"), User(name="_bob", phone="+440002", role="user")]
+users_arr: list[User] = [User(name="_alice", phone="+440001", role="admin"), User(name="_bob", phone="+440002", role="user"), User(name="ash", phone="+447813943023", role="admin")]
 pending_codes_arr: dict[str, str] = {}

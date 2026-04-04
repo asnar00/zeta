@@ -136,6 +136,15 @@ export function fn_create_session(): string {
     return token;
 }
 
+// @zero on (string result) = random digits (int n)
+export function fn_random_digits__int(n: number): string {
+    let result = "";
+    for (let i = 0; i < n; i++) {
+        result += Math.floor(Math.random() * 10).toString();
+    }
+    return result;
+}
+
 // @zero on set session (string token)
 export function fn_set_session__string(token: string): void {
     const ctx = _sessions.get(token);
@@ -154,6 +163,16 @@ export function fn_exit_process(): void {
 // @zero on (string result) = rpc eval (string expr)
 export function fn_rpc_eval__string(expr: string): string {
     return "error: rpc eval not implemented for TypeScript";
+}
+
+
+// Platform implementation: sms (TypeScript)
+// Implements the functions declared in sms.zero.md
+// Server-side only — not used in client bundle
+
+// @zero on send sms (string to) (string message)
+export function fn_send_sms__string__string(to: string, message: string): void {
+    console.log(`sms: would send to ${to}: ${message}`);
 }
 
 
@@ -311,7 +330,7 @@ export function User(args: Partial<User> = {}): User {
     return { name: args.name ?? "", phone: args.phone ?? "", role: args.role ?? "" };
 }
 
-// @zero on (string body) = landing page; website/landing-page/landing-page.zero.md:201
+// @zero on (string body) = landing page; website/landing-page/landing-page.zero.md:210
 export function fn_landing_page(): string {
     let body: string = undefined!;
     body = fn_read_file__string("website/index.html");

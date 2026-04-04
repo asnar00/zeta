@@ -12,6 +12,15 @@ function fn_create_session(): string {
     return token;
 }
 
+// @zero on (string result) = random digits (int n)
+function fn_random_digits__int(n: number): string {
+    let result = "";
+    for (let i = 0; i < n; i++) {
+        result += Math.floor(Math.random() * 10).toString();
+    }
+    return result;
+}
+
 // @zero on set session (string token)
 function fn_set_session__string(token: string): void {
     const ctx = _sessions.get(token);

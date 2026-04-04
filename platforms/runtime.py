@@ -177,6 +177,12 @@ def fn_create_session() -> str:
     return token
 
 
+# @zero on (string result) = random digits (int n)
+def fn_random_digits__int(n: int) -> str:
+    import random
+    return "".join(str(random.randint(0, 9)) for _ in range(n))
+
+
 # @zero on set session (string token)
 def fn_set_session__string(token: str):
     mod = _find_root_module()

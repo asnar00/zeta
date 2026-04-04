@@ -145,6 +145,15 @@ export function fn_create_session(): string {
     return token;
 }
 
+// @zero on (string result) = random digits (int n)
+export function fn_random_digits__int(n: number): string {
+    let result = "";
+    for (let i = 0; i < n; i++) {
+        result += Math.floor(Math.random() * 10).toString();
+    }
+    return result;
+}
+
 // @zero on set session (string token)
 export function fn_set_session__string(token: string): void {
     const ctx = _sessions.get(token);
@@ -163,6 +172,16 @@ export function fn_exit_process(): void {
 // @zero on (string result) = rpc eval (string expr)
 export function fn_rpc_eval__string(expr: string): string {
     return "error: rpc eval not implemented for TypeScript";
+}
+
+
+// Platform implementation: sms (TypeScript)
+// Implements the functions declared in sms.zero.md
+// Server-side only — not used in client bundle
+
+// @zero on send sms (string to) (string message)
+export function fn_send_sms__string__string(to: string, message: string): void {
+    console.log(`sms: would send to ${to}: ${message}`);
 }
 
 
@@ -414,7 +433,7 @@ export function User(args: Partial<User> = {}): User {
     return { name: args.name ?? "", phone: args.phone ?? "", role: args.role ?? "" };
 }
 
-// @zero on main (string args$); website/website.zero.md:134
+// @zero on main (string args$); website/website.zero.md:143
 export async function task_main__string(args_arr: readonly string[]): Promise<void> {
     _push_terminal_out(logo);
     const request_arr = task_serve_http__int(port);
@@ -425,7 +444,7 @@ export async function task_main__string(args_arr: readonly string[]): Promise<vo
     }
 }
 
-// @zero on (string body) = handle request (Http-Request request); website/website.zero.md:142
+// @zero on (string body) = handle request (Http-Request request); website/website.zero.md:151
 export function fn_handle_request__Http_Request(request: Http_Request): string {
     let body: string = undefined!;
     if (_get_ctx().landing_page.enabled && request.path == "/") {
@@ -443,7 +462,7 @@ export function fn_handle_request__Http_Request(request: Http_Request): string {
     return body;
 }
 
-// @zero on stop; website/website.zero.md:150
+// @zero on stop; website/website.zero.md:159
 export function fn_stop(): void {
     fn_print__string("stopping");
 }
