@@ -81,7 +81,8 @@ def task_serve_http__int(port):
         # switch context: session-specific if token, default otherwise
         if _main_mod and hasattr(_main_mod, '_ctx_var'):
             if req.token:
-                sessions = getattr(_main_mod, '_sessions', {}) if _main_mod else {}
+                _ensure_sessions = getattr(_main_mod, '_get_sessions', None)
+                sessions = _ensure_sessions() if _ensure_sessions else getattr(_main_mod, '_sessions', {})
                 ctx = sessions.get(req.token, _default_ctx)
                 _main_mod._ctx_var.set(ctx)
             else:

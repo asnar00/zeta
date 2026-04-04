@@ -109,7 +109,8 @@ def task_serve_http__int(port):
         # switch context: session-specific if token, default otherwise
         if _main_mod and hasattr(_main_mod, '_ctx_var'):
             if req.token:
-                sessions = getattr(_main_mod, '_sessions', {}) if _main_mod else {}
+                _ensure_sessions = getattr(_main_mod, '_get_sessions', None)
+                sessions = _ensure_sessions() if _ensure_sessions else getattr(_main_mod, '_sessions', {})
                 ctx = sessions.get(req.token, _default_ctx)
                 _main_mod._ctx_var.set(ctx)
             else:
@@ -196,6 +197,7 @@ def _try_set_ctx(mod, name, value):
             section = getattr(ctx, safe_feat, None)
             if section is not None and hasattr(section, safe_var):
                 setattr(section, safe_var, _coerce_value(value))
+                _save_sessions()
                 return True
         return False
     except Exception:
@@ -301,6 +303,72 @@ def _find_function(mod, fn_words, arg_count=0):
     return None
 
 
+def _sessions_path():
+    """Path to the sessions persistence file."""
+    import os
+    mod = _find_root_module()
+    if mod and hasattr(mod, '__file__'):
+        return os.path.join(os.path.dirname(os.path.abspath(mod.__file__)), "sessions.json")
+    return "sessions.json"
+
+
+def _serialize_ctx(ctx):
+    """Serialize a _Context object to a dict."""
+    data = {}
+    for attr in dir(ctx):
+        if attr.startswith("_"):
+            continue
+        feat = getattr(ctx, attr)
+        if hasattr(feat, '__dict__'):
+            data[attr] = {k: v for k, v in feat.__dict__.items() if not k.startswith("_")}
+    return data
+
+
+def _deserialize_ctx(data, ctx_class):
+    """Deserialize a dict into a _Context object."""
+    ctx = ctx_class()
+    for feat_name, feat_data in data.items():
+        feat = getattr(ctx, feat_name, None)
+        if feat is None:
+            continue
+        for k, v in feat_data.items():
+            if hasattr(feat, k):
+                setattr(feat, k, v)
+    return ctx
+
+
+def _save_sessions():
+    """Save all sessions to disk."""
+    import json
+    sessions = _get_sessions()
+    data = {token: _serialize_ctx(ctx) for token, ctx in sessions.items()}
+    try:
+        with open(_sessions_path(), "w") as f:
+            json.dump(data, f, indent=2)
+    except Exception as e:
+        print(f"sessions: save error: {e}")
+
+
+def _load_sessions():
+    """Load sessions from disk into the root module."""
+    import json, os
+    mod = _find_root_module()
+    if mod is None:
+        return
+    path = _sessions_path()
+    if not os.path.exists(path):
+        return
+    try:
+        with open(path) as f:
+            data = json.load(f)
+        sessions = _get_sessions()
+        for token, ctx_data in data.items():
+            sessions[token] = _deserialize_ctx(ctx_data, mod._Context)
+        print(f"sessions: loaded {len(sessions)} from {path}")
+    except Exception as e:
+        print(f"sessions: load error: {e}")
+
+
 def _get_sessions():
     """Get the shared sessions dict from the root module."""
     mod = _find_root_module()
@@ -308,6 +376,7 @@ def _get_sessions():
         return {}
     if not hasattr(mod, '_sessions'):
         mod._sessions = {}
+        _load_sessions()
     return mod._sessions
 
 
@@ -320,6 +389,7 @@ def fn_create_session() -> str:
     token = str(uuid.uuid4())[:8]
     ctx = mod._Context()
     _get_sessions()[token] = ctx
+    _save_sessions()
     return token
 
 
@@ -568,8 +638,9 @@ def fn_rpc_eval__string(expr: str) -> str:
         return fn_features() + "\n\n" + fn_functions()
 
     # assignment: feature.var = value  or  var = value
+    # brackets indicate a function call, not an assignment
     assign_match = re.match(r'^([\w.-]+)\s*=\s*(.+)$', expr)
-    if assign_match and '(' not in assign_match.group(2):
+    if assign_match and '(' not in expr and '[' not in expr:
         name = assign_match.group(1)
         value = assign_match.group(2).strip().strip('"')
         # try context first (for user-scoped vars)
@@ -586,8 +657,8 @@ def fn_rpc_eval__string(expr: str) -> str:
         setattr(target, attr_name, _coerce_value(value))
         return f"{name} = {value}"
 
-    # var get: feature.var  or  var  (no parens, no =)
-    if '(' not in expr and '=' not in expr:
+    # var get: no brackets and no = means it's a variable read
+    if '(' not in expr and '[' not in expr and '=' not in expr:
         name = expr.strip()
         # try context first (for user-scoped vars)
         ctx_val = _try_get_ctx(mod, name)
