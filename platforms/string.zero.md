@@ -58,3 +58,50 @@ Replace all occurrences of a needle in a string:
 Split a string at the given positions, removing a 2-character separator at each position (the marked character and the one before it):
 
     on (string result$) = split [string s] at [int positions$]
+
+## tests
+
+Trim handles various whitespace patterns:
+
+    trim ("") => ""
+    trim ("  ") => ""
+    trim ("no spaces") => "no spaces"
+    trim ("  leading") => "leading"
+    trim ("trailing  ") => "trailing"
+
+Character access at boundaries:
+
+    char (0) of ("a") => "a"
+    char (2) of ("abcde") => "c"
+
+Starts-with edge cases:
+
+    ("") starts with ("") => true
+    ("hello") starts with ("") => true
+    ("") starts with ("x") => false
+    ("abc") starts with ("abc") => true
+    ("abc") starts with ("abcd") => false
+
+Split by various delimiters:
+
+    split ("one") by (",") => ["one"]
+    split ("a,b") by (",") => ["a", "b"]
+    split ("a,,b") by (",") => ["a", "", "b"]
+
+Length of various strings:
+
+    length of ("") => 0
+    length of ("a") => 1
+    length of ("hello world") => 11
+
+Substring from various positions:
+
+    substring of ("hello") from (0) => "hello"
+    substring of ("hello") from (3) => "lo"
+    substring of ("hello") from (5) => ""
+
+Replace with various patterns:
+
+    replace ("a") in ("aaa") with ("b") => "bbb"
+    replace ("xy") in ("no match") with ("z") => "no match"
+    replace ("") in ("hello") with ("x") => "xhxexlxlxox"

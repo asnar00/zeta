@@ -50,7 +50,7 @@ function fn_reload_page() {
     location.reload();
 }
 
-// @zero on login; composed:165
+// @zero on login; composed:213
 async function fn_login(){
     try {
         const name = await fn_input__string("name");
@@ -70,17 +70,17 @@ async function fn_login(){
     }
 }
 
-// @zero on unknown user (string name); composed:173
+// @zero on unknown user (string name); composed:221
 async function fn_unknown_user__string(name){
     await fn_show_message__string("unknown user");
 }
 
-// @zero on invalid code (string code); composed:176
+// @zero on invalid code (string code); composed:224
 async function fn_invalid_code__string(code){
     await fn_show_message__string("invalid code");
 }
 
-// @zero on logo clicked; composed:207
+// @zero on logo clicked; composed:255
 async function fn_logo_clicked(){
     await fn_login();
 }

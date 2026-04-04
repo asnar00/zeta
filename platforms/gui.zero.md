@@ -24,3 +24,37 @@ Show a message to the user:
 Reload the current page (or refresh the current view on native):
 
     on reload page ()
+
+## integration tests
+
+Input shows a labelled text field, returns the typed value, then removes itself:
+
+    call input ("name")
+    check element "div" contains text "name"
+    check element "input" exists
+    check element "input" is focused
+    type "alice" into element "input"
+    press "Enter" on element "input"
+    check result is "alice"
+    check element "input" does not exist
+
+Input works with an empty submission:
+
+    call input ("code")
+    press "Enter" on element "input"
+    check result is ""
+
+Show message displays an alert dialog:
+
+    call show message ("hello")
+    check alert appears with text "hello"
+
+Set cookie stores a value accessible to subsequent requests:
+
+    call set cookie of ("test") to ("abc")
+    check cookie "test" is "abc"
+
+Reload page triggers a page navigation:
+
+    call reload page ()
+    check page reloads

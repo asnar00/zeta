@@ -39,3 +39,15 @@ Switch the current request to a session's context by token:
 Terminate the process (with a short delay for response delivery):
 
     on exit process ()
+
+## tests
+
+Random digits produces the requested length:
+
+    length of (random digits (1)) => 1
+    length of (random digits (4)) => 4
+    length of (random digits (10)) => 10
+
+Create session returns a non-empty token:
+
+    length of (create session ()) => 8
