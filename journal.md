@@ -486,3 +486,10 @@ The integration test now uses actual browser interactions: Playwright clicks the
 - `5c27d3a` Exception handlers: in X(), on Y() wraps function body in try/catch
 - `1c94114` Integration test passes: 3 tabs, 3 users, 3 background colours
 - `0860c81` Client-side JS emission: browser login with DOM inputs, cross-component RPC
+- `e04f65a` Session persistence: sessions survive server restarts
+- `d3121c7` SMS platform: send real verification codes via Vonage
+- `02def24` Platform tests: string, runtime, gui test specs and runner
+
+### next: observability as test infrastructure
+
+Playwright works but is fragile (headless Chrome hangs, external process management). The better approach: build observability and control into the gui platform itself. DOM state query and user action simulation via RPC — `/@rpc/click (".logo")`, `/@rpc/element ("input") exists`, etc. Then the test runner is just HTTP calls, no browser automation. Testing becomes another RPC client.
