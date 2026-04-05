@@ -2,15 +2,45 @@ import { register_tests, run_tests } from './_runtime.js';
 import './parser.js';
 import * as parser from './parser.js';
 
+// Platform implementation: eval (TypeScript)
+// Implements the functions declared in eval.zero.md
+// Server-side stub — delegates to rpc eval
+
+// @zero on (string result) = eval (string expr)
+export function fn_eval__string(expr: string): string {
+    return fn_rpc_eval__string(expr);
+}
+
+
 // Platform implementation: gui (TypeScript/web)
 // Implements the functions declared in gui.zero.md
 
 // @zero on (string result) = input (string prompt)
 export function fn_input__string(prompt: string): string {
-    // For now, use window.prompt — a proper implementation would
-    // create a styled input element in the DOM and await submission
-    const result = (globalThis as any).prompt?.(prompt) ?? "";
-    return result;
+    return (globalThis as any).prompt?.(prompt) ?? "";
+}
+
+// @zero on show message (string text)
+export function fn_show_message__string(text: string): void {
+    if (typeof alert !== "undefined") {
+        alert(text);
+    } else {
+        console.log(text);
+    }
+}
+
+// @zero on (string value) = get cookie (string name)
+export function fn_get_cookie__string(name: string): string {
+    return "";
+}
+
+// @zero on clear cookie (string name)
+export function fn_clear_cookie__string(name: string): void {
+}
+
+// @zero on (string choice) = choose (string option_a) or (string option_b)
+export function fn_choose__string_or__string(option_a: string, option_b: string): string {
+    return option_a;
 }
 
 // @zero on set cookie of (string name) to (string value)
@@ -106,8 +136,8 @@ export function fn_read_file__string(path: string): string {
     return readFileSync(path, 'utf8');
 }
 
-// @zero on write file (string path) (string content)
-export function fn_write_file__string__string(path: string, content: string): void {
+// @zero on write (string content) to file (string path)
+export function fn_write__string_to_file__string(content: string, path: string): void {
     writeFileSync(path, content, 'utf8');
 }
 
@@ -117,18 +147,56 @@ export function fn_print__string(message: string): void {
 }
 
 
+// Platform implementation: remote (TypeScript)
+// Implements the functions declared in remote.zero.md
+// Server-side stub.
+
+// @zero on (string channel) = connect to (string url)
+export function fn_connect_to__string(url: string): string {
+    return "";
+}
+
+// @zero on (string result) = request (string command) on (string channel)
+export function fn_request__string_on__string(command: string, channel: string): string {
+    return "";
+}
+
+// @zero on disconnect from (string channel)
+export function fn_disconnect_from__string(channel: string): void {
+}
+
+// @zero on (string result) = handle remote request (string command)
+export function fn_handle_remote_request__string(command: string): string {
+    if (command === "ping") return "pong";
+    if (command.startsWith("echo:")) return command.slice(5);
+    return `error: unknown command: ${command}`;
+}
+
+
 // Platform implementation: runtime (TypeScript)
 // Implements the functions declared in runtime.zero.md
 
 const _sessions: Map<string, any> = new Map();
+const _session_names: Map<string, string> = new Map();
 
-// @zero on (string token) = create session ()
-export function fn_create_session(): string {
+// @zero on (string token) = create session (string name)
+export function fn_create_session__string(name: string): string {
+    const existing = _session_names.get(name);
+    if (existing) return existing;
     const token = Math.random().toString(36).slice(2, 10);
-    // _Context will be available in the compiled output
     const ctx = new (globalThis as any)._Context();
     _sessions.set(token, ctx);
+    _session_names.set(name, token);
     return token;
+}
+
+// @zero on (string result) = random digits (int n)
+export function fn_random_digits__int(n: number): string {
+    let result = "";
+    for (let i = 0; i < n; i++) {
+        result += Math.floor(Math.random() * 10).toString();
+    }
+    return result;
 }
 
 // @zero on set session (string token)
@@ -149,6 +217,16 @@ export function fn_exit_process(): void {
 // @zero on (string result) = rpc eval (string expr)
 export function fn_rpc_eval__string(expr: string): string {
     return "error: rpc eval not implemented for TypeScript";
+}
+
+
+// Platform implementation: sms (TypeScript)
+// Implements the functions declared in sms.zero.md
+// Server-side only — not used in client bundle
+
+// @zero on send sms (string message) to (string phone)
+export function fn_send_sms__string_to__string(message: string, phone: string): void {
+    console.log(`sms: would send to ${phone}: ${message}`);
 }
 
 
@@ -225,6 +303,29 @@ export function _push_terminal_out(value: string): void {
 // Yields lines from stdin (not implemented for server context)
 export function* terminal_in(): Generator<string> {
     // stdin reading requires async in Node — stub for now
+}
+
+
+// Platform implementation: websocket (TypeScript)
+// Implements the functions declared in websocket.zero.md
+// Server-side stub — the real client implementation lives in the client bundle.
+
+// @zero on (string channel) = open channel (string path)
+export function fn_open_channel__string(path: string): string {
+    return "";
+}
+
+// @zero on send message (string data) on (string channel)
+export function fn_send_message__string_on__string(data: string, channel: string): void {
+}
+
+// @zero on (string data) = receive message on (string channel)
+export function fn_receive_message_on__string(channel: string): string {
+    return "";
+}
+
+// @zero on close channel (string channel)
+export function fn_close_channel__string(channel: string): void {
 }
 
 
@@ -320,13 +421,209 @@ export function test_zeta_12(): void {
 }
 
 export function test_zeta_13(): void {
+    // trim ("") => ""
+    const _result = fn_trim__string("");
+    const _expected = "";
+    if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
+}
+
+export function test_zeta_14(): void {
+    // trim ("  ") => ""
+    const _result = fn_trim__string("  ");
+    const _expected = "";
+    if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
+}
+
+export function test_zeta_15(): void {
+    // trim ("no spaces") => "no spaces"
+    const _result = fn_trim__string("no spaces");
+    const _expected = "no spaces";
+    if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
+}
+
+export function test_zeta_16(): void {
+    // trim ("  leading") => "leading"
+    const _result = fn_trim__string("  leading");
+    const _expected = "leading";
+    if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
+}
+
+export function test_zeta_17(): void {
+    // trim ("trailing  ") => "trailing"
+    const _result = fn_trim__string("trailing  ");
+    const _expected = "trailing";
+    if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
+}
+
+export function test_zeta_18(): void {
+    // char (0) of ("a") => "a"
+    const _result = fn_char__int_of__string(0, "a");
+    const _expected = "a";
+    if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
+}
+
+export function test_zeta_19(): void {
+    // char (2) of ("abcde") => "c"
+    const _result = fn_char__int_of__string(2, "abcde");
+    const _expected = "c";
+    if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
+}
+
+export function test_zeta_20(): void {
+    // ("") starts with ("") => true
+    const _result = fn__string_starts_with__string("", "");
+    const _expected = true;
+    if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
+}
+
+export function test_zeta_21(): void {
+    // ("hello") starts with ("") => true
+    const _result = fn__string_starts_with__string("hello", "");
+    const _expected = true;
+    if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
+}
+
+export function test_zeta_22(): void {
+    // ("") starts with ("x") => false
+    const _result = fn__string_starts_with__string("", "x");
+    const _expected = false;
+    if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
+}
+
+export function test_zeta_23(): void {
+    // ("abc") starts with ("abc") => true
+    const _result = fn__string_starts_with__string("abc", "abc");
+    const _expected = true;
+    if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
+}
+
+export function test_zeta_24(): void {
+    // ("abc") starts with ("abcd") => false
+    const _result = fn__string_starts_with__string("abc", "abcd");
+    const _expected = false;
+    if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
+}
+
+export function test_zeta_25(): void {
+    // split ("one") by (",") => ["one"]
+    const _result = fn_split__string_by__string("one", ",");
+    const _expected = ["one"];
+    if (JSON.stringify(_result) !== JSON.stringify(_expected)) throw new Error(`expected ${_expected}, got ${_result}`);
+}
+
+export function test_zeta_26(): void {
+    // split ("a,b") by (",") => ["a", "b"]
+    const _result = fn_split__string_by__string("a,b", ",");
+    const _expected = ["a", "b"];
+    if (JSON.stringify(_result) !== JSON.stringify(_expected)) throw new Error(`expected ${_expected}, got ${_result}`);
+}
+
+export function test_zeta_27(): void {
+    // split ("a,,b") by (",") => ["a", "", "b"]
+    const _result = fn_split__string_by__string("a,,b", ",");
+    const _expected = ["a", "", "b"];
+    if (JSON.stringify(_result) !== JSON.stringify(_expected)) throw new Error(`expected ${_expected}, got ${_result}`);
+}
+
+export function test_zeta_28(): void {
+    // length of ("") => 0
+    const _result = fn_length_of__string("");
+    const _expected = 0;
+    if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
+}
+
+export function test_zeta_29(): void {
+    // length of ("a") => 1
+    const _result = fn_length_of__string("a");
+    const _expected = 1;
+    if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
+}
+
+export function test_zeta_30(): void {
+    // length of ("hello world") => 11
+    const _result = fn_length_of__string("hello world");
+    const _expected = 11;
+    if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
+}
+
+export function test_zeta_31(): void {
+    // substring of ("hello") from (0) => "hello"
+    const _result = fn_substring_of__string_from__int("hello", 0);
+    const _expected = "hello";
+    if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
+}
+
+export function test_zeta_32(): void {
+    // substring of ("hello") from (3) => "lo"
+    const _result = fn_substring_of__string_from__int("hello", 3);
+    const _expected = "lo";
+    if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
+}
+
+export function test_zeta_33(): void {
+    // substring of ("hello") from (5) => ""
+    const _result = fn_substring_of__string_from__int("hello", 5);
+    const _expected = "";
+    if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
+}
+
+export function test_zeta_34(): void {
+    // replace ("a") in ("aaa") with ("b") => "bbb"
+    const _result = fn_replace__string_in__string_with__string("a", "aaa", "b");
+    const _expected = "bbb";
+    if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
+}
+
+export function test_zeta_35(): void {
+    // replace ("xy") in ("no match") with ("z") => "no match"
+    const _result = fn_replace__string_in__string_with__string("xy", "no match", "z");
+    const _expected = "no match";
+    if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
+}
+
+export function test_zeta_36(): void {
+    // replace ("") in ("hello") with ("x") => "xhxexlxlxox"
+    const _result = fn_replace__string_in__string_with__string("", "hello", "x");
+    const _expected = "xhxexlxlxox";
+    if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
+}
+
+export function test_zeta_37(): void {
+    // length of (random digits (1)) => 1
+    const _result = fn_length_of__string(fn_random_digits__int(1));
+    const _expected = 1;
+    if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
+}
+
+export function test_zeta_38(): void {
+    // length of (random digits (4)) => 4
+    const _result = fn_length_of__string(fn_random_digits__int(4));
+    const _expected = 4;
+    if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
+}
+
+export function test_zeta_39(): void {
+    // length of (random digits (10)) => 10
+    const _result = fn_length_of__string(fn_random_digits__int(10));
+    const _expected = 10;
+    if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
+}
+
+export function test_zeta_40(): void {
+    // length of (create session ("test")) => 8
+    const _result = fn_length_of__string(fn_create_session__string("test"));
+    const _expected = 8;
+    if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
+}
+
+export function test_zeta_41(): void {
     // main(["input.zero.md", "output.py"]) => "ᕦ(ツ)ᕤ"
     const _result = [...task_main__string(["input.zero.md", "output.py"])];
     const _expected = ["ᕦ(ツ)ᕤ"];
     if (JSON.stringify(_result) !== JSON.stringify(_expected)) throw new Error(`expected ${_expected}, got ${_result}`);
 }
 
-register_tests('zeta', [[test_zeta_0, 'trim ("  hello  ") => "hello"'], [test_zeta_1, 'trim ("already") => "already"'], [test_zeta_2, 'char (0) of ("hello") => "h"'], [test_zeta_3, 'char (4) of ("hello") => "o"'], [test_zeta_4, '("hello world") starts with ("hello") => true'], [test_zeta_5, '("hello world") starts with ("world") => false'], [test_zeta_6, 'split ("a/b/c") by ("/") => ["a", "b", "c"]'], [test_zeta_7, 'split ("hello") by ("/") => ["hello"]'], [test_zeta_8, 'length of ("hello") => 5'], [test_zeta_9, 'length of ("") => 0'], [test_zeta_10, 'replace ("world") in ("hello world") with ("zero") => "hello zero"'], [test_zeta_11, 'substring of ("hello world") from (6) => "world"'], [test_zeta_12, 'substring of ("abc") from (0) => "abc"'], [test_zeta_13, 'main(["input.zero.md", "output.py"]) => "ᕦ(ツ)ᕤ"']]);
+register_tests('zeta', [[test_zeta_0, 'trim ("  hello  ") => "hello"'], [test_zeta_1, 'trim ("already") => "already"'], [test_zeta_2, 'char (0) of ("hello") => "h"'], [test_zeta_3, 'char (4) of ("hello") => "o"'], [test_zeta_4, '("hello world") starts with ("hello") => true'], [test_zeta_5, '("hello world") starts with ("world") => false'], [test_zeta_6, 'split ("a/b/c") by ("/") => ["a", "b", "c"]'], [test_zeta_7, 'split ("hello") by ("/") => ["hello"]'], [test_zeta_8, 'length of ("hello") => 5'], [test_zeta_9, 'length of ("") => 0'], [test_zeta_10, 'replace ("world") in ("hello world") with ("zero") => "hello zero"'], [test_zeta_11, 'substring of ("hello world") from (6) => "world"'], [test_zeta_12, 'substring of ("abc") from (0) => "abc"'], [test_zeta_13, 'trim ("") => ""'], [test_zeta_14, 'trim ("  ") => ""'], [test_zeta_15, 'trim ("no spaces") => "no spaces"'], [test_zeta_16, 'trim ("  leading") => "leading"'], [test_zeta_17, 'trim ("trailing  ") => "trailing"'], [test_zeta_18, 'char (0) of ("a") => "a"'], [test_zeta_19, 'char (2) of ("abcde") => "c"'], [test_zeta_20, '("") starts with ("") => true'], [test_zeta_21, '("hello") starts with ("") => true'], [test_zeta_22, '("") starts with ("x") => false'], [test_zeta_23, '("abc") starts with ("abc") => true'], [test_zeta_24, '("abc") starts with ("abcd") => false'], [test_zeta_25, 'split ("one") by (",") => ["one"]'], [test_zeta_26, 'split ("a,b") by (",") => ["a", "b"]'], [test_zeta_27, 'split ("a,,b") by (",") => ["a", "", "b"]'], [test_zeta_28, 'length of ("") => 0'], [test_zeta_29, 'length of ("a") => 1'], [test_zeta_30, 'length of ("hello world") => 11'], [test_zeta_31, 'substring of ("hello") from (0) => "hello"'], [test_zeta_32, 'substring of ("hello") from (3) => "lo"'], [test_zeta_33, 'substring of ("hello") from (5) => ""'], [test_zeta_34, 'replace ("a") in ("aaa") with ("b") => "bbb"'], [test_zeta_35, 'replace ("xy") in ("no match") with ("z") => "no match"'], [test_zeta_36, 'replace ("") in ("hello") with ("x") => "xhxexlxlxox"'], [test_zeta_37, 'length of (random digits (1)) => 1'], [test_zeta_38, 'length of (random digits (4)) => 4'], [test_zeta_39, 'length of (random digits (10)) => 10'], [test_zeta_40, 'length of (create session ("test")) => 8'], [test_zeta_41, 'main(["input.zero.md", "output.py"]) => "ᕦ(ツ)ᕤ"']]);
 
 const logo: string = "ᕦ(ツ)ᕤ";
 
@@ -349,7 +646,7 @@ export function Http_Response(args: Partial<Http_Response> = {}): Http_Response 
     return { request: args.request ?? Http_Request(), body: args.body ?? "" };
 }
 
-// @zero on (string out$) <- main (string args$); ziz/zeta.zero.md:128
+// @zero on (string out$) <- main (string args$); ziz/zeta.zero.md:222
 export function* task_main__string(args_arr: readonly string[]): Generator<string> {
     yield logo;
 }

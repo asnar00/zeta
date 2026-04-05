@@ -84,20 +84,36 @@ def _platform_dir():
     return os.path.join(os.path.dirname(__file__), "platforms")
 
 
+def _list_platform_files(ext):
+    """List all platform files with the given extension, scanning subdirectories."""
+    pdir = _platform_dir()
+    result = []
+    if not os.path.isdir(pdir):
+        return result
+    for entry in sorted(os.listdir(pdir)):
+        subdir = os.path.join(pdir, entry)
+        if not os.path.isdir(subdir) or entry.startswith("_"):
+            continue
+        for fname in sorted(os.listdir(subdir)):
+            if fname.endswith(ext):
+                result.append(os.path.join(subdir, fname))
+    return result
+
+
 def _prepend_platform_interfaces(source):
     """Load platform .zero.md signatures and prepend them to source."""
-    pdir = _platform_dir()
-    if not os.path.isdir(pdir):
+    files = _list_platform_files(".zero.md")
+    if not files:
         return source
     with log.section("load platform interfaces"):
-        for fname in sorted(os.listdir(pdir)):
-            if fname.endswith(".zero.md"):
-                log.log(fname)
-                with open(os.path.join(pdir, fname)) as pf:
-                    plat_src = pf.read()
-                    if _is_markdown(plat_src):
-                        plat_src, _ = _extract_code(plat_src)
-                    source = plat_src + "\n" + source
+        for path in files:
+            fname = os.path.basename(path)
+            log.log(fname)
+            with open(path) as pf:
+                plat_src = pf.read()
+                if _is_markdown(plat_src):
+                    plat_src, _ = _extract_code(plat_src)
+                source = plat_src + "\n" + source
     return source
 
 
@@ -147,22 +163,17 @@ def _parse_and_log(source, input_paths, feature_tests):
 
 def _collect_platform_code(ext):
     """Collect platform prepend/append code for the given extension."""
-    pdir = _platform_dir()
     platform_ext = _PLATFORM_EXT.get(ext, "")
     main_ext = ".main" + platform_ext
     prepend = []
     append = []
-    if not os.path.isdir(pdir):
-        return prepend, append
     with log.section("platform code"):
-        for fname in sorted(os.listdir(pdir)):
-            if fname.endswith(".zero.md"):
-                continue
-            path = os.path.join(pdir, fname)
+        for path in _list_platform_files(platform_ext):
+            fname = os.path.basename(path)
             if fname.endswith(main_ext):
                 log.log(f"{fname} (append)")
                 append.append(open(path).read())
-            elif fname.endswith(platform_ext):
+            else:
                 log.log(f"{fname} (prepend)")
                 prepend.append(open(path).read())
     return prepend, append
@@ -546,41 +557,32 @@ def _load_platform_interface_code():
     """Load all platform .zero.md files and extract their code.
     Returns (plat_code, client_fn_bases) where client_fn_bases is a set of
     function base names that belong to @client platforms."""
-    pdir = _platform_dir()
     plat_code = ""
     client_fn_bases = set()
-    if not os.path.isdir(pdir):
-        return plat_code, client_fn_bases
-    for fname in sorted(os.listdir(pdir)):
-        if fname.endswith(".zero.md"):
-            with open(os.path.join(pdir, fname)) as pf:
-                plat_src = pf.read()
-                plat_name = fname.replace(".zero.md", "")
-                component = _detect_platform_component(plat_src)
-                if _is_markdown(plat_src):
-                    plat_src, _ = _extract_code(plat_src)
-                if component == "client":
-                    client_fn_bases |= _collect_platform_signatures(plat_src, plat_name)
-                plat_code = plat_src + "\n" + plat_code
+    for path in _list_platform_files(".zero.md"):
+        with open(path) as pf:
+            plat_src = pf.read()
+            plat_name = os.path.basename(path).replace(".zero.md", "")
+            component = _detect_platform_component(plat_src)
+            if _is_markdown(plat_src):
+                plat_src, _ = _extract_code(plat_src)
+            if component == "client":
+                client_fn_bases |= _collect_platform_signatures(plat_src, plat_name)
+            plat_code = plat_src + "\n" + plat_code
     return plat_code, client_fn_bases
 
 
 def _load_platform_implementations():
     """Load platform implementation files, split into prepend and append groups."""
-    pdir = _platform_dir()
     prepend = {ext: [] for ext in _PLATFORM_EXT}
     append = {ext: [] for ext in _PLATFORM_EXT}
-    if not os.path.isdir(pdir):
-        return prepend, append
-    for fname in sorted(os.listdir(pdir)):
-        if fname.endswith(".zero.md"):
-            continue
-        for ext, pext in _PLATFORM_EXT.items():
-            main_ext = ".main" + pext
-            path = os.path.join(pdir, fname)
+    for ext, pext in _PLATFORM_EXT.items():
+        main_ext = ".main" + pext
+        for path in _list_platform_files(pext):
+            fname = os.path.basename(path)
             if fname.endswith(main_ext):
                 append[ext].append(open(path).read())
-            elif fname.endswith(pext):
+            else:
                 prepend[ext].append(open(path).read())
     return prepend, append
 
@@ -1026,7 +1028,7 @@ def _walk_for_server_calls(node, placement, rpc_targets):
 
 def _read_gui_platform_js():
     """Read the gui platform TypeScript implementation."""
-    gui_path = os.path.join(_platform_dir(), "gui.ts")
+    gui_path = os.path.join(_platform_dir(), "gui", "gui.ts")
     if os.path.exists(gui_path):
         return open(gui_path).read()
     return ""

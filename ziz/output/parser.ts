@@ -1,14 +1,44 @@
 import { register_tests } from './_runtime.js';
 
+// Platform implementation: eval (TypeScript)
+// Implements the functions declared in eval.zero.md
+// Server-side stub — delegates to rpc eval
+
+// @zero on (string result) = eval (string expr)
+export function fn_eval__string(expr: string): string {
+    return fn_rpc_eval__string(expr);
+}
+
+
 // Platform implementation: gui (TypeScript/web)
 // Implements the functions declared in gui.zero.md
 
 // @zero on (string result) = input (string prompt)
 export function fn_input__string(prompt: string): string {
-    // For now, use window.prompt — a proper implementation would
-    // create a styled input element in the DOM and await submission
-    const result = (globalThis as any).prompt?.(prompt) ?? "";
-    return result;
+    return (globalThis as any).prompt?.(prompt) ?? "";
+}
+
+// @zero on show message (string text)
+export function fn_show_message__string(text: string): void {
+    if (typeof alert !== "undefined") {
+        alert(text);
+    } else {
+        console.log(text);
+    }
+}
+
+// @zero on (string value) = get cookie (string name)
+export function fn_get_cookie__string(name: string): string {
+    return "";
+}
+
+// @zero on clear cookie (string name)
+export function fn_clear_cookie__string(name: string): void {
+}
+
+// @zero on (string choice) = choose (string option_a) or (string option_b)
+export function fn_choose__string_or__string(option_a: string, option_b: string): string {
+    return option_a;
 }
 
 // @zero on set cookie of (string name) to (string value)
@@ -104,8 +134,8 @@ export function fn_read_file__string(path: string): string {
     return readFileSync(path, 'utf8');
 }
 
-// @zero on write file (string path) (string content)
-export function fn_write_file__string__string(path: string, content: string): void {
+// @zero on write (string content) to file (string path)
+export function fn_write__string_to_file__string(content: string, path: string): void {
     writeFileSync(path, content, 'utf8');
 }
 
@@ -115,18 +145,56 @@ export function fn_print__string(message: string): void {
 }
 
 
+// Platform implementation: remote (TypeScript)
+// Implements the functions declared in remote.zero.md
+// Server-side stub.
+
+// @zero on (string channel) = connect to (string url)
+export function fn_connect_to__string(url: string): string {
+    return "";
+}
+
+// @zero on (string result) = request (string command) on (string channel)
+export function fn_request__string_on__string(command: string, channel: string): string {
+    return "";
+}
+
+// @zero on disconnect from (string channel)
+export function fn_disconnect_from__string(channel: string): void {
+}
+
+// @zero on (string result) = handle remote request (string command)
+export function fn_handle_remote_request__string(command: string): string {
+    if (command === "ping") return "pong";
+    if (command.startsWith("echo:")) return command.slice(5);
+    return `error: unknown command: ${command}`;
+}
+
+
 // Platform implementation: runtime (TypeScript)
 // Implements the functions declared in runtime.zero.md
 
 const _sessions: Map<string, any> = new Map();
+const _session_names: Map<string, string> = new Map();
 
-// @zero on (string token) = create session ()
-export function fn_create_session(): string {
+// @zero on (string token) = create session (string name)
+export function fn_create_session__string(name: string): string {
+    const existing = _session_names.get(name);
+    if (existing) return existing;
     const token = Math.random().toString(36).slice(2, 10);
-    // _Context will be available in the compiled output
     const ctx = new (globalThis as any)._Context();
     _sessions.set(token, ctx);
+    _session_names.set(name, token);
     return token;
+}
+
+// @zero on (string result) = random digits (int n)
+export function fn_random_digits__int(n: number): string {
+    let result = "";
+    for (let i = 0; i < n; i++) {
+        result += Math.floor(Math.random() * 10).toString();
+    }
+    return result;
 }
 
 // @zero on set session (string token)
@@ -147,6 +215,16 @@ export function fn_exit_process(): void {
 // @zero on (string result) = rpc eval (string expr)
 export function fn_rpc_eval__string(expr: string): string {
     return "error: rpc eval not implemented for TypeScript";
+}
+
+
+// Platform implementation: sms (TypeScript)
+// Implements the functions declared in sms.zero.md
+// Server-side only — not used in client bundle
+
+// @zero on send sms (string message) to (string phone)
+export function fn_send_sms__string_to__string(message: string, phone: string): void {
+    console.log(`sms: would send to ${phone}: ${message}`);
 }
 
 
@@ -226,6 +304,29 @@ export function* terminal_in(): Generator<string> {
 }
 
 
+// Platform implementation: websocket (TypeScript)
+// Implements the functions declared in websocket.zero.md
+// Server-side stub — the real client implementation lives in the client bundle.
+
+// @zero on (string channel) = open channel (string path)
+export function fn_open_channel__string(path: string): string {
+    return "";
+}
+
+// @zero on send message (string data) on (string channel)
+export function fn_send_message__string_on__string(data: string, channel: string): void {
+}
+
+// @zero on (string data) = receive message on (string channel)
+export function fn_receive_message_on__string(channel: string): string {
+    return "";
+}
+
+// @zero on close channel (string channel)
+export function fn_close_channel__string(channel: string): void {
+}
+
+
 export function test_parser_0(): void {
     // matching ("()") in ("ᕦ(ツ)ᕤ") after (1) => 3
     const _result = fn_matching__string_in__string_after__int("()", "ᕦ(ツ)ᕤ", 1);
@@ -282,7 +383,7 @@ export function Http_Response(args: Partial<Http_Response> = {}): Http_Response 
     return { request: args.request ?? Http_Request(), body: args.body ?? "" };
 }
 
-// @zero on (int depth$) <- bracket depth of matching (string s) (string pair); ziz/parser.zero.md:131
+// @zero on (int depth$) <- bracket depth of matching (string s) (string pair); ziz/parser.zero.md:225
 export function* task_bracket_depth_of_matching__string__string(s: string, pair: string): Generator<number> {
     let d = 0;
     for (const c of [...s]) {
@@ -295,7 +396,7 @@ export function* task_bracket_depth_of_matching__string__string(s: string, pair:
     }
 }
 
-// @zero on (int pos) = matching (string pair) in (string s) after (int start); ziz/parser.zero.md:140
+// @zero on (int pos) = matching (string pair) in (string s) after (int start); ziz/parser.zero.md:234
 export function fn_matching__string_in__string_after__int(pair: string, s: string, start: number): number {
     const sub = s.slice(start);
     const depth_arr = [...task_bracket_depth_of_matching__string__string(sub, pair)];
@@ -303,7 +404,7 @@ export function fn_matching__string_in__string_after__int(pair: string, s: strin
     return pos;
 }
 
-// @zero on (string part$) = split stream parts (string s); ziz/parser.zero.md:145
+// @zero on (string part$) = split stream parts (string s); ziz/parser.zero.md:239
 export function fn_split_stream_parts__string(s: string): string[] {
     const padded = s + "<-";
     const depth_arr = [...task_bracket_depth_of_matching__string__string(padded, "()")];
