@@ -55,6 +55,11 @@ def fn_reload_page():
     pass  # no-op on server
 
 
+# @zero on (string snapshot) = describe page ()
+def fn_describe_page() -> str:
+    return "no gui on server"
+
+
 # Platform implementation: http (Python)
 # Implements the streams and tasks declared in http.zero.md
 

@@ -56,6 +56,11 @@ export function fn_reload_page(): void {
     }
 }
 
+// @zero on (string snapshot) = describe page ()
+export function fn_describe_page(): string {
+    return "no gui on server";
+}
+
 
 // Platform implementation: http (TypeScript)
 // Implements the streams and tasks declared in http.zero.md
@@ -413,7 +418,7 @@ export function User(args: Partial<User> = {}): User {
     return { name: args.name ?? "", phone: args.phone ?? "", role: args.role ?? "" };
 }
 
-// @zero on (string body) = not found; website/not-found/not-found.zero.md:255
+// @zero on (string body) = not found; website/not-found/not-found.zero.md:258
 export function fn_not_found(): string {
     const body: string = "not found";
     return body;

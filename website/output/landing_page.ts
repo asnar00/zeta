@@ -56,6 +56,11 @@ export function fn_reload_page(): void {
     }
 }
 
+// @zero on (string snapshot) = describe page ()
+export function fn_describe_page(): string {
+    return "no gui on server";
+}
+
 
 // Platform implementation: http (TypeScript)
 // Implements the streams and tasks declared in http.zero.md
@@ -406,7 +411,7 @@ export function User(args: Partial<User> = {}): User {
     return { name: args.name ?? "", phone: args.phone ?? "", role: args.role ?? "" };
 }
 
-// @zero on (string body) = landing page; website/landing-page/landing-page.zero.md:316
+// @zero on (string body) = landing page; website/landing-page/landing-page.zero.md:319
 export function fn_landing_page(): string {
     let body: string = undefined!;
     body = fn_read_file__string("website/index.html");

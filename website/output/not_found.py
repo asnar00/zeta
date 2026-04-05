@@ -56,6 +56,11 @@ def fn_reload_page():
     pass  # no-op on server
 
 
+# @zero on (string snapshot) = describe page ()
+def fn_describe_page() -> str:
+    return "no gui on server"
+
+
 # Platform implementation: http (Python)
 # Implements the streams and tasks declared in http.zero.md
 
@@ -1351,7 +1356,7 @@ class User(NamedTuple):
     phone: str = ""
     role: str = ""
 
-# @zero on (string body) = not found; website/not-found/not-found.zero.md:255
+# @zero on (string body) = not found; website/not-found/not-found.zero.md:258
 def fn_not_found() -> str:
     body = "not found"
     return body

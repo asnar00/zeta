@@ -60,6 +60,11 @@ def fn_reload_page():
     pass  # no-op on server
 
 
+# @zero on (string snapshot) = describe page ()
+def fn_describe_page() -> str:
+    return "no gui on server"
+
+
 # Platform implementation: http (Python)
 # Implements the streams and tasks declared in http.zero.md
 
@@ -1595,7 +1600,7 @@ class User(NamedTuple):
     phone: str = ""
     role: str = ""
 
-# @zero on main (string args$); website/website.zero.md:236
+# @zero on main (string args$); website/website.zero.md:239
 def task_main__string(args_arr: str):
     _push_terminal_out(logo)
     request_arr = task_serve_http__int(port)
@@ -1604,7 +1609,7 @@ def task_main__string(args_arr: str):
         body = fn_handle_request__Http_Request(request)
         _push_http_response(Http_Response(request, body))
 
-# @zero on (string body) = handle request (Http-Request request); website/website.zero.md:244
+# @zero on (string body) = handle request (Http-Request request); website/website.zero.md:247
 def fn_handle_request__Http_Request(request: Http_Request) -> str:
     body = None
     if _get_ctx().landing_page.enabled and request.path == "/":
@@ -1617,7 +1622,7 @@ def fn_handle_request__Http_Request(request: Http_Request) -> str:
         body = not_found.fn_not_found()
     return body if body is not None else ""
 
-# @zero on stop; website/website.zero.md:252
+# @zero on stop; website/website.zero.md:255
 def fn_stop():
     fn_print__string("stopping")
 

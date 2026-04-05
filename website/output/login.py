@@ -53,6 +53,11 @@ def fn_reload_page():
     pass  # no-op on server
 
 
+# @zero on (string snapshot) = describe page ()
+def fn_describe_page() -> str:
+    return "no gui on server"
+
+
 # Platform implementation: http (Python)
 # Implements the streams and tasks declared in http.zero.md
 
@@ -1328,7 +1333,7 @@ class User(NamedTuple):
     phone: str = ""
     role: str = ""
 
-# @zero on toggle login; website/login/login.zero.md:258
+# @zero on toggle login; website/login/login.zero.md:261
 def fn_toggle_login():
     session = fn_get_cookie__string("session")
     if session == "":
@@ -1336,7 +1341,7 @@ def fn_toggle_login():
     else:
         fn_logout_dialog()
 
-# @zero on login; website/login/login.zero.md:265
+# @zero on login; website/login/login.zero.md:268
 def fn_login():
     try:
         name = fn_input__string("name")
@@ -1353,22 +1358,22 @@ def fn_login():
         else:
             raise
 
-# @zero on logout dialog; website/login/login.zero.md:273
+# @zero on logout dialog; website/login/login.zero.md:276
 def fn_logout_dialog():
     choice = fn_choose__string_or__string("log out", "cancel")
     if choice == "log out":
         fn_clear_cookie__string("session")
         fn_reload_page()
 
-# @zero on unknown user (string name); website/login/login.zero.md:279
+# @zero on unknown user (string name); website/login/login.zero.md:282
 def fn_unknown_user__string(name: str):
     fn_show_message__string("unknown user")
 
-# @zero on invalid code (string code); website/login/login.zero.md:282
+# @zero on invalid code (string code); website/login/login.zero.md:285
 def fn_invalid_code__string(code: str):
     fn_show_message__string("invalid code")
 
-# @zero on (string code) = request login (string name); website/login/login.zero.md:285
+# @zero on (string code) = request login (string name); website/login/login.zero.md:288
 def fn_request_login__string(name: str) -> str:
     found = next((x for x in users_arr if x.name == name), type(users_arr[0])() if users_arr else None)
     if found.name != name:
@@ -1378,7 +1383,7 @@ def fn_request_login__string(name: str) -> str:
     pending_codes_arr[found.phone] = code
     return code
 
-# @zero on (User result) = verify login (string name) with code (string code); website/login/login.zero.md:293
+# @zero on (User result) = verify login (string name) with code (string code); website/login/login.zero.md:296
 def fn_verify_login__string_with_code__string(name: str, code: str) -> User:
     found = next((x for x in users_arr if x.name == name), type(users_arr[0])() if users_arr else None)
     stored = pending_codes_arr[found.phone]
@@ -1388,13 +1393,13 @@ def fn_verify_login__string_with_code__string(name: str, code: str) -> User:
     result = found
     return result
 
-# @zero on (string token) = complete login (string name) with code (string code); website/login/login.zero.md:301
+# @zero on (string token) = complete login (string name) with code (string code); website/login/login.zero.md:304
 def fn_complete_login__string_with_code__string(name: str, code: str) -> str:
     found = fn_verify_login__string_with_code__string(name, code)
     token = fn_create_session__string(name)
     return token
 
-# @zero on (string code) = generate code (User u); website/login/login.zero.md:305
+# @zero on (string code) = generate code (User u); website/login/login.zero.md:308
 def fn_generate_code__User(u: User) -> str:
     code = None
     if u.name == "_alice":
@@ -1405,7 +1410,7 @@ def fn_generate_code__User(u: User) -> str:
         code = fn_random_digits__int(4)
     return code if code is not None else ""
 
-# @zero on logo clicked; website/login/login.zero.md:313
+# @zero on logo clicked; website/login/login.zero.md:316
 def fn_logo_clicked():
     fn_toggle_login()
 

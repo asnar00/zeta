@@ -1144,6 +1144,67 @@ function fn_set_cookie_of__string_to__string(name, value) {
 function fn_reload_page() {
     location.reload();
 }
+
+function fn_describe_page() {
+    const lines = [];
+    const vw = window.innerWidth, vh = window.innerHeight;
+    lines.push("viewport " + vw + "x" + vh);
+
+    function describeEl(el, depth) {
+        const rect = el.getBoundingClientRect();
+        const cs = window.getComputedStyle(el);
+        // skip invisible elements
+        if (cs.display === "none" || rect.width === 0 && rect.height === 0) return;
+
+        const indent = "  ".repeat(depth);
+        let tag = el.tagName.toLowerCase();
+        if (el.className && typeof el.className === "string") tag += "." + el.className.trim().replace(/\\s+/g, ".");
+        if (el.id) tag += "#" + el.id;
+
+        const x = Math.round(rect.left), y = Math.round(rect.top);
+        const w = Math.round(rect.width), h = Math.round(rect.height);
+        const offscreen = (x + w < 0 || y + h < 0 || x > vw || y > vh);
+        const visible = cs.visibility !== "hidden" && cs.opacity !== "0" && !offscreen;
+
+        let line = indent + tag + " (" + x + "," + y + " " + w + "x" + h;
+        if (!visible) line += " hidden";
+        if (offscreen) line += " offscreen";
+        line += ")";
+
+        // key styles
+        const bg = cs.backgroundColor;
+        if (bg && bg !== "rgba(0, 0, 0, 0)" && bg !== "transparent") line += " bg:" + bg;
+        const font = cs.fontFamily.split(",")[0].trim().replace(/['"]/g, "");
+        const size = cs.fontSize;
+        line += " " + font + " " + size;
+        const color = cs.color;
+        if (color) line += " color:" + color;
+        const zi = cs.zIndex;
+        if (zi && zi !== "auto") line += " z:" + zi;
+
+        // content
+        const text = Array.from(el.childNodes)
+            .filter(n => n.nodeType === 3 && n.textContent.trim())
+            .map(n => n.textContent.trim())
+            .join(" ");
+        if (text) line += ' "' + text + '"';
+        if (el.tagName === "INPUT") {
+            line += ' value="' + (el.value || "") + '"';
+            if (document.activeElement === el) line += " focused";
+        }
+        if (el.tagName === "BUTTON") {
+            line += ' "' + (el.textContent || "").trim() + '"';
+        }
+
+        lines.push(line);
+        for (const child of el.children) {
+            describeEl(child, depth + 1);
+        }
+    }
+
+    describeEl(document.documentElement, 0);
+    return lines.join("\\n");
+}
 """
 
 _CLIENT_EVAL = """\

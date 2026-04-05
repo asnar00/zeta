@@ -42,3 +42,8 @@ function fn_reload_page(): void {
         location.reload();
     }
 }
+
+// @zero on (string snapshot) = describe page ()
+function fn_describe_page(): string {
+    return "no gui on server";
+}

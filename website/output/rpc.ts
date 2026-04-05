@@ -55,6 +55,11 @@ export function fn_reload_page(): void {
     }
 }
 
+// @zero on (string snapshot) = describe page ()
+export function fn_describe_page(): string {
+    return "no gui on server";
+}
+
 
 // Platform implementation: http (TypeScript)
 // Implements the streams and tasks declared in http.zero.md

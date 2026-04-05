@@ -270,6 +270,25 @@ The handler sits outside the call stack. It can:
 
 Compiles to a no-op. The build reports placeholders separately from errors. A coding agent seeing `...` knows "this is where future work plugs in."
 
+## feature-granular logging
+
+Per-user, per-feature logging that compiles to a single condition check when disabled:
+
+    log ("request login called for " + name)
+
+Compiles to:
+
+    if _get_ctx().login.logging:
+        _emit_log("login", "request login called for " + name)
+
+Each feature gets a `logging` boolean in its context section (per-user, defaulting to false). Toggle live:
+
+    /@rpc/login.logging = true
+
+Log messages route through the WebSocket for real-time streaming. A debugging tool connects to a user's session and subscribes to their log stream — see exactly what their browser or server code is doing.
+
+Minimal overhead when off (one condition check). Instant visibility when on. Per-user so production traffic is unaffected while debugging one user's session.
+
 ## emitter deduplication (PARTIALLY RESOLVED)
 
 `emit_base.py` now contains shared logic: function naming, array refs, dispatch groups, underscore replacement, field collection. Both emitters import from it. Further deduplication possible but diminishing returns until a third emitter is added.

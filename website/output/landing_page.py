@@ -56,6 +56,11 @@ def fn_reload_page():
     pass  # no-op on server
 
 
+# @zero on (string snapshot) = describe page ()
+def fn_describe_page() -> str:
+    return "no gui on server"
+
+
 # Platform implementation: http (Python)
 # Implements the streams and tasks declared in http.zero.md
 
@@ -1345,7 +1350,7 @@ class User(NamedTuple):
     phone: str = ""
     role: str = ""
 
-# @zero on (string body) = landing page; website/landing-page/landing-page.zero.md:316
+# @zero on (string body) = landing page; website/landing-page/landing-page.zero.md:319
 def fn_landing_page() -> str:
     body = fn_read_file__string("website/index.html")
     body = fn_replace__string_in__string_with__string("#34988b", body, _get_ctx().background.colour)

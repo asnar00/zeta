@@ -37,6 +37,10 @@ Reload the current page (or refresh the current view on native):
 
     on reload page ()
 
+Describe the full page state — every visible element with position, size, styles, and content:
+
+    on (string snapshot) = describe page ()
+
 ## integration tests
 
 Input shows a labelled text field, returns the typed value, then removes itself:

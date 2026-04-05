@@ -152,7 +152,15 @@ def run_tests(headed=False):
         check_contains("client functions: has login", result, "login")
         check_contains("client functions: has input", result, "input")
 
-        # --- step 5: clean up ---
+        # --- step 5: describe page ---
+        print("describe page:")
+        snapshot = ws_request(ws, "describe page ()", to="_alice")
+        check_contains("snapshot has viewport", snapshot, "viewport")
+        check_contains("snapshot has body", snapshot, "body")
+        check_contains("snapshot has logo", snapshot, "logo")
+        check_contains("snapshot has teal bg", snapshot, "52, 152, 139")
+
+        # --- step 6: clean up ---
         ws.close()
         browser.close()
 

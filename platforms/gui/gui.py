@@ -36,3 +36,8 @@ def fn_set_cookie_of__string_to__string(name: str, value: str):
 # @zero on reload page ()
 def fn_reload_page():
     pass  # no-op on server
+
+
+# @zero on (string snapshot) = describe page ()
+def fn_describe_page() -> str:
+    return "no gui on server"
