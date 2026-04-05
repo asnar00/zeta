@@ -4,6 +4,7 @@
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import threading
 import queue
+import json
 
 
 class _Request:
@@ -68,9 +69,9 @@ def task_serve_http__int(port):
                 if part.startswith("session="):
                     token = part[8:]
             user_name = _resolve_session_user(token) if token else None
-            route_name = user_name or "anonymous"
+            route_name = user_name or _next_guest_name()
             _register_client_channel(route_name, channel_id)
-            channel.send(channel_id)
+            channel.send(json.dumps({"channel": channel_id, "route": route_name}))
             # process incoming messages via the remote platform
             while not channel._closed:
                 try:

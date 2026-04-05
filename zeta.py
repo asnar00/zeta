@@ -1330,10 +1330,16 @@ function _connect_ws() {
     _ws.onopen = () => console.log("[zero] ws connected");
     _ws.onmessage = async (event) => {
         const data = event.data;
-        // first message is the channel ID
+        // first message is the connection info
         if (!_ws_channel_id) {
-            _ws_channel_id = data;
-            console.log("[zero] ws channel: " + data);
+            try {
+                const info = JSON.parse(data);
+                _ws_channel_id = info.channel;
+                console.log("[zero] ws connected as " + info.route + " (channel " + info.channel + ")");
+            } catch (e) {
+                _ws_channel_id = data;
+                console.log("[zero] ws channel: " + data);
+            }
             return;
         }
         // parse as JSON command

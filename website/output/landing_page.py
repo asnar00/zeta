@@ -82,6 +82,7 @@ def fn_describe_page() -> str:
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import threading
 import queue
+import json
 
 
 class _Request:
@@ -146,9 +147,9 @@ def task_serve_http__int(port):
                 if part.startswith("session="):
                     token = part[8:]
             user_name = _resolve_session_user(token) if token else None
-            route_name = user_name or "anonymous"
+            route_name = user_name or _next_guest_name()
             _register_client_channel(route_name, channel_id)
-            channel.send(channel_id)
+            channel.send(json.dumps({"channel": channel_id, "route": route_name}))
             # process incoming messages via the remote platform
             while not channel._closed:
                 try:
@@ -298,16 +299,25 @@ def fn_handle_remote_request__string(command: str) -> str:
 
 # --- client channel routing ---
 
-_client_channels = {}  # user_name -> set of channel_ids
+_client_channels = {}  # route_name -> set of channel_ids
 _client_channels_lock = threading.Lock()
+_guest_counter = 0
 
 
-def _register_client_channel(user_name, channel_id):
-    """Associate a WebSocket channel with a user name."""
+def _next_guest_name():
+    """Generate a sequential guest name for anonymous connections."""
+    global _guest_counter
     with _client_channels_lock:
-        if user_name not in _client_channels:
-            _client_channels[user_name] = set()
-        _client_channels[user_name].add(channel_id)
+        _guest_counter += 1
+        return f"guest-{_guest_counter}"
+
+
+def _register_client_channel(route_name, channel_id):
+    """Associate a WebSocket channel with a route name."""
+    with _client_channels_lock:
+        if route_name not in _client_channels:
+            _client_channels[route_name] = set()
+        _client_channels[route_name].add(channel_id)
 
 
 def _unregister_client_channel(user_name, channel_id):

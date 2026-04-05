@@ -529,3 +529,5 @@ This exposed three things:
 - Client eval uses same algorithm as server `rpc eval`: `_extract_fn_words` → `_extract_args` → `_find_function`
 - Client WebSocket auto-reconnects on disconnect
 - User names as channel addresses (not opaque IDs) — natural, works for drones/phones/browsers
+- Anonymous connections get sequential names (guest-1, guest-2) so each browser is individually addressable in tests
+- Multi-browser integration test: each tab is a separate guest or named user, test routes commands to specific browsers by name

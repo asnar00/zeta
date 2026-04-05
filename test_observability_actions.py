@@ -115,43 +115,45 @@ def run_tests(headed=False):
         ws = ws_lib.create_connection(WS_URL, timeout=5)
         ws.recv()
 
-        # verify anonymous client is connected
+        # find the guest name assigned to the anonymous browser
         clients = ws_request(ws, "connected clients ()")
-        check_contains("anonymous connected", clients, "anonymous")
+        guest_names = [c.strip() for c in clients.split(",") if c.strip().startswith("guest-")]
+        guest = guest_names[0] if guest_names else "guest-1"
+        check_true("guest connected", len(guest_names) > 0)
 
         # describe initial page
-        snapshot = ws_request(ws, "describe page ()", to="anonymous")
+        snapshot = ws_request(ws, "describe page ()", to=guest)
         check_contains("initial: has logo", snapshot, "logo")
         check_contains("initial: teal bg", snapshot, "52, 152, 139")
 
         # --- click logo: should show login (no session) ---
         print("login flow via ws:")
-        result = ws_request(ws, 'click on (".logo")', to="anonymous")
+        result = ws_request(ws, 'click on (".logo")', to=guest)
         check("click logo", result, "ok")
         time.sleep(1)
 
-        snapshot = ws_request(ws, "describe page ()", to="anonymous")
+        snapshot = ws_request(ws, "describe page ()", to=guest)
         check_contains("name input appeared", snapshot, "input")
 
         # type name
-        result = ws_request(ws, 'type ("_alice") into ("input")', to="anonymous")
+        result = ws_request(ws, 'type ("_alice") into ("input")', to=guest)
         check("type name", result, "ok")
 
         # press Enter — triggers RPC to server
-        result = ws_request(ws, 'press ("Enter") on ("input")', to="anonymous")
+        result = ws_request(ws, 'press ("Enter") on ("input")', to=guest)
         check("press enter on name", result, "ok")
         time.sleep(3)
 
         # code input should appear
-        snapshot = ws_request(ws, "describe page ()", to="anonymous")
+        snapshot = ws_request(ws, "describe page ()", to=guest)
         check_contains("code input appeared", snapshot, "input")
 
         # type code
-        result = ws_request(ws, 'type ("1234") into ("input")', to="anonymous")
+        result = ws_request(ws, 'type ("1234") into ("input")', to=guest)
         check("type code", result, "ok")
 
         # press Enter — triggers login, cookie set, page reload
-        result = ws_request(ws, 'press ("Enter") on ("input")', to="anonymous")
+        result = ws_request(ws, 'press ("Enter") on ("input")', to=guest)
         check("press enter on code", result, "ok")
         time.sleep(5)
 

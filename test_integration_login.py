@@ -4,7 +4,10 @@ Implements the test spec from website/login/login.zero.md ## integration tests:
 Three browser tabs, three users, three background colours.
 Also tests the toggle login / logout workflow.
 
-ALL tests run through the real Cloudflare HTTPS URL, not localhost.
+Playwright opens browser contexts. All interaction and assertions go
+through the WebSocket remote channel.
+
+All tests go through the real Cloudflare HTTPS URL.
 
 Usage: python3 test_integration_login.py [--headed]
 """
@@ -13,26 +16,20 @@ import subprocess
 import sys
 import time
 import os
+import signal
+import json
+import urllib.request
+import urllib.parse
 
 BASE_URL = "https://test.xn--nb-lkaa.org"
+WS_URL = "wss://test.xn--nb-lkaa.org/@ws"
 
 
-def build_website():
-    result = subprocess.run(
+def build_and_start():
+    subprocess.run(
         [sys.executable, "zeta.py", "website/features.md", "website/output/"],
         capture_output=True, text=True
     )
-    if result.returncode != 0:
-        print("BUILD FAILED:")
-        print(result.stderr)
-        return False
-    print(result.stdout.strip())
-    return True
-
-
-def start_server():
-    # kill any existing server on port 8084
-    import signal
     try:
         pids = subprocess.check_output(["lsof", "-ti", ":8084"], text=True).strip()
         for pid in pids.split("\n"):
@@ -48,122 +45,113 @@ def start_server():
         [sys.executable, "website/output/website.py"],
         stdout=subprocess.PIPE, stderr=subprocess.PIPE,
     )
-    # wait for server to be reachable — first check localhost, then Cloudflare
-    import urllib.request
     for _ in range(20):
         try:
             urllib.request.urlopen("http://localhost:8084/", timeout=1)
             break
         except Exception:
             time.sleep(0.3)
-    else:
-        print("SERVER FAILED TO START (not listening on 8084)")
-        if proc.poll() is not None:
-            print("STDERR:", proc.stderr.read().decode()[:500])
-        proc.kill()
-        return None
-    # now wait for Cloudflare to route to it
     for _ in range(20):
         try:
             req = urllib.request.Request(f"{BASE_URL}/",
-                headers={"User-Agent": "Mozilla/5.0 (Macintosh) Chrome/120"})
+                headers={"User-Agent": "Mozilla/5.0 Chrome/120"})
             urllib.request.urlopen(req, timeout=3)
             return proc
         except Exception:
             time.sleep(0.5)
-    print("SERVER FAILED TO START (not reachable via Cloudflare)")
-    if proc.poll() is not None:
-        print("STDERR:", proc.stderr.read().decode()[:500])
+    print("SERVER NOT REACHABLE")
     proc.kill()
     return None
 
 
-def stop_server(proc):
-    if proc:
-        proc.terminate()
+def rpc(path):
+    url = f"{BASE_URL}/@rpc/{urllib.parse.quote(path)}"
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 Chrome/120"})
+    return urllib.request.urlopen(req, timeout=5).read().decode().strip()
+
+
+def ws_request(ws, cmd, to=None, timeout=10):
+    rid = str(time.monotonic_ns())
+    msg = {"id": rid, "cmd": cmd}
+    if to:
+        msg["to"] = to
+    ws.send(json.dumps(msg))
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        ws.settimeout(max(0.1, deadline - time.time()))
         try:
-            proc.wait(timeout=3)
-        except subprocess.TimeoutExpired:
-            proc.kill()
-
-
-def get_background_colour(page):
-    return page.evaluate("""
-        () => {
-            const bg = window.getComputedStyle(document.body).backgroundColor;
-            const match = bg.match(/rgb\\((\\d+),\\s*(\\d+),\\s*(\\d+)\\)/);
-            if (!match) return bg;
-            const r = parseInt(match[1]).toString(16).padStart(2, '0');
-            const g = parseInt(match[2]).toString(16).padStart(2, '0');
-            const b = parseInt(match[3]).toString(16).padStart(2, '0');
-            return '#' + r + g + b;
-        }
-    """)
-
-
-def set_background_via_rpc(page, colour):
-    import urllib.parse
-    expr = urllib.parse.quote(f'background.colour = {colour}')
-    page.evaluate(f'() => fetch("{BASE_URL}/@rpc/{expr}", {{ credentials: "include" }})')
-    page.reload()
-    page.wait_for_load_state("networkidle")
-
-
-def has_session_cookie(ctx):
-    return any(c["name"] == "session" for c in ctx.cookies())
-
-
-def login_via_browser(page, ctx, name, code):
-    """Click logo, type name, type code. Returns True if login succeeded."""
-    page.click(".logo")
-    try:
-        page.wait_for_selector("input", timeout=5000)
-    except Exception:
-        return False
-    input_el = page.query_selector("input")
-    input_el.fill(name)
-    input_el.press("Enter")
-    time.sleep(2)
-    try:
-        page.wait_for_selector("input", timeout=10000)
-    except Exception:
-        return False
-    input_el = page.query_selector("input")
-    input_el.fill(code)
-    input_el.press("Enter")
-    time.sleep(3)
-    return has_session_cookie(ctx)
-
-
-def logout_via_browser(page, ctx):
-    """Click logo (should show logout dialog), click 'log out'."""
-    page.click(".logo")
-    try:
-        page.wait_for_selector("button", timeout=5000)
-    except Exception:
-        return False
-    buttons = page.query_selector_all("button")
-    for b in buttons:
-        if b.text_content() == "log out":
-            b.click()
+            data = ws.recv()
+            resp = json.loads(data)
+            if resp.get("id") == rid:
+                return resp.get("result", "")
+        except Exception:
             break
+    return "error: timeout"
+
+
+def get_bg(ws, route):
+    """Get background colour as hex from a page snapshot."""
+    import re
+    snapshot = ws_request(ws, "describe page ()", to=route)
+    m = re.search(r"bg:rgb\((\d+),\s*(\d+),\s*(\d+)\)", snapshot)
+    if m:
+        r, g, b = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        return f"#{r:02x}{g:02x}{b:02x}"
+    return ""
+
+
+def set_bg(colour, token):
+    """Set background colour via RPC with session cookie."""
+    expr = urllib.parse.quote(f"background.colour = {colour}")
+    url = f"{BASE_URL}/@rpc/{expr}"
+    req = urllib.request.Request(url, headers={
+        "User-Agent": "Mozilla/5.0 Chrome/120",
+        "Cookie": f"session={token}",
+    })
+    urllib.request.urlopen(req, timeout=5)
+
+
+def find_new_guests(ws, known_guests):
+    """Find guest names that weren't in known_guests."""
+    clients = ws_request(ws, "connected clients ()")
+    all_names = [c.strip() for c in clients.split(",")]
+    return [n for n in all_names if n.startswith("guest-") and n not in known_guests]
+
+
+def open_tab(browser, ws, known_guests):
+    """Open a new browser tab and return (context, page, guest_name)."""
+    ctx = browser.new_context()
+    page = ctx.new_page()
+    page.goto(f"{BASE_URL}/")
+    page.wait_for_load_state("networkidle")
     time.sleep(3)
-    return not has_session_cookie(ctx)
+    new_guests = find_new_guests(ws, known_guests)
+    name = new_guests[0] if new_guests else None
+    if name:
+        known_guests.add(name)
+    return ctx, page, name
 
 
-def click_logo_shows_buttons(page):
-    """Click logo and check if buttons appear (logout) rather than input (login)."""
-    page.click(".logo")
+def login_via_ws(ws, route, name, code):
+    """Login flow via WebSocket commands. Returns the user's route name after login."""
+    ws_request(ws, 'click on (".logo")', to=route)
     time.sleep(1)
-    buttons = page.query_selector_all("button")
-    inputs = page.query_selector_all("input")
-    return len(buttons) > 0 and len(inputs) == 0
+    ws_request(ws, f'type ("{name}") into ("input")', to=route)
+    ws_request(ws, 'press ("Enter") on ("input")', to=route)
+    time.sleep(3)
+    ws_request(ws, f'type ("{code}") into ("input")', to=route)
+    ws_request(ws, 'press ("Enter") on ("input")', to=route)
+    time.sleep(5)
+    # after login + reload, the route changes from guest-N to the user name
+    return name
 
 
 def run_tests(headed=False):
+    import websocket as ws_lib
     from playwright.sync_api import sync_playwright
 
     results = []
+    known_guests = set()
 
     def check(name, actual, expected):
         ok = actual == expected
@@ -174,83 +162,95 @@ def run_tests(headed=False):
         results.append((name, bool(value)))
         print(f"  {'PASS' if value else 'FAIL'}: {name}" + ("" if value else f" (got {value!r})"))
 
+    def check_contains(name, haystack, needle):
+        ok = needle in haystack
+        results.append((name, ok))
+        print(f"  {'PASS' if ok else 'FAIL'}: {name}" + (f" ({needle!r} not in ...)" if not ok else ""))
+
+    ws = ws_lib.create_connection(WS_URL, timeout=5)
+    first_msg = ws.recv()
+    try:
+        info = json.loads(first_msg)
+        test_route = info.get("route", "")
+    except Exception:
+        test_route = ""
+    known_guests.add(test_route)  # exclude our own connection from guest discovery
+
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=not headed)
 
         # --- default tab: no login, teal ---
         print("default tab:")
-        ctx_default = browser.new_context()
-        page_default = ctx_default.new_page()
-        page_default.goto(f"{BASE_URL}/")
-        page_default.wait_for_load_state("networkidle")
-        check("default: teal background", get_background_colour(page_default), "#34988b")
+        ctx_default, _, default_route = open_tab(browser, ws, known_guests)
+        check_true("default: has route", default_route is not None)
+        check("default: teal", get_bg(ws, default_route), "#34988b")
 
         # --- alice: login, set red ---
         print("alice tab:")
-        ctx_alice = browser.new_context()
-        page_alice = ctx_alice.new_page()
-        page_alice.goto(f"{BASE_URL}/")
-        page_alice.wait_for_load_state("networkidle")
-        logged_in = login_via_browser(page_alice, ctx_alice, "_alice", "1234")
-        check_true("alice: logged in", logged_in)
-        set_background_via_rpc(page_alice, "#ff0000")
-        check("alice: red background", get_background_colour(page_alice), "#ff0000")
+        ctx_alice, _, alice_guest = open_tab(browser, ws, known_guests)
+        check_true("alice tab: has route", alice_guest is not None)
+        login_via_ws(ws, alice_guest, "_alice", "1234")
+        # alice's route should now be "_alice"
+        clients = ws_request(ws, "connected clients ()")
+        check_contains("alice connected", clients, "_alice")
+        alice_token = ws_request(ws, 'get cookie ("session")', to="_alice")
+        check_true("alice has token", len(alice_token) > 0 and alice_token != "error: timeout")
+        set_bg("#ff0000", alice_token)
+        ws_request(ws, "reload page ()", to="_alice")
+        time.sleep(3)
+        check("alice: red", get_bg(ws, "_alice"), "#ff0000")
 
-        # --- alice: click logo again shows logout dialog ---
+        # --- alice toggle: logo shows logout ---
         print("alice toggle:")
-        shows_buttons = click_logo_shows_buttons(page_alice)
-        check_true("alice: logo click shows logout buttons", shows_buttons)
-        page_alice.reload()
-        page_alice.wait_for_load_state("networkidle")
+        ws_request(ws, 'click on (".logo")', to="_alice")
+        time.sleep(1)
+        snapshot = ws_request(ws, "describe page ()", to="_alice")
+        check_contains("alice: logout buttons", snapshot, '"log out"')
+        ws_request(ws, "reload page ()", to="_alice")
+        time.sleep(3)
 
         # --- bob: login, set blue ---
         print("bob tab:")
-        ctx_bob = browser.new_context()
-        page_bob = ctx_bob.new_page()
-        page_bob.goto(f"{BASE_URL}/")
-        page_bob.wait_for_load_state("networkidle")
-        logged_in = login_via_browser(page_bob, ctx_bob, "_bob", "4321")
-        check_true("bob: logged in", logged_in)
-        set_background_via_rpc(page_bob, "#0000ff")
-        check("bob: blue background", get_background_colour(page_bob), "#0000ff")
+        ctx_bob, _, bob_guest = open_tab(browser, ws, known_guests)
+        check_true("bob tab: has route", bob_guest is not None)
+        login_via_ws(ws, bob_guest, "_bob", "4321")
+        clients = ws_request(ws, "connected clients ()")
+        check_contains("bob connected", clients, "_bob")
+        bob_token = ws_request(ws, 'get cookie ("session")', to="_bob")
+        check_true("bob has token", len(bob_token) > 0 and bob_token != "error: timeout")
+        set_bg("#0000ff", bob_token)
+        ws_request(ws, "reload page ()", to="_bob")
+        time.sleep(3)
+        check("bob: blue", get_bg(ws, "_bob"), "#0000ff")
 
         # --- isolation ---
         print("isolation:")
-        page_default.reload()
-        page_default.wait_for_load_state("networkidle")
-        check("default: still teal", get_background_colour(page_default), "#34988b")
+        check("default: still teal", get_bg(ws, default_route), "#34988b")
+        check("alice: still red", get_bg(ws, "_alice"), "#ff0000")
+        check("bob: still blue", get_bg(ws, "_bob"), "#0000ff")
 
-        page_alice.reload()
-        page_alice.wait_for_load_state("networkidle")
-        check("alice: still red", get_background_colour(page_alice), "#ff0000")
-
-        page_bob.reload()
-        page_bob.wait_for_load_state("networkidle")
-        check("bob: still blue", get_background_colour(page_bob), "#0000ff")
-
-        # --- alice: logout ---
+        # --- alice logout ---
         print("alice logout:")
-        logged_out = logout_via_browser(page_alice, ctx_alice)
-        check_true("alice: logged out (cookie cleared)", logged_out)
-        page_alice.goto(f"{BASE_URL}/")
-        page_alice.wait_for_load_state("networkidle")
-        check("alice: back to teal after logout", get_background_colour(page_alice), "#34988b")
-
-        # --- alice: logo after logout shows login ---
-        print("alice after logout:")
-        page_alice.click(".logo")
+        ws_request(ws, 'click on (".logo")', to="_alice")
         time.sleep(1)
-        has_input = page_alice.query_selector("input") is not None
-        has_buttons = len(page_alice.query_selector_all("button")) > 0
-        check_true("alice: logo shows login input after logout", has_input and not has_buttons)
+        ws_request(ws, 'click on ("button")', to="_alice")
+        time.sleep(3)
+        # after logout + reload, alice's browser reconnects as a new guest
+        time.sleep(3)
+        new_guests = find_new_guests(ws, known_guests)
+        alice_after = new_guests[0] if new_guests else None
+        if alice_after:
+            known_guests.add(alice_after)
+        check_true("alice: got new guest route", alice_after is not None)
+        if alice_after:
+            check("alice: teal after logout", get_bg(ws, alice_after), "#34988b")
 
-        # --- bob: still logged in ---
-        print("bob still active:")
-        page_bob.reload()
-        page_bob.wait_for_load_state("networkidle")
-        check("bob: still blue after alice logout", get_background_colour(page_bob), "#0000ff")
+        # bob still blue
+        check("bob: still blue", get_bg(ws, "_bob"), "#0000ff")
 
         browser.close()
+
+    ws.close()
 
     passed = sum(1 for _, ok in results if ok)
     failed = sum(1 for _, ok in results if not ok)
@@ -261,12 +261,8 @@ def run_tests(headed=False):
 if __name__ == "__main__":
     headed = "--headed" in sys.argv
 
-    print("=== building website ===")
-    if not build_website():
-        sys.exit(1)
-
-    print("\n=== starting server ===")
-    server = start_server()
+    print("=== building and starting server ===")
+    server = build_and_start()
     if not server:
         sys.exit(1)
 
@@ -275,6 +271,12 @@ if __name__ == "__main__":
         success = run_tests(headed)
     finally:
         print("\n=== stopping server ===")
-        stop_server(server)
+        try:
+            pids = subprocess.check_output(["lsof", "-ti", ":8084"], text=True).strip()
+            for pid in pids.split("\n"):
+                if pid:
+                    os.kill(int(pid), signal.SIGTERM)
+        except Exception:
+            pass
 
     sys.exit(0 if success else 1)

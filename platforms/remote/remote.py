@@ -63,16 +63,25 @@ def fn_handle_remote_request__string(command: str) -> str:
 
 # --- client channel routing ---
 
-_client_channels = {}  # user_name -> set of channel_ids
+_client_channels = {}  # route_name -> set of channel_ids
 _client_channels_lock = threading.Lock()
+_guest_counter = 0
 
 
-def _register_client_channel(user_name, channel_id):
-    """Associate a WebSocket channel with a user name."""
+def _next_guest_name():
+    """Generate a sequential guest name for anonymous connections."""
+    global _guest_counter
     with _client_channels_lock:
-        if user_name not in _client_channels:
-            _client_channels[user_name] = set()
-        _client_channels[user_name].add(channel_id)
+        _guest_counter += 1
+        return f"guest-{_guest_counter}"
+
+
+def _register_client_channel(route_name, channel_id):
+    """Associate a WebSocket channel with a route name."""
+    with _client_channels_lock:
+        if route_name not in _client_channels:
+            _client_channels[route_name] = set()
+        _client_channels[route_name].add(channel_id)
 
 
 def _unregister_client_channel(user_name, channel_id):

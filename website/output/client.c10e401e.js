@@ -87,7 +87,93 @@ function fn_reload_page() {
     location.reload();
 }
 
-// @zero on toggle login; composed:258
+async function fn_click_on__string(selector) {
+    const el = document.querySelector(selector);
+    if (!el) return "error: element not found: " + selector;
+    el.click();
+    // wait for async handlers to settle (microtasks + one animation frame)
+    await new Promise(r => setTimeout(r, 100));
+    return "ok";
+}
+
+function fn_type__string_into__string(text, selector) {
+    const el = document.querySelector(selector);
+    if (!el) return "error: element not found: " + selector;
+    el.focus();
+    el.value = text;
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+    return "ok";
+}
+
+function fn_press__string_on__string(key, selector) {
+    const el = document.querySelector(selector);
+    if (!el) return "error: element not found: " + selector;
+    el.dispatchEvent(new KeyboardEvent("keydown", { key: key, bubbles: true }));
+    return "ok";
+}
+
+function fn_describe_page() {
+    const lines = [];
+    const vw = window.innerWidth, vh = window.innerHeight;
+    lines.push("viewport " + vw + "x" + vh);
+
+    function describeEl(el, depth) {
+        const rect = el.getBoundingClientRect();
+        const cs = window.getComputedStyle(el);
+        // skip invisible elements
+        if (cs.display === "none" || rect.width === 0 && rect.height === 0) return;
+
+        const indent = "  ".repeat(depth);
+        let tag = el.tagName.toLowerCase();
+        if (el.className && typeof el.className === "string") tag += "." + el.className.trim().replace(/\s+/g, ".");
+        if (el.id) tag += "#" + el.id;
+
+        const x = Math.round(rect.left), y = Math.round(rect.top);
+        const w = Math.round(rect.width), h = Math.round(rect.height);
+        const offscreen = (x + w < 0 || y + h < 0 || x > vw || y > vh);
+        const visible = cs.visibility !== "hidden" && cs.opacity !== "0" && !offscreen;
+
+        let line = indent + tag + " (" + x + "," + y + " " + w + "x" + h;
+        if (!visible) line += " hidden";
+        if (offscreen) line += " offscreen";
+        line += ")";
+
+        // key styles
+        const bg = cs.backgroundColor;
+        if (bg && bg !== "rgba(0, 0, 0, 0)" && bg !== "transparent") line += " bg:" + bg;
+        const font = cs.fontFamily.split(",")[0].trim().replace(/['"]/g, "");
+        const size = cs.fontSize;
+        line += " " + font + " " + size;
+        const color = cs.color;
+        if (color) line += " color:" + color;
+        const zi = cs.zIndex;
+        if (zi && zi !== "auto") line += " z:" + zi;
+
+        // content
+        const text = Array.from(el.childNodes)
+            .filter(n => n.nodeType === 3 && n.textContent.trim())
+            .map(n => n.textContent.trim())
+            .join(" ");
+        if (text) line += ' "' + text + '"';
+        if (el.tagName === "INPUT") {
+            line += ' value="' + (el.value || "") + '"';
+            if (document.activeElement === el) line += " focused";
+        }
+        if (el.tagName === "BUTTON") {
+            line += ' "' + (el.textContent || "").trim() + '"';
+        }
+
+        lines.push(line);
+        for (const child of el.children) {
+            describeEl(child, depth + 1);
+        }
+    }
+
+    describeEl(document.documentElement, 0);
+    return lines.join("\n");
+}
+
+// @zero on toggle login; composed:270
 async function fn_toggle_login(){
     const session = await fn_get_cookie__string("session");
     if (session == "") {
@@ -97,7 +183,7 @@ async function fn_toggle_login(){
 }
 }
 
-// @zero on login; composed:265
+// @zero on login; composed:277
 async function fn_login(){
     try {
         const name = await fn_input__string("name");
@@ -117,7 +203,7 @@ async function fn_login(){
     }
 }
 
-// @zero on logout dialog; composed:273
+// @zero on logout dialog; composed:285
 async function fn_logout_dialog(){
     const choice = await fn_choose__string_or__string("log out", "cancel");
     if (choice == "log out") {
@@ -126,17 +212,17 @@ async function fn_logout_dialog(){
 }
 }
 
-// @zero on unknown user (string name); composed:279
+// @zero on unknown user (string name); composed:291
 async function fn_unknown_user__string(name){
     await fn_show_message__string("unknown user");
 }
 
-// @zero on invalid code (string code); composed:282
+// @zero on invalid code (string code); composed:294
 async function fn_invalid_code__string(code){
     await fn_show_message__string("invalid code");
 }
 
-// @zero on logo clicked; composed:313
+// @zero on logo clicked; composed:325
 async function fn_logo_clicked(){
     await fn_toggle_login();
 }
@@ -236,10 +322,16 @@ function _connect_ws() {
     _ws.onopen = () => console.log("[zero] ws connected");
     _ws.onmessage = async (event) => {
         const data = event.data;
-        // first message is the channel ID
+        // first message is the connection info
         if (!_ws_channel_id) {
-            _ws_channel_id = data;
-            console.log("[zero] ws channel: " + data);
+            try {
+                const info = JSON.parse(data);
+                _ws_channel_id = info.channel;
+                console.log("[zero] ws connected as " + info.route + " (channel " + info.channel + ")");
+            } catch (e) {
+                _ws_channel_id = data;
+                console.log("[zero] ws channel: " + data);
+            }
             return;
         }
         // parse as JSON command
