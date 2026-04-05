@@ -53,6 +53,18 @@ export function fn_reload_page(): void {
     }
 }
 
+// @zero on click on (string selector)
+export function fn_click_on__string(selector: string): void {
+}
+
+// @zero on type (string text) into (string selector)
+export function fn_type__string_into__string(text: string, selector: string): void {
+}
+
+// @zero on press (string key) on (string selector)
+export function fn_press__string_on__string(key: string, selector: string): void {
+}
+
 // @zero on (string snapshot) = describe page ()
 export function fn_describe_page(): string {
     return "no gui on server";
@@ -395,7 +407,7 @@ export function User(args: Partial<User> = {}): User {
     return { name: args.name ?? "", phone: args.phone ?? "", role: args.role ?? "" };
 }
 
-// @zero on toggle login; website/login/login.zero.md:261
+// @zero on toggle login; website/login/login.zero.md:270
 export function fn_toggle_login(): void {
     const session = fn_get_cookie__string("session");
     if (session == "") {
@@ -405,7 +417,7 @@ export function fn_toggle_login(): void {
 }
 }
 
-// @zero on login; website/login/login.zero.md:268
+// @zero on login; website/login/login.zero.md:277
 export function fn_login(): void {
     try {
         const name = fn_input__string("name");
@@ -425,7 +437,7 @@ export function fn_login(): void {
     }
 }
 
-// @zero on logout dialog; website/login/login.zero.md:276
+// @zero on logout dialog; website/login/login.zero.md:285
 export function fn_logout_dialog(): void {
     const choice = fn_choose__string_or__string("log out", "cancel");
     if (choice == "log out") {
@@ -434,17 +446,17 @@ export function fn_logout_dialog(): void {
 }
 }
 
-// @zero on unknown user (string name); website/login/login.zero.md:282
+// @zero on unknown user (string name); website/login/login.zero.md:291
 export function fn_unknown_user__string(name: string): void {
     fn_show_message__string("unknown user");
 }
 
-// @zero on invalid code (string code); website/login/login.zero.md:285
+// @zero on invalid code (string code); website/login/login.zero.md:294
 export function fn_invalid_code__string(code: string): void {
     fn_show_message__string("invalid code");
 }
 
-// @zero on (string code) = request login (string name); website/login/login.zero.md:288
+// @zero on (string code) = request login (string name); website/login/login.zero.md:297
 export function fn_request_login__string(name: string): string {
     let code: string = undefined!;
     const found = users_arr.find(x => x.name == name)!;
@@ -457,7 +469,7 @@ export function fn_request_login__string(name: string): string {
     return code;
 }
 
-// @zero on (User result) = verify login (string name) with code (string code); website/login/login.zero.md:296
+// @zero on (User result) = verify login (string name) with code (string code); website/login/login.zero.md:305
 export function fn_verify_login__string_with_code__string(name: string, code: string): User {
     let result: User = undefined!;
     const found = users_arr.find(x => x.name == name)!;
@@ -470,14 +482,14 @@ export function fn_verify_login__string_with_code__string(name: string, code: st
     return result;
 }
 
-// @zero on (string token) = complete login (string name) with code (string code); website/login/login.zero.md:304
+// @zero on (string token) = complete login (string name) with code (string code); website/login/login.zero.md:313
 export function fn_complete_login__string_with_code__string(name: string, code: string): string {
     const found = fn_verify_login__string_with_code__string(name, code);
     const token: string = fn_create_session__string(name);
     return token;
 }
 
-// @zero on (string code) = generate code (User u); website/login/login.zero.md:308
+// @zero on (string code) = generate code (User u); website/login/login.zero.md:317
 export function fn_generate_code__User(u: User): string {
     let code: string = undefined!;
     if (u.name == "_alice") {
@@ -490,7 +502,7 @@ export function fn_generate_code__User(u: User): string {
     return code;
 }
 
-// @zero on logo clicked; website/login/login.zero.md:316
+// @zero on logo clicked; website/login/login.zero.md:325
 export function fn_logo_clicked(): void {
     fn_toggle_login();
 }

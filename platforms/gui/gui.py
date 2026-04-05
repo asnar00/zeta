@@ -38,6 +38,21 @@ def fn_reload_page():
     pass  # no-op on server
 
 
+# @zero on click on (string selector)
+def fn_click_on__string(selector: str):
+    pass  # no-op on server
+
+
+# @zero on type (string text) into (string selector)
+def fn_type__string_into__string(text: str, selector: str):
+    pass  # no-op on server
+
+
+# @zero on press (string key) on (string selector)
+def fn_press__string_on__string(key: str, selector: str):
+    pass  # no-op on server
+
+
 # @zero on (string snapshot) = describe page ()
 def fn_describe_page() -> str:
     return "no gui on server"

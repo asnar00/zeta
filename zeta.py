@@ -1145,6 +1145,31 @@ function fn_reload_page() {
     location.reload();
 }
 
+async function fn_click_on__string(selector) {
+    const el = document.querySelector(selector);
+    if (!el) return "error: element not found: " + selector;
+    el.click();
+    // wait for async handlers to settle (microtasks + one animation frame)
+    await new Promise(r => setTimeout(r, 100));
+    return "ok";
+}
+
+function fn_type__string_into__string(text, selector) {
+    const el = document.querySelector(selector);
+    if (!el) return "error: element not found: " + selector;
+    el.focus();
+    el.value = text;
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+    return "ok";
+}
+
+function fn_press__string_on__string(key, selector) {
+    const el = document.querySelector(selector);
+    if (!el) return "error: element not found: " + selector;
+    el.dispatchEvent(new KeyboardEvent("keydown", { key: key, bubbles: true }));
+    return "ok";
+}
+
 function fn_describe_page() {
     const lines = [];
     const vw = window.innerWidth, vh = window.innerHeight;

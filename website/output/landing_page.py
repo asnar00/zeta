@@ -56,6 +56,21 @@ def fn_reload_page():
     pass  # no-op on server
 
 
+# @zero on click on (string selector)
+def fn_click_on__string(selector: str):
+    pass  # no-op on server
+
+
+# @zero on type (string text) into (string selector)
+def fn_type__string_into__string(text: str, selector: str):
+    pass  # no-op on server
+
+
+# @zero on press (string key) on (string selector)
+def fn_press__string_on__string(key: str, selector: str):
+    pass  # no-op on server
+
+
 # @zero on (string snapshot) = describe page ()
 def fn_describe_page() -> str:
     return "no gui on server"
@@ -131,8 +146,8 @@ def task_serve_http__int(port):
                 if part.startswith("session="):
                     token = part[8:]
             user_name = _resolve_session_user(token) if token else None
-            if user_name:
-                _register_client_channel(user_name, channel_id)
+            route_name = user_name or "anonymous"
+            _register_client_channel(route_name, channel_id)
             channel.send(channel_id)
             # process incoming messages via the remote platform
             while not channel._closed:
@@ -142,8 +157,7 @@ def task_serve_http__int(port):
                 except Exception:
                     pass
             # clean up
-            if user_name:
-                _unregister_client_channel(user_name, channel_id)
+            _unregister_client_channel(route_name, channel_id)
             self.close_connection = True
 
         def _serve_client_file(self):
@@ -1350,7 +1364,7 @@ class User(NamedTuple):
     phone: str = ""
     role: str = ""
 
-# @zero on (string body) = landing page; website/landing-page/landing-page.zero.md:319
+# @zero on (string body) = landing page; website/landing-page/landing-page.zero.md:328
 def fn_landing_page() -> str:
     body = fn_read_file__string("website/index.html")
     body = fn_replace__string_in__string_with__string("#34988b", body, _get_ctx().background.colour)

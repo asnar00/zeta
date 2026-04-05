@@ -43,6 +43,18 @@ function fn_reload_page(): void {
     }
 }
 
+// @zero on click on (string selector)
+function fn_click_on__string(selector: string): void {
+}
+
+// @zero on type (string text) into (string selector)
+function fn_type__string_into__string(text: string, selector: string): void {
+}
+
+// @zero on press (string key) on (string selector)
+function fn_press__string_on__string(key: string, selector: string): void {
+}
+
 // @zero on (string snapshot) = describe page ()
 function fn_describe_page(): string {
     return "no gui on server";

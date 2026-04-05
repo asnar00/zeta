@@ -41,6 +41,18 @@ Describe the full page state — every visible element with position, size, styl
 
     on (string snapshot) = describe page ()
 
+Click on an element:
+
+    on click on (string selector)
+
+Type text into an input element:
+
+    on type (string text) into (string selector)
+
+Press a key on an element:
+
+    on press (string key) on (string selector)
+
 ## integration tests
 
 Input shows a labelled text field, returns the typed value, then removes itself:

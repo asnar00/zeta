@@ -65,6 +65,18 @@ export function fn_reload_page(): void {
     }
 }
 
+// @zero on click on (string selector)
+export function fn_click_on__string(selector: string): void {
+}
+
+// @zero on type (string text) into (string selector)
+export function fn_type__string_into__string(text: string, selector: string): void {
+}
+
+// @zero on press (string key) on (string selector)
+export function fn_press__string_on__string(key: string, selector: string): void {
+}
+
 // @zero on (string snapshot) = describe page ()
 export function fn_describe_page(): string {
     return "no gui on server";
@@ -710,7 +722,7 @@ export function User(args: Partial<User> = {}): User {
     return { name: args.name ?? "", phone: args.phone ?? "", role: args.role ?? "" };
 }
 
-// @zero on main (string args$); website/website.zero.md:239
+// @zero on main (string args$); website/website.zero.md:248
 export async function task_main__string(args_arr: readonly string[]): Promise<void> {
     _push_terminal_out(logo);
     const request_arr = task_serve_http__int(port);
@@ -721,7 +733,7 @@ export async function task_main__string(args_arr: readonly string[]): Promise<vo
     }
 }
 
-// @zero on (string body) = handle request (Http-Request request); website/website.zero.md:247
+// @zero on (string body) = handle request (Http-Request request); website/website.zero.md:256
 export function fn_handle_request__Http_Request(request: Http_Request): string {
     let body: string = undefined!;
     if (_get_ctx().landing_page.enabled && request.path == "/") {
@@ -739,7 +751,7 @@ export function fn_handle_request__Http_Request(request: Http_Request): string {
     return body;
 }
 
-// @zero on stop; website/website.zero.md:255
+// @zero on stop; website/website.zero.md:264
 export function fn_stop(): void {
     fn_print__string("stopping");
 }

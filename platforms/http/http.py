@@ -68,8 +68,8 @@ def task_serve_http__int(port):
                 if part.startswith("session="):
                     token = part[8:]
             user_name = _resolve_session_user(token) if token else None
-            if user_name:
-                _register_client_channel(user_name, channel_id)
+            route_name = user_name or "anonymous"
+            _register_client_channel(route_name, channel_id)
             channel.send(channel_id)
             # process incoming messages via the remote platform
             while not channel._closed:
@@ -79,8 +79,7 @@ def task_serve_http__int(port):
                 except Exception:
                     pass
             # clean up
-            if user_name:
-                _unregister_client_channel(user_name, channel_id)
+            _unregister_client_channel(route_name, channel_id)
             self.close_connection = True
 
         def _serve_client_file(self):

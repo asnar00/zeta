@@ -56,6 +56,21 @@ def fn_reload_page():
     pass  # no-op on server
 
 
+# @zero on click on (string selector)
+def fn_click_on__string(selector: str):
+    pass  # no-op on server
+
+
+# @zero on type (string text) into (string selector)
+def fn_type__string_into__string(text: str, selector: str):
+    pass  # no-op on server
+
+
+# @zero on press (string key) on (string selector)
+def fn_press__string_on__string(key: str, selector: str):
+    pass  # no-op on server
+
+
 # @zero on (string snapshot) = describe page ()
 def fn_describe_page() -> str:
     return "no gui on server"
@@ -131,8 +146,8 @@ def task_serve_http__int(port):
                 if part.startswith("session="):
                     token = part[8:]
             user_name = _resolve_session_user(token) if token else None
-            if user_name:
-                _register_client_channel(user_name, channel_id)
+            route_name = user_name or "anonymous"
+            _register_client_channel(route_name, channel_id)
             channel.send(channel_id)
             # process incoming messages via the remote platform
             while not channel._closed:
@@ -142,8 +157,7 @@ def task_serve_http__int(port):
                 except Exception:
                     pass
             # clean up
-            if user_name:
-                _unregister_client_channel(user_name, channel_id)
+            _unregister_client_channel(route_name, channel_id)
             self.close_connection = True
 
         def _serve_client_file(self):
@@ -1356,7 +1370,7 @@ class User(NamedTuple):
     phone: str = ""
     role: str = ""
 
-# @zero on (string body) = not found; website/not-found/not-found.zero.md:258
+# @zero on (string body) = not found; website/not-found/not-found.zero.md:267
 def fn_not_found() -> str:
     body = "not found"
     return body

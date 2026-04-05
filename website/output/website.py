@@ -60,6 +60,21 @@ def fn_reload_page():
     pass  # no-op on server
 
 
+# @zero on click on (string selector)
+def fn_click_on__string(selector: str):
+    pass  # no-op on server
+
+
+# @zero on type (string text) into (string selector)
+def fn_type__string_into__string(text: str, selector: str):
+    pass  # no-op on server
+
+
+# @zero on press (string key) on (string selector)
+def fn_press__string_on__string(key: str, selector: str):
+    pass  # no-op on server
+
+
 # @zero on (string snapshot) = describe page ()
 def fn_describe_page() -> str:
     return "no gui on server"
@@ -135,8 +150,8 @@ def task_serve_http__int(port):
                 if part.startswith("session="):
                     token = part[8:]
             user_name = _resolve_session_user(token) if token else None
-            if user_name:
-                _register_client_channel(user_name, channel_id)
+            route_name = user_name or "anonymous"
+            _register_client_channel(route_name, channel_id)
             channel.send(channel_id)
             # process incoming messages via the remote platform
             while not channel._closed:
@@ -146,8 +161,7 @@ def task_serve_http__int(port):
                 except Exception:
                     pass
             # clean up
-            if user_name:
-                _unregister_client_channel(user_name, channel_id)
+            _unregister_client_channel(route_name, channel_id)
             self.close_connection = True
 
         def _serve_client_file(self):
@@ -1600,7 +1614,7 @@ class User(NamedTuple):
     phone: str = ""
     role: str = ""
 
-# @zero on main (string args$); website/website.zero.md:239
+# @zero on main (string args$); website/website.zero.md:248
 def task_main__string(args_arr: str):
     _push_terminal_out(logo)
     request_arr = task_serve_http__int(port)
@@ -1609,7 +1623,7 @@ def task_main__string(args_arr: str):
         body = fn_handle_request__Http_Request(request)
         _push_http_response(Http_Response(request, body))
 
-# @zero on (string body) = handle request (Http-Request request); website/website.zero.md:247
+# @zero on (string body) = handle request (Http-Request request); website/website.zero.md:256
 def fn_handle_request__Http_Request(request: Http_Request) -> str:
     body = None
     if _get_ctx().landing_page.enabled and request.path == "/":
@@ -1622,7 +1636,7 @@ def fn_handle_request__Http_Request(request: Http_Request) -> str:
         body = not_found.fn_not_found()
     return body if body is not None else ""
 
-# @zero on stop; website/website.zero.md:255
+# @zero on stop; website/website.zero.md:264
 def fn_stop():
     fn_print__string("stopping")
 
