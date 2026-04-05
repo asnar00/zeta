@@ -518,6 +518,10 @@ This exposed three things:
 
 **Session-aware routing (in progress):** Commands are addressed to users, not channel IDs. `request ("get cookie (\"session\")") on ("_alice")` routes to `_alice`'s browser via their WebSocket. The server reads the session cookie from the WebSocket upgrade request and maintains a `user_name → channel_id` mapping. Test users (`_alice`, `_bob`) are used for test sessions.
 
+**GUI action primitives:** `click on`, `type into`, `press on` — all execute on the client via WebSocket. Full login flow tested via 15 WebSocket-only commands. Anonymous connections routed as "anonymous" so the login flow can be tested from scratch. After login + reload, the WS reconnects with the session and routes by user name.
+
+**`describe page ()`:** Single call returns full DOM snapshot — tag, classes, position, size, font, colour, background, text, input state. One round-trip gives enough information for layout assertions, overlap detection, visibility checks.
+
 **Decision log:**
 - WebSocket GUID must be exact `258EAFA5-E914-47DA-95CA-C5AB0DC85B11` (spent time debugging wrong GUID)
 - HTTP server must be `ThreadingHTTPServer` for concurrent WebSocket connections
