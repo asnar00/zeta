@@ -131,8 +131,8 @@ def fn_read_file__string(path: str) -> str:
         return f.read()
 
 
-# @zero on write file (string path) (string content)
-def fn_write_file__string__string(path: str, content: str):
+# @zero on write (string content) to file (string path)
+def fn_write__string_to_file__string(content: str, path: str):
     with open(path, 'w') as f:
         f.write(content)
 
@@ -751,17 +751,17 @@ def _load_vonage_credentials():
     return key, secret
 
 
-# @zero on send sms (string to) (string message)
-def fn_send_sms__string__string(to: str, message: str):
+# @zero on send sms (string message) to (string phone)
+def fn_send_sms__string_to__string(message: str, phone: str):
     import urllib.request
     import urllib.parse
     import json
     key, secret = _load_vonage_credentials()
     if not key or not secret:
-        print(f"sms: no credentials, would send to {to}: {message}")
+        print(f"sms: no credentials, would send to {phone}: {message}")
         return
     # strip + prefix for Vonage
-    phone = to.lstrip("+")
+    to = phone.lstrip("+")
     data = json.dumps({
         "from": "noob",
         "text": message,
@@ -906,7 +906,7 @@ def fn_login():
         name = fn_input__string("name")
         code = fn_request_login__string(name)
         entered = fn_input__string("code")
-        token = fn_complete_login__string__string(name, entered)
+        token = fn_complete_login__string_with_code__string(name, entered)
         fn_set_cookie_of__string_to__string("session", token)
         fn_reload_page()
     except _ZeroRaise as _e:
@@ -931,12 +931,12 @@ def fn_request_login__string(name: str) -> str:
     if found.name != name:
         raise _ZeroRaise('unknown user', ['name'])
     code = fn_generate_code__User(found)
-    fn_send_sms__string__string(found.phone, "Your nøøb code: " + code)
+    fn_send_sms__string_to__string("Your nøøb code: " + code, found.phone)
     pending_codes_arr[found.phone] = code
     return code
 
-# @zero on (User result) = verify login (string name) (string code); website/login/login.zero.md:235
-def fn_verify_login__string__string(name: str, code: str) -> User:
+# @zero on (User result) = verify login (string name) with code (string code); website/login/login.zero.md:235
+def fn_verify_login__string_with_code__string(name: str, code: str) -> User:
     found = next((x for x in users_arr if x.name == name), type(users_arr[0])() if users_arr else None)
     stored = pending_codes_arr[found.phone]
     if found.name != name or stored != code or stored == "":
@@ -945,9 +945,9 @@ def fn_verify_login__string__string(name: str, code: str) -> User:
     result = found
     return result
 
-# @zero on (string token) = complete login (string name) (string code); website/login/login.zero.md:243
-def fn_complete_login__string__string(name: str, code: str) -> str:
-    found = fn_verify_login__string__string(name, code)
+# @zero on (string token) = complete login (string name) with code (string code); website/login/login.zero.md:243
+def fn_complete_login__string_with_code__string(name: str, code: str) -> str:
+    found = fn_verify_login__string_with_code__string(name, code)
     token = fn_create_session__string(name)
     return token
 

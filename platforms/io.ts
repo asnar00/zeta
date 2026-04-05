@@ -8,8 +8,8 @@ function fn_read_file__string(path: string): string {
     return readFileSync(path, 'utf8');
 }
 
-// @zero on write file (string path) (string content)
-function fn_write_file__string__string(path: string, content: string): void {
+// @zero on write (string content) to file (string path)
+function fn_write__string_to_file__string(content: string, path: string): void {
     writeFileSync(path, content, 'utf8');
 }
 

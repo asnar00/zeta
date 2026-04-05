@@ -13,7 +13,7 @@ Read the contents of a text file:
 
 Write a string to a text file:
 
-    on write file (string path) (string content)
+    on write (string content) to file (string path)
 
 Print a string to standard output:
 

@@ -33,7 +33,7 @@ The interactive login flow — input name, request a code, input code, log in:
         string name = input ("name")
         string code = request login (name)
         string entered = input ("code")
-        string token = complete login (name) (entered)
+        string token = complete login (name) with code (entered)
         set cookie of ("session") to (token)
         reload page ()
 
@@ -57,12 +57,12 @@ Request a login code by name. Looks up the user, generates a code, and stores it
         if (found.name != name)
             raise unknown user (name)
         code = generate code (found)
-        send sms (found.phone) ("Your nøøb code: " + code)
+        send sms ("Your nøøb code: " + code) to (found.phone)
         pending-codes$[found.phone] = code
 
 Verify a code against the stored one. Returns the user on success, raises on failure:
 
-    on (User result) = verify login (string name) (string code)
+    on (User result) = verify login (string name) with code (string code)
         User found = first of [users$] where (_.name == name)
         string stored = pending-codes$[found.phone]
         if (found.name != name or stored != code or stored == "")
@@ -72,8 +72,8 @@ Verify a code against the stored one. Returns the user on success, raises on fai
 
 Complete login: verify the code and find or create the user's session:
 
-    on (string token) = complete login (string name) (string code)
-        User found = verify login (name) (code)
+    on (string token) = complete login (string name) with code (string code)
+        User found = verify login (name) with code (code)
         token = create session (name)
 
 Generate a code per user. Test users get deterministic codes; real users get random ones:

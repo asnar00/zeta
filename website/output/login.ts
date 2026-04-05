@@ -108,8 +108,8 @@ export function fn_read_file__string(path: string): string {
     return readFileSync(path, 'utf8');
 }
 
-// @zero on write file (string path) (string content)
-export function fn_write_file__string__string(path: string, content: string): void {
+// @zero on write (string content) to file (string path)
+export function fn_write__string_to_file__string(content: string, path: string): void {
     writeFileSync(path, content, 'utf8');
 }
 
@@ -170,9 +170,9 @@ export function fn_rpc_eval__string(expr: string): string {
 // Implements the functions declared in sms.zero.md
 // Server-side only — not used in client bundle
 
-// @zero on send sms (string to) (string message)
-export function fn_send_sms__string__string(to: string, message: string): void {
-    console.log(`sms: would send to ${to}: ${message}`);
+// @zero on send sms (string message) to (string phone)
+export function fn_send_sms__string_to__string(message: string, phone: string): void {
+    console.log(`sms: would send to ${phone}: ${message}`);
 }
 
 
@@ -323,7 +323,7 @@ export function fn_login(): void {
         const name = fn_input__string("name");
         const code = fn_request_login__string(name);
         const entered = fn_input__string("code");
-        const token = fn_complete_login__string__string(name, entered);
+        const token = fn_complete_login__string_with_code__string(name, entered);
         fn_set_cookie_of__string_to__string("session", token);
         fn_reload_page();
     } catch (_e) {
@@ -355,13 +355,13 @@ export function fn_request_login__string(name: string): string {
     throw new _ZeroRaise('unknown user', ['name']);
 }
     code = fn_generate_code__User(found);
-    fn_send_sms__string__string(found.phone, "Your nøøb code: " + code);
+    fn_send_sms__string_to__string("Your nøøb code: " + code, found.phone);
     pending_codes_arr.set(found.phone, code);
     return code;
 }
 
-// @zero on (User result) = verify login (string name) (string code); website/login/login.zero.md:235
-export function fn_verify_login__string__string(name: string, code: string): User {
+// @zero on (User result) = verify login (string name) with code (string code); website/login/login.zero.md:235
+export function fn_verify_login__string_with_code__string(name: string, code: string): User {
     let result: User = undefined!;
     const found = users_arr.find(x => x.name == name)!;
     const stored = pending_codes_arr.get(found.phone) ?? "";
@@ -373,9 +373,9 @@ export function fn_verify_login__string__string(name: string, code: string): Use
     return result;
 }
 
-// @zero on (string token) = complete login (string name) (string code); website/login/login.zero.md:243
-export function fn_complete_login__string__string(name: string, code: string): string {
-    const found = fn_verify_login__string__string(name, code);
+// @zero on (string token) = complete login (string name) with code (string code); website/login/login.zero.md:243
+export function fn_complete_login__string_with_code__string(name: string, code: string): string {
+    const found = fn_verify_login__string_with_code__string(name, code);
     const token: string = fn_create_session__string(name);
     return token;
 }

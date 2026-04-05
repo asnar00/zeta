@@ -110,8 +110,8 @@ export function fn_read_file__string(path: string): string {
     return readFileSync(path, 'utf8');
 }
 
-// @zero on write file (string path) (string content)
-export function fn_write_file__string__string(path: string, content: string): void {
+// @zero on write (string content) to file (string path)
+export function fn_write__string_to_file__string(content: string, path: string): void {
     writeFileSync(path, content, 'utf8');
 }
 
@@ -172,9 +172,9 @@ export function fn_rpc_eval__string(expr: string): string {
 // Implements the functions declared in sms.zero.md
 // Server-side only — not used in client bundle
 
-// @zero on send sms (string to) (string message)
-export function fn_send_sms__string__string(to: string, message: string): void {
-    console.log(`sms: would send to ${to}: ${message}`);
+// @zero on send sms (string message) to (string phone)
+export function fn_send_sms__string_to__string(message: string, phone: string): void {
+    console.log(`sms: would send to ${phone}: ${message}`);
 }
 
 

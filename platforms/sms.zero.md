@@ -11,4 +11,4 @@ Send SMS messages via an external provider (Vonage). Credentials are read from e
 
 Send an SMS message to a phone number:
 
-    on send sms (string to) (string message)
+    on send sms (string message) to (string phone)

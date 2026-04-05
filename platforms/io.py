@@ -8,8 +8,8 @@ def fn_read_file__string(path: str) -> str:
         return f.read()
 
 
-# @zero on write file (string path) (string content)
-def fn_write_file__string__string(path: str, content: str):
+# @zero on write (string content) to file (string path)
+def fn_write__string_to_file__string(content: str, path: str):
     with open(path, 'w') as f:
         f.write(content)
 

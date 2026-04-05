@@ -56,7 +56,7 @@ async function fn_login(){
         const name = await fn_input__string("name");
         const code = await _rpc("request login " + encodeURIComponent("(" + name + ")") + "");
         const entered = await fn_input__string("code");
-        const token = await _rpc("complete login " + encodeURIComponent("(" + name + ")") + " " + encodeURIComponent("(" + entered + ")") + "");
+        const token = await _rpc("complete login " + encodeURIComponent("(" + name + ")") + " with code " + encodeURIComponent("(" + entered + ")") + "");
         await fn_set_cookie_of__string_to__string("session", token);
         await fn_reload_page();
     } catch (_e) {

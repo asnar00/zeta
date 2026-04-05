@@ -134,8 +134,8 @@ def fn_read_file__string(path: str) -> str:
         return f.read()
 
 
-# @zero on write file (string path) (string content)
-def fn_write_file__string__string(path: str, content: str):
+# @zero on write (string content) to file (string path)
+def fn_write__string_to_file__string(content: str, path: str):
     with open(path, 'w') as f:
         f.write(content)
 
@@ -754,17 +754,17 @@ def _load_vonage_credentials():
     return key, secret
 
 
-# @zero on send sms (string to) (string message)
-def fn_send_sms__string__string(to: str, message: str):
+# @zero on send sms (string message) to (string phone)
+def fn_send_sms__string_to__string(message: str, phone: str):
     import urllib.request
     import urllib.parse
     import json
     key, secret = _load_vonage_credentials()
     if not key or not secret:
-        print(f"sms: no credentials, would send to {to}: {message}")
+        print(f"sms: no credentials, would send to {phone}: {message}")
         return
     # strip + prefix for Vonage
-    phone = to.lstrip("+")
+    to = phone.lstrip("+")
     data = json.dumps({
         "from": "noob",
         "text": message,
