@@ -1092,7 +1092,8 @@ function fn_get_cookie__string(name) {
 }
 
 function fn_clear_cookie__string(name) {
-    document.cookie = name + "=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
+    const secure = location.protocol === "https:" ? "; Secure" : "";
+    document.cookie = name + "=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax" + secure;
 }
 
 async function fn_choose__string_or__string(optionA, optionB) {
@@ -1113,7 +1114,8 @@ async function fn_choose__string_or__string(optionA, optionB) {
 }
 
 function fn_set_cookie_of__string_to__string(name, value) {
-    document.cookie = name + "=" + value + "; path=/; SameSite=Strict";
+    const secure = location.protocol === "https:" ? "; Secure" : "";
+    document.cookie = name + "=" + value + "; path=/; SameSite=Lax" + secure;
 }
 
 function fn_reload_page() {
