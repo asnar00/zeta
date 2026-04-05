@@ -86,6 +86,7 @@ def task_serve_http__int(port):
             body = req._wait()
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
             self.end_headers()
             self.wfile.write(body.encode("utf-8"))
 
@@ -99,6 +100,7 @@ def task_serve_http__int(port):
                 self.send_response(200)
                 ct = "application/javascript" if filename.endswith(".js") else "text/plain"
                 self.send_header("Content-Type", ct)
+                self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
                 self.end_headers()
                 with open(filepath, "rb") as f:
                     self.wfile.write(f.read())
