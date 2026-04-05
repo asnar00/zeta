@@ -61,12 +61,13 @@ def task_serve_http__int(port):
                 return
             channel, channel_id = result
             channel.send(channel_id)
-            # block until the channel closes — prevents BaseHTTPRequestHandler
-            # from closing the connection or trying to read another HTTP request
+            # process incoming messages via the remote platform
             while not channel._closed:
-                import time
-                time.sleep(0.5)
-            # prevent BaseHTTPRequestHandler from sending a response
+                try:
+                    msg = channel.inbox.get(timeout=1)
+                    _handle_incoming_ws_message(channel_id, msg)
+                except Exception:
+                    pass
             self.close_connection = True
 
         def _serve_client_file(self):

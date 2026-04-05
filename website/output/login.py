@@ -101,12 +101,13 @@ def task_serve_http__int(port):
                 return
             channel, channel_id = result
             channel.send(channel_id)
-            # block until the channel closes — prevents BaseHTTPRequestHandler
-            # from closing the connection or trying to read another HTTP request
+            # process incoming messages via the remote platform
             while not channel._closed:
-                import time
-                time.sleep(0.5)
-            # prevent BaseHTTPRequestHandler from sending a response
+                try:
+                    msg = channel.inbox.get(timeout=1)
+                    _handle_incoming_ws_message(channel_id, msg)
+                except Exception:
+                    pass
             self.close_connection = True
 
         def _serve_client_file(self):
@@ -180,6 +181,115 @@ def fn_write__string_to_file__string(content: str, path: str):
 # @zero on print (string message)
 def fn_print__string(message: str):
     print(message)
+
+
+# Platform implementation: remote (Python)
+# Implements the functions declared in remote.zero.md
+# Server-side: handles incoming remote requests via WebSocket.
+
+import json
+import threading
+
+
+# @zero on (string channel) = connect to (string url)
+def fn_connect_to__string(url: str) -> str:
+    # server-side: connections are initiated by clients, not by the server.
+    # a server-to-client channel is obtained when the client connects.
+    return ""
+
+
+# @zero on (string result) = request (string command) on (string channel)
+def fn_request__string_on__string(command: str, channel: str) -> str:
+    """Send a command to a remote component and wait for the response."""
+    import queue as _queue
+    ch = _get_ws_channel(channel)
+    if ch is None:
+        return "error: channel not found"
+    # build request with unique ID
+    req_id = _next_request_id()
+    msg = json.dumps({"id": req_id, "cmd": command})
+    # register a response queue before sending
+    response_q = _queue.Queue()
+    _pending_responses[req_id] = response_q
+    ch.send(msg)
+    try:
+        result = response_q.get(timeout=10)
+        return result
+    except _queue.Empty:
+        return "error: timeout"
+    finally:
+        _pending_responses.pop(req_id, None)
+
+
+# @zero on disconnect from (string channel)
+def fn_disconnect_from__string(channel: str):
+    ch = _get_ws_channel(channel)
+    if ch:
+        ch.close()
+
+
+# @zero on (string result) = handle remote request (string command)
+def fn_handle_remote_request__string(command: str) -> str:
+    """Default handler for incoming remote requests. Supports ping and echo."""
+    if command == "ping":
+        return "pong"
+    if command.startswith("echo:"):
+        return command[5:]
+    return f"error: unknown command: {command}"
+
+
+# --- internal machinery ---
+
+_request_counter = 0
+_counter_lock = threading.Lock()
+_pending_responses = {}
+
+
+def _next_request_id():
+    global _request_counter
+    with _counter_lock:
+        _request_counter += 1
+        return str(_request_counter)
+
+
+def _get_ws_channel(channel_id):
+    """Look up a WebSocket channel by ID."""
+    try:
+        from websocket import _get_channel
+        return _get_channel(channel_id)
+    except ImportError:
+        pass
+    # fallback: look in the compiled module
+    import sys
+    mod = sys.modules.get("__main__")
+    if mod and hasattr(mod, "_get_channel"):
+        return mod._get_channel(channel_id)
+    # try the websocket platform functions directly
+    for name, m in sys.modules.items():
+        if hasattr(m, "_get_channel"):
+            return m._get_channel(channel_id)
+    return None
+
+
+def _handle_incoming_ws_message(channel_id, data):
+    """Route an incoming WebSocket message — either a response or a request."""
+    try:
+        msg = json.loads(data)
+    except json.JSONDecodeError:
+        return
+    if "result" in msg and "id" in msg:
+        # it's a response to a pending request
+        req_id = msg["id"]
+        q = _pending_responses.get(req_id)
+        if q:
+            q.put(msg["result"])
+    elif "cmd" in msg and "id" in msg:
+        # it's an incoming request — handle it and send the response
+        result = fn_handle_remote_request__string(msg["cmd"])
+        ch = _get_ws_channel(channel_id)
+        if ch:
+            response = json.dumps({"id": msg["id"], "result": result})
+            ch.send(response)
 
 
 # Platform implementation: runtime (Python)
@@ -1126,7 +1236,7 @@ class User(NamedTuple):
     phone: str = ""
     role: str = ""
 
-# @zero on toggle login; website/login/login.zero.md:236
+# @zero on toggle login; website/login/login.zero.md:250
 def fn_toggle_login():
     session = fn_get_cookie__string("session")
     if session == "":
@@ -1134,7 +1244,7 @@ def fn_toggle_login():
     else:
         fn_logout_dialog()
 
-# @zero on login; website/login/login.zero.md:243
+# @zero on login; website/login/login.zero.md:257
 def fn_login():
     try:
         name = fn_input__string("name")
@@ -1151,22 +1261,22 @@ def fn_login():
         else:
             raise
 
-# @zero on logout dialog; website/login/login.zero.md:251
+# @zero on logout dialog; website/login/login.zero.md:265
 def fn_logout_dialog():
     choice = fn_choose__string_or__string("log out", "cancel")
     if choice == "log out":
         fn_clear_cookie__string("session")
         fn_reload_page()
 
-# @zero on unknown user (string name); website/login/login.zero.md:257
+# @zero on unknown user (string name); website/login/login.zero.md:271
 def fn_unknown_user__string(name: str):
     fn_show_message__string("unknown user")
 
-# @zero on invalid code (string code); website/login/login.zero.md:260
+# @zero on invalid code (string code); website/login/login.zero.md:274
 def fn_invalid_code__string(code: str):
     fn_show_message__string("invalid code")
 
-# @zero on (string code) = request login (string name); website/login/login.zero.md:263
+# @zero on (string code) = request login (string name); website/login/login.zero.md:277
 def fn_request_login__string(name: str) -> str:
     found = next((x for x in users_arr if x.name == name), type(users_arr[0])() if users_arr else None)
     if found.name != name:
@@ -1176,7 +1286,7 @@ def fn_request_login__string(name: str) -> str:
     pending_codes_arr[found.phone] = code
     return code
 
-# @zero on (User result) = verify login (string name) with code (string code); website/login/login.zero.md:271
+# @zero on (User result) = verify login (string name) with code (string code); website/login/login.zero.md:285
 def fn_verify_login__string_with_code__string(name: str, code: str) -> User:
     found = next((x for x in users_arr if x.name == name), type(users_arr[0])() if users_arr else None)
     stored = pending_codes_arr[found.phone]
@@ -1186,13 +1296,13 @@ def fn_verify_login__string_with_code__string(name: str, code: str) -> User:
     result = found
     return result
 
-# @zero on (string token) = complete login (string name) with code (string code); website/login/login.zero.md:279
+# @zero on (string token) = complete login (string name) with code (string code); website/login/login.zero.md:293
 def fn_complete_login__string_with_code__string(name: str, code: str) -> str:
     found = fn_verify_login__string_with_code__string(name, code)
     token = fn_create_session__string(name)
     return token
 
-# @zero on (string code) = generate code (User u); website/login/login.zero.md:283
+# @zero on (string code) = generate code (User u); website/login/login.zero.md:297
 def fn_generate_code__User(u: User) -> str:
     code = None
     if u.name == "_alice":
@@ -1203,7 +1313,7 @@ def fn_generate_code__User(u: User) -> str:
         code = fn_random_digits__int(4)
     return code if code is not None else ""
 
-# @zero on logo clicked; website/login/login.zero.md:291
+# @zero on logo clicked; website/login/login.zero.md:305
 def fn_logo_clicked():
     fn_toggle_login()
 

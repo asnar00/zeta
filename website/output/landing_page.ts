@@ -136,6 +136,32 @@ export function fn_print__string(message: string): void {
 }
 
 
+// Platform implementation: remote (TypeScript)
+// Implements the functions declared in remote.zero.md
+// Server-side stub.
+
+// @zero on (string channel) = connect to (string url)
+export function fn_connect_to__string(url: string): string {
+    return "";
+}
+
+// @zero on (string result) = request (string command) on (string channel)
+export function fn_request__string_on__string(command: string, channel: string): string {
+    return "";
+}
+
+// @zero on disconnect from (string channel)
+export function fn_disconnect_from__string(channel: string): void {
+}
+
+// @zero on (string result) = handle remote request (string command)
+export function fn_handle_remote_request__string(command: string): string {
+    if (command === "ping") return "pong";
+    if (command.startsWith("echo:")) return command.slice(5);
+    return `error: unknown command: ${command}`;
+}
+
+
 // Platform implementation: runtime (TypeScript)
 // Implements the functions declared in runtime.zero.md
 
@@ -370,7 +396,7 @@ export function User(args: Partial<User> = {}): User {
     return { name: args.name ?? "", phone: args.phone ?? "", role: args.role ?? "" };
 }
 
-// @zero on (string body) = landing page; website/landing-page/landing-page.zero.md:294
+// @zero on (string body) = landing page; website/landing-page/landing-page.zero.md:308
 export function fn_landing_page(): string {
     let body: string = undefined!;
     body = fn_read_file__string("website/index.html");
