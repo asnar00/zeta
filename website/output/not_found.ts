@@ -1,6 +1,16 @@
 import { register_tests } from './_runtime.js';
 import * as website from './website.js';
 
+// Platform implementation: eval (TypeScript)
+// Implements the functions declared in eval.zero.md
+// Server-side stub — delegates to rpc eval
+
+// @zero on (string result) = eval (string expr)
+export function fn_eval__string(expr: string): string {
+    return fn_rpc_eval__string(expr);
+}
+
+
 // Platform implementation: gui (TypeScript/web)
 // Implements the functions declared in gui.zero.md
 
@@ -403,7 +413,7 @@ export function User(args: Partial<User> = {}): User {
     return { name: args.name ?? "", phone: args.phone ?? "", role: args.role ?? "" };
 }
 
-// @zero on (string body) = not found; website/not-found/not-found.zero.md:247
+// @zero on (string body) = not found; website/not-found/not-found.zero.md:255
 export function fn_not_found(): string {
     const body: string = "not found";
     return body;

@@ -1,5 +1,15 @@
 import { register_tests } from './_runtime.js';
 
+// Platform implementation: eval (TypeScript)
+// Implements the functions declared in eval.zero.md
+// Server-side stub — delegates to rpc eval
+
+// @zero on (string result) = eval (string expr)
+export function fn_eval__string(expr: string): string {
+    return fn_rpc_eval__string(expr);
+}
+
+
 // Platform implementation: gui (TypeScript/web)
 // Implements the functions declared in gui.zero.md
 

@@ -1052,6 +1052,8 @@ def _emit_client_bundle(ctx, output_dir):
     parts.append(_CLIENT_RPC_HELPER)
     parts.append(_CLIENT_GUI)
     parts.append(code)
+    parts.append(_CLIENT_EVAL)
+    parts.append(_CLIENT_WEBSOCKET)
     parts.append(_CLIENT_WIRING)
     bundle = "\n".join(parts)
     # write with content hash for cache busting
@@ -1142,14 +1144,138 @@ function fn_reload_page() {
 }
 """
 
+_CLIENT_EVAL = """\
+// expression evaluator — same algorithm as server-side rpc eval
+function _extract_fn_words(s) {
+    const p = s.indexOf("(");
+    return p === -1 ? s.trim() : s.slice(0, p).trim();
+}
+
+function _extract_args(s) {
+    const args = [];
+    let i = 0;
+    while (i < s.length) {
+        if (s[i] === "(") {
+            let depth = 1, start = i + 1;
+            i++;
+            while (i < s.length && depth > 0) {
+                if (s[i] === "(") depth++;
+                else if (s[i] === ")") depth--;
+                i++;
+            }
+            let inner = s.slice(start, i - 1).trim();
+            if (inner === "") continue;
+            if (inner.startsWith('"') && inner.endsWith('"')) inner = inner.slice(1, -1);
+            args.push(inner);
+        } else {
+            i++;
+        }
+    }
+    return args;
+}
+
+function _find_client_function(fn_words, arg_count) {
+    const prefix = "fn_" + fn_words.replace(/ /g, "_").replace(/-/g, "_");
+    for (const name of Object.getOwnPropertyNames(window)) {
+        if (typeof window[name] !== "function") continue;
+        if (name === prefix && arg_count === 0) return window[name];
+        if (name.startsWith(prefix + "__")) {
+            const typePart = name.slice(prefix.length + 2);
+            const nTypes = (typePart.match(/__/g) || []).length + 1;
+            if (nTypes === arg_count) return window[name];
+        }
+    }
+    return null;
+}
+
+function _format_client_value(val) {
+    if (val === null || val === undefined) return "ok";
+    if (typeof val === "boolean") return val ? "true" : "false";
+    return String(val);
+}
+
+function _list_client_functions() {
+    const fns = [];
+    for (const name of Object.getOwnPropertyNames(window)) {
+        if (typeof window[name] === "function" && name.startsWith("fn_")) {
+            fns.push(name.replace(/^fn_/, "").replace(/__/g, " (").replace(/_/g, " ") + (name.includes("__") ? ")" : " ()"));
+        }
+    }
+    return fns.join("\\n");
+}
+
+async function _client_eval(expr) {
+    expr = expr.trim();
+    if (!expr) return _list_client_functions();
+    if (expr === "functions ()") return _list_client_functions();
+
+    // variable get (no brackets)
+    if (!expr.includes("(") && !expr.includes("=")) {
+        const val = window[expr.replace(/-/g, "_")];
+        return val !== undefined ? _format_client_value(val) : "error: " + expr + " not found";
+    }
+
+    // function call
+    const fn_words = _extract_fn_words(expr);
+    const args = _extract_args(expr);
+    const fn = _find_client_function(fn_words, args.length);
+    if (!fn) return "error: function '" + fn_words + "' not found";
+    try {
+        const result = await fn(...args);
+        return _format_client_value(result);
+    } catch (e) {
+        if (e instanceof _ZeroRaise) return "raise: " + e.zeroName;
+        return "error: " + e.message;
+    }
+}
+"""
+
+_CLIENT_WEBSOCKET = """\
+// WebSocket connection for remote commands
+let _ws = null;
+let _ws_channel_id = null;
+
+function _connect_ws() {
+    const proto = location.protocol === "https:" ? "wss:" : "ws:";
+    const url = proto + "//" + location.host + "/@ws";
+    _ws = new WebSocket(url);
+    _ws.onopen = () => console.log("[zero] ws connected");
+    _ws.onmessage = async (event) => {
+        const data = event.data;
+        // first message is the channel ID
+        if (!_ws_channel_id) {
+            _ws_channel_id = data;
+            console.log("[zero] ws channel: " + data);
+            return;
+        }
+        // parse as JSON command
+        try {
+            const msg = JSON.parse(data);
+            if (msg.cmd && msg.id) {
+                const result = await _client_eval(msg.cmd);
+                _ws.send(JSON.stringify({ id: msg.id, result: result }));
+            }
+        } catch (e) {
+            console.log("[zero] ws message error: " + e);
+        }
+    };
+    _ws.onclose = () => {
+        console.log("[zero] ws disconnected, reconnecting...");
+        _ws_channel_id = null;
+        setTimeout(_connect_ws, 1000);
+    };
+}
+"""
+
 _CLIENT_WIRING = """\
-// wire up DOM events
+// wire up DOM events and WebSocket
 document.addEventListener("DOMContentLoaded", () => {
     const logo = document.querySelector(".logo");
     if (logo) {
         logo.style.cursor = "pointer";
         logo.addEventListener("click", () => fn_logo_clicked());
     }
+    _connect_ws();
 });
 """
 

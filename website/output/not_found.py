@@ -1,6 +1,21 @@
 from _runtime import register_tests
 import website
 
+# Platform implementation: eval (Python)
+# Implements the functions declared in eval.zero.md
+# Server-side: delegates to the existing rpc eval machinery in runtime.py
+
+
+# @zero on (string result) = eval (string expr)
+def fn_eval__string(expr: str) -> str:
+    # delegate to rpc eval which has the full implementation
+    return fn_rpc_eval__string(expr)
+
+
+# functions() and features() are already implemented in runtime.py
+# and will be available in the compiled output
+
+
 # Platform implementation: gui (Python)
 # Implements the functions declared in gui.zero.md
 # Server-side fallback — in production, these run on the client.
@@ -96,13 +111,23 @@ def task_serve_http__int(port):
 
         def _handle_websocket(self):
             """Upgrade to WebSocket and keep the connection alive.
-            Takes over the raw socket from BaseHTTPRequestHandler."""
+            Associates the channel with the user's session if a cookie is present."""
             result = websocket_handshake(self)
             if result is None:
                 self.send_response(400)
                 self.end_headers()
                 return
             channel, channel_id = result
+            # extract session cookie and associate channel with user
+            token = ""
+            cookie_header = self.headers.get("Cookie", "")
+            for part in cookie_header.split(";"):
+                part = part.strip()
+                if part.startswith("session="):
+                    token = part[8:]
+            user_name = _resolve_session_user(token) if token else None
+            if user_name:
+                _register_client_channel(user_name, channel_id)
             channel.send(channel_id)
             # process incoming messages via the remote platform
             while not channel._closed:
@@ -111,6 +136,9 @@ def task_serve_http__int(port):
                     _handle_incoming_ws_message(channel_id, msg)
                 except Exception:
                     pass
+            # clean up
+            if user_name:
+                _unregister_client_channel(user_name, channel_id)
             self.close_connection = True
 
         def _serve_client_file(self):
@@ -203,11 +231,16 @@ def fn_connect_to__string(url: str) -> str:
 
 # @zero on (string result) = request (string command) on (string channel)
 def fn_request__string_on__string(command: str, channel: str) -> str:
-    """Send a command to a remote component and wait for the response."""
+    """Send a command to a remote component and wait for the response.
+    Channel can be a channel ID or a user name (routes to their browser)."""
     import queue as _queue
+    # try as user name first
+    client_channel = _get_client_channel(channel)
+    if client_channel:
+        channel = client_channel
     ch = _get_ws_channel(channel)
     if ch is None:
-        return "error: channel not found"
+        return f"error: channel '{channel}' not found"
     # build request with unique ID
     req_id = _next_request_id()
     msg = json.dumps({"id": req_id, "cmd": command})
@@ -233,12 +266,65 @@ def fn_disconnect_from__string(channel: str):
 
 # @zero on (string result) = handle remote request (string command)
 def fn_handle_remote_request__string(command: str) -> str:
-    """Default handler for incoming remote requests. Supports ping and echo."""
+    """Handle incoming remote requests by evaluating as zero expressions."""
     if command == "ping":
         return "pong"
     if command.startswith("echo:"):
         return command[5:]
-    return f"error: unknown command: {command}"
+    if command == "connected clients ()":
+        return ", ".join(_list_connected_clients()) or "none"
+    # evaluate as zero expression
+    return fn_rpc_eval__string(command)
+
+
+# --- client channel routing ---
+
+_client_channels = {}  # user_name -> set of channel_ids
+_client_channels_lock = threading.Lock()
+
+
+def _register_client_channel(user_name, channel_id):
+    """Associate a WebSocket channel with a user name."""
+    with _client_channels_lock:
+        if user_name not in _client_channels:
+            _client_channels[user_name] = set()
+        _client_channels[user_name].add(channel_id)
+
+
+def _unregister_client_channel(user_name, channel_id):
+    """Remove a WebSocket channel association."""
+    with _client_channels_lock:
+        if user_name in _client_channels:
+            _client_channels[user_name].discard(channel_id)
+            if not _client_channels[user_name]:
+                del _client_channels[user_name]
+
+
+def _get_client_channel(user_name):
+    """Get a WebSocket channel ID for a user, or None."""
+    with _client_channels_lock:
+        channels = _client_channels.get(user_name, set())
+        if channels:
+            return next(iter(channels))
+    return None
+
+
+def _resolve_session_user(token):
+    """Reverse-look up the user name from a session token."""
+    import sys
+    mod = sys.modules.get("__main__")
+    if mod and hasattr(mod, "_session_names"):
+        names = mod._session_names
+        for name, tok in names.items():
+            if tok == token:
+                return name
+    return None
+
+
+def _list_connected_clients():
+    """List connected client user names."""
+    with _client_channels_lock:
+        return list(_client_channels.keys())
 
 
 # --- internal machinery ---
@@ -275,7 +361,7 @@ def _get_ws_channel(channel_id):
 
 
 def _handle_incoming_ws_message(channel_id, data):
-    """Route an incoming WebSocket message — either a response or a request."""
+    """Route an incoming WebSocket message — response, local request, or routed request."""
     try:
         msg = json.loads(data)
     except json.JSONDecodeError:
@@ -287,12 +373,18 @@ def _handle_incoming_ws_message(channel_id, data):
         if q:
             q.put(msg["result"])
     elif "cmd" in msg and "id" in msg:
-        # it's an incoming request — handle it and send the response
-        result = fn_handle_remote_request__string(msg["cmd"])
-        ch = _get_ws_channel(channel_id)
-        if ch:
-            response = json.dumps({"id": msg["id"], "result": result})
-            ch.send(response)
+        if "to" in msg:
+            # routed request — forward to target user's client channel
+            result = fn_request__string_on__string(msg["cmd"], msg["to"])
+            ch = _get_ws_channel(channel_id)
+            if ch:
+                ch.send(json.dumps({"id": msg["id"], "result": result}))
+        else:
+            # local request — handle on this component
+            result = fn_handle_remote_request__string(msg["cmd"])
+            ch = _get_ws_channel(channel_id)
+            if ch:
+                ch.send(json.dumps({"id": msg["id"], "result": result}))
 
 
 # Platform implementation: runtime (Python)
@@ -1259,7 +1351,7 @@ class User(NamedTuple):
     phone: str = ""
     role: str = ""
 
-# @zero on (string body) = not found; website/not-found/not-found.zero.md:247
+# @zero on (string body) = not found; website/not-found/not-found.zero.md:255
 def fn_not_found() -> str:
     body = "not found"
     return body

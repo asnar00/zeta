@@ -507,6 +507,21 @@ This exposed three things:
 
 **3. The build pipeline manages deployment, not just compilation.** Hashed filenames, script tag injection, cache headers — these aren't optional extras. They're part of what "building" means for a system with client-side code. As more client features are added, this deployment layer will grow and may deserve its own section in the architecture.
 
-### next: observability as test infrastructure
+### observability: building in progress
 
-Playwright works but is fragile (headless Chrome hangs, external process management). The better approach: build observability and control into the gui platform itself. DOM state query and user action simulation via RPC — `/@rpc/click (".logo")`, `/@rpc/element ("input") exists`, etc. Then the test runner is just HTTP calls, no browser automation. Testing becomes another RPC client.
+**Architecture decided:** Three platform layers for cross-component communication:
+- `websocket` — raw bidirectional channels (implemented, tested through Cloudflare)
+- `remote` — request/response protocol with JSON `{id, cmd}` / `{id, result}` messages (implemented, 11 tests pass)
+- `eval` — every component can parse and evaluate zero expressions (server: delegates to rpc eval; client: JS port of the same parser)
+
+**Unified eval model:** RPC and remote are the same thing — send a zero expression to a component, get a result. The transport (HTTP GET, WebSocket) is irrelevant. Every component has a function registry and a minimal expression parser.
+
+**Session-aware routing (in progress):** Commands are addressed to users, not channel IDs. `request ("get cookie (\"session\")") on ("_alice")` routes to `_alice`'s browser via their WebSocket. The server reads the session cookie from the WebSocket upgrade request and maintains a `user_name → channel_id` mapping. Test users (`_alice`, `_bob`) are used for test sessions.
+
+**Decision log:**
+- WebSocket GUID must be exact `258EAFA5-E914-47DA-95CA-C5AB0DC85B11` (spent time debugging wrong GUID)
+- HTTP server must be `ThreadingHTTPServer` for concurrent WebSocket connections
+- WebSocket handshake must write directly to socket (BaseHTTPRequestHandler defaults to HTTP/1.0)
+- Client eval uses same algorithm as server `rpc eval`: `_extract_fn_words` → `_extract_args` → `_find_function`
+- Client WebSocket auto-reconnects on disconnect
+- User names as channel addresses (not opaque IDs) — natural, works for drones/phones/browsers

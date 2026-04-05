@@ -10,6 +10,16 @@ import * as landing_page from './landing_page.js';
 import './background.js';
 import * as background from './background.js';
 
+// Platform implementation: eval (TypeScript)
+// Implements the functions declared in eval.zero.md
+// Server-side stub — delegates to rpc eval
+
+// @zero on (string result) = eval (string expr)
+export function fn_eval__string(expr: string): string {
+    return fn_rpc_eval__string(expr);
+}
+
+
 // Platform implementation: gui (TypeScript/web)
 // Implements the functions declared in gui.zero.md
 
@@ -695,7 +705,7 @@ export function User(args: Partial<User> = {}): User {
     return { name: args.name ?? "", phone: args.phone ?? "", role: args.role ?? "" };
 }
 
-// @zero on main (string args$); website/website.zero.md:228
+// @zero on main (string args$); website/website.zero.md:236
 export async function task_main__string(args_arr: readonly string[]): Promise<void> {
     _push_terminal_out(logo);
     const request_arr = task_serve_http__int(port);
@@ -706,7 +716,7 @@ export async function task_main__string(args_arr: readonly string[]): Promise<vo
     }
 }
 
-// @zero on (string body) = handle request (Http-Request request); website/website.zero.md:236
+// @zero on (string body) = handle request (Http-Request request); website/website.zero.md:244
 export function fn_handle_request__Http_Request(request: Http_Request): string {
     let body: string = undefined!;
     if (_get_ctx().landing_page.enabled && request.path == "/") {
@@ -724,7 +734,7 @@ export function fn_handle_request__Http_Request(request: Http_Request): string {
     return body;
 }
 
-// @zero on stop; website/website.zero.md:244
+// @zero on stop; website/website.zero.md:252
 export function fn_stop(): void {
     fn_print__string("stopping");
 }

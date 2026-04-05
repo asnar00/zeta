@@ -53,13 +53,23 @@ def task_serve_http__int(port):
 
         def _handle_websocket(self):
             """Upgrade to WebSocket and keep the connection alive.
-            Takes over the raw socket from BaseHTTPRequestHandler."""
+            Associates the channel with the user's session if a cookie is present."""
             result = websocket_handshake(self)
             if result is None:
                 self.send_response(400)
                 self.end_headers()
                 return
             channel, channel_id = result
+            # extract session cookie and associate channel with user
+            token = ""
+            cookie_header = self.headers.get("Cookie", "")
+            for part in cookie_header.split(";"):
+                part = part.strip()
+                if part.startswith("session="):
+                    token = part[8:]
+            user_name = _resolve_session_user(token) if token else None
+            if user_name:
+                _register_client_channel(user_name, channel_id)
             channel.send(channel_id)
             # process incoming messages via the remote platform
             while not channel._closed:
@@ -68,6 +78,9 @@ def task_serve_http__int(port):
                     _handle_incoming_ws_message(channel_id, msg)
                 except Exception:
                     pass
+            # clean up
+            if user_name:
+                _unregister_client_channel(user_name, channel_id)
             self.close_connection = True
 
         def _serve_client_file(self):
