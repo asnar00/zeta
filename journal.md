@@ -489,6 +489,23 @@ The integration test now uses actual browser interactions: Playwright clicks the
 - `e04f65a` Session persistence: sessions survive server restarts
 - `d3121c7` SMS platform: send real verification codes via Vonage
 - `02def24` Platform tests: string, runtime, gui test specs and runner
+- `fe135ad` Named sessions: login restores user's context across restarts
+- `8535a16` Rename functions for natural language readability
+- `09d5164` Toggle login: click logo to login or logout depending on session state
+- `4668594` Toggle login/logout integration test (13 tests), HTTPS cookie fix
+- `ffd78b4` Cache-busting client.js, tests through Cloudflare HTTPS
+
+### the Cloudflare caching bug and its lessons
+
+The login/logout toggle was implemented and all 13 integration tests passed — but the real site at `test.nøøb.org` was completely broken. Clicking the logo always showed login, never logout. The root cause: Cloudflare cached the old `client.js` which didn't contain the toggle logic. Every code update was invisible to the user.
+
+This exposed three things:
+
+**1. Cache-busting is a deployment requirement.** Any system serving client code through a CDN needs content-hashed filenames. The build pipeline now generates `client.HASH.js` and updates the HTML script tag on each build. Cloudflare sees a new URL and fetches fresh content.
+
+**2. Tests must go through the real deployment path.** The integration test was running on `http://localhost:8084` — bypassing Cloudflare, HTTPS, and the CDN cache entirely. It gave false confidence. The test now runs through `https://test.nøøb.org/` (the Cloudflare URL). There's no point testing a path the user never takes.
+
+**3. The build pipeline manages deployment, not just compilation.** Hashed filenames, script tag injection, cache headers — these aren't optional extras. They're part of what "building" means for a system with client-side code. As more client features are added, this deployment layer will grow and may deserve its own section in the architecture.
 
 ### next: observability as test infrastructure
 
