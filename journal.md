@@ -531,3 +531,14 @@ This exposed three things:
 - User names as channel addresses (not opaque IDs) — natural, works for drones/phones/browsers
 - Anonymous connections get sequential names (guest-1, guest-2) so each browser is individually addressable in tests
 - Multi-browser integration test: each tab is a separate guest or named user, test routes commands to specific browsers by name
+- Test's own WebSocket gets a guest name too — must be excluded when discovering browser guests
+- After logout, browser reconnects with a new guest name — test discovers it dynamically
+
+**Milestone: Playwright reduced to browser-opener.** The integration test (17 tests) now uses Playwright only to open browser contexts. All interaction (click, type, press) and all assertions (describe page, get cookie, background colour) go through the WebSocket remote channel. This is the observability model: the application tests itself through its own communication infrastructure.
+
+### commits (continued)
+- `d181228` Observability: route commands to browser via session-aware WebSocket
+- `5835608` describe page (): full DOM snapshot for observability
+- `0a78661` GUI action primitives: click, type, press via WebSocket
+- `f775488` Journal update, anonymous WS routing
+- `34b30a1` WebSocket-based integration test, sequential guest naming
