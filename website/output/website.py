@@ -137,7 +137,8 @@ def task_serve_http__int(port):
         def log_message(self, format, *args):
             pass  # silence default logging
 
-    server = HTTPServer(("", port), Handler)
+    from http.server import ThreadingHTTPServer
+    server = ThreadingHTTPServer(("", port), Handler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
 
     # keep a reference to the default context
