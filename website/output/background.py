@@ -335,10 +335,13 @@ def _deserialize_ctx(data, ctx_class):
 
 
 def _save_sessions():
-    """Save all sessions to disk."""
+    """Save all sessions and name mappings to disk."""
     import json
     sessions = _get_sessions()
-    data = {token: _serialize_ctx(ctx) for token, ctx in sessions.items()}
+    data = {
+        "sessions": {token: _serialize_ctx(ctx) for token, ctx in sessions.items()},
+        "names": _get_session_names(),
+    }
     try:
         with open(_sessions_path(), "w") as f:
             json.dump(data, f, indent=2)
@@ -347,7 +350,7 @@ def _save_sessions():
 
 
 def _load_sessions():
-    """Load sessions from disk into the root module."""
+    """Load sessions and name mappings from disk."""
     import json, os
     mod = _find_root_module()
     if mod is None:
@@ -358,10 +361,19 @@ def _load_sessions():
     try:
         with open(path) as f:
             data = json.load(f)
+        # handle both old format (flat) and new format (with names)
+        if "sessions" in data:
+            session_data = data["sessions"]
+            name_data = data.get("names", {})
+        else:
+            session_data = data
+            name_data = {}
         sessions = _get_sessions()
-        for token, ctx_data in data.items():
+        for token, ctx_data in session_data.items():
             sessions[token] = _deserialize_ctx(ctx_data, mod._Context)
-        print(f"sessions: loaded {len(sessions)} from {path}")
+        name_map = _get_session_names()
+        name_map.update(name_data)
+        print(f"sessions: loaded {len(sessions)} ({len(name_map)} named)")
     except Exception as e:
         print(f"sessions: load error: {e}")
 
@@ -377,17 +389,34 @@ def _get_sessions():
     return mod._sessions
 
 
-# @zero on (string token) = create session ()
-def fn_create_session() -> str:
+# @zero on (string token) = create session (string name)
+def fn_create_session__string(name: str) -> str:
     import uuid
     mod = _find_root_module()
     if mod is None:
         return ""
+    sessions = _get_sessions()
+    # check for existing session for this user
+    name_map = _get_session_names()
+    if name in name_map:
+        return name_map[name]
+    # create new session
     token = str(uuid.uuid4())[:8]
     ctx = mod._Context()
-    _get_sessions()[token] = ctx
+    sessions[token] = ctx
+    name_map[name] = token
     _save_sessions()
     return token
+
+
+def _get_session_names():
+    """Get the shared name→token mapping from the root module."""
+    mod = _find_root_module()
+    if mod is None:
+        return {}
+    if not hasattr(mod, '_session_names'):
+        mod._session_names = {}
+    return mod._session_names
 
 
 # @zero on (string result) = random digits (int n)

@@ -70,11 +70,11 @@ Verify a code against the stored one. Returns the user on success, raises on fai
         pending-codes$[found.phone] = ""
         result = found
 
-Complete login: verify the code and create a session:
+Complete login: verify the code and find or create the user's session:
 
     on (string token) = complete login (string name) (string code)
         User found = verify login (name) (code)
-        token = create session ()
+        token = create session (name)
 
 Generate a code per user. Test users get deterministic codes; real users get random ones:
 

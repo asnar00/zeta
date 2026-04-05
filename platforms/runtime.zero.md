@@ -24,9 +24,9 @@ Run all tests, or tests for a specific feature:
     on (string result) = test ()
     on (string result) = test (string feature)
 
-Create a new session context, returns a token:
+Find or create a named session, returns a token. If the user has logged in before, their context is restored:
 
-    on (string token) = create session ()
+    on (string token) = create session (string name)
 
 Generate a random string of digits of the given length:
 
@@ -50,4 +50,4 @@ Random digits produces the requested length:
 
 Create session returns a non-empty token:
 
-    length of (create session ()) => 8
+    length of (create session ("test")) => 8

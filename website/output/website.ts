@@ -135,13 +135,16 @@ export function fn_print__string(message: string): void {
 // Implements the functions declared in runtime.zero.md
 
 const _sessions: Map<string, any> = new Map();
+const _session_names: Map<string, string> = new Map();
 
-// @zero on (string token) = create session ()
-export function fn_create_session(): string {
+// @zero on (string token) = create session (string name)
+export function fn_create_session__string(name: string): string {
+    const existing = _session_names.get(name);
+    if (existing) return existing;
     const token = Math.random().toString(36).slice(2, 10);
-    // _Context will be available in the compiled output
     const ctx = new (globalThis as any)._Context();
     _sessions.set(token, ctx);
+    _session_names.set(name, token);
     return token;
 }
 
@@ -575,8 +578,8 @@ export function test_website_39(): void {
 }
 
 export function test_website_40(): void {
-    // length of (create session ()) => 8
-    const _result = fn_length_of__string(fn_create_session());
+    // length of (create session ("test")) => 8
+    const _result = fn_length_of__string(fn_create_session__string("test"));
     const _expected = 8;
     if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
 }
@@ -595,7 +598,7 @@ export function test_website_42(): void {
     if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
 }
 
-register_tests('website', [[test_website_0, 'trim ("  hello  ") => "hello"'], [test_website_1, 'trim ("already") => "already"'], [test_website_2, 'char (0) of ("hello") => "h"'], [test_website_3, 'char (4) of ("hello") => "o"'], [test_website_4, '("hello world") starts with ("hello") => true'], [test_website_5, '("hello world") starts with ("world") => false'], [test_website_6, 'split ("a/b/c") by ("/") => ["a", "b", "c"]'], [test_website_7, 'split ("hello") by ("/") => ["hello"]'], [test_website_8, 'length of ("hello") => 5'], [test_website_9, 'length of ("") => 0'], [test_website_10, 'replace ("world") in ("hello world") with ("zero") => "hello zero"'], [test_website_11, 'substring of ("hello world") from (6) => "world"'], [test_website_12, 'substring of ("abc") from (0) => "abc"'], [test_website_13, 'trim ("") => ""'], [test_website_14, 'trim ("  ") => ""'], [test_website_15, 'trim ("no spaces") => "no spaces"'], [test_website_16, 'trim ("  leading") => "leading"'], [test_website_17, 'trim ("trailing  ") => "trailing"'], [test_website_18, 'char (0) of ("a") => "a"'], [test_website_19, 'char (2) of ("abcde") => "c"'], [test_website_20, '("") starts with ("") => true'], [test_website_21, '("hello") starts with ("") => true'], [test_website_22, '("") starts with ("x") => false'], [test_website_23, '("abc") starts with ("abc") => true'], [test_website_24, '("abc") starts with ("abcd") => false'], [test_website_25, 'split ("one") by (",") => ["one"]'], [test_website_26, 'split ("a,b") by (",") => ["a", "b"]'], [test_website_27, 'split ("a,,b") by (",") => ["a", "", "b"]'], [test_website_28, 'length of ("") => 0'], [test_website_29, 'length of ("a") => 1'], [test_website_30, 'length of ("hello world") => 11'], [test_website_31, 'substring of ("hello") from (0) => "hello"'], [test_website_32, 'substring of ("hello") from (3) => "lo"'], [test_website_33, 'substring of ("hello") from (5) => ""'], [test_website_34, 'replace ("a") in ("aaa") with ("b") => "bbb"'], [test_website_35, 'replace ("xy") in ("no match") with ("z") => "no match"'], [test_website_36, 'replace ("") in ("hello") with ("x") => "xhxexlxlxox"'], [test_website_37, 'length of (random digits (1)) => 1'], [test_website_38, 'length of (random digits (4)) => 4'], [test_website_39, 'length of (random digits (10)) => 10'], [test_website_40, 'length of (create session ()) => 8'], [test_website_41, 'handle request (Http-Request(path="/")) => "ᕦ(ツ)ᕤ"'], [test_website_42, 'handle request (Http-Request(path="/nope")) => "ᕦ(ツ)ᕤ"']]);
+register_tests('website', [[test_website_0, 'trim ("  hello  ") => "hello"'], [test_website_1, 'trim ("already") => "already"'], [test_website_2, 'char (0) of ("hello") => "h"'], [test_website_3, 'char (4) of ("hello") => "o"'], [test_website_4, '("hello world") starts with ("hello") => true'], [test_website_5, '("hello world") starts with ("world") => false'], [test_website_6, 'split ("a/b/c") by ("/") => ["a", "b", "c"]'], [test_website_7, 'split ("hello") by ("/") => ["hello"]'], [test_website_8, 'length of ("hello") => 5'], [test_website_9, 'length of ("") => 0'], [test_website_10, 'replace ("world") in ("hello world") with ("zero") => "hello zero"'], [test_website_11, 'substring of ("hello world") from (6) => "world"'], [test_website_12, 'substring of ("abc") from (0) => "abc"'], [test_website_13, 'trim ("") => ""'], [test_website_14, 'trim ("  ") => ""'], [test_website_15, 'trim ("no spaces") => "no spaces"'], [test_website_16, 'trim ("  leading") => "leading"'], [test_website_17, 'trim ("trailing  ") => "trailing"'], [test_website_18, 'char (0) of ("a") => "a"'], [test_website_19, 'char (2) of ("abcde") => "c"'], [test_website_20, '("") starts with ("") => true'], [test_website_21, '("hello") starts with ("") => true'], [test_website_22, '("") starts with ("x") => false'], [test_website_23, '("abc") starts with ("abc") => true'], [test_website_24, '("abc") starts with ("abcd") => false'], [test_website_25, 'split ("one") by (",") => ["one"]'], [test_website_26, 'split ("a,b") by (",") => ["a", "b"]'], [test_website_27, 'split ("a,,b") by (",") => ["a", "", "b"]'], [test_website_28, 'length of ("") => 0'], [test_website_29, 'length of ("a") => 1'], [test_website_30, 'length of ("hello world") => 11'], [test_website_31, 'substring of ("hello") from (0) => "hello"'], [test_website_32, 'substring of ("hello") from (3) => "lo"'], [test_website_33, 'substring of ("hello") from (5) => ""'], [test_website_34, 'replace ("a") in ("aaa") with ("b") => "bbb"'], [test_website_35, 'replace ("xy") in ("no match") with ("z") => "no match"'], [test_website_36, 'replace ("") in ("hello") with ("x") => "xhxexlxlxox"'], [test_website_37, 'length of (random digits (1)) => 1'], [test_website_38, 'length of (random digits (4)) => 4'], [test_website_39, 'length of (random digits (10)) => 10'], [test_website_40, 'length of (create session ("test")) => 8'], [test_website_41, 'handle request (Http-Request(path="/")) => "ᕦ(ツ)ᕤ"'], [test_website_42, 'handle request (Http-Request(path="/nope")) => "ᕦ(ツ)ᕤ"']]);
 
 const port: number = 8084;
 const logo: string = "ᕦ(ツ)ᕤ";

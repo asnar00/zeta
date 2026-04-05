@@ -125,13 +125,16 @@ export function fn_print__string(message: string): void {
 // Implements the functions declared in runtime.zero.md
 
 const _sessions: Map<string, any> = new Map();
+const _session_names: Map<string, string> = new Map();
 
-// @zero on (string token) = create session ()
-export function fn_create_session(): string {
+// @zero on (string token) = create session (string name)
+export function fn_create_session__string(name: string): string {
+    const existing = _session_names.get(name);
+    if (existing) return existing;
     const token = Math.random().toString(36).slice(2, 10);
-    // _Context will be available in the compiled output
     const ctx = new (globalThis as any)._Context();
     _sessions.set(token, ctx);
+    _session_names.set(name, token);
     return token;
 }
 

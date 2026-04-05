@@ -342,10 +342,13 @@ def _deserialize_ctx(data, ctx_class):
 
 
 def _save_sessions():
-    """Save all sessions to disk."""
+    """Save all sessions and name mappings to disk."""
     import json
     sessions = _get_sessions()
-    data = {token: _serialize_ctx(ctx) for token, ctx in sessions.items()}
+    data = {
+        "sessions": {token: _serialize_ctx(ctx) for token, ctx in sessions.items()},
+        "names": _get_session_names(),
+    }
     try:
         with open(_sessions_path(), "w") as f:
             json.dump(data, f, indent=2)
@@ -354,7 +357,7 @@ def _save_sessions():
 
 
 def _load_sessions():
-    """Load sessions from disk into the root module."""
+    """Load sessions and name mappings from disk."""
     import json, os
     mod = _find_root_module()
     if mod is None:
@@ -365,10 +368,19 @@ def _load_sessions():
     try:
         with open(path) as f:
             data = json.load(f)
+        # handle both old format (flat) and new format (with names)
+        if "sessions" in data:
+            session_data = data["sessions"]
+            name_data = data.get("names", {})
+        else:
+            session_data = data
+            name_data = {}
         sessions = _get_sessions()
-        for token, ctx_data in data.items():
+        for token, ctx_data in session_data.items():
             sessions[token] = _deserialize_ctx(ctx_data, mod._Context)
-        print(f"sessions: loaded {len(sessions)} from {path}")
+        name_map = _get_session_names()
+        name_map.update(name_data)
+        print(f"sessions: loaded {len(sessions)} ({len(name_map)} named)")
     except Exception as e:
         print(f"sessions: load error: {e}")
 
@@ -384,17 +396,34 @@ def _get_sessions():
     return mod._sessions
 
 
-# @zero on (string token) = create session ()
-def fn_create_session() -> str:
+# @zero on (string token) = create session (string name)
+def fn_create_session__string(name: str) -> str:
     import uuid
     mod = _find_root_module()
     if mod is None:
         return ""
+    sessions = _get_sessions()
+    # check for existing session for this user
+    name_map = _get_session_names()
+    if name in name_map:
+        return name_map[name]
+    # create new session
     token = str(uuid.uuid4())[:8]
     ctx = mod._Context()
-    _get_sessions()[token] = ctx
+    sessions[token] = ctx
+    name_map[name] = token
     _save_sessions()
     return token
+
+
+def _get_session_names():
+    """Get the shared name→token mapping from the root module."""
+    mod = _find_root_module()
+    if mod is None:
+        return {}
+    if not hasattr(mod, '_session_names'):
+        mod._session_names = {}
+    return mod._session_names
 
 
 # @zero on (string result) = random digits (int n)
@@ -1105,8 +1134,8 @@ def test_website_39():
     assert _result == _expected, f"expected {_expected}, got {_result}"
 
 def test_website_40():
-    '''length of (create session ()) => 8'''
-    _result = fn_length_of__string(fn_create_session())
+    '''length of (create session ("test")) => 8'''
+    _result = fn_length_of__string(fn_create_session__string("test"))
     _expected = 8
     assert _result == _expected, f"expected {_expected}, got {_result}"
 
@@ -1122,7 +1151,7 @@ def test_website_42():
     _expected = "ᕦ(ツ)ᕤ"
     assert _result == _expected, f"expected {_expected}, got {_result}"
 
-register_tests('website', [(test_website_0, 'trim ("  hello  ") => "hello"'), (test_website_1, 'trim ("already") => "already"'), (test_website_2, 'char (0) of ("hello") => "h"'), (test_website_3, 'char (4) of ("hello") => "o"'), (test_website_4, '("hello world") starts with ("hello") => true'), (test_website_5, '("hello world") starts with ("world") => false'), (test_website_6, 'split ("a/b/c") by ("/") => ["a", "b", "c"]'), (test_website_7, 'split ("hello") by ("/") => ["hello"]'), (test_website_8, 'length of ("hello") => 5'), (test_website_9, 'length of ("") => 0'), (test_website_10, 'replace ("world") in ("hello world") with ("zero") => "hello zero"'), (test_website_11, 'substring of ("hello world") from (6) => "world"'), (test_website_12, 'substring of ("abc") from (0) => "abc"'), (test_website_13, 'trim ("") => ""'), (test_website_14, 'trim ("  ") => ""'), (test_website_15, 'trim ("no spaces") => "no spaces"'), (test_website_16, 'trim ("  leading") => "leading"'), (test_website_17, 'trim ("trailing  ") => "trailing"'), (test_website_18, 'char (0) of ("a") => "a"'), (test_website_19, 'char (2) of ("abcde") => "c"'), (test_website_20, '("") starts with ("") => true'), (test_website_21, '("hello") starts with ("") => true'), (test_website_22, '("") starts with ("x") => false'), (test_website_23, '("abc") starts with ("abc") => true'), (test_website_24, '("abc") starts with ("abcd") => false'), (test_website_25, 'split ("one") by (",") => ["one"]'), (test_website_26, 'split ("a,b") by (",") => ["a", "b"]'), (test_website_27, 'split ("a,,b") by (",") => ["a", "", "b"]'), (test_website_28, 'length of ("") => 0'), (test_website_29, 'length of ("a") => 1'), (test_website_30, 'length of ("hello world") => 11'), (test_website_31, 'substring of ("hello") from (0) => "hello"'), (test_website_32, 'substring of ("hello") from (3) => "lo"'), (test_website_33, 'substring of ("hello") from (5) => ""'), (test_website_34, 'replace ("a") in ("aaa") with ("b") => "bbb"'), (test_website_35, 'replace ("xy") in ("no match") with ("z") => "no match"'), (test_website_36, 'replace ("") in ("hello") with ("x") => "xhxexlxlxox"'), (test_website_37, 'length of (random digits (1)) => 1'), (test_website_38, 'length of (random digits (4)) => 4'), (test_website_39, 'length of (random digits (10)) => 10'), (test_website_40, 'length of (create session ()) => 8'), (test_website_41, 'handle request (Http-Request(path="/")) => "ᕦ(ツ)ᕤ"'), (test_website_42, 'handle request (Http-Request(path="/nope")) => "ᕦ(ツ)ᕤ"')])
+register_tests('website', [(test_website_0, 'trim ("  hello  ") => "hello"'), (test_website_1, 'trim ("already") => "already"'), (test_website_2, 'char (0) of ("hello") => "h"'), (test_website_3, 'char (4) of ("hello") => "o"'), (test_website_4, '("hello world") starts with ("hello") => true'), (test_website_5, '("hello world") starts with ("world") => false'), (test_website_6, 'split ("a/b/c") by ("/") => ["a", "b", "c"]'), (test_website_7, 'split ("hello") by ("/") => ["hello"]'), (test_website_8, 'length of ("hello") => 5'), (test_website_9, 'length of ("") => 0'), (test_website_10, 'replace ("world") in ("hello world") with ("zero") => "hello zero"'), (test_website_11, 'substring of ("hello world") from (6) => "world"'), (test_website_12, 'substring of ("abc") from (0) => "abc"'), (test_website_13, 'trim ("") => ""'), (test_website_14, 'trim ("  ") => ""'), (test_website_15, 'trim ("no spaces") => "no spaces"'), (test_website_16, 'trim ("  leading") => "leading"'), (test_website_17, 'trim ("trailing  ") => "trailing"'), (test_website_18, 'char (0) of ("a") => "a"'), (test_website_19, 'char (2) of ("abcde") => "c"'), (test_website_20, '("") starts with ("") => true'), (test_website_21, '("hello") starts with ("") => true'), (test_website_22, '("") starts with ("x") => false'), (test_website_23, '("abc") starts with ("abc") => true'), (test_website_24, '("abc") starts with ("abcd") => false'), (test_website_25, 'split ("one") by (",") => ["one"]'), (test_website_26, 'split ("a,b") by (",") => ["a", "b"]'), (test_website_27, 'split ("a,,b") by (",") => ["a", "", "b"]'), (test_website_28, 'length of ("") => 0'), (test_website_29, 'length of ("a") => 1'), (test_website_30, 'length of ("hello world") => 11'), (test_website_31, 'substring of ("hello") from (0) => "hello"'), (test_website_32, 'substring of ("hello") from (3) => "lo"'), (test_website_33, 'substring of ("hello") from (5) => ""'), (test_website_34, 'replace ("a") in ("aaa") with ("b") => "bbb"'), (test_website_35, 'replace ("xy") in ("no match") with ("z") => "no match"'), (test_website_36, 'replace ("") in ("hello") with ("x") => "xhxexlxlxox"'), (test_website_37, 'length of (random digits (1)) => 1'), (test_website_38, 'length of (random digits (4)) => 4'), (test_website_39, 'length of (random digits (10)) => 10'), (test_website_40, 'length of (create session ("test")) => 8'), (test_website_41, 'handle request (Http-Request(path="/")) => "ᕦ(ツ)ᕤ"'), (test_website_42, 'handle request (Http-Request(path="/nope")) => "ᕦ(ツ)ᕤ"')])
 
 class Http_Request(NamedTuple):
     path: str = ""
