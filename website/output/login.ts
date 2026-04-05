@@ -266,6 +266,29 @@ export function* terminal_in(): Generator<string> {
 }
 
 
+// Platform implementation: websocket (TypeScript)
+// Implements the functions declared in websocket.zero.md
+// Server-side stub — the real client implementation lives in the client bundle.
+
+// @zero on (string channel) = open channel (string path)
+export function fn_open_channel__string(path: string): string {
+    return "";
+}
+
+// @zero on send message (string data) on (string channel)
+export function fn_send_message__string_on__string(data: string, channel: string): void {
+}
+
+// @zero on (string data) = receive message on (string channel)
+export function fn_receive_message_on__string(channel: string): string {
+    return "";
+}
+
+// @zero on close channel (string channel)
+export function fn_close_channel__string(channel: string): void {
+}
+
+
 import { AsyncLocalStorage } from 'async_hooks';
 
 class _Ctx_background {
@@ -331,7 +354,7 @@ export function User(args: Partial<User> = {}): User {
     return { name: args.name ?? "", phone: args.phone ?? "", role: args.role ?? "" };
 }
 
-// @zero on toggle login; website/login/login.zero.md:222
+// @zero on toggle login; website/login/login.zero.md:236
 export function fn_toggle_login(): void {
     const session = fn_get_cookie__string("session");
     if (session == "") {
@@ -341,7 +364,7 @@ export function fn_toggle_login(): void {
 }
 }
 
-// @zero on login; website/login/login.zero.md:229
+// @zero on login; website/login/login.zero.md:243
 export function fn_login(): void {
     try {
         const name = fn_input__string("name");
@@ -361,7 +384,7 @@ export function fn_login(): void {
     }
 }
 
-// @zero on logout dialog; website/login/login.zero.md:237
+// @zero on logout dialog; website/login/login.zero.md:251
 export function fn_logout_dialog(): void {
     const choice = fn_choose__string_or__string("log out", "cancel");
     if (choice == "log out") {
@@ -370,17 +393,17 @@ export function fn_logout_dialog(): void {
 }
 }
 
-// @zero on unknown user (string name); website/login/login.zero.md:243
+// @zero on unknown user (string name); website/login/login.zero.md:257
 export function fn_unknown_user__string(name: string): void {
     fn_show_message__string("unknown user");
 }
 
-// @zero on invalid code (string code); website/login/login.zero.md:246
+// @zero on invalid code (string code); website/login/login.zero.md:260
 export function fn_invalid_code__string(code: string): void {
     fn_show_message__string("invalid code");
 }
 
-// @zero on (string code) = request login (string name); website/login/login.zero.md:249
+// @zero on (string code) = request login (string name); website/login/login.zero.md:263
 export function fn_request_login__string(name: string): string {
     let code: string = undefined!;
     const found = users_arr.find(x => x.name == name)!;
@@ -393,7 +416,7 @@ export function fn_request_login__string(name: string): string {
     return code;
 }
 
-// @zero on (User result) = verify login (string name) with code (string code); website/login/login.zero.md:257
+// @zero on (User result) = verify login (string name) with code (string code); website/login/login.zero.md:271
 export function fn_verify_login__string_with_code__string(name: string, code: string): User {
     let result: User = undefined!;
     const found = users_arr.find(x => x.name == name)!;
@@ -406,14 +429,14 @@ export function fn_verify_login__string_with_code__string(name: string, code: st
     return result;
 }
 
-// @zero on (string token) = complete login (string name) with code (string code); website/login/login.zero.md:265
+// @zero on (string token) = complete login (string name) with code (string code); website/login/login.zero.md:279
 export function fn_complete_login__string_with_code__string(name: string, code: string): string {
     const found = fn_verify_login__string_with_code__string(name, code);
     const token: string = fn_create_session__string(name);
     return token;
 }
 
-// @zero on (string code) = generate code (User u); website/login/login.zero.md:269
+// @zero on (string code) = generate code (User u); website/login/login.zero.md:283
 export function fn_generate_code__User(u: User): string {
     let code: string = undefined!;
     if (u.name == "_alice") {
@@ -426,7 +449,7 @@ export function fn_generate_code__User(u: User): string {
     return code;
 }
 
-// @zero on logo clicked; website/login/login.zero.md:277
+// @zero on logo clicked; website/login/login.zero.md:291
 export function fn_logo_clicked(): void {
     fn_toggle_login();
 }

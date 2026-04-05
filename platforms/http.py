@@ -27,6 +27,10 @@ def task_serve_http__int(port):
 
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
+            # WebSocket upgrade
+            if self.headers.get("Upgrade", "").lower() == "websocket":
+                self._handle_websocket()
+                return
             # serve client-side files from /@client/
             if self.path.startswith("/@client/"):
                 self._serve_client_file()
@@ -46,6 +50,24 @@ def task_serve_http__int(port):
             self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
             self.end_headers()
             self.wfile.write(body.encode("utf-8"))
+
+        def _handle_websocket(self):
+            """Upgrade to WebSocket and keep the connection alive.
+            Takes over the raw socket from BaseHTTPRequestHandler."""
+            result = websocket_handshake(self)
+            if result is None:
+                self.send_response(400)
+                self.end_headers()
+                return
+            channel, channel_id = result
+            channel.send(channel_id)
+            # block until the channel closes — prevents BaseHTTPRequestHandler
+            # from closing the connection or trying to read another HTTP request
+            while not channel._closed:
+                import time
+                time.sleep(0.5)
+            # prevent BaseHTTPRequestHandler from sending a response
+            self.close_connection = True
 
         def _serve_client_file(self):
             """Serve a static file from the output directory."""

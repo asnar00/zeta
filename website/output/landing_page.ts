@@ -269,6 +269,29 @@ export function* terminal_in(): Generator<string> {
 }
 
 
+// Platform implementation: websocket (TypeScript)
+// Implements the functions declared in websocket.zero.md
+// Server-side stub — the real client implementation lives in the client bundle.
+
+// @zero on (string channel) = open channel (string path)
+export function fn_open_channel__string(path: string): string {
+    return "";
+}
+
+// @zero on send message (string data) on (string channel)
+export function fn_send_message__string_on__string(data: string, channel: string): void {
+}
+
+// @zero on (string data) = receive message on (string channel)
+export function fn_receive_message_on__string(channel: string): string {
+    return "";
+}
+
+// @zero on close channel (string channel)
+export function fn_close_channel__string(channel: string): void {
+}
+
+
 import { AsyncLocalStorage } from 'async_hooks';
 
 class _Ctx_background {
@@ -347,7 +370,7 @@ export function User(args: Partial<User> = {}): User {
     return { name: args.name ?? "", phone: args.phone ?? "", role: args.role ?? "" };
 }
 
-// @zero on (string body) = landing page; website/landing-page/landing-page.zero.md:280
+// @zero on (string body) = landing page; website/landing-page/landing-page.zero.md:294
 export function fn_landing_page(): string {
     let body: string = undefined!;
     body = fn_read_file__string("website/index.html");

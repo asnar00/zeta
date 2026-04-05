@@ -278,6 +278,29 @@ export function* terminal_in(): Generator<string> {
 }
 
 
+// Platform implementation: websocket (TypeScript)
+// Implements the functions declared in websocket.zero.md
+// Server-side stub — the real client implementation lives in the client bundle.
+
+// @zero on (string channel) = open channel (string path)
+export function fn_open_channel__string(path: string): string {
+    return "";
+}
+
+// @zero on send message (string data) on (string channel)
+export function fn_send_message__string_on__string(data: string, channel: string): void {
+}
+
+// @zero on (string data) = receive message on (string channel)
+export function fn_receive_message_on__string(channel: string): string {
+    return "";
+}
+
+// @zero on close channel (string channel)
+export function fn_close_channel__string(channel: string): void {
+}
+
+
 import { AsyncLocalStorage } from 'async_hooks';
 
 class _Ctx_background {
@@ -646,7 +669,7 @@ export function User(args: Partial<User> = {}): User {
     return { name: args.name ?? "", phone: args.phone ?? "", role: args.role ?? "" };
 }
 
-// @zero on main (string args$); website/website.zero.md:200
+// @zero on main (string args$); website/website.zero.md:214
 export async function task_main__string(args_arr: readonly string[]): Promise<void> {
     _push_terminal_out(logo);
     const request_arr = task_serve_http__int(port);
@@ -657,7 +680,7 @@ export async function task_main__string(args_arr: readonly string[]): Promise<vo
     }
 }
 
-// @zero on (string body) = handle request (Http-Request request); website/website.zero.md:208
+// @zero on (string body) = handle request (Http-Request request); website/website.zero.md:222
 export function fn_handle_request__Http_Request(request: Http_Request): string {
     let body: string = undefined!;
     if (_get_ctx().landing_page.enabled && request.path == "/") {
@@ -675,7 +698,7 @@ export function fn_handle_request__Http_Request(request: Http_Request): string {
     return body;
 }
 
-// @zero on stop; website/website.zero.md:216
+// @zero on stop; website/website.zero.md:230
 export function fn_stop(): void {
     fn_print__string("stopping");
 }
