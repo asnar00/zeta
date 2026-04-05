@@ -21,6 +21,18 @@ Show a message to the user:
 
     on show message (string text)
 
+Get a cookie value (returns "" if not set):
+
+    on (string value) = get cookie (string name)
+
+Remove a cookie:
+
+    on clear cookie (string name)
+
+Show a choice dialog with labelled buttons, return the chosen label:
+
+    on (string choice) = choose (string option-a) or (string option-b)
+
 Reload the current page (or refresh the current view on native):
 
     on reload page ()

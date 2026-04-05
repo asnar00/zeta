@@ -27,6 +27,15 @@ The user database and pending verification codes:
     shared User users$ = [User(name="_alice", phone="+440001", role="admin"), User(name="_bob", phone="+440002", role="user"), User(name="ash", phone="+447813943023", role="admin")]
     shared string pending-codes$[string]
 
+Toggle between login and logout based on session state:
+
+    on toggle login ()
+        string session = get cookie ("session")
+        if (session == "")
+            login ()
+        else
+            logout dialog ()
+
 The interactive login flow — input name, request a code, input code, log in:
 
     on login ()
@@ -36,6 +45,14 @@ The interactive login flow — input name, request a code, input code, log in:
         string token = complete login (name) with code (entered)
         set cookie of ("session") to (token)
         reload page ()
+
+Log out — confirm with the user, then clear the session cookie:
+
+    on logout dialog ()
+        string choice = choose ("log out") or ("cancel")
+        if (choice == "log out")
+            clear cookie ("session")
+            reload page ()
 
 Handle errors — these are regular functions, called when a raise occurs inside login:
 
@@ -89,7 +106,7 @@ Generate a code per user. Test users get deterministic codes; real users get ran
 Wire login into the landing page — when the logo is clicked, start the login flow:
 
     on logo clicked ()
-        login ()
+        toggle login ()
 
 ## integration tests
 

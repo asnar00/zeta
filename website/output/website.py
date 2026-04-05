@@ -20,6 +20,21 @@ def fn_show_message__string(text: str):
     print(text)  # server fallback: print to terminal
 
 
+# @zero on (string value) = get cookie (string name)
+def fn_get_cookie__string(name: str) -> str:
+    return ""  # server fallback: no cookies
+
+
+# @zero on clear cookie (string name)
+def fn_clear_cookie__string(name: str):
+    pass  # server fallback: no-op
+
+
+# @zero on (string choice) = choose (string option_a) or (string option_b)
+def fn_choose__string_or__string(option_a: str, option_b: str) -> str:
+    return option_a  # server fallback: return first option
+
+
 # @zero on set cookie of (string name) to (string value)
 def fn_set_cookie_of__string_to__string(name: str, value: str):
     pass  # no-op on server — cookies are set by the HTTP response
@@ -1167,7 +1182,7 @@ class User(NamedTuple):
     phone: str = ""
     role: str = ""
 
-# @zero on main (string args$); website/website.zero.md:191
+# @zero on main (string args$); website/website.zero.md:200
 def task_main__string(args_arr: str):
     _push_terminal_out(logo)
     request_arr = task_serve_http__int(port)
@@ -1176,7 +1191,7 @@ def task_main__string(args_arr: str):
         body = fn_handle_request__Http_Request(request)
         _push_http_response(Http_Response(request, body))
 
-# @zero on (string body) = handle request (Http-Request request); website/website.zero.md:199
+# @zero on (string body) = handle request (Http-Request request); website/website.zero.md:208
 def fn_handle_request__Http_Request(request: Http_Request) -> str:
     body = None
     if _get_ctx().landing_page.enabled and request.path == "/":
@@ -1189,7 +1204,7 @@ def fn_handle_request__Http_Request(request: Http_Request) -> str:
         body = not_found.fn_not_found()
     return body if body is not None else ""
 
-# @zero on stop; website/website.zero.md:207
+# @zero on stop; website/website.zero.md:216
 def fn_stop():
     fn_print__string("stopping")
 

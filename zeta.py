@@ -1086,6 +1086,32 @@ function fn_show_message__string(text) {
     alert(text);
 }
 
+function fn_get_cookie__string(name) {
+    const match = document.cookie.match(new RegExp("(?:^|; )" + name + "=([^;]*)"));
+    return match ? match[1] : "";
+}
+
+function fn_clear_cookie__string(name) {
+    document.cookie = name + "=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
+}
+
+async function fn_choose__string_or__string(optionA, optionB) {
+    return new Promise((resolve) => {
+        const container = document.createElement("div");
+        container.style.cssText = "text-align:center; margin-top:20px;";
+        const makeBtn = (label) => {
+            const btn = document.createElement("button");
+            btn.textContent = label;
+            btn.style.cssText = "font-family:'Switzer',sans-serif; font-size:14pt; padding:8px 24px; margin:0 8px; cursor:pointer; border:1px solid #1a1a1a; background:transparent;";
+            btn.addEventListener("click", () => { container.remove(); resolve(label); });
+            return btn;
+        };
+        container.appendChild(makeBtn(optionA));
+        container.appendChild(makeBtn(optionB));
+        document.body.appendChild(container);
+    });
+}
+
 function fn_set_cookie_of__string_to__string(name, value) {
     document.cookie = name + "=" + value + "; path=/; SameSite=Strict";
 }

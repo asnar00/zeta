@@ -16,6 +16,21 @@ def fn_show_message__string(text: str):
     print(text)  # server fallback: print to terminal
 
 
+# @zero on (string value) = get cookie (string name)
+def fn_get_cookie__string(name: str) -> str:
+    return ""  # server fallback: no cookies
+
+
+# @zero on clear cookie (string name)
+def fn_clear_cookie__string(name: str):
+    pass  # server fallback: no-op
+
+
+# @zero on (string choice) = choose (string option_a) or (string option_b)
+def fn_choose__string_or__string(option_a: str, option_b: str) -> str:
+    return option_a  # server fallback: return first option
+
+
 # @zero on set cookie of (string name) to (string value)
 def fn_set_cookie_of__string_to__string(name: str, value: str):
     pass  # no-op on server — cookies are set by the HTTP response
@@ -917,7 +932,7 @@ class User(NamedTuple):
     phone: str = ""
     role: str = ""
 
-# @zero on (string body) = landing page; website/landing-page/landing-page.zero.md:258
+# @zero on (string body) = landing page; website/landing-page/landing-page.zero.md:280
 def fn_landing_page() -> str:
     body = fn_read_file__string("website/index.html")
     body = fn_replace__string_in__string_with__string("#34988b", body, _get_ctx().background.colour)

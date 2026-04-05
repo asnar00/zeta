@@ -27,6 +27,20 @@ export function fn_show_message__string(text: string): void {
     }
 }
 
+// @zero on (string value) = get cookie (string name)
+export function fn_get_cookie__string(name: string): string {
+    return "";
+}
+
+// @zero on clear cookie (string name)
+export function fn_clear_cookie__string(name: string): void {
+}
+
+// @zero on (string choice) = choose (string option_a) or (string option_b)
+export function fn_choose__string_or__string(option_a: string, option_b: string): string {
+    return option_a;
+}
+
 // @zero on set cookie of (string name) to (string value)
 export function fn_set_cookie_of__string_to__string(name: string, value: string): void {
     if (typeof document !== "undefined") {
@@ -632,7 +646,7 @@ export function User(args: Partial<User> = {}): User {
     return { name: args.name ?? "", phone: args.phone ?? "", role: args.role ?? "" };
 }
 
-// @zero on main (string args$); website/website.zero.md:191
+// @zero on main (string args$); website/website.zero.md:200
 export async function task_main__string(args_arr: readonly string[]): Promise<void> {
     _push_terminal_out(logo);
     const request_arr = task_serve_http__int(port);
@@ -643,7 +657,7 @@ export async function task_main__string(args_arr: readonly string[]): Promise<vo
     }
 }
 
-// @zero on (string body) = handle request (Http-Request request); website/website.zero.md:199
+// @zero on (string body) = handle request (Http-Request request); website/website.zero.md:208
 export function fn_handle_request__Http_Request(request: Http_Request): string {
     let body: string = undefined!;
     if (_get_ctx().landing_page.enabled && request.path == "/") {
@@ -661,7 +675,7 @@ export function fn_handle_request__Http_Request(request: Http_Request): string {
     return body;
 }
 
-// @zero on stop; website/website.zero.md:207
+// @zero on stop; website/website.zero.md:216
 export function fn_stop(): void {
     fn_print__string("stopping");
 }

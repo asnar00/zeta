@@ -13,6 +13,21 @@ def fn_show_message__string(text: str):
     print(text)  # server fallback: print to terminal
 
 
+# @zero on (string value) = get cookie (string name)
+def fn_get_cookie__string(name: str) -> str:
+    return ""  # server fallback: no cookies
+
+
+# @zero on clear cookie (string name)
+def fn_clear_cookie__string(name: str):
+    pass  # server fallback: no-op
+
+
+# @zero on (string choice) = choose (string option_a) or (string option_b)
+def fn_choose__string_or__string(option_a: str, option_b: str) -> str:
+    return option_a  # server fallback: return first option
+
+
 # @zero on set cookie of (string name) to (string value)
 def fn_set_cookie_of__string_to__string(name: str, value: str):
     pass  # no-op on server — cookies are set by the HTTP response
@@ -900,7 +915,15 @@ class User(NamedTuple):
     phone: str = ""
     role: str = ""
 
-# @zero on login; website/login/login.zero.md:213
+# @zero on toggle login; website/login/login.zero.md:222
+def fn_toggle_login():
+    session = fn_get_cookie__string("session")
+    if session == "":
+        fn_login()
+    else:
+        fn_logout_dialog()
+
+# @zero on login; website/login/login.zero.md:229
 def fn_login():
     try:
         name = fn_input__string("name")
@@ -917,15 +940,22 @@ def fn_login():
         else:
             raise
 
-# @zero on unknown user (string name); website/login/login.zero.md:221
+# @zero on logout dialog; website/login/login.zero.md:237
+def fn_logout_dialog():
+    choice = fn_choose__string_or__string("log out", "cancel")
+    if choice == "log out":
+        fn_clear_cookie__string("session")
+        fn_reload_page()
+
+# @zero on unknown user (string name); website/login/login.zero.md:243
 def fn_unknown_user__string(name: str):
     fn_show_message__string("unknown user")
 
-# @zero on invalid code (string code); website/login/login.zero.md:224
+# @zero on invalid code (string code); website/login/login.zero.md:246
 def fn_invalid_code__string(code: str):
     fn_show_message__string("invalid code")
 
-# @zero on (string code) = request login (string name); website/login/login.zero.md:227
+# @zero on (string code) = request login (string name); website/login/login.zero.md:249
 def fn_request_login__string(name: str) -> str:
     found = next((x for x in users_arr if x.name == name), type(users_arr[0])() if users_arr else None)
     if found.name != name:
@@ -935,7 +965,7 @@ def fn_request_login__string(name: str) -> str:
     pending_codes_arr[found.phone] = code
     return code
 
-# @zero on (User result) = verify login (string name) with code (string code); website/login/login.zero.md:235
+# @zero on (User result) = verify login (string name) with code (string code); website/login/login.zero.md:257
 def fn_verify_login__string_with_code__string(name: str, code: str) -> User:
     found = next((x for x in users_arr if x.name == name), type(users_arr[0])() if users_arr else None)
     stored = pending_codes_arr[found.phone]
@@ -945,13 +975,13 @@ def fn_verify_login__string_with_code__string(name: str, code: str) -> User:
     result = found
     return result
 
-# @zero on (string token) = complete login (string name) with code (string code); website/login/login.zero.md:243
+# @zero on (string token) = complete login (string name) with code (string code); website/login/login.zero.md:265
 def fn_complete_login__string_with_code__string(name: str, code: str) -> str:
     found = fn_verify_login__string_with_code__string(name, code)
     token = fn_create_session__string(name)
     return token
 
-# @zero on (string code) = generate code (User u); website/login/login.zero.md:247
+# @zero on (string code) = generate code (User u); website/login/login.zero.md:269
 def fn_generate_code__User(u: User) -> str:
     code = None
     if u.name == "_alice":
@@ -962,9 +992,9 @@ def fn_generate_code__User(u: User) -> str:
         code = fn_random_digits__int(4)
     return code if code is not None else ""
 
-# @zero on logo clicked; website/login/login.zero.md:255
+# @zero on logo clicked; website/login/login.zero.md:277
 def fn_logo_clicked():
-    fn_login()
+    fn_toggle_login()
 
 users_arr: list[User] = [User(name="_alice", phone="+440001", role="admin"), User(name="_bob", phone="+440002", role="user"), User(name="ash", phone="+447813943023", role="admin")]
 pending_codes_arr: dict[str, str] = {}
