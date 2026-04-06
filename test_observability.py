@@ -78,7 +78,7 @@ class Browser:
                 "--no-first-run", "--no-default-browser-check",
                 "--window-size=800,600"]
         if not headed:
-            args.append("--headless=new")
+            args.append("--window-size=800,600")
         args.append(f"{BASE_URL}/")
         self.proc = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
@@ -117,13 +117,18 @@ def ws_request(ws, cmd, to=None, timeout=10):
 
 
 def wait_for_guest(ws, known, timeout=15):
+    """Wait for a real browser tab (with visible logo) to connect."""
     deadline = time.time() + timeout
     while time.time() < deadline:
         clients = ws_request(ws, "connected clients ()")
         new = [c.strip() for c in clients.split(",")
                if c.strip().startswith("guest-") and c.strip() not in known]
-        if new:
-            return new[0]
+        for name in new:
+            snapshot = ws_request(ws, "describe page ()", to=name, timeout=3)
+            if "logo" in snapshot and "offscreen" not in snapshot.split("logo")[1][:50]:
+                return name
+            else:
+                known.add(name)
         time.sleep(0.5)
     return None
 

@@ -84,8 +84,7 @@ class Browser:
         args = [CHROME, f"--user-data-dir={self.tmpdir}",
                 "--no-first-run", "--no-default-browser-check",
                 "--window-size=800,600"]
-        if not headed:
-            args.append("--headless=new")
+        # always use visible Chrome — headless has issues with multiple WS connections
         args.append(f"{BASE_URL}/")
         self.proc = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         self.guest_name = None
@@ -126,12 +125,19 @@ def find_new_guests(ws, known):
 
 
 def wait_for_browser(ws, known, timeout=15):
-    """Wait for a new browser to connect and return its guest name."""
+    """Wait for a new browser tab to connect and return its guest name.
+    Verifies the guest has a visible logo element to skip Chrome's
+    internal connections (service workers, extensions)."""
     deadline = time.time() + timeout
     while time.time() < deadline:
         new = find_new_guests(ws, known)
-        if new:
-            return new[0]
+        for name in new:
+            snapshot = ws_request(ws, "describe page ()", to=name, timeout=3)
+            # real page has logo that's NOT offscreen
+            if "logo" in snapshot and "offscreen" not in snapshot.split("logo")[1][:50]:
+                return name
+            else:
+                known.add(name)  # skip non-page connections
         time.sleep(0.5)
     return None
 
@@ -209,71 +215,81 @@ def run_tests(headed=False):
         check_true("default: connected", default_route is not None)
         check("default: teal", get_bg(ws, default_route), "#34988b")
 
-        # --- alice tab: login, set red ---
-        print("alice tab:")
+        # --- alice: login, set red, logout ---
+        print("alice first login:")
         b_alice = Browser(headed)
         browsers.append(b_alice)
         alice_guest = wait_for_browser(ws, known_guests)
         known_guests.add(alice_guest or "")
         check_true("alice: connected", alice_guest is not None)
+        check("alice: teal before login", get_bg(ws, alice_guest), "#34988b")
         login_via_ws(ws, alice_guest, "_alice", "1234")
         clients = ws_request(ws, "connected clients ()")
         check_contains("alice: logged in", clients, "_alice")
         alice_token = ws_request(ws, 'get cookie ("session")', to="_alice")
         check_true("alice: has token", len(alice_token) > 0 and "error" not in alice_token)
+        check("alice: teal on first login", get_bg(ws, "_alice"), "#34988b")
         set_bg("#ff0000", alice_token)
         ws_request(ws, "reload page ()", to="_alice")
         time.sleep(3)
-        check("alice: red", get_bg(ws, "_alice"), "#ff0000")
+        check("alice: red after set", get_bg(ws, "_alice"), "#ff0000")
 
-        # --- alice toggle ---
-        print("alice toggle:")
+        # alice logs out
+        print("alice first logout:")
         ws_request(ws, 'click on (".logo")', to="_alice")
         time.sleep(1)
-        snapshot = ws_request(ws, "describe page ()", to="_alice")
-        check_contains("alice: logout buttons", snapshot, '"log out"')
-        ws_request(ws, "reload page ()", to="_alice")
-        time.sleep(3)
+        ws_request(ws, 'click on ("button")', to="_alice")
+        time.sleep(5)
+        alice_guest2 = find_new_guests(ws, known_guests)
+        alice_guest2 = alice_guest2[0] if alice_guest2 else None
+        if alice_guest2:
+            known_guests.add(alice_guest2)
+        check_true("alice: guest after logout", alice_guest2 is not None)
+        check("alice: teal after logout", get_bg(ws, alice_guest2), "#34988b")
 
-        # --- bob tab: login, set blue ---
-        print("bob tab:")
+        # alice logs back in — colour should be red (persisted)
+        print("alice second login:")
+        time.sleep(2)  # ensure page is fully loaded after logout
+        login_via_ws(ws, alice_guest2, "_alice", "1234")
+        clients = ws_request(ws, "connected clients ()")
+        check_contains("alice: logged in again", clients, "_alice")
+        check("alice: red on second login", get_bg(ws, "_alice"), "#ff0000")
+
+        # alice logs out again — back to teal
+        print("alice second logout:")
+        ws_request(ws, 'click on (".logo")', to="_alice")
+        time.sleep(1)
+        ws_request(ws, 'click on ("button")', to="_alice")
+        time.sleep(5)
+        alice_guest3 = find_new_guests(ws, known_guests)
+        alice_guest3 = alice_guest3[0] if alice_guest3 else None
+        if alice_guest3:
+            known_guests.add(alice_guest3)
+        check_true("alice: guest after second logout", alice_guest3 is not None)
+        check("alice: teal after second logout", get_bg(ws, alice_guest3), "#34988b")
+
+        # --- bob: same flow ---
+        print("bob first login:")
         b_bob = Browser(headed)
         browsers.append(b_bob)
         bob_guest = wait_for_browser(ws, known_guests)
         known_guests.add(bob_guest or "")
         check_true("bob: connected", bob_guest is not None)
+        check("bob: teal before login", get_bg(ws, bob_guest), "#34988b")
         login_via_ws(ws, bob_guest, "_bob", "4321")
         clients = ws_request(ws, "connected clients ()")
         check_contains("bob: logged in", clients, "_bob")
         bob_token = ws_request(ws, 'get cookie ("session")', to="_bob")
         check_true("bob: has token", len(bob_token) > 0 and "error" not in bob_token)
+        check("bob: teal on first login", get_bg(ws, "_bob"), "#34988b")
         set_bg("#0000ff", bob_token)
         ws_request(ws, "reload page ()", to="_bob")
         time.sleep(3)
-        check("bob: blue", get_bg(ws, "_bob"), "#0000ff")
+        check("bob: blue after set", get_bg(ws, "_bob"), "#0000ff")
 
-        # --- isolation ---
+        # --- isolation: default still teal ---
         print("isolation:")
         check("default: still teal", get_bg(ws, default_route), "#34988b")
-        check("alice: still red", get_bg(ws, "_alice"), "#ff0000")
-        check("bob: still blue", get_bg(ws, "_bob"), "#0000ff")
-
-        # --- alice logout ---
-        print("alice logout:")
-        ws_request(ws, 'click on (".logo")', to="_alice")
-        time.sleep(1)
-        ws_request(ws, 'click on ("button")', to="_alice")
-        time.sleep(5)
-        new_guests = find_new_guests(ws, known_guests)
-        alice_after = new_guests[0] if new_guests else None
-        if alice_after:
-            known_guests.add(alice_after)
-        check_true("alice: new guest after logout", alice_after is not None)
-        if alice_after:
-            check("alice: teal after logout", get_bg(ws, alice_after), "#34988b")
-
-        # bob still blue
-        check("bob: still blue", get_bg(ws, "_bob"), "#0000ff")
 
         ws.close()
 
