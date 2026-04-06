@@ -62,3 +62,10 @@ function fn_length_of__string(s: string): number {
 function fn_substring_of__string_from__int(s: string, start: number): string {
     return s.slice(start);
 }
+
+
+// @zero on (int n) = to int (string s)
+function fn_to_int__string(s: string): number {
+    const n = parseInt(s, 10);
+    return isNaN(n) ? 0 : n;
+}

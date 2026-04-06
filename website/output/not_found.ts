@@ -485,6 +485,13 @@ export function fn_substring_of__string_from__int(s: string, start: number): str
 }
 
 
+// @zero on (int n) = to int (string s)
+export function fn_to_int__string(s: string): number {
+    const n = parseInt(s, 10);
+    return isNaN(n) ? 0 : n;
+}
+
+
 // Platform implementation: terminal (TypeScript)
 // Implements the streams declared in terminal.zero.md
 
@@ -609,7 +616,7 @@ export function User(args: Partial<User> = {}): User {
     return { name: args.name ?? "", phone: args.phone ?? "", role: args.role ?? "" };
 }
 
-// @zero on (string body) = not found; website/not-found/not-found.zero.md:320
+// @zero on (string body) = not found; website/not-found/not-found.zero.md:326
 export function fn_not_found(): string {
     const body: string = "not found";
     return body;

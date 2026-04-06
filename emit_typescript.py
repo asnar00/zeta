@@ -913,10 +913,14 @@ def _emit_task_var_decl_ts(node: dict, structs: dict, base_indent: str, extra_in
         args = ", ".join(_coerce_task_arg(a, t, val) for a, t in
                          zip(val["args"], _task_call_param_types(val)))
         return f"{base_indent}{extra_indent}const {name} = {call_fn}({args});"
+    if node.get("array") and isinstance(val, dict) and "range" in val:
+        return f"{base_indent}{extra_indent}{_emit_range_expr_ts(name, val)};"
     if node.get("array") and isinstance(val, list):
         items = ", ".join(_emit_expr(v, structs) if isinstance(v, dict) else str(v) for v in val)
         return f"{base_indent}{extra_indent}const {name} = [{items}];"
-    if isinstance(val, dict):
+    if isinstance(val, dict) and val.get("kind") == "string_build":
+        return f"{base_indent}{extra_indent}let {name} = {_emit_string_build_ts(val['steps'], structs)};"
+    if isinstance(val, dict) and "kind" in val:
         return f"{base_indent}{extra_indent}let {name} = {_emit_expr(val, structs)};"
     return f"{base_indent}{extra_indent}let {name} = {val};"
 
@@ -1346,11 +1350,26 @@ def _needs_await(value_node):
     return False
 
 
+def _emit_string_build_ts(steps: list, structs: dict) -> str:
+    """Emit a string_build expression as concatenation with String() conversion."""
+    parts = []
+    for step in steps:
+        expr = _emit_expr(step, structs)
+        if step.get("kind") == "literal" and isinstance(step.get("value"), str):
+            parts.append(expr)
+        else:
+            parts.append(f"String({expr})")
+    return " + ".join(parts)
+
+
 def _emit_var_decl_expr_ts(node: dict, structs: dict) -> str:
     """Emit a var_decl expression."""
     name = node["name"] + "_arr" if node.get("array") else node["name"]
     if node.get("array"):
         return _emit_var_decl_array_ts(name, node, structs)
+    val = node.get("value")
+    if isinstance(val, dict) and val.get("kind") == "string_build":
+        return f"const {name} = {_emit_string_build_ts(val['steps'], structs)}"
     value_expr = _emit_expr(node['value'], structs)
     if _needs_await(node.get('value')):
         return f"const {name} = await {value_expr}"
@@ -1464,6 +1483,8 @@ def _emit_leaf_expr_ts(node: dict) -> str | None:
 def _emit_expr(node: dict, structs: dict) -> str:
     """Emit a TypeScript expression from an AST node."""
     kind = node["kind"]
+    if kind == "string_build":
+        return _emit_string_build_ts(node["steps"], structs)
     if kind == "scoped_hook":
         return "/* scoped hook (handled at function level) */"
     if kind == "placeholder":

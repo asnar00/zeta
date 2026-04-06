@@ -53,3 +53,11 @@ def fn_length_of__string(s: str) -> int:
 # @zero on (string sub) = substring of (string s) from (int start)
 def fn_substring_of__string_from__int(s: str, start: int) -> str:
     return s[start:]
+
+
+# @zero on (int n) = to int (string s)
+def fn_to_int__string(s: str) -> int:
+    try:
+        return int(s)
+    except (ValueError, TypeError):
+        return 0

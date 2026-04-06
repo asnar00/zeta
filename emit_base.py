@@ -9,6 +9,7 @@ SYMBOL_WORDS = {
     "+": "plus", "-": "minus", "*": "times", "/": "div", "%": "mod",
     "==": "eq", "!=": "neq", "<": "lt", ">": "gt", "<=": "lte", ">=": "gte",
     "&": "band", "|": "bor", "^": "bxor", "<<": "shl", ">>": "shr",
+    "<-": "from",
 }
 
 SUPPORTED_VERSION = 1

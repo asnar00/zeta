@@ -64,6 +64,13 @@ Replace all occurrences of a needle in a string:
     substring of ("hello world") from (6) => "world"
     substring of ("abc") from (0) => "abc"
 
+Convert a string to an integer (returns 0 if not a valid number):
+
+    on (int n) = to int (string s)
+
+    to int ("42") => 42
+    to int ("0") => 0
+
 Split a string at the given positions, removing a 2-character separator at each position (the marked character and the one before it):
 
     on (string result$) = split [string s] at [int positions$]

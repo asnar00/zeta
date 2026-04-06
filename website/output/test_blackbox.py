@@ -1640,6 +1640,14 @@ def fn_substring_of__string_from__int(s: str, start: int) -> str:
     return s[start:]
 
 
+# @zero on (int n) = to int (string s)
+def fn_to_int__string(s: str) -> int:
+    try:
+        return int(s)
+    except (ValueError, TypeError):
+        return 0
+
+
 # Platform implementation: terminal (Python)
 # Implements the streams declared in terminal.zero.md
 
@@ -1888,17 +1896,17 @@ class User(NamedTuple):
     phone: str = ""
     role: str = ""
 
-# @zero on bb check (string actual) contains (string expected); website/test-blackbox/test-blackbox.zero.md:403
+# @zero on bb check (string actual) contains (string expected); website/test-blackbox/test-blackbox.zero.md:409
 def fn_bb_check__string_contains__string(actual: str, expected: str):
     found = fn__string_contains__string(actual, expected)
     if found == False:
         raise _ZeroRaise('bb check failed', ['expected'])
 
-# @zero on bb check failed (string what); website/test-blackbox/test-blackbox.zero.md:408
+# @zero on bb check failed (string what); website/test-blackbox/test-blackbox.zero.md:414
 def fn_bb_check_failed__string(what: str):
     fn_print__string("FAIL: expected " + what)
 
-# @zero on test blackbox; website/test-blackbox/test-blackbox.zero.md:411
+# @zero on test blackbox; website/test-blackbox/test-blackbox.zero.md:417
 def fn_test_blackbox():
     fn_click_on__string(".logo")
     fn_press__string_on__string("Escape", "body")

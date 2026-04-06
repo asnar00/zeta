@@ -672,10 +672,19 @@ def _parse_scalar_rhs(rhs, fn_sigs):
 def _parse_scalar_variable(type_name: str, var_name: str, rest: str, fn_sigs: list = None) -> dict:
     """Parse a scalar variable from its type, name, and remaining text."""
     value = None
-    if rest.startswith("="):
+    if rest.startswith("<-"):
+        value = _parse_string_build(rest, fn_sigs)
+    elif rest.startswith("="):
         rhs = rest[1:].strip()
         value = _parse_scalar_rhs(rhs, fn_sigs)
     return {"name": var_name, "type": type_name, "array": False, "value": value}
+
+
+def _parse_string_build(rest: str, fn_sigs: list = None) -> dict:
+    """Parse a string build expression: <- expr <- expr <- ..."""
+    parts = _split_stream_parts(rest)
+    steps = [_parse_expr(p, fn_sigs) for p in parts]
+    return {"kind": "string_build", "steps": steps}
 
 
 def _try_parse_where(rhs: str, fn_sigs: list = None) -> dict | None:
@@ -978,8 +987,21 @@ def _parse_literal(s: str):
 
 # --- functions ---
 
+def _is_conversion_operator(line):
+    """Check if a line is a conversion operator: on (type name) <- (other_type param)"""
+    return bool(re.match(rf"on\s+\({W}\s+{W}\)\s*<-\s*\(", line))
+
+
 def _parse_fn_signature(line, line_num):
     """Parse the 'on' line to extract result, params, and signature_parts."""
+    # conversion operator: on (string s) <- (number n)
+    conv_match = re.match(rf"on\s+\(({W})\s+({W})\)\s*<-\s*\(({W})\s+({W})\)", line)
+    if conv_match:
+        result = {"name": conv_match.group(2), "type": conv_match.group(1)}
+        param = {"name": conv_match.group(4), "type": conv_match.group(3)}
+        # signature: (result_type) <- (param_type)
+        sig_parts = [f"({conv_match.group(1)})", "<-", f"({conv_match.group(3)})"]
+        return result, [param], sig_parts
     result_match = re.match(rf"on\s+\(({W})\s+({W}\$?)\)\s*=\s*(.*)", line)
     if result_match:
         result = {"name": result_match.group(2), "type": result_match.group(1)}
@@ -1628,6 +1650,14 @@ def _try_parse_map_decl(line, fn_signatures):
 
 def _try_parse_scalar_decl(line, fn_signatures, task_signatures):
     """Try to parse a scalar/array variable declaration."""
+    # string build: string s <- expr <- expr
+    build_decl = re.match(rf"({W})\s+({W})\s*<-\s*(.*)", line)
+    if build_decl and _looks_like_type(build_decl.group(1)) and not build_decl.group(2).endswith("$"):
+        type_name = build_decl.group(1)
+        var_name = build_decl.group(2)
+        rest = "<-" + build_decl.group(3)
+        value = _parse_string_build(rest, fn_signatures)
+        return {"kind": "var_decl", "name": var_name, "type": type_name, "array": False, "value": value}
     var_decl = re.match(rf"({W})\s+({W})(\$)?\s*=\s*(.*)", line)
     if var_decl and _looks_like_type(var_decl.group(1)):
         type_name = var_decl.group(1)

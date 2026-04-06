@@ -485,6 +485,13 @@ export function fn_substring_of__string_from__int(s: string, start: number): str
 }
 
 
+// @zero on (int n) = to int (string s)
+export function fn_to_int__string(s: string): number {
+    const n = parseInt(s, 10);
+    return isNaN(n) ? 0 : n;
+}
+
+
 // Platform implementation: terminal (TypeScript)
 // Implements the streams declared in terminal.zero.md
 
@@ -602,7 +609,7 @@ export function User(args: Partial<User> = {}): User {
     return { name: args.name ?? "", phone: args.phone ?? "", role: args.role ?? "" };
 }
 
-// @zero on (string body) = landing page; website/landing-page/landing-page.zero.md:399
+// @zero on (string body) = landing page; website/landing-page/landing-page.zero.md:405
 export function fn_landing_page(): string {
     let body: string = undefined!;
     body = fn_read_file__string("website/index.html");

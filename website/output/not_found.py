@@ -1643,6 +1643,14 @@ def fn_substring_of__string_from__int(s: str, start: int) -> str:
     return s[start:]
 
 
+# @zero on (int n) = to int (string s)
+def fn_to_int__string(s: str) -> int:
+    try:
+        return int(s)
+    except (ValueError, TypeError):
+        return 0
+
+
 # Platform implementation: terminal (Python)
 # Implements the streams declared in terminal.zero.md
 
@@ -1911,7 +1919,7 @@ class User(NamedTuple):
     phone: str = ""
     role: str = ""
 
-# @zero on (string body) = not found; website/not-found/not-found.zero.md:320
+# @zero on (string body) = not found; website/not-found/not-found.zero.md:326
 def fn_not_found() -> str:
     body = "not found"
     return body

@@ -1098,6 +1098,18 @@ def _emit_var_decl_array(name: str, node: dict) -> str:
     return f"{name} = {val}"
 
 
+def _emit_string_build(steps: list) -> str:
+    """Emit a string_build expression as concatenation with str() conversion."""
+    parts = []
+    for step in steps:
+        expr = _emit_expr(step)
+        if step.get("kind") == "literal" and isinstance(step.get("value"), str):
+            parts.append(expr)
+        else:
+            parts.append(f"str({expr})")
+    return " + ".join(parts)
+
+
 def _emit_var_decl_expr(node: dict) -> str:
     """Emit a var_decl expression."""
     name = _safe(node["name"]) + "_arr" if node.get("array") else _safe(node["name"])
@@ -1107,6 +1119,9 @@ def _emit_var_decl_expr(node: dict) -> str:
         return f"{name}: dict[{key_type}, {val_type}] = {{}}"
     if node.get("array"):
         return _emit_var_decl_array(name, node)
+    val = node.get("value")
+    if isinstance(val, dict) and val.get("kind") == "string_build":
+        return f"{name} = {_emit_string_build(val['steps'])}"
     return f"{name} = {_emit_expr(node['value'])}"
 
 
@@ -1253,6 +1268,8 @@ def _emit_function_with_hooks(fn, name, params, ir):
 def _emit_expr(node: dict) -> str:
     """Emit a Python expression from an AST node."""
     kind = node["kind"]
+    if kind == "string_build":
+        return _emit_string_build(node["steps"])
     if kind == "scoped_hook":
         return _emit_scoped_hook(node)
     if kind == "placeholder":

@@ -1640,6 +1640,14 @@ def fn_substring_of__string_from__int(s: str, start: int) -> str:
     return s[start:]
 
 
+# @zero on (int n) = to int (string s)
+def fn_to_int__string(s: str) -> int:
+    try:
+        return int(s)
+    except (ValueError, TypeError):
+        return 0
+
+
 # Platform implementation: terminal (Python)
 # Implements the streams declared in terminal.zero.md
 
@@ -1888,7 +1896,7 @@ class User(NamedTuple):
     phone: str = ""
     role: str = ""
 
-# @zero on toggle login; website/login/login.zero.md:323
+# @zero on toggle login; website/login/login.zero.md:329
 def fn_toggle_login():
     session = fn_get_cookie__string("session")
     if session == "":
@@ -1896,7 +1904,7 @@ def fn_toggle_login():
     else:
         fn_logout_dialog()
 
-# @zero on login; website/login/login.zero.md:330
+# @zero on login; website/login/login.zero.md:336
 def fn_login():
     try:
         name = fn_input__string("name")
@@ -1913,22 +1921,22 @@ def fn_login():
         else:
             raise
 
-# @zero on logout dialog; website/login/login.zero.md:338
+# @zero on logout dialog; website/login/login.zero.md:344
 def fn_logout_dialog():
     choice = fn_choose__string_or__string("log out", "cancel")
     if choice == "log out":
         fn_clear_cookie__string("session")
         fn_reload_page()
 
-# @zero on unknown user (string name); website/login/login.zero.md:344
+# @zero on unknown user (string name); website/login/login.zero.md:350
 def fn_unknown_user__string(name: str):
     fn_show_message__string("unknown user")
 
-# @zero on invalid code (string code); website/login/login.zero.md:347
+# @zero on invalid code (string code); website/login/login.zero.md:353
 def fn_invalid_code__string(code: str):
     fn_show_message__string("invalid code")
 
-# @zero on (string code) = request login (string name); website/login/login.zero.md:350
+# @zero on (string code) = request login (string name); website/login/login.zero.md:356
 def fn_request_login__string(name: str) -> str:
     found = next((x for x in users_arr if x.name == name), type(users_arr[0])() if users_arr else None)
     if found.name != name:
@@ -1938,7 +1946,7 @@ def fn_request_login__string(name: str) -> str:
     pending_codes_arr[found.phone] = code
     return code
 
-# @zero on (User result) = verify login (string name) with code (string code); website/login/login.zero.md:358
+# @zero on (User result) = verify login (string name) with code (string code); website/login/login.zero.md:364
 def fn_verify_login__string_with_code__string(name: str, code: str) -> User:
     found = next((x for x in users_arr if x.name == name), type(users_arr[0])() if users_arr else None)
     stored = pending_codes_arr[found.phone]
@@ -1948,13 +1956,13 @@ def fn_verify_login__string_with_code__string(name: str, code: str) -> User:
     result = found
     return result
 
-# @zero on (string token) = complete login (string name) with code (string code); website/login/login.zero.md:366
+# @zero on (string token) = complete login (string name) with code (string code); website/login/login.zero.md:372
 def fn_complete_login__string_with_code__string(name: str, code: str) -> str:
     found = fn_verify_login__string_with_code__string(name, code)
     token = fn_create_session__string(name)
     return token
 
-# @zero on (string code) = generate code (User u); website/login/login.zero.md:370
+# @zero on (string code) = generate code (User u); website/login/login.zero.md:376
 def fn_generate_code__User(u: User) -> str:
     code = None
     if u.name == "_alice":
@@ -1965,21 +1973,21 @@ def fn_generate_code__User(u: User) -> str:
         code = fn_random_digits__int(4)
     return code if code is not None else ""
 
-# @zero on logo clicked; website/login/login.zero.md:378
+# @zero on logo clicked; website/login/login.zero.md:384
 def fn_logo_clicked():
     fn_toggle_login()
 
-# @zero on check (string snapshot) contains (string expected); website/login/login.zero.md:381
+# @zero on check (string snapshot) contains (string expected); website/login/login.zero.md:387
 def fn_check__string_contains__string(snapshot: str, expected: str):
     found = fn__string_contains__string(snapshot, expected)
     if found == False:
         raise _ZeroRaise('check failed', ['expected'])
 
-# @zero on check failed (string what); website/login/login.zero.md:386
+# @zero on check failed (string what); website/login/login.zero.md:392
 def fn_check_failed__string(what: str):
     fn_print__string("FAIL: expected " + what)
 
-# @zero on test login; website/login/login.zero.md:389
+# @zero on test login; website/login/login.zero.md:395
 def fn_test_login():
     import threading as _th
     _orig_fn_input__string = globals().get('fn_input__string', fn_input__string)

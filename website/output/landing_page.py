@@ -1643,6 +1643,14 @@ def fn_substring_of__string_from__int(s: str, start: int) -> str:
     return s[start:]
 
 
+# @zero on (int n) = to int (string s)
+def fn_to_int__string(s: str) -> int:
+    try:
+        return int(s)
+    except (ValueError, TypeError):
+        return 0
+
+
 # Platform implementation: terminal (Python)
 # Implements the streams declared in terminal.zero.md
 
@@ -1905,7 +1913,7 @@ class User(NamedTuple):
     phone: str = ""
     role: str = ""
 
-# @zero on (string body) = landing page; website/landing-page/landing-page.zero.md:399
+# @zero on (string body) = landing page; website/landing-page/landing-page.zero.md:405
 def fn_landing_page() -> str:
     body = fn_read_file__string("website/index.html")
     body = fn_replace__string_in__string_with__string("#34988b", body, _get_ctx().background.colour)
