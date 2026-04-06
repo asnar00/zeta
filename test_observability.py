@@ -181,7 +181,7 @@ def run_tests(headed=False):
         # login alice via WS on this browser
         ws_request(ws, 'click on (".logo")', to=guest)
         time.sleep(1)
-        ws_request(ws, 'type ("_alice") into ("input")', to=guest)
+        ws_request(ws, 'type ("_alice") into input box ("input")', to=guest)
         ws_request(ws, 'press ("Enter") on ("input")', to=guest)
         time.sleep(3)
         ws_request(ws, 'type ("1234") into ("input")', to=guest)

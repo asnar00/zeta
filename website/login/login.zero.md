@@ -122,10 +122,10 @@ Test the login flow — hooks intercept input calls to simulate the user:
 
     on test login ()
         in login (), on input ("name")
-            type ("_alice") into ("input")
+            type ("_alice") into input box ("input")
             press ("Enter") on ("input")
         in login (), on input ("code")
-            type ("1234") into ("input")
+            type ("1234") into input box ("input")
             press ("Enter") on ("input")
         login ()
         check (describe page ()) contains ("log out")

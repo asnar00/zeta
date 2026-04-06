@@ -47,7 +47,7 @@ Click on an element:
 
 Type text into an input element:
 
-    on type (string text) into (string selector)
+    on type (string text) into input box (string selector)
 
 Press a key on an element:
 

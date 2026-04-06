@@ -167,10 +167,10 @@ def login_via_ws(ws, route, name, code):
     """Login flow via WebSocket commands."""
     ws_request(ws, 'click on (".logo")', to=route)
     time.sleep(1)
-    ws_request(ws, f'type ("{name}") into ("input")', to=route)
+    ws_request(ws, f'type ("{name}") into input box ("input")', to=route)
     ws_request(ws, 'press ("Enter") on ("input")', to=route)
     time.sleep(3)
-    ws_request(ws, f'type ("{code}") into ("input")', to=route)
+    ws_request(ws, f'type ("{code}") into input box ("input")', to=route)
     ws_request(ws, 'press ("Enter") on ("input")', to=route)
     time.sleep(5)
 

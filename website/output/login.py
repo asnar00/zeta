@@ -58,8 +58,8 @@ def fn_click_on__string(selector: str):
     pass  # no-op on server
 
 
-# @zero on type (string text) into (string selector)
-def fn_type__string_into__string(text: str, selector: str):
+# @zero on type (string text) into input box (string selector)
+def fn_type__string_into_input_box__string(text: str, selector: str):
     pass  # no-op on server
 
 
@@ -1562,13 +1562,13 @@ def fn_test_login():
         if _prompt == 'name':
             def _do():
                 import time; time.sleep(0.5)
-                fn_type__string_into__string("_alice", "input")
+                fn_type__string_into_input_box__string("_alice", "input")
                 fn_press__string_on__string("Enter", "input")
             _th.Thread(target=_do, daemon=True).start()
         if _prompt == 'code':
             def _do():
                 import time; time.sleep(0.5)
-                fn_type__string_into__string("1234", "input")
+                fn_type__string_into_input_box__string("1234", "input")
                 fn_press__string_on__string("Enter", "input")
             _th.Thread(target=_do, daemon=True).start()
         return _orig(_prompt)

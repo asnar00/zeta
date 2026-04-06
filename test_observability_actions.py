@@ -181,7 +181,7 @@ def run_tests(headed=False):
                 break
         check_contains("name input appeared", snapshot, "input")
 
-        result = ws_request(ws, 'type ("_alice") into ("input")', to=guest)
+        result = ws_request(ws, 'type ("_alice") into input box ("input")', to=guest)
         check("type name", result, "ok")
 
         result = ws_request(ws, 'press ("Enter") on ("input")', to=guest)
@@ -196,7 +196,7 @@ def run_tests(headed=False):
                 break
         check_contains("code input appeared", snapshot, "input")
 
-        result = ws_request(ws, 'type ("1234") into ("input")', to=guest)
+        result = ws_request(ws, 'type ("1234") into input box ("input")', to=guest)
         check("type code", result, "ok")
 
         result = ws_request(ws, 'press ("Enter") on ("input")', to=guest)

@@ -61,8 +61,8 @@ def fn_click_on__string(selector: str):
     pass  # no-op on server
 
 
-# @zero on type (string text) into (string selector)
-def fn_type__string_into__string(text: str, selector: str):
+# @zero on type (string text) into input box (string selector)
+def fn_type__string_into_input_box__string(text: str, selector: str):
     pass  # no-op on server
 
 

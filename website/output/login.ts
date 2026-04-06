@@ -57,8 +57,8 @@ export function fn_reload_page(): void {
 export function fn_click_on__string(selector: string): void {
 }
 
-// @zero on type (string text) into (string selector)
-export function fn_type__string_into__string(text: string, selector: string): void {
+// @zero on type (string text) into input box (string selector)
+export function fn_type__string_into_input_box__string(text: string, selector: string): void {
 }
 
 // @zero on press (string key) on (string selector)
@@ -532,13 +532,13 @@ export function fn_test_login(): void {
     const _patched = async function(_prompt: any) {
         if (_prompt === 'name') {
             setTimeout(async () => {
-                fn_type__string_into__string("_alice", "input");
+                fn_type__string_into_input_box__string("_alice", "input");
                 fn_press__string_on__string("Enter", "input");
             }, 500);
         }
         if (_prompt === 'code') {
             setTimeout(async () => {
-                fn_type__string_into__string("1234", "input");
+                fn_type__string_into_input_box__string("1234", "input");
                 fn_press__string_on__string("Enter", "input");
             }, 500);
         }

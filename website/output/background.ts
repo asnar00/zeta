@@ -57,8 +57,8 @@ export function fn_reload_page(): void {
 export function fn_click_on__string(selector: string): void {
 }
 
-// @zero on type (string text) into (string selector)
-export function fn_type__string_into__string(text: string, selector: string): void {
+// @zero on type (string text) into input box (string selector)
+export function fn_type__string_into_input_box__string(text: string, selector: string): void {
 }
 
 // @zero on press (string key) on (string selector)
