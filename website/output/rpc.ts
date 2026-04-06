@@ -507,6 +507,40 @@ export function* terminal_in(): Generator<string> {
 }
 
 
+// Platform implementation: time (TypeScript)
+// Implements the functions declared in time.zero.md
+
+
+// @zero on (time t) = (number n) seconds
+export function fn__number_seconds(n: number): number {
+    return n;
+}
+
+
+// @zero on (time t) = (number n) ms
+export function fn__number_ms(n: number): number {
+    return n / 1000;
+}
+
+
+// @zero on (time t) = (number n) hz
+export function fn__number_hz(n: number): number {
+    return 1 / n;
+}
+
+
+// @zero on (time t) = (number n) bpm
+export function fn__number_bpm(n: number): number {
+    return 60 / n;
+}
+
+
+// @zero on (time t) = now ()
+export function fn_now(): number {
+    return Date.now() / 1000;
+}
+
+
 // Platform implementation: websocket (TypeScript)
 // Implements the functions declared in websocket.zero.md
 // Server-side stub — the real client implementation lives in the client bundle.

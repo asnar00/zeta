@@ -22,7 +22,7 @@ from emit_base import (
 _BUILTINS = {"number"}
 
 # Zero numeric base types to TS types
-_TS_NUMERIC = {"int": "number", "float": "number", "int | float": "number", "char": "string", "bool": "boolean"}
+_TS_NUMERIC = {"int": "number", "float": "number", "int | float": "number", "char": "string", "bool": "boolean", "time": "number"}
 
 _enum_values = {}  # populated by emit(), maps value -> "type.value"
 

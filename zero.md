@@ -58,6 +58,13 @@ In general, you can use any combination eg. `int8`, `float16`, as appropriate.
     type number = int | float
     type bool = ... true or false
 
+The `time` type represents a duration or interval. The internal representation is platform-specific (rational, fixed-point, or floating-point), but zero code constructs time values using unit functions:
+
+    time t = (1) seconds
+    time t = (500) ms
+    time t = (44100) hz          # period: 1/44100 seconds
+    time t = (120) bpm           # period: 0.5 seconds
+
 User-defined types start with an uppercase letter, distinguishing them from variables and built-in types:
 
 *enumerations* are types which take one of a range of values, each specified by a single word:
@@ -290,6 +297,30 @@ The keywords `while` and `until` repeat a streaming operation until some termina
     int i$ <- 1 <- (i$ + 1) until (i$==4)   # i$ = [1, 2, 3, 4]
 
     int i$ <- 0 <- (i$ + 1) while (i$ < 4)  # i$ = [0, 1, 2, 3]
+
+### stream timing
+
+Every stream has three timing properties:
+
+- `t0` — start time (when the first sample was taken)
+- `dt` — time between samples (a `time` value)
+- `length` — how much history to keep (a `time` value, for circular buffers)
+
+By default, `dt` is zero (instantaneous — computed as fast as possible), `t0` is the time of creation, and `length` is unlimited (the full array is kept).
+
+Setting `dt` attaches a time scale to the stream. Setting `length` makes it a circular buffer that discards values older than the window:
+
+    int countdown$
+    countdown$.dt = (1) seconds
+    countdown$ <- 10 <- (countdown$ - 1) while (countdown$ > 0)
+    # countdown$ = [10, 9, 8, ..., 1], dt = 1 second, t0 = now
+
+    Action action$
+    action$.dt = (1) ms
+    action$.length = (60) seconds
+    # sparse circular buffer: 1ms resolution, 60-second window, 60000 slots
+
+The time of any element is `t0 + (i * dt)`. To read the value at a given time `t`, compute `i = (t - t0) / dt` and sample the buffer. A stream is just data — the consumer decides whether to play it back in real time or process it instantly.
 
 ## tasks
 

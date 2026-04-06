@@ -23,7 +23,7 @@ from emit_base import (
 _BUILTINS = {"int", "float", "string"}
 
 # Zero type names to Python type names
-_PY_TYPE_MAP = {"string": "str", "char": "str"}
+_PY_TYPE_MAP = {"string": "str", "char": "str", "time": "float"}
 
 
 _enum_values = {}  # populated by emit(), maps value -> "type.value"

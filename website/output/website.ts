@@ -519,6 +519,40 @@ export function* terminal_in(): Generator<string> {
 }
 
 
+// Platform implementation: time (TypeScript)
+// Implements the functions declared in time.zero.md
+
+
+// @zero on (time t) = (number n) seconds
+export function fn__number_seconds(n: number): number {
+    return n;
+}
+
+
+// @zero on (time t) = (number n) ms
+export function fn__number_ms(n: number): number {
+    return n / 1000;
+}
+
+
+// @zero on (time t) = (number n) hz
+export function fn__number_hz(n: number): number {
+    return 1 / n;
+}
+
+
+// @zero on (time t) = (number n) bpm
+export function fn__number_bpm(n: number): number {
+    return 60 / n;
+}
+
+
+// @zero on (time t) = now ()
+export function fn_now(): number {
+    return Date.now() / 1000;
+}
+
+
 // Platform implementation: websocket (TypeScript)
 // Implements the functions declared in websocket.zero.md
 // Server-side stub — the real client implementation lives in the client bundle.
@@ -576,363 +610,419 @@ class _ZeroRaise extends Error {
 }
 
 export function test_website_0(): void {
+    // (1) seconds => 1
+    const _result = fn__number_seconds(1);
+    const _expected = 1;
+    if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
+}
+
+export function test_website_1(): void {
+    // (0.5) seconds => 0.5
+    const _result = fn__number_seconds(0.5);
+    const _expected = 0.5;
+    if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
+}
+
+export function test_website_2(): void {
+    // (1000) ms => 1
+    const _result = fn__number_ms(1000);
+    const _expected = 1;
+    if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
+}
+
+export function test_website_3(): void {
+    // (500) ms => 0.5
+    const _result = fn__number_ms(500);
+    const _expected = 0.5;
+    if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
+}
+
+export function test_website_4(): void {
+    // (1) hz => 1
+    const _result = fn__number_hz(1);
+    const _expected = 1;
+    if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
+}
+
+export function test_website_5(): void {
+    // (10) hz => 0.1
+    const _result = fn__number_hz(10);
+    const _expected = 0.1;
+    if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
+}
+
+export function test_website_6(): void {
+    // (60) bpm => 1
+    const _result = fn__number_bpm(60);
+    const _expected = 1;
+    if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
+}
+
+export function test_website_7(): void {
+    // (120) bpm => 0.5
+    const _result = fn__number_bpm(120);
+    const _expected = 0.5;
+    if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
+}
+
+export function test_website_8(): void {
     // trim ("  hello  ") => "hello"
     const _result = fn_trim__string("  hello  ");
     const _expected = "hello";
     if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
 }
 
-export function test_website_1(): void {
+export function test_website_9(): void {
     // trim ("already") => "already"
     const _result = fn_trim__string("already");
     const _expected = "already";
     if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
 }
 
-export function test_website_2(): void {
+export function test_website_10(): void {
     // char (0) of ("hello") => "h"
     const _result = fn_char__int_of__string(0, "hello");
     const _expected = "h";
     if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
 }
 
-export function test_website_3(): void {
+export function test_website_11(): void {
     // char (4) of ("hello") => "o"
     const _result = fn_char__int_of__string(4, "hello");
     const _expected = "o";
     if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
 }
 
-export function test_website_4(): void {
+export function test_website_12(): void {
     // ("hello world") starts with ("hello") => true
     const _result = fn__string_starts_with__string("hello world", "hello");
     const _expected = true;
     if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
 }
 
-export function test_website_5(): void {
+export function test_website_13(): void {
     // ("hello world") starts with ("world") => false
     const _result = fn__string_starts_with__string("hello world", "world");
     const _expected = false;
     if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
 }
 
-export function test_website_6(): void {
+export function test_website_14(): void {
     // ("hello world") contains ("world") => true
     const _result = fn__string_contains__string("hello world", "world");
     const _expected = true;
     if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
 }
 
-export function test_website_7(): void {
+export function test_website_15(): void {
     // ("hello world") contains ("xyz") => false
     const _result = fn__string_contains__string("hello world", "xyz");
     const _expected = false;
     if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
 }
 
-export function test_website_8(): void {
+export function test_website_16(): void {
     // ("hello") contains ("hello") => true
     const _result = fn__string_contains__string("hello", "hello");
     const _expected = true;
     if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
 }
 
-export function test_website_9(): void {
+export function test_website_17(): void {
     // ("hello") contains ("") => true
     const _result = fn__string_contains__string("hello", "");
     const _expected = true;
     if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
 }
 
-export function test_website_10(): void {
+export function test_website_18(): void {
     // split ("a/b/c") by ("/") => ["a", "b", "c"]
     const _result = fn_split__string_by__string("a/b/c", "/");
     const _expected = ["a", "b", "c"];
     if (JSON.stringify(_result) !== JSON.stringify(_expected)) throw new Error(`expected ${_expected}, got ${_result}`);
 }
 
-export function test_website_11(): void {
+export function test_website_19(): void {
     // split ("hello") by ("/") => ["hello"]
     const _result = fn_split__string_by__string("hello", "/");
     const _expected = ["hello"];
     if (JSON.stringify(_result) !== JSON.stringify(_expected)) throw new Error(`expected ${_expected}, got ${_result}`);
 }
 
-export function test_website_12(): void {
+export function test_website_20(): void {
     // length of ("hello") => 5
     const _result = fn_length_of__string("hello");
     const _expected = 5;
     if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
 }
 
-export function test_website_13(): void {
+export function test_website_21(): void {
     // length of ("") => 0
     const _result = fn_length_of__string("");
     const _expected = 0;
     if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
 }
 
-export function test_website_14(): void {
+export function test_website_22(): void {
     // replace ("world") in ("hello world") with ("zero") => "hello zero"
     const _result = fn_replace__string_in__string_with__string("world", "hello world", "zero");
     const _expected = "hello zero";
     if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
 }
 
-export function test_website_15(): void {
+export function test_website_23(): void {
     // substring of ("hello world") from (6) => "world"
     const _result = fn_substring_of__string_from__int("hello world", 6);
     const _expected = "world";
     if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
 }
 
-export function test_website_16(): void {
+export function test_website_24(): void {
     // substring of ("abc") from (0) => "abc"
     const _result = fn_substring_of__string_from__int("abc", 0);
     const _expected = "abc";
     if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
 }
 
-export function test_website_17(): void {
+export function test_website_25(): void {
     // to int ("42") => 42
     const _result = fn_to_int__string("42");
     const _expected = 42;
     if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
 }
 
-export function test_website_18(): void {
+export function test_website_26(): void {
     // to int ("0") => 0
     const _result = fn_to_int__string("0");
     const _expected = 0;
     if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
 }
 
-export function test_website_19(): void {
+export function test_website_27(): void {
     // trim ("") => ""
     const _result = fn_trim__string("");
     const _expected = "";
     if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
 }
 
-export function test_website_20(): void {
+export function test_website_28(): void {
     // trim ("  ") => ""
     const _result = fn_trim__string("  ");
     const _expected = "";
     if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
 }
 
-export function test_website_21(): void {
+export function test_website_29(): void {
     // trim ("no spaces") => "no spaces"
     const _result = fn_trim__string("no spaces");
     const _expected = "no spaces";
     if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
 }
 
-export function test_website_22(): void {
+export function test_website_30(): void {
     // trim ("  leading") => "leading"
     const _result = fn_trim__string("  leading");
     const _expected = "leading";
     if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
 }
 
-export function test_website_23(): void {
+export function test_website_31(): void {
     // trim ("trailing  ") => "trailing"
     const _result = fn_trim__string("trailing  ");
     const _expected = "trailing";
     if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
 }
 
-export function test_website_24(): void {
+export function test_website_32(): void {
     // char (0) of ("a") => "a"
     const _result = fn_char__int_of__string(0, "a");
     const _expected = "a";
     if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
 }
 
-export function test_website_25(): void {
+export function test_website_33(): void {
     // char (2) of ("abcde") => "c"
     const _result = fn_char__int_of__string(2, "abcde");
     const _expected = "c";
     if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
 }
 
-export function test_website_26(): void {
+export function test_website_34(): void {
     // ("") starts with ("") => true
     const _result = fn__string_starts_with__string("", "");
     const _expected = true;
     if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
 }
 
-export function test_website_27(): void {
+export function test_website_35(): void {
     // ("hello") starts with ("") => true
     const _result = fn__string_starts_with__string("hello", "");
     const _expected = true;
     if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
 }
 
-export function test_website_28(): void {
+export function test_website_36(): void {
     // ("") starts with ("x") => false
     const _result = fn__string_starts_with__string("", "x");
     const _expected = false;
     if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
 }
 
-export function test_website_29(): void {
+export function test_website_37(): void {
     // ("abc") starts with ("abc") => true
     const _result = fn__string_starts_with__string("abc", "abc");
     const _expected = true;
     if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
 }
 
-export function test_website_30(): void {
+export function test_website_38(): void {
     // ("abc") starts with ("abcd") => false
     const _result = fn__string_starts_with__string("abc", "abcd");
     const _expected = false;
     if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
 }
 
-export function test_website_31(): void {
+export function test_website_39(): void {
     // split ("one") by (",") => ["one"]
     const _result = fn_split__string_by__string("one", ",");
     const _expected = ["one"];
     if (JSON.stringify(_result) !== JSON.stringify(_expected)) throw new Error(`expected ${_expected}, got ${_result}`);
 }
 
-export function test_website_32(): void {
+export function test_website_40(): void {
     // split ("a,b") by (",") => ["a", "b"]
     const _result = fn_split__string_by__string("a,b", ",");
     const _expected = ["a", "b"];
     if (JSON.stringify(_result) !== JSON.stringify(_expected)) throw new Error(`expected ${_expected}, got ${_result}`);
 }
 
-export function test_website_33(): void {
+export function test_website_41(): void {
     // split ("a,,b") by (",") => ["a", "", "b"]
     const _result = fn_split__string_by__string("a,,b", ",");
     const _expected = ["a", "", "b"];
     if (JSON.stringify(_result) !== JSON.stringify(_expected)) throw new Error(`expected ${_expected}, got ${_result}`);
 }
 
-export function test_website_34(): void {
+export function test_website_42(): void {
     // length of ("") => 0
     const _result = fn_length_of__string("");
     const _expected = 0;
     if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
 }
 
-export function test_website_35(): void {
+export function test_website_43(): void {
     // length of ("a") => 1
     const _result = fn_length_of__string("a");
     const _expected = 1;
     if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
 }
 
-export function test_website_36(): void {
+export function test_website_44(): void {
     // length of ("hello world") => 11
     const _result = fn_length_of__string("hello world");
     const _expected = 11;
     if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
 }
 
-export function test_website_37(): void {
+export function test_website_45(): void {
     // substring of ("hello") from (0) => "hello"
     const _result = fn_substring_of__string_from__int("hello", 0);
     const _expected = "hello";
     if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
 }
 
-export function test_website_38(): void {
+export function test_website_46(): void {
     // substring of ("hello") from (3) => "lo"
     const _result = fn_substring_of__string_from__int("hello", 3);
     const _expected = "lo";
     if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
 }
 
-export function test_website_39(): void {
+export function test_website_47(): void {
     // substring of ("hello") from (5) => ""
     const _result = fn_substring_of__string_from__int("hello", 5);
     const _expected = "";
     if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
 }
 
-export function test_website_40(): void {
+export function test_website_48(): void {
     // replace ("a") in ("aaa") with ("b") => "bbb"
     const _result = fn_replace__string_in__string_with__string("a", "aaa", "b");
     const _expected = "bbb";
     if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
 }
 
-export function test_website_41(): void {
+export function test_website_49(): void {
     // replace ("xy") in ("no match") with ("z") => "no match"
     const _result = fn_replace__string_in__string_with__string("xy", "no match", "z");
     const _expected = "no match";
     if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
 }
 
-export function test_website_42(): void {
+export function test_website_50(): void {
     // replace ("") in ("hello") with ("x") => "xhxexlxlxox"
     const _result = fn_replace__string_in__string_with__string("", "hello", "x");
     const _expected = "xhxexlxlxox";
     if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
 }
 
-export function test_website_43(): void {
+export function test_website_51(): void {
     // length of (random digits (1)) => 1
     const _result = fn_length_of__string(fn_random_digits__int(1));
     const _expected = 1;
     if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
 }
 
-export function test_website_44(): void {
+export function test_website_52(): void {
     // length of (random digits (4)) => 4
     const _result = fn_length_of__string(fn_random_digits__int(4));
     const _expected = 4;
     if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
 }
 
-export function test_website_45(): void {
+export function test_website_53(): void {
     // length of (random digits (10)) => 10
     const _result = fn_length_of__string(fn_random_digits__int(10));
     const _expected = 10;
     if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
 }
 
-export function test_website_46(): void {
+export function test_website_54(): void {
     // length of (create session ("test")) => 8
     const _result = fn_length_of__string(fn_create_session__string("test"));
     const _expected = 8;
     if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
 }
 
-export function test_website_47(): void {
+export function test_website_55(): void {
     // elapsed time () => 0
     const _result = fn_elapsed_time();
     const _expected = 0;
     if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
 }
 
-export function test_website_48(): void {
+export function test_website_56(): void {
     // length of (report fault ("test")) => 8
     const _result = fn_length_of__string(fn_report_fault__string("test"));
     const _expected = 8;
     if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
 }
 
-export function test_website_49(): void {
+export function test_website_57(): void {
     // handle request (Http-Request(path="/")) => "ᕦ(ツ)ᕤ"
     const _result = fn_handle_request__Http_Request(Http_Request({ path: "/" }));
     const _expected = "ᕦ(ツ)ᕤ";
     if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
 }
 
-export function test_website_50(): void {
+export function test_website_58(): void {
     // handle request (Http-Request(path="/nope")) => "ᕦ(ツ)ᕤ"
     const _result = fn_handle_request__Http_Request(Http_Request({ path: "/nope" }));
     const _expected = "ᕦ(ツ)ᕤ";
     if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
 }
 
-register_tests('website', [[test_website_0, 'trim ("  hello  ") => "hello"'], [test_website_1, 'trim ("already") => "already"'], [test_website_2, 'char (0) of ("hello") => "h"'], [test_website_3, 'char (4) of ("hello") => "o"'], [test_website_4, '("hello world") starts with ("hello") => true'], [test_website_5, '("hello world") starts with ("world") => false'], [test_website_6, '("hello world") contains ("world") => true'], [test_website_7, '("hello world") contains ("xyz") => false'], [test_website_8, '("hello") contains ("hello") => true'], [test_website_9, '("hello") contains ("") => true'], [test_website_10, 'split ("a/b/c") by ("/") => ["a", "b", "c"]'], [test_website_11, 'split ("hello") by ("/") => ["hello"]'], [test_website_12, 'length of ("hello") => 5'], [test_website_13, 'length of ("") => 0'], [test_website_14, 'replace ("world") in ("hello world") with ("zero") => "hello zero"'], [test_website_15, 'substring of ("hello world") from (6) => "world"'], [test_website_16, 'substring of ("abc") from (0) => "abc"'], [test_website_17, 'to int ("42") => 42'], [test_website_18, 'to int ("0") => 0'], [test_website_19, 'trim ("") => ""'], [test_website_20, 'trim ("  ") => ""'], [test_website_21, 'trim ("no spaces") => "no spaces"'], [test_website_22, 'trim ("  leading") => "leading"'], [test_website_23, 'trim ("trailing  ") => "trailing"'], [test_website_24, 'char (0) of ("a") => "a"'], [test_website_25, 'char (2) of ("abcde") => "c"'], [test_website_26, '("") starts with ("") => true'], [test_website_27, '("hello") starts with ("") => true'], [test_website_28, '("") starts with ("x") => false'], [test_website_29, '("abc") starts with ("abc") => true'], [test_website_30, '("abc") starts with ("abcd") => false'], [test_website_31, 'split ("one") by (",") => ["one"]'], [test_website_32, 'split ("a,b") by (",") => ["a", "b"]'], [test_website_33, 'split ("a,,b") by (",") => ["a", "", "b"]'], [test_website_34, 'length of ("") => 0'], [test_website_35, 'length of ("a") => 1'], [test_website_36, 'length of ("hello world") => 11'], [test_website_37, 'substring of ("hello") from (0) => "hello"'], [test_website_38, 'substring of ("hello") from (3) => "lo"'], [test_website_39, 'substring of ("hello") from (5) => ""'], [test_website_40, 'replace ("a") in ("aaa") with ("b") => "bbb"'], [test_website_41, 'replace ("xy") in ("no match") with ("z") => "no match"'], [test_website_42, 'replace ("") in ("hello") with ("x") => "xhxexlxlxox"'], [test_website_43, 'length of (random digits (1)) => 1'], [test_website_44, 'length of (random digits (4)) => 4'], [test_website_45, 'length of (random digits (10)) => 10'], [test_website_46, 'length of (create session ("test")) => 8'], [test_website_47, 'elapsed time () => 0'], [test_website_48, 'length of (report fault ("test")) => 8'], [test_website_49, 'handle request (Http-Request(path="/")) => "ᕦ(ツ)ᕤ"'], [test_website_50, 'handle request (Http-Request(path="/nope")) => "ᕦ(ツ)ᕤ"']]);
+register_tests('website', [[test_website_0, '(1) seconds => 1'], [test_website_1, '(0.5) seconds => 0.5'], [test_website_2, '(1000) ms => 1'], [test_website_3, '(500) ms => 0.5'], [test_website_4, '(1) hz => 1'], [test_website_5, '(10) hz => 0.1'], [test_website_6, '(60) bpm => 1'], [test_website_7, '(120) bpm => 0.5'], [test_website_8, 'trim ("  hello  ") => "hello"'], [test_website_9, 'trim ("already") => "already"'], [test_website_10, 'char (0) of ("hello") => "h"'], [test_website_11, 'char (4) of ("hello") => "o"'], [test_website_12, '("hello world") starts with ("hello") => true'], [test_website_13, '("hello world") starts with ("world") => false'], [test_website_14, '("hello world") contains ("world") => true'], [test_website_15, '("hello world") contains ("xyz") => false'], [test_website_16, '("hello") contains ("hello") => true'], [test_website_17, '("hello") contains ("") => true'], [test_website_18, 'split ("a/b/c") by ("/") => ["a", "b", "c"]'], [test_website_19, 'split ("hello") by ("/") => ["hello"]'], [test_website_20, 'length of ("hello") => 5'], [test_website_21, 'length of ("") => 0'], [test_website_22, 'replace ("world") in ("hello world") with ("zero") => "hello zero"'], [test_website_23, 'substring of ("hello world") from (6) => "world"'], [test_website_24, 'substring of ("abc") from (0) => "abc"'], [test_website_25, 'to int ("42") => 42'], [test_website_26, 'to int ("0") => 0'], [test_website_27, 'trim ("") => ""'], [test_website_28, 'trim ("  ") => ""'], [test_website_29, 'trim ("no spaces") => "no spaces"'], [test_website_30, 'trim ("  leading") => "leading"'], [test_website_31, 'trim ("trailing  ") => "trailing"'], [test_website_32, 'char (0) of ("a") => "a"'], [test_website_33, 'char (2) of ("abcde") => "c"'], [test_website_34, '("") starts with ("") => true'], [test_website_35, '("hello") starts with ("") => true'], [test_website_36, '("") starts with ("x") => false'], [test_website_37, '("abc") starts with ("abc") => true'], [test_website_38, '("abc") starts with ("abcd") => false'], [test_website_39, 'split ("one") by (",") => ["one"]'], [test_website_40, 'split ("a,b") by (",") => ["a", "b"]'], [test_website_41, 'split ("a,,b") by (",") => ["a", "", "b"]'], [test_website_42, 'length of ("") => 0'], [test_website_43, 'length of ("a") => 1'], [test_website_44, 'length of ("hello world") => 11'], [test_website_45, 'substring of ("hello") from (0) => "hello"'], [test_website_46, 'substring of ("hello") from (3) => "lo"'], [test_website_47, 'substring of ("hello") from (5) => ""'], [test_website_48, 'replace ("a") in ("aaa") with ("b") => "bbb"'], [test_website_49, 'replace ("xy") in ("no match") with ("z") => "no match"'], [test_website_50, 'replace ("") in ("hello") with ("x") => "xhxexlxlxox"'], [test_website_51, 'length of (random digits (1)) => 1'], [test_website_52, 'length of (random digits (4)) => 4'], [test_website_53, 'length of (random digits (10)) => 10'], [test_website_54, 'length of (create session ("test")) => 8'], [test_website_55, 'elapsed time () => 0'], [test_website_56, 'length of (report fault ("test")) => 8'], [test_website_57, 'handle request (Http-Request(path="/")) => "ᕦ(ツ)ᕤ"'], [test_website_58, 'handle request (Http-Request(path="/nope")) => "ᕦ(ツ)ᕤ"']]);
 
 const port: number = 8084;
 const logo: string = "ᕦ(ツ)ᕤ";
@@ -966,7 +1056,7 @@ export function User(args: Partial<User> = {}): User {
     return { name: args.name ?? "", phone: args.phone ?? "", role: args.role ?? "" };
 }
 
-// @zero on main (string args$); website/website.zero.md:307
+// @zero on main (string args$); website/website.zero.md:336
 export async function task_main__string(args_arr: readonly string[]): Promise<void> {
     _push_terminal_out(logo);
     const request_arr = task_serve_http__int(port);
@@ -977,7 +1067,7 @@ export async function task_main__string(args_arr: readonly string[]): Promise<vo
     }
 }
 
-// @zero on (string body) = handle request (Http-Request request); website/website.zero.md:315
+// @zero on (string body) = handle request (Http-Request request); website/website.zero.md:344
 export function fn_handle_request__Http_Request(request: Http_Request): string {
     let body: string = undefined!;
     if (_get_ctx().landing_page.enabled && request.path == "/") {
@@ -995,7 +1085,7 @@ export function fn_handle_request__Http_Request(request: Http_Request): string {
     return body;
 }
 
-// @zero on stop; website/website.zero.md:323
+// @zero on stop; website/website.zero.md:352
 export function fn_stop(): void {
     fn_print__string("stopping");
 }
@@ -1025,4 +1115,4 @@ try {
 
 const _FEATURE_TREE: [string, string, string | null][] = [["website", "the nøøb website", null], ["not-found", "default 404 response", "website"], ["login", "SMS code authentication", "website"], ["rpc", "RPC endpoint for runtime evaluation", "website"], ["landing-page", "serves the noob landing page at root", "website"], ["background", "per-user background colour", "landing-page"], ["test-blackbox", "integration tests for the flight recorder", "website"]];
 
-const _BUILD_FINGERPRINT: {hash: string, git: string, features: string} = {"hash": "96ed6614c2adb405", "git": "9a0d27ccfdf2", "features": "website,not-found,login,rpc,landing-page,background,test-blackbox"};
+const _BUILD_FINGERPRINT: {hash: string, git: string, features: string} = {"hash": "6caf3071d94863c8", "git": "2bd46a787713", "features": "website,not-found,login,rpc,landing-page,background,test-blackbox"};

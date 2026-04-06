@@ -822,7 +822,7 @@ def _try_parse_array_stream_or_task(type_name, var_name, rest, fn_sigs, task_sig
     return None
 
 
-_BUILTIN_TYPES = {"string", "int", "uint", "float", "number", "bool", "char"}
+_BUILTIN_TYPES = {"string", "int", "uint", "float", "number", "bool", "char", "time"}
 
 
 def _parse_array_variable(type_name: str, var_name: str, rest: str, fn_sigs: list = None, task_sigs: list = None) -> dict:
@@ -1727,7 +1727,7 @@ def _looks_like_type(s: str) -> bool:
     Built-in types are lowercase keywords; user-defined types start with uppercase."""
     if re.match(r"(int|uint|float)\d*$", s):
         return True
-    if s in ("number", "string", "bool", "char"):
+    if s in ("number", "string", "bool", "char", "time"):
         return True
     if s[0:1].isupper():
         return True

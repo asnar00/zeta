@@ -505,6 +505,40 @@ export function* terminal_in(): Generator<string> {
 }
 
 
+// Platform implementation: time (TypeScript)
+// Implements the functions declared in time.zero.md
+
+
+// @zero on (time t) = (number n) seconds
+export function fn__number_seconds(n: number): number {
+    return n;
+}
+
+
+// @zero on (time t) = (number n) ms
+export function fn__number_ms(n: number): number {
+    return n / 1000;
+}
+
+
+// @zero on (time t) = (number n) hz
+export function fn__number_hz(n: number): number {
+    return 1 / n;
+}
+
+
+// @zero on (time t) = (number n) bpm
+export function fn__number_bpm(n: number): number {
+    return 60 / n;
+}
+
+
+// @zero on (time t) = now ()
+export function fn_now(): number {
+    return Date.now() / 1000;
+}
+
+
 // Platform implementation: websocket (TypeScript)
 // Implements the functions declared in websocket.zero.md
 // Server-side stub — the real client implementation lives in the client bundle.
@@ -593,7 +627,7 @@ export function User(args: Partial<User> = {}): User {
     return { name: args.name ?? "", phone: args.phone ?? "", role: args.role ?? "" };
 }
 
-// @zero on toggle login; website/login/login.zero.md:329
+// @zero on toggle login; website/login/login.zero.md:358
 export function fn_toggle_login(): void {
     const session = fn_get_cookie__string("session");
     if (session == "") {
@@ -603,7 +637,7 @@ export function fn_toggle_login(): void {
 }
 }
 
-// @zero on login; website/login/login.zero.md:336
+// @zero on login; website/login/login.zero.md:365
 export function fn_login(): void {
     try {
         const name = fn_input__string("name");
@@ -623,7 +657,7 @@ export function fn_login(): void {
     }
 }
 
-// @zero on logout dialog; website/login/login.zero.md:344
+// @zero on logout dialog; website/login/login.zero.md:373
 export function fn_logout_dialog(): void {
     const choice = fn_choose__string_or__string("log out", "cancel");
     if (choice == "log out") {
@@ -632,17 +666,17 @@ export function fn_logout_dialog(): void {
 }
 }
 
-// @zero on unknown user (string name); website/login/login.zero.md:350
+// @zero on unknown user (string name); website/login/login.zero.md:379
 export function fn_unknown_user__string(name: string): void {
     fn_show_message__string("unknown user");
 }
 
-// @zero on invalid code (string code); website/login/login.zero.md:353
+// @zero on invalid code (string code); website/login/login.zero.md:382
 export function fn_invalid_code__string(code: string): void {
     fn_show_message__string("invalid code");
 }
 
-// @zero on (string code) = request login (string name); website/login/login.zero.md:356
+// @zero on (string code) = request login (string name); website/login/login.zero.md:385
 export function fn_request_login__string(name: string): string {
     let code: string = undefined!;
     const found = users_arr.find(x => x.name == name)!;
@@ -655,7 +689,7 @@ export function fn_request_login__string(name: string): string {
     return code;
 }
 
-// @zero on (User result) = verify login (string name) with code (string code); website/login/login.zero.md:364
+// @zero on (User result) = verify login (string name) with code (string code); website/login/login.zero.md:393
 export function fn_verify_login__string_with_code__string(name: string, code: string): User {
     let result: User = undefined!;
     const found = users_arr.find(x => x.name == name)!;
@@ -668,14 +702,14 @@ export function fn_verify_login__string_with_code__string(name: string, code: st
     return result;
 }
 
-// @zero on (string token) = complete login (string name) with code (string code); website/login/login.zero.md:372
+// @zero on (string token) = complete login (string name) with code (string code); website/login/login.zero.md:401
 export function fn_complete_login__string_with_code__string(name: string, code: string): string {
     const found = fn_verify_login__string_with_code__string(name, code);
     const token: string = fn_create_session__string(name);
     return token;
 }
 
-// @zero on (string code) = generate code (User u); website/login/login.zero.md:376
+// @zero on (string code) = generate code (User u); website/login/login.zero.md:405
 export function fn_generate_code__User(u: User): string {
     let code: string = undefined!;
     if (u.name == "_alice") {
@@ -688,12 +722,12 @@ export function fn_generate_code__User(u: User): string {
     return code;
 }
 
-// @zero on logo clicked; website/login/login.zero.md:384
+// @zero on logo clicked; website/login/login.zero.md:413
 export function fn_logo_clicked(): void {
     fn_toggle_login();
 }
 
-// @zero on check (string snapshot) contains (string expected); website/login/login.zero.md:387
+// @zero on check (string snapshot) contains (string expected); website/login/login.zero.md:416
 export function fn_check__string_contains__string(snapshot: string, expected: string): void {
     const found = fn__string_contains__string(snapshot, expected);
     if (found == false) {
@@ -701,12 +735,12 @@ export function fn_check__string_contains__string(snapshot: string, expected: st
 }
 }
 
-// @zero on check failed (string what); website/login/login.zero.md:392
+// @zero on check failed (string what); website/login/login.zero.md:421
 export function fn_check_failed__string(what: string): void {
     fn_print__string("FAIL: expected " + what);
 }
 
-// @zero on test login; website/login/login.zero.md:395
+// @zero on test login; website/login/login.zero.md:424
 export function fn_test_login(): void {
     const _orig_fn_input__string = fn_input__string;
     const _patched = async function(_prompt: any) {

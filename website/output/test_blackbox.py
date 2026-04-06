@@ -1667,6 +1667,37 @@ def terminal_in():
         yield line.rstrip('\n')
 
 
+# Platform implementation: time (Python)
+# Implements the functions declared in time.zero.md
+
+import time as _time
+
+
+# @zero on (time t) = (number n) seconds
+def fn__number_seconds(n: float) -> float:
+    return float(n)
+
+
+# @zero on (time t) = (number n) ms
+def fn__number_ms(n: float) -> float:
+    return float(n) / 1000.0
+
+
+# @zero on (time t) = (number n) hz
+def fn__number_hz(n: float) -> float:
+    return 1.0 / float(n)
+
+
+# @zero on (time t) = (number n) bpm
+def fn__number_bpm(n: float) -> float:
+    return 60.0 / float(n)
+
+
+# @zero on (time t) = now ()
+def fn_now() -> float:
+    return _time.time()
+
+
 # Platform implementation: websocket (Python)
 # Implements the functions declared in websocket.zero.md
 # Server-side WebSocket using the standard library (no dependencies).
@@ -1896,17 +1927,17 @@ class User(NamedTuple):
     phone: str = ""
     role: str = ""
 
-# @zero on bb check (string actual) contains (string expected); website/test-blackbox/test-blackbox.zero.md:409
+# @zero on bb check (string actual) contains (string expected); website/test-blackbox/test-blackbox.zero.md:438
 def fn_bb_check__string_contains__string(actual: str, expected: str):
     found = fn__string_contains__string(actual, expected)
     if found == False:
         raise _ZeroRaise('bb check failed', ['expected'])
 
-# @zero on bb check failed (string what); website/test-blackbox/test-blackbox.zero.md:414
+# @zero on bb check failed (string what); website/test-blackbox/test-blackbox.zero.md:443
 def fn_bb_check_failed__string(what: str):
     fn_print__string("FAIL: expected " + what)
 
-# @zero on test blackbox; website/test-blackbox/test-blackbox.zero.md:417
+# @zero on test blackbox; website/test-blackbox/test-blackbox.zero.md:446
 def fn_test_blackbox():
     fn_click_on__string(".logo")
     fn_press__string_on__string("Escape", "body")
