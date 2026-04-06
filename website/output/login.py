@@ -1554,28 +1554,30 @@ def fn_check__string_contains__string(snapshot: str, expected: str):
 def fn_check_failed__string(what: str):
     fn_print__string("FAIL: expected " + what)
 
-# @zero on check background of (string route) is (string expected); website/login/login.zero.md:344
-def fn_check_background_of__string_is__string(route: str, expected: str):
-    snapshot = fn_request__string_on__string("describe page ()", route)
-    fn_check__string_contains__string(snapshot, expected)
-
-# @zero on do login (string name) with code (string code) on (string route); website/login/login.zero.md:348
-def fn_do_login__string_with_code__string_on__string(name: str, code: str, route: str):
-    fn_request__string_on__string("click on (\".logo\")", route)
-    pass  # TODO: wait for input to appear
-    fn_request__string_on__string("type (\"" + name + "\") into (\"input\")", route)
-    fn_request__string_on__string("press (\"Enter\") on (\"input\")", route)
-    pass  # TODO: wait for code input to appear
-    fn_request__string_on__string("type (\"" + code + "\") into (\"input\")", route)
-    fn_request__string_on__string("press (\"Enter\") on (\"input\")", route)
-    pass  # TODO: wait for login to complete
-
-# @zero on do logout on (string route); website/login/login.zero.md:358
-def fn_do_logout_on__string(route: str):
-    fn_request__string_on__string("click on (\".logo\")", route)
-    pass  # TODO: wait for buttons to appear
-    fn_request__string_on__string("click on (\"button\")", route)
-    pass  # TODO: wait for reload to complete
+# @zero on test login; website/login/login.zero.md:344
+def fn_test_login():
+    import threading as _th
+    _orig_fn_input__string = globals().get('fn_input__string', fn_input__string)
+    def _patched_fn_input__string(_prompt, _orig=_orig_fn_input__string):
+        if _prompt == 'name':
+            def _do():
+                import time; time.sleep(0.5)
+                fn_type__string_into__string("_alice", "input")
+                fn_press__string_on__string("Enter", "input")
+            _th.Thread(target=_do, daemon=True).start()
+        if _prompt == 'code':
+            def _do():
+                import time; time.sleep(0.5)
+                fn_type__string_into__string("1234", "input")
+                fn_press__string_on__string("Enter", "input")
+            _th.Thread(target=_do, daemon=True).start()
+        return _orig(_prompt)
+    globals()['fn_input__string'] = _patched_fn_input__string
+    try:
+        fn_login()
+        fn_check__string_contains__string(fn_describe_page(), "log out")
+    finally:
+        globals()['fn_input__string'] = _orig_fn_input__string
 
 users_arr: list[User] = [User(name="_alice", phone="+440001", role="admin"), User(name="_bob", phone="+440002", role="user"), User(name="ash", phone="+447813943023", role="admin")]
 pending_codes_arr: dict[str, str] = {}

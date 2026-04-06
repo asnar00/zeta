@@ -118,28 +118,14 @@ Check that a snapshot contains expected text, raise if not:
     on check failed (string what)
         print ("FAIL: expected " + what)
 
-Check the background colour of a browser:
+Test the login flow — hooks intercept input calls to simulate the user:
 
-    on check background of (string route) is (string expected)
-        string snapshot = request ("describe page ()") on (route)
-        check (snapshot) contains (expected)
-
-Do the login flow on a browser via remote commands:
-
-    on do login (string name) with code (string code) on (string route)
-        request ("click on (\".logo\")") on (route)
-        ... wait for input to appear
-        request ("type (\"" + name + "\") into (\"input\")") on (route)
-        request ("press (\"Enter\") on (\"input\")") on (route)
-        ... wait for code input to appear
-        request ("type (\"" + code + "\") into (\"input\")") on (route)
-        request ("press (\"Enter\") on (\"input\")") on (route)
-        ... wait for login to complete
-
-Do the logout flow on a browser:
-
-    on do logout on (string route)
-        request ("click on (\".logo\")") on (route)
-        ... wait for buttons to appear
-        request ("click on (\"button\")") on (route)
-        ... wait for reload to complete
+    on test login ()
+        in login (), on input ("name")
+            type ("_alice") into ("input")
+            press ("Enter") on ("input")
+        in login (), on input ("code")
+            type ("1234") into ("input")
+            press ("Enter") on ("input")
+        login ()
+        check (describe page ()) contains ("log out")

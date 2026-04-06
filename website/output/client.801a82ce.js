@@ -227,6 +227,14 @@ async function fn_logo_clicked(){
     await fn_toggle_login();
 }
 
+// @zero on test login; composed:344
+async function fn_test_login(){
+    /* scoped hook (handled at function level) */;
+    /* scoped hook (handled at function level) */;
+    await fn_login();
+    await _rpc("check " + encodeURIComponent("(" + fn_describe_page() + ")") + " contains " + encodeURIComponent("(" + "log out" + ")") + "");
+}
+
 // expression evaluator — same algorithm as server-side rpc eval
 function _extract_fn_words(s) {
     const p = s.indexOf("(");

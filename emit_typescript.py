@@ -1405,6 +1405,8 @@ def _emit_leaf_expr_ts(node: dict) -> str | None:
 def _emit_expr(node: dict, structs: dict) -> str:
     """Emit a TypeScript expression from an AST node."""
     kind = node["kind"]
+    if kind == "scoped_hook":
+        return "/* scoped hook (handled at function level) */"
     if kind == "placeholder":
         return f"/* TODO: {node['text']} */"
     if kind == "raise":

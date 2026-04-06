@@ -971,6 +971,8 @@ def _emit_function(fn: dict, ir: dict = None) -> str:
     handlers = _get_handlers_for(name, ir.get("handlers", []))
     if fn["result"] is not None:
         return _emit_result_function(fn, name, params, handlers)
+    if _has_scoped_hooks(fn["body"]):
+        return _emit_function_with_hooks(fn, name, params, ir)
     lines = [f"def {name}({params}):"]
     body_lines = []
     for stmt in fn["body"]:
@@ -1147,9 +1149,65 @@ def _emit_simple_expr(node: dict) -> str | None:
     return None
 
 
+def _emit_scoped_hook(node: dict) -> str:
+    """Placeholder — scoped hooks are handled at the function level."""
+    return "pass  # scoped hook (handled at function level)"
+
+
+def _has_scoped_hooks(body):
+    """Check if a function body contains scoped hook nodes."""
+    return any(isinstance(s, dict) and s.get("kind") == "scoped_hook" for s in body)
+
+
+def _emit_function_with_hooks(fn, name, params, ir):
+    """Emit a function that contains scoped hooks — patches hooked functions."""
+    hooks = [s for s in fn["body"] if isinstance(s, dict) and s.get("kind") == "scoped_hook"]
+    stmts = [s for s in fn["body"] if not (isinstance(s, dict) and s.get("kind") == "scoped_hook")]
+
+    lines = [f"def {name}({params}):"]
+    lines.append("    import threading as _th")
+
+    # collect hooks by hooked function
+    hooked_fns = {}
+    for h in hooks:
+        hook_fn = "fn_" + h["hook_fn"].replace(" ", "_").replace("-", "_") + "__string"
+        hooked_fns.setdefault(hook_fn, []).append(h)
+
+    # save originals and create patched versions
+    for hook_fn, hook_list in hooked_fns.items():
+        lines.append(f"    _orig_{hook_fn} = globals().get('{hook_fn}', {hook_fn})")
+        lines.append(f"    def _patched_{hook_fn}(_prompt, _orig=_orig_{hook_fn}):")
+        for h in hook_list:
+            args = h["hook_args"]
+            arg_check = f"_prompt == {repr(args[0])}" if args else "True"
+            body_lines = [_emit_expr(s) for s in h["body"]]
+            lines.append(f"        if {arg_check}:")
+            lines.append(f"            def _do():")
+            lines.append(f"                import time; time.sleep(0.5)")
+            for bl in body_lines:
+                lines.append(f"                {bl}")
+            lines.append(f"            _th.Thread(target=_do, daemon=True).start()")
+        lines.append(f"        return _orig(_prompt)")
+        lines.append(f"    globals()['{hook_fn}'] = _patched_{hook_fn}")
+
+    # try/finally to restore originals
+    lines.append("    try:")
+    for stmt in stmts:
+        code = _emit_expr(stmt)
+        for cl in code.split("\n"):
+            lines.append(f"        {cl}")
+    lines.append("    finally:")
+    for hook_fn in hooked_fns:
+        lines.append(f"        globals()['{hook_fn}'] = _orig_{hook_fn}")
+
+    return "\n".join(lines)
+
+
 def _emit_expr(node: dict) -> str:
     """Emit a Python expression from an AST node."""
     kind = node["kind"]
+    if kind == "scoped_hook":
+        return _emit_scoped_hook(node)
     if kind == "placeholder":
         return f"pass  # TODO: {node['text']}"
     if kind == "raise":

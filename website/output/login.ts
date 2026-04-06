@@ -526,28 +526,10 @@ export function fn_check_failed__string(what: string): void {
     fn_print__string("FAIL: expected " + what);
 }
 
-// @zero on check background of (string route) is (string expected); website/login/login.zero.md:344
-export function fn_check_background_of__string_is__string(route: string, expected: string): void {
-    const snapshot = fn_request__string_on__string("describe page ()", route);
-    fn_check__string_contains__string(snapshot, expected);
-}
-
-// @zero on do login (string name) with code (string code) on (string route); website/login/login.zero.md:348
-export function fn_do_login__string_with_code__string_on__string(name: string, code: string, route: string): void {
-    fn_request__string_on__string("click on (\".logo\")", route);
-    /* TODO: wait for input to appear */;
-    fn_request__string_on__string("type (\"" + name + "\") into (\"input\")", route);
-    fn_request__string_on__string("press (\"Enter\") on (\"input\")", route);
-    /* TODO: wait for code input to appear */;
-    fn_request__string_on__string("type (\"" + code + "\") into (\"input\")", route);
-    fn_request__string_on__string("press (\"Enter\") on (\"input\")", route);
-    /* TODO: wait for login to complete */;
-}
-
-// @zero on do logout on (string route); website/login/login.zero.md:358
-export function fn_do_logout_on__string(route: string): void {
-    fn_request__string_on__string("click on (\".logo\")", route);
-    /* TODO: wait for buttons to appear */;
-    fn_request__string_on__string("click on (\"button\")", route);
-    /* TODO: wait for reload to complete */;
+// @zero on test login; website/login/login.zero.md:344
+export function fn_test_login(): void {
+    /* scoped hook (handled at function level) */;
+    /* scoped hook (handled at function level) */;
+    fn_login();
+    fn_check__string_contains__string(fn_describe_page(), "log out");
 }

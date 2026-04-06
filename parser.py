@@ -1016,7 +1016,7 @@ def _parse_fn_body(grouped, fn_signatures, task_signatures, result, src_line, st
     body = []
     assigned = set()
     for idx, item in enumerate(grouped):
-        if isinstance(item, dict) and item.get("kind") in ("concurrently", "if_block"):
+        if isinstance(item, dict) and item.get("kind") in ("concurrently", "if_block", "scoped_hook"):
             body.append(item)
             continue
         stmt = _parse_expression(item, fn_signatures, task_signatures)
@@ -1078,14 +1078,58 @@ def _group_concurrently_block(body_lines, raw_body_lines, i):
     return {"kind": "concurrently", "blocks": blocks}, i
 
 
+def _group_scoped_hook(body_lines, raw_body_lines, i, fn_sigs):
+    """Group an 'in X(), on Y(args)' scoped hook block. Returns (node, new_i)."""
+    line = body_lines[i]
+    # parse: in target(), on hook(args)
+    m = re.match(
+        rf"in\s+({W}[\w\s]*?)\s*\(\),\s*on\s+({W}[\w\s]*?)(?:\s*\(([^)]*)\))?\s*$",
+        line
+    )
+    if not m:
+        return None, i
+    target_fn = m.group(1).strip()
+    hook_fn = m.group(2).strip()
+    hook_args_str = m.group(3) or ""
+    # collect indented body
+    hook_indent = len(raw_body_lines[i]) - len(raw_body_lines[i].lstrip())
+    hook_body = []
+    j = i + 1
+    while j < len(body_lines):
+        line_indent = len(raw_body_lines[j]) - len(raw_body_lines[j].lstrip())
+        if line_indent <= hook_indent:
+            break
+        hook_body.append(body_lines[j])
+        j += 1
+    # parse hook args
+    hook_args = []
+    if hook_args_str.strip():
+        hook_args = [a.strip().strip('"') for a in hook_args_str.split(",")]
+    return {
+        "kind": "scoped_hook",
+        "target_fn": target_fn,
+        "hook_fn": hook_fn,
+        "hook_args": hook_args,
+        "body": [_parse_expression(l, fn_sigs) for l in hook_body],
+    }, j
+
+
 def _group_blocks(body_lines: list[str], raw_body_lines: list[str], fn_sigs: list = None) -> list:
-    """Group multi-line constructs (concurrently, if/else) using indentation."""
+    """Group multi-line constructs (concurrently, if/else, scoped hooks) using indentation."""
     result = []
     i = 0
     while i < len(body_lines):
         if body_lines[i] == "concurrently":
             node, i = _group_concurrently_block(body_lines, raw_body_lines, i)
             result.append(node)
+        elif re.match(r"in\s+\w.*\(\),\s*on\s+", body_lines[i]):
+            node, j = _group_scoped_hook(body_lines, raw_body_lines, i, fn_sigs)
+            if node:
+                result.append(node)
+                i = j
+            else:
+                result.append(body_lines[i])
+                i += 1
         elif re.match(r"if\s+\(.+\)", body_lines[i]):
             if_node, consumed = _group_if_block(body_lines, raw_body_lines, i, fn_sigs)
             result.append(if_node)

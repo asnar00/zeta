@@ -533,6 +533,30 @@ This exposed three things:
 - Multi-browser integration test: each tab is a separate guest or named user, test routes commands to specific browsers by name
 - Test's own WebSocket gets a guest name too — must be excluded when discovering browser guests
 - After logout, browser reconnects with a new guest name — test discovers it dynamically
+- RPC eval now handles method-style calls like (s) contains (sub) via signature matching
+- `in X, on Y` inside function bodies: next language feature for test/hook composition
+
+### zero tests: the design
+
+Tests are zero code. No separate test framework, no string-building, no route management. The test sets up hooks on function calls, then runs the flow:
+
+```
+on test login ()
+    in login (), on input ("name")
+        type ("_alice") into ("input")
+        press ("Enter") on ("input")
+    in login (), on input ("code")
+        type ("1234") into ("input")
+        press ("Enter") on ("input")
+    login ()
+    check (describe page ()) contains ("log out")
+```
+
+Key principles:
+- Component/route concerns never appear in zero code — the compiler figures out where to run each call
+- `in X, on Y` hooks work inside function bodies (not just at feature level) — sets up interception before calling X
+- The same code is a test (check assertions), a demo (add narration), or documentation (the code IS the spec)
+- Tests are part of the feature, not a separate file or framework
 
 **Milestone: Playwright reduced to browser-opener.** The integration test (17 tests) now uses Playwright only to open browser contexts. All interaction (click, type, press) and all assertions (describe page, get cookie, background colour) go through the WebSocket remote channel. This is the observability model: the application tests itself through its own communication infrastructure.
 
