@@ -558,7 +558,37 @@ Key principles:
 - The same code is a test (check assertions), a demo (add narration), or documentation (the code IS the spec)
 - Tests are part of the feature, not a separate file or framework
 
-**Milestone: Playwright reduced to browser-opener.** The integration test (17 tests) now uses Playwright only to open browser contexts. All interaction (click, type, press) and all assertions (describe page, get cookie, background colour) go through the WebSocket remote channel. This is the observability model: the application tests itself through its own communication infrastructure.
+### milestones
+
+**Playwright eliminated.** All browser tests use Chrome with temp profiles for isolated cookie jars. All interaction (click, type, press) and all assertions (describe page, get cookie, background colour) go through the WebSocket remote channel. No external browser automation dependency.
+
+**Zero test function works.** `test login ()` is a zero function in login.zero.md that runs on the browser via WebSocket. It uses scoped hooks (`in login (), on input ("name")`) to intercept the input calls and simulate the user. The login flow runs, the hooks type and press Enter, and the check passes. Same code could be a test, a demo, or a tutorial.
+
+**No hardcoded platform code in zeta.py.** All platform implementations live in `platforms/name/` files:
+- `.py` / `.ts` — server-side implementations (prepended to compiled output)
+- `.client.js` — browser-side implementations (assembled into client bundle)
+- `.zero.md` — interface declarations
+- `@shared-runtime-start/end` markers in runtime files — extracted into shared `_runtime` module
+
+zeta.py is purely the compiler/build tool. It reads platform files but contains no platform-specific code.
+
+### scoped hooks
+
+New language feature: `in X (), on Y (args)` inside function bodies. Sets up a temporary interception of function Y while X is running. Compiles to function patching with try/finally cleanup. Used for testing (simulate user input) and extensible for demos, tutorials, and debugging.
+
+The design principle: the hook is like a dynamic feature with an implicit guard. The compiled code always contains the hook — it's just guarded by a flag that's only true when the enclosing function is executing. One boolean check when not active, zero overhead.
+
+### integration test: the full story
+
+21 tests, all through Cloudflare HTTPS, no Playwright:
+- Default tab: teal background
+- Alice: login → teal → set red → red → logout → teal → login again → red (persisted!) → logout → teal
+- Bob: login → teal → set blue → blue
+- Default: teal throughout
+
+Chrome headless had issues (extra WebSocket connections from service workers/extensions, stale sessions). Fixed by: using visible Chrome, identifying real browser tabs by checking for visible logo element, sequential guest naming.
+
+Cloudflare caching bug: old client.js cached by CDN, new code invisible to users. Fixed by content-hashed filenames (`client.HASH.js`).
 
 ### commits (continued)
 - `d181228` Observability: route commands to browser via session-aware WebSocket
@@ -566,3 +596,9 @@ Key principles:
 - `0a78661` GUI action primitives: click, type, press via WebSocket
 - `f775488` Journal update, anonymous WS routing
 - `34b30a1` WebSocket-based integration test, sequential guest naming
+- `78b6381` Playwright eliminated: all tests use Chrome with temp profiles
+- `241a04d` RPC eval handles method-style calls: (s) contains (sub)
+- `fd21071` Scoped hooks: in X(), on Y() inside function bodies
+- `5b988af` Zero test function works: test login () runs on browser via WebSocket
+- `23f0b7d` Move all client platform code from zeta.py to platform files
+- `cd6a3ab` Test runtime moved to platform files, no hardcoded platform code in zeta.py
