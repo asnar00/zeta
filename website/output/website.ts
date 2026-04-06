@@ -9,6 +9,8 @@ import './landing_page.js';
 import * as landing_page from './landing_page.js';
 import './background.js';
 import * as background from './background.js';
+import './test_blackbox.js';
+import * as test_blackbox from './test_blackbox.js';
 
 // Platform implementation: blackbox (TypeScript)
 // Implements the functions declared in blackbox.zero.md
@@ -145,6 +147,34 @@ export function fn_stored_keys__string(prefix: string): string {
 export function fn_remove_locally__string(key: string): void {
     _store.delete(key);
     _remove_key(key);
+}
+
+
+// @zero on upload pending faults ()
+export function fn_upload_pending_faults(): void {
+    // client-side implementation is in blackbox.client.js
+}
+
+
+// @zero on (string fault) = report fault (string comment)
+export function fn_report_fault__string(comment: string): string {
+    // server-side stub — real implementation is in blackbox.py
+    // client-side implementation is in blackbox.client.js
+    return "";
+}
+
+
+// @zero on (string result) = get fault (string fault-id)
+export function fn_get_fault__string(fault_id: string): string {
+    // server-side stub — real implementation is in blackbox.py
+    return "";
+}
+
+
+// @zero on (string buffer) = freeze buffer (string fault-id)
+export function fn_freeze_buffer__string(fault_id: string): string {
+    // server-side stub — real implementation is in blackbox.client.js
+    return "{}";
 }
 
 
@@ -522,10 +552,6 @@ export function _get_ctx(): _Context {
 }
 
 
-// blackbox fallback (overridden when blackbox platform is loaded)
-export function _bb_record_stream(_name: string, _iter: any): any { return _iter; }
-export function _bb_record_call(_name: string, _result: any): any { return _result; }
-
 class _ZeroRaise extends Error {
     zeroName: string;
     argsList: any[];
@@ -859,20 +885,27 @@ export function test_website_45(): void {
 }
 
 export function test_website_46(): void {
+    // length of (report fault ("test")) => 8
+    const _result = fn_length_of__string(fn_report_fault__string("test"));
+    const _expected = 8;
+    if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
+}
+
+export function test_website_47(): void {
     // handle request (Http-Request(path="/")) => "ᕦ(ツ)ᕤ"
     const _result = fn_handle_request__Http_Request(Http_Request({ path: "/" }));
     const _expected = "ᕦ(ツ)ᕤ";
     if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
 }
 
-export function test_website_47(): void {
+export function test_website_48(): void {
     // handle request (Http-Request(path="/nope")) => "ᕦ(ツ)ᕤ"
     const _result = fn_handle_request__Http_Request(Http_Request({ path: "/nope" }));
     const _expected = "ᕦ(ツ)ᕤ";
     if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
 }
 
-register_tests('website', [[test_website_0, 'trim ("  hello  ") => "hello"'], [test_website_1, 'trim ("already") => "already"'], [test_website_2, 'char (0) of ("hello") => "h"'], [test_website_3, 'char (4) of ("hello") => "o"'], [test_website_4, '("hello world") starts with ("hello") => true'], [test_website_5, '("hello world") starts with ("world") => false'], [test_website_6, '("hello world") contains ("world") => true'], [test_website_7, '("hello world") contains ("xyz") => false'], [test_website_8, '("hello") contains ("hello") => true'], [test_website_9, '("hello") contains ("") => true'], [test_website_10, 'split ("a/b/c") by ("/") => ["a", "b", "c"]'], [test_website_11, 'split ("hello") by ("/") => ["hello"]'], [test_website_12, 'length of ("hello") => 5'], [test_website_13, 'length of ("") => 0'], [test_website_14, 'replace ("world") in ("hello world") with ("zero") => "hello zero"'], [test_website_15, 'substring of ("hello world") from (6) => "world"'], [test_website_16, 'substring of ("abc") from (0) => "abc"'], [test_website_17, 'trim ("") => ""'], [test_website_18, 'trim ("  ") => ""'], [test_website_19, 'trim ("no spaces") => "no spaces"'], [test_website_20, 'trim ("  leading") => "leading"'], [test_website_21, 'trim ("trailing  ") => "trailing"'], [test_website_22, 'char (0) of ("a") => "a"'], [test_website_23, 'char (2) of ("abcde") => "c"'], [test_website_24, '("") starts with ("") => true'], [test_website_25, '("hello") starts with ("") => true'], [test_website_26, '("") starts with ("x") => false'], [test_website_27, '("abc") starts with ("abc") => true'], [test_website_28, '("abc") starts with ("abcd") => false'], [test_website_29, 'split ("one") by (",") => ["one"]'], [test_website_30, 'split ("a,b") by (",") => ["a", "b"]'], [test_website_31, 'split ("a,,b") by (",") => ["a", "", "b"]'], [test_website_32, 'length of ("") => 0'], [test_website_33, 'length of ("a") => 1'], [test_website_34, 'length of ("hello world") => 11'], [test_website_35, 'substring of ("hello") from (0) => "hello"'], [test_website_36, 'substring of ("hello") from (3) => "lo"'], [test_website_37, 'substring of ("hello") from (5) => ""'], [test_website_38, 'replace ("a") in ("aaa") with ("b") => "bbb"'], [test_website_39, 'replace ("xy") in ("no match") with ("z") => "no match"'], [test_website_40, 'replace ("") in ("hello") with ("x") => "xhxexlxlxox"'], [test_website_41, 'length of (random digits (1)) => 1'], [test_website_42, 'length of (random digits (4)) => 4'], [test_website_43, 'length of (random digits (10)) => 10'], [test_website_44, 'length of (create session ("test")) => 8'], [test_website_45, 'elapsed time () => 0'], [test_website_46, 'handle request (Http-Request(path="/")) => "ᕦ(ツ)ᕤ"'], [test_website_47, 'handle request (Http-Request(path="/nope")) => "ᕦ(ツ)ᕤ"']]);
+register_tests('website', [[test_website_0, 'trim ("  hello  ") => "hello"'], [test_website_1, 'trim ("already") => "already"'], [test_website_2, 'char (0) of ("hello") => "h"'], [test_website_3, 'char (4) of ("hello") => "o"'], [test_website_4, '("hello world") starts with ("hello") => true'], [test_website_5, '("hello world") starts with ("world") => false'], [test_website_6, '("hello world") contains ("world") => true'], [test_website_7, '("hello world") contains ("xyz") => false'], [test_website_8, '("hello") contains ("hello") => true'], [test_website_9, '("hello") contains ("") => true'], [test_website_10, 'split ("a/b/c") by ("/") => ["a", "b", "c"]'], [test_website_11, 'split ("hello") by ("/") => ["hello"]'], [test_website_12, 'length of ("hello") => 5'], [test_website_13, 'length of ("") => 0'], [test_website_14, 'replace ("world") in ("hello world") with ("zero") => "hello zero"'], [test_website_15, 'substring of ("hello world") from (6) => "world"'], [test_website_16, 'substring of ("abc") from (0) => "abc"'], [test_website_17, 'trim ("") => ""'], [test_website_18, 'trim ("  ") => ""'], [test_website_19, 'trim ("no spaces") => "no spaces"'], [test_website_20, 'trim ("  leading") => "leading"'], [test_website_21, 'trim ("trailing  ") => "trailing"'], [test_website_22, 'char (0) of ("a") => "a"'], [test_website_23, 'char (2) of ("abcde") => "c"'], [test_website_24, '("") starts with ("") => true'], [test_website_25, '("hello") starts with ("") => true'], [test_website_26, '("") starts with ("x") => false'], [test_website_27, '("abc") starts with ("abc") => true'], [test_website_28, '("abc") starts with ("abcd") => false'], [test_website_29, 'split ("one") by (",") => ["one"]'], [test_website_30, 'split ("a,b") by (",") => ["a", "b"]'], [test_website_31, 'split ("a,,b") by (",") => ["a", "", "b"]'], [test_website_32, 'length of ("") => 0'], [test_website_33, 'length of ("a") => 1'], [test_website_34, 'length of ("hello world") => 11'], [test_website_35, 'substring of ("hello") from (0) => "hello"'], [test_website_36, 'substring of ("hello") from (3) => "lo"'], [test_website_37, 'substring of ("hello") from (5) => ""'], [test_website_38, 'replace ("a") in ("aaa") with ("b") => "bbb"'], [test_website_39, 'replace ("xy") in ("no match") with ("z") => "no match"'], [test_website_40, 'replace ("") in ("hello") with ("x") => "xhxexlxlxox"'], [test_website_41, 'length of (random digits (1)) => 1'], [test_website_42, 'length of (random digits (4)) => 4'], [test_website_43, 'length of (random digits (10)) => 10'], [test_website_44, 'length of (create session ("test")) => 8'], [test_website_45, 'elapsed time () => 0'], [test_website_46, 'length of (report fault ("test")) => 8'], [test_website_47, 'handle request (Http-Request(path="/")) => "ᕦ(ツ)ᕤ"'], [test_website_48, 'handle request (Http-Request(path="/nope")) => "ᕦ(ツ)ᕤ"']]);
 
 const port: number = 8084;
 const logo: string = "ᕦ(ツ)ᕤ";
@@ -906,7 +939,7 @@ export function User(args: Partial<User> = {}): User {
     return { name: args.name ?? "", phone: args.phone ?? "", role: args.role ?? "" };
 }
 
-// @zero on main (string args$); website/website.zero.md:289
+// @zero on main (string args$); website/website.zero.md:298
 export async function task_main__string(args_arr: readonly string[]): Promise<void> {
     _push_terminal_out(logo);
     const request_arr = task_serve_http__int(port);
@@ -917,7 +950,7 @@ export async function task_main__string(args_arr: readonly string[]): Promise<vo
     }
 }
 
-// @zero on (string body) = handle request (Http-Request request); website/website.zero.md:297
+// @zero on (string body) = handle request (Http-Request request); website/website.zero.md:306
 export function fn_handle_request__Http_Request(request: Http_Request): string {
     let body: string = undefined!;
     if (_get_ctx().landing_page.enabled && request.path == "/") {
@@ -935,7 +968,7 @@ export function fn_handle_request__Http_Request(request: Http_Request): string {
     return body;
 }
 
-// @zero on stop; website/website.zero.md:305
+// @zero on stop; website/website.zero.md:314
 export function fn_stop(): void {
     fn_print__string("stopping");
 }
@@ -963,4 +996,4 @@ try {
 }
 }
 
-const _FEATURE_TREE: [string, string, string | null][] = [["website", "the nøøb website", null], ["not-found", "default 404 response", "website"], ["login", "SMS code authentication", "website"], ["rpc", "RPC endpoint for runtime evaluation", "website"], ["landing-page", "serves the noob landing page at root", "website"], ["background", "per-user background colour", "landing-page"]];
+const _FEATURE_TREE: [string, string, string | null][] = [["website", "the nøøb website", null], ["not-found", "default 404 response", "website"], ["login", "SMS code authentication", "website"], ["rpc", "RPC endpoint for runtime evaluation", "website"], ["landing-page", "serves the noob landing page at root", "website"], ["background", "per-user background colour", "landing-page"], ["test-blackbox", "integration tests for the flight recorder", "website"]];

@@ -65,8 +65,20 @@ Retrieve a stored fault report by ID:
 
     on (string result) = get fault (string fault-id)
 
+Upload any pending fault reports that were saved while offline:
+
+    on upload pending faults ()
+
+Freeze the current buffer for multi-device collection. Called by the server on other clients when a fault is reported. Returns the frozen moments as JSON:
+
+    on (string buffer) = freeze buffer (string fault-id)
+
 ## tests
 
 Elapsed time returns a non-negative number:
 
     elapsed time () => 0
+
+Report fault returns an 8-character ID:
+
+    length of (report fault ("test")) => 8

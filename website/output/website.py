@@ -4,6 +4,7 @@ import login
 import rpc
 import landing_page
 import background
+import test_blackbox
 
 # Platform implementation: blackbox (Python)
 # Implements the functions declared in blackbox.zero.md
@@ -149,23 +150,6 @@ def _bb_rotate_moment():
         _bb_current_moment = _bb_new_moment()
 
 
-def _bb_record_action(feature, name, args, correlation, result, elapsed):
-    """Append an action to the current moment."""
-    if not _bb_recording or not _bb_current_moment:
-        return
-    with _bb_lock:
-        _bb_current_moment["actions"].append({
-            "time": _bb_elapsed(),
-            "feature": feature,
-            "name": name,
-            "args": args,
-            "correlation": correlation,
-            "result": result,
-            "elapsed": elapsed,
-            "kind": "call"
-        })
-
-
 def _bb_start_server_recording():
     """Start server-side recording with periodic moment rotation."""
     global _bb_recording, _bb_current_moment, _bb_tick_timer
@@ -188,54 +172,110 @@ def _bb_start_server_recording():
     print("[blackbox] server recording started")
 
 
-def _bb_install_rpc_hook():
-    """Wrap fn_handle_remote_request__string to record server-side RPC calls."""
+def _bb_record_action(feature, name, args, correlation, result, elapsed):
+    """Append an action to the current moment."""
+    if not _bb_recording or not _bb_current_moment:
+        return
+    with _bb_lock:
+        _bb_current_moment["actions"].append({
+            "time": _bb_elapsed(),
+            "feature": feature,
+            "name": name,
+            "args": args,
+            "correlation": correlation,
+            "result": result,
+            "elapsed": elapsed,
+            "kind": "call"
+        })
+
+
+_bb_start_server_recording()
+
+
+def _bb_snapshot_server_moments():
+    """Snapshot the server's current buffer."""
+    with _bb_lock:
+        moments = list(_bb_moments)
+        if _bb_current_moment:
+            snap = dict(_bb_current_moment)
+            snap["end_time"] = _bb_elapsed()
+            moments.append(snap)
+    return moments
+
+
+def _bb_collect_other_devices(fault_id, reporter_session):
+    """Ask all other connected clients to freeze and send their buffers.
+    Skips the reporter (identified by session) and uses a short timeout."""
     import sys
+    import queue as _queue
+    device_buffers = []
     mod = sys.modules.get('__main__')
     if mod is None:
-        return
-
-    # find the original handler across all modules
-    original = None
-    for name, m in sys.modules.items():
-        fn = getattr(m, 'fn_handle_remote_request__string', None)
-        if fn and not getattr(fn, '_bb_wrapped', False):
-            original = fn
-            break
-
-    if original is None:
-        return
-
-    def wrapped(command):
-        correlation = _bb_next_correlation()
-        t0 = _bb_elapsed()
-        result = original(command)
-        elapsed = _bb_elapsed() - t0
-        _bb_record_action("rpc", command, "", correlation, str(result)[:200], elapsed)
-        return result
-
-    wrapped._bb_wrapped = True
-
-    # patch it everywhere it appears
-    for name, m in sys.modules.items():
-        if hasattr(m, 'fn_handle_remote_request__string'):
-            try:
-                m.fn_handle_remote_request__string = wrapped
-            except (AttributeError, TypeError):
-                pass
+        return device_buffers
+    list_clients = getattr(mod, '_list_connected_clients', None)
+    if not list_clients:
+        return device_buffers
+    try:
+        clients = list_clients()
+    except Exception:
+        return device_buffers
+    # resolve reporter's route name from session token
+    reporter_name = None
+    resolve_user = getattr(mod, '_resolve_session_user', None)
+    if resolve_user and reporter_session:
+        reporter_name = resolve_user(reporter_session)
+    for client_name in clients:
+        if client_name == reporter_name:
+            continue
+        try:
+            result = _bb_request_with_timeout(
+                f'freeze buffer ("{fault_id}")', client_name, timeout=3
+            )
+            if result and result.startswith("{"):
+                device_buffers.append(json.loads(result))
+        except Exception:
+            pass
+    return device_buffers
 
 
-def _bb_auto_start():
-    """Auto-start server recording after a short delay (lets other platforms load)."""
-    def deferred():
-        _bb_start_server_recording()
-        _bb_install_rpc_hook()
-    t = threading.Timer(2.0, deferred)
-    t.daemon = True
-    t.start()
+def _bb_request_with_timeout(command, client_name, timeout=3):
+    """Send a command to a client with a short timeout. Returns result or empty."""
+    import sys
+    import queue as _queue
+    mod = sys.modules.get('__main__')
+    get_channel = getattr(mod, '_get_client_channel', None)
+    get_ws = getattr(mod, '_get_ws_channel', None)
+    if not get_channel or not get_ws:
+        return ""
+    channel_id = get_channel(client_name)
+    if not channel_id:
+        return ""
+    ch = get_ws(channel_id)
+    if ch is None:
+        return ""
+    import json as _json
+    counter = getattr(mod, '_next_request_id', None)
+    pending = getattr(mod, '_pending_responses', None)
+    if not counter or pending is None:
+        return ""
+    req_id = counter()
+    response_q = _queue.Queue()
+    pending[req_id] = response_q
+    ch.send(_json.dumps({"id": req_id, "cmd": command}))
+    try:
+        return response_q.get(timeout=timeout)
+    except _queue.Empty:
+        return ""
+    finally:
+        pending.pop(req_id, None)
 
 
-_bb_auto_start()
+def _bb_store_report(fault_id, report):
+    """Persist a fault report to the in-memory cache and local store."""
+    _bb_fault_reports[fault_id] = report
+    _init_store_path()
+    _store[f"fault:{fault_id}"] = json.dumps(report)
+    _save_store()
 
 
 # @zero on (string fault) = report fault (string comment)
@@ -247,16 +287,15 @@ def fn_report_fault__string(comment: str) -> str:
             report = json.loads(comment)
             fault_id = report.get("fault_id", "")
             if fault_id:
-                _bb_fault_reports[fault_id] = report
-                # also attach server moments from the same time window
-                with _bb_lock:
-                    report["server_moments"] = list(_bb_moments)
-                    if _bb_current_moment:
-                        report["server_moments"].append(_bb_current_moment)
-                _init_store_path()
-                _store[f"fault:{fault_id}"] = json.dumps(report)
-                _save_store()
-                print(f"[blackbox] fault received: {fault_id}")
+                # attach server moments from the same time window
+                report["server_moments"] = _bb_snapshot_server_moments()
+                # collect buffers from all other connected devices
+                report["device_buffers"] = _bb_collect_other_devices(
+                    fault_id, report.get("session", "")
+                )
+                _bb_store_report(fault_id, report)
+                print(f"[blackbox] fault received: {fault_id} "
+                      f"({len(report['device_buffers'])} other devices)")
                 return fault_id
         except json.JSONDecodeError:
             pass
@@ -264,22 +303,14 @@ def fn_report_fault__string(comment: str) -> str:
     # server-side fault report (not from client)
     import uuid
     fault_id = str(uuid.uuid4())[:8]
-    with _bb_lock:
-        moments = list(_bb_moments)
-        if _bb_current_moment:
-            _bb_current_moment["end_time"] = _bb_elapsed()
-            moments.append(_bb_current_moment)
     report = {
         "fault_id": fault_id,
         "session": _bb_session_id,
         "comment": comment,
-        "moments": moments,
+        "moments": _bb_snapshot_server_moments(),
         "reported_at": _bb_elapsed()
     }
-    _bb_fault_reports[fault_id] = report
-    _init_store_path()
-    _store[f"fault:{fault_id}"] = json.dumps(report)
-    _save_store()
+    _bb_store_report(fault_id, report)
     print(f"[blackbox] server fault reported: {fault_id}")
     return fault_id
 
@@ -669,6 +700,9 @@ def fn_handle_remote_request__string(command: str) -> str:
         return command[5:]
     if command == "connected clients ()":
         return ", ".join(_list_connected_clients()) or "none"
+    # blackbox fault upload via WebSocket (avoids URL length limits)
+    if command.startswith("bb:fault:"):
+        return fn_report_fault__string(command[9:])
     # evaluate as zero expression
     return fn_rpc_eval__string(command)
 
@@ -2112,18 +2146,24 @@ def test_website_45():
     assert _result == _expected, f"expected {_expected}, got {_result}"
 
 def test_website_46():
+    '''length of (report fault ("test")) => 8'''
+    _result = fn_length_of__string(fn_report_fault__string("test"))
+    _expected = 8
+    assert _result == _expected, f"expected {_expected}, got {_result}"
+
+def test_website_47():
     '''handle request (Http-Request(path="/")) => "ᕦ(ツ)ᕤ"'''
     _result = fn_handle_request__Http_Request(Http_Request(path="/"))
     _expected = "ᕦ(ツ)ᕤ"
     assert _result == _expected, f"expected {_expected}, got {_result}"
 
-def test_website_47():
+def test_website_48():
     '''handle request (Http-Request(path="/nope")) => "ᕦ(ツ)ᕤ"'''
     _result = fn_handle_request__Http_Request(Http_Request(path="/nope"))
     _expected = "ᕦ(ツ)ᕤ"
     assert _result == _expected, f"expected {_expected}, got {_result}"
 
-register_tests('website', [(test_website_0, 'trim ("  hello  ") => "hello"'), (test_website_1, 'trim ("already") => "already"'), (test_website_2, 'char (0) of ("hello") => "h"'), (test_website_3, 'char (4) of ("hello") => "o"'), (test_website_4, '("hello world") starts with ("hello") => true'), (test_website_5, '("hello world") starts with ("world") => false'), (test_website_6, '("hello world") contains ("world") => true'), (test_website_7, '("hello world") contains ("xyz") => false'), (test_website_8, '("hello") contains ("hello") => true'), (test_website_9, '("hello") contains ("") => true'), (test_website_10, 'split ("a/b/c") by ("/") => ["a", "b", "c"]'), (test_website_11, 'split ("hello") by ("/") => ["hello"]'), (test_website_12, 'length of ("hello") => 5'), (test_website_13, 'length of ("") => 0'), (test_website_14, 'replace ("world") in ("hello world") with ("zero") => "hello zero"'), (test_website_15, 'substring of ("hello world") from (6) => "world"'), (test_website_16, 'substring of ("abc") from (0) => "abc"'), (test_website_17, 'trim ("") => ""'), (test_website_18, 'trim ("  ") => ""'), (test_website_19, 'trim ("no spaces") => "no spaces"'), (test_website_20, 'trim ("  leading") => "leading"'), (test_website_21, 'trim ("trailing  ") => "trailing"'), (test_website_22, 'char (0) of ("a") => "a"'), (test_website_23, 'char (2) of ("abcde") => "c"'), (test_website_24, '("") starts with ("") => true'), (test_website_25, '("hello") starts with ("") => true'), (test_website_26, '("") starts with ("x") => false'), (test_website_27, '("abc") starts with ("abc") => true'), (test_website_28, '("abc") starts with ("abcd") => false'), (test_website_29, 'split ("one") by (",") => ["one"]'), (test_website_30, 'split ("a,b") by (",") => ["a", "b"]'), (test_website_31, 'split ("a,,b") by (",") => ["a", "", "b"]'), (test_website_32, 'length of ("") => 0'), (test_website_33, 'length of ("a") => 1'), (test_website_34, 'length of ("hello world") => 11'), (test_website_35, 'substring of ("hello") from (0) => "hello"'), (test_website_36, 'substring of ("hello") from (3) => "lo"'), (test_website_37, 'substring of ("hello") from (5) => ""'), (test_website_38, 'replace ("a") in ("aaa") with ("b") => "bbb"'), (test_website_39, 'replace ("xy") in ("no match") with ("z") => "no match"'), (test_website_40, 'replace ("") in ("hello") with ("x") => "xhxexlxlxox"'), (test_website_41, 'length of (random digits (1)) => 1'), (test_website_42, 'length of (random digits (4)) => 4'), (test_website_43, 'length of (random digits (10)) => 10'), (test_website_44, 'length of (create session ("test")) => 8'), (test_website_45, 'elapsed time () => 0'), (test_website_46, 'handle request (Http-Request(path="/")) => "ᕦ(ツ)ᕤ"'), (test_website_47, 'handle request (Http-Request(path="/nope")) => "ᕦ(ツ)ᕤ"')])
+register_tests('website', [(test_website_0, 'trim ("  hello  ") => "hello"'), (test_website_1, 'trim ("already") => "already"'), (test_website_2, 'char (0) of ("hello") => "h"'), (test_website_3, 'char (4) of ("hello") => "o"'), (test_website_4, '("hello world") starts with ("hello") => true'), (test_website_5, '("hello world") starts with ("world") => false'), (test_website_6, '("hello world") contains ("world") => true'), (test_website_7, '("hello world") contains ("xyz") => false'), (test_website_8, '("hello") contains ("hello") => true'), (test_website_9, '("hello") contains ("") => true'), (test_website_10, 'split ("a/b/c") by ("/") => ["a", "b", "c"]'), (test_website_11, 'split ("hello") by ("/") => ["hello"]'), (test_website_12, 'length of ("hello") => 5'), (test_website_13, 'length of ("") => 0'), (test_website_14, 'replace ("world") in ("hello world") with ("zero") => "hello zero"'), (test_website_15, 'substring of ("hello world") from (6) => "world"'), (test_website_16, 'substring of ("abc") from (0) => "abc"'), (test_website_17, 'trim ("") => ""'), (test_website_18, 'trim ("  ") => ""'), (test_website_19, 'trim ("no spaces") => "no spaces"'), (test_website_20, 'trim ("  leading") => "leading"'), (test_website_21, 'trim ("trailing  ") => "trailing"'), (test_website_22, 'char (0) of ("a") => "a"'), (test_website_23, 'char (2) of ("abcde") => "c"'), (test_website_24, '("") starts with ("") => true'), (test_website_25, '("hello") starts with ("") => true'), (test_website_26, '("") starts with ("x") => false'), (test_website_27, '("abc") starts with ("abc") => true'), (test_website_28, '("abc") starts with ("abcd") => false'), (test_website_29, 'split ("one") by (",") => ["one"]'), (test_website_30, 'split ("a,b") by (",") => ["a", "b"]'), (test_website_31, 'split ("a,,b") by (",") => ["a", "", "b"]'), (test_website_32, 'length of ("") => 0'), (test_website_33, 'length of ("a") => 1'), (test_website_34, 'length of ("hello world") => 11'), (test_website_35, 'substring of ("hello") from (0) => "hello"'), (test_website_36, 'substring of ("hello") from (3) => "lo"'), (test_website_37, 'substring of ("hello") from (5) => ""'), (test_website_38, 'replace ("a") in ("aaa") with ("b") => "bbb"'), (test_website_39, 'replace ("xy") in ("no match") with ("z") => "no match"'), (test_website_40, 'replace ("") in ("hello") with ("x") => "xhxexlxlxox"'), (test_website_41, 'length of (random digits (1)) => 1'), (test_website_42, 'length of (random digits (4)) => 4'), (test_website_43, 'length of (random digits (10)) => 10'), (test_website_44, 'length of (create session ("test")) => 8'), (test_website_45, 'elapsed time () => 0'), (test_website_46, 'length of (report fault ("test")) => 8'), (test_website_47, 'handle request (Http-Request(path="/")) => "ᕦ(ツ)ᕤ"'), (test_website_48, 'handle request (Http-Request(path="/nope")) => "ᕦ(ツ)ᕤ"')])
 
 class Http_Request(NamedTuple):
     path: str = ""
@@ -2139,7 +2179,7 @@ class User(NamedTuple):
     phone: str = ""
     role: str = ""
 
-# @zero on main (string args$); website/website.zero.md:289
+# @zero on main (string args$); website/website.zero.md:298
 def task_main__string(args_arr: str):
     _push_terminal_out(logo)
     request_arr = task_serve_http__int(port)
@@ -2148,7 +2188,7 @@ def task_main__string(args_arr: str):
         body = fn_handle_request__Http_Request(request)
         _push_http_response(Http_Response(request, body))
 
-# @zero on (string body) = handle request (Http-Request request); website/website.zero.md:297
+# @zero on (string body) = handle request (Http-Request request); website/website.zero.md:306
 def fn_handle_request__Http_Request(request: Http_Request) -> str:
     body = None
     if _get_ctx().landing_page.enabled and request.path == "/":
@@ -2161,7 +2201,7 @@ def fn_handle_request__Http_Request(request: Http_Request) -> str:
         body = not_found.fn_not_found()
     return body if body is not None else ""
 
-# @zero on stop; website/website.zero.md:305
+# @zero on stop; website/website.zero.md:314
 def fn_stop():
     fn_print__string("stopping")
 
@@ -2182,4 +2222,4 @@ if __name__ == '__main__':
     except NameError:
         pass  # no main task defined
 
-_FEATURE_TREE = [("website", "the nøøb website", None), ("not-found", "default 404 response", 'website'), ("login", "SMS code authentication", 'website'), ("rpc", "RPC endpoint for runtime evaluation", 'website'), ("landing-page", "serves the noob landing page at root", 'website'), ("background", "per-user background colour", 'landing-page')]
+_FEATURE_TREE = [("website", "the nøøb website", None), ("not-found", "default 404 response", 'website'), ("login", "SMS code authentication", 'website'), ("rpc", "RPC endpoint for runtime evaluation", 'website'), ("landing-page", "serves the noob landing page at root", 'website'), ("background", "per-user background colour", 'landing-page'), ("test-blackbox", "integration tests for the flight recorder", 'website')]

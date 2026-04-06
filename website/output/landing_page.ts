@@ -139,6 +139,34 @@ export function fn_remove_locally__string(key: string): void {
 }
 
 
+// @zero on upload pending faults ()
+export function fn_upload_pending_faults(): void {
+    // client-side implementation is in blackbox.client.js
+}
+
+
+// @zero on (string fault) = report fault (string comment)
+export function fn_report_fault__string(comment: string): string {
+    // server-side stub — real implementation is in blackbox.py
+    // client-side implementation is in blackbox.client.js
+    return "";
+}
+
+
+// @zero on (string result) = get fault (string fault-id)
+export function fn_get_fault__string(fault_id: string): string {
+    // server-side stub — real implementation is in blackbox.py
+    return "";
+}
+
+
+// @zero on (string buffer) = freeze buffer (string fault-id)
+export function fn_freeze_buffer__string(fault_id: string): string {
+    // server-side stub — real implementation is in blackbox.client.js
+    return "{}";
+}
+
+
 // Platform implementation: eval (TypeScript)
 // Implements the functions declared in eval.zero.md
 // Server-side stub — delegates to rpc eval
@@ -568,7 +596,7 @@ export function User(args: Partial<User> = {}): User {
     return { name: args.name ?? "", phone: args.phone ?? "", role: args.role ?? "" };
 }
 
-// @zero on (string body) = landing page; website/landing-page/landing-page.zero.md:387
+// @zero on (string body) = landing page; website/landing-page/landing-page.zero.md:396
 export function fn_landing_page(): string {
     let body: string = undefined!;
     body = fn_read_file__string("website/index.html");

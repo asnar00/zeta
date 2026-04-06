@@ -189,19 +189,19 @@ def _walk_has_kind(stmts, kind):
     return False
 
 
-_BB_FALLBACK_TS = """\
-// blackbox fallback (overridden when blackbox platform is loaded)
-function _bb_record_stream(_name: string, _iter: any): any { return _iter; }
-function _bb_record_call(_name: string, _result: any): any { return _result; }"""
-
-
 def emit(ir: dict) -> str:
     """Emit TypeScript source code from a zero IR dict."""
     _check_compatibility(ir)
     structs, enums = _init_globals_ts(ir)
     sections = []
-    if ir.get("tasks"):
-        sections.append(_BB_FALLBACK_TS)
+    # emit blackbox fallback for standalone builds (no platform prepend).
+    # feature-modular builds have blackbox.ts prepended, so skip to avoid redeclaration.
+    if ir.get("tasks") and not ir.get("module_map"):
+        sections.append(
+            "// blackbox fallback (standalone build)\n"
+            "function _bb_record_stream(_name: string, _iter: any): any { return _iter; }\n"
+            "function _bb_record_call(_name: string, _result: any): any { return _result; }"
+        )
     if _has_concurrently(ir):
         sections.append(_CONCURRENTLY_HELPER_TS)
     if ir.get("errors"):

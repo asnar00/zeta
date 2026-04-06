@@ -29,6 +29,86 @@ function _bb_next_correlation() {
 }
 
 
+// --- WebSocket request helper ---
+
+let _bb_pending_ws = {};
+let _bb_ws_hooked = null;
+
+function _bb_ensure_ws_hook() {
+    // install listener on _ws if it changed (reconnect) or first time
+    if (_ws && _ws !== _bb_ws_hooked) {
+        _bb_ws_hooked = _ws;
+        _ws.addEventListener("message", (event) => {
+            try {
+                const msg = JSON.parse(event.data);
+                if (msg.id && msg.result !== undefined && _bb_pending_ws[msg.id]) {
+                    _bb_pending_ws[msg.id](msg.result);
+                }
+            } catch (e) {}
+        });
+    }
+}
+
+function _bb_ws_request(cmd, timeout) {
+    timeout = timeout || 10000;
+    _bb_ensure_ws_hook();
+    return new Promise((resolve, reject) => {
+        if (!_ws || _ws.readyState !== WebSocket.OPEN) {
+            reject(new Error("WebSocket not connected"));
+            return;
+        }
+        const rid = "bb-" + (++_bb_correlation_counter).toString(36);
+        const timer = setTimeout(() => {
+            delete _bb_pending_ws[rid];
+            reject(new Error("timeout"));
+        }, timeout);
+        _bb_pending_ws[rid] = (result) => {
+            clearTimeout(timer);
+            delete _bb_pending_ws[rid];
+            resolve(result);
+        };
+        _ws.send(JSON.stringify({id: rid, cmd: cmd}));
+    });
+}
+
+
+// --- local persistence ---
+
+const _BB_BUFFER_KEY = "blackbox:buffer";
+
+
+function _bb_persist_buffer() {
+    try {
+        const data = {
+            session: _bb_session_id,
+            start_time: _bb_start_time,
+            moments: _bb_moments,
+            current: _bb_current_moment
+        };
+        localStorage.setItem(_BB_BUFFER_KEY, JSON.stringify(data));
+    } catch (e) {
+        // localStorage full or unavailable — silently skip
+    }
+}
+
+
+function _bb_restore_buffer() {
+    try {
+        const raw = localStorage.getItem(_BB_BUFFER_KEY);
+        if (!raw) return;
+        const data = JSON.parse(raw);
+        if (data.moments && data.moments.length > 0) {
+            _bb_moments.length = 0;
+            for (const m of data.moments) _bb_moments.push(m);
+            _bb_current_moment = data.current || _bb_new_moment();
+            console.log("[blackbox] restored " + _bb_moments.length + " moments from localStorage");
+        }
+    } catch (e) {
+        // corrupt data — start fresh
+    }
+}
+
+
 // --- moment management ---
 
 function _bb_new_moment() {
@@ -50,6 +130,7 @@ function _bb_rotate_moment() {
         }
     }
     _bb_current_moment = _bb_new_moment();
+    _bb_persist_buffer();
 }
 
 
@@ -148,6 +229,7 @@ function _bb_start(session) {
     _bb_recording = true;
     _bb_moments.length = 0;
     _bb_current_moment = _bb_new_moment();
+    _bb_restore_buffer();
     _bb_tick_timer = setInterval(_bb_rotate_moment, _bb_moment_duration);
     _bb_install_hooks();
     console.log("[blackbox] recording started for session: " + session);
@@ -166,9 +248,8 @@ function _bb_stop() {
 }
 
 
-function _bb_freeze(comment) {
-    if (!_bb_recording) return null;
-    // close current moment
+function _bb_snapshot_moments() {
+    // Snapshot the current buffer: close the current moment and copy all moments.
     if (_bb_current_moment) {
         _bb_current_moment.end_time = _bb_elapsed();
         _bb_moments.push(_bb_current_moment);
@@ -176,13 +257,26 @@ function _bb_freeze(comment) {
             _bb_moments.shift();
         }
     }
-    // copy moments
-    const frozen_moments = _bb_moments.map(m => ({
+    return _bb_moments.map(m => ({
         start_time: m.start_time,
         end_time: m.end_time,
         keyframe: m.keyframe,
         actions: m.actions.slice()
     }));
+}
+
+
+function _bb_fresh_buffer() {
+    // Clear the buffer and start a new moment.
+    _bb_moments.length = 0;
+    _bb_current_moment = _bb_new_moment();
+    _bb_persist_buffer();
+}
+
+
+function _bb_freeze(comment) {
+    if (!_bb_recording) return null;
+    const frozen_moments = _bb_snapshot_moments();
     // generate fault ID
     const fault_id = Math.random().toString(36).slice(2, 10);
     const report = {
@@ -199,26 +293,31 @@ function _bb_freeze(comment) {
     } catch (e) {
         console.log("[blackbox] persist error: " + e.message);
     }
-    // start fresh buffer
-    _bb_moments.length = 0;
-    _bb_current_moment = _bb_new_moment();
+    _bb_fresh_buffer();
     console.log("[blackbox] fault reported: " + fault_id);
     return fault_id;
 }
 
 
 async function _bb_upload_pending() {
+    if (!_ws || _ws.readyState !== WebSocket.OPEN) {
+        console.log("[blackbox] upload deferred: WebSocket not connected");
+        return;
+    }
+    // collect fault keys first (iterating localStorage while removing is fragile)
+    const fault_keys = [];
     for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
-        if (!key || !key.startsWith("blackbox:fault:")) continue;
+        if (key && key.startsWith("blackbox:fault:")) fault_keys.push(key);
+    }
+    for (const key of fault_keys) {
         const data = localStorage.getItem(key);
+        if (!data) continue;
         try {
-            const resp = await fetch("/@rpc/report%20fault%20(" +
-                encodeURIComponent('"' + data + '"') + ")");
-            if (resp.ok) {
-                localStorage.removeItem(key);
-                console.log("[blackbox] uploaded: " + key);
-            }
+            // upload via WebSocket — no URL length limits, waits for acknowledgment
+            const result = await _bb_ws_request("bb:fault:" + data);
+            localStorage.removeItem(key);
+            console.log("[blackbox] uploaded: " + key + " -> " + result);
         } catch (e) {
             console.log("[blackbox] upload failed, will retry: " + e.message);
         }
@@ -231,6 +330,30 @@ async function _bb_upload_pending() {
 // @zero on (string fault) = report fault (string comment)
 function fn_report_fault__string(comment) {
     return _bb_freeze(comment) || "";
+}
+
+// @zero on (string buffer) = freeze buffer (string fault-id)
+function fn_freeze_buffer__string(fault_id) {
+    // Called by the server to collect this device's buffer for a multi-device fault.
+    // Returns the frozen moments as JSON without generating a new fault report.
+    if (!_bb_recording) return "{}";
+    const frozen_moments = _bb_snapshot_moments();
+    const result = {
+        fault_id: fault_id,
+        session: _bb_session_id,
+        device: "client",
+        moments: frozen_moments,
+        collected_at: _bb_elapsed()
+    };
+    _bb_fresh_buffer();
+    console.log("[blackbox] buffer frozen for collection: " + fault_id);
+    return JSON.stringify(result);
+}
+
+// @zero on (string result) = get fault (string fault-id)
+async function fn_get_fault__string(fault_id) {
+    // client-side: request from server via WebSocket
+    return await _bb_ws_request('get fault ("' + fault_id + '")');
 }
 
 // @zero on start recording (string session)
@@ -572,7 +695,7 @@ document.addEventListener("DOMContentLoaded", () => {
     _connect_ws();
 });
 
-// @zero on toggle login; composed:311
+// @zero on toggle login; composed:320
 async function fn_toggle_login(){
     const session = await fn_get_cookie__string("session");
     if (session == "") {
@@ -582,7 +705,7 @@ async function fn_toggle_login(){
 }
 }
 
-// @zero on login; composed:318
+// @zero on login; composed:327
 async function fn_login(){
     try {
         const name = await fn_input__string("name");
@@ -602,7 +725,7 @@ async function fn_login(){
     }
 }
 
-// @zero on logout dialog; composed:326
+// @zero on logout dialog; composed:335
 async function fn_logout_dialog(){
     const choice = await fn_choose__string_or__string("log out", "cancel");
     if (choice == "log out") {
@@ -611,22 +734,22 @@ async function fn_logout_dialog(){
 }
 }
 
-// @zero on unknown user (string name); composed:332
+// @zero on unknown user (string name); composed:341
 async function fn_unknown_user__string(name){
     await fn_show_message__string("unknown user");
 }
 
-// @zero on invalid code (string code); composed:335
+// @zero on invalid code (string code); composed:344
 async function fn_invalid_code__string(code){
     await fn_show_message__string("invalid code");
 }
 
-// @zero on logo clicked; composed:366
+// @zero on logo clicked; composed:375
 async function fn_logo_clicked(){
     await fn_toggle_login();
 }
 
-// @zero on test login; composed:377
+// @zero on test login; composed:386
 async function fn_test_login(){
     const _orig_fn_input__string = fn_input__string;
     const _patched = async function(_prompt) {
@@ -651,4 +774,16 @@ async function fn_test_login(){
     } finally {
         (globalThis).fn_input__string = _orig_fn_input__string;
     }
+}
+
+// @zero on test blackbox; composed:408
+async function fn_test_blackbox(){
+    await fn_click_on__string(".logo");
+    await fn_press__string_on__string("Escape", "body");
+    const fault = fn_report_fault__string("test: logo did something weird");
+    fn_upload_pending_faults();
+    const data = fn_get_fault__string(fault);
+    await _rpc("bb check " + encodeURIComponent("(" + data + ")") + " contains " + encodeURIComponent("(" + "fault_id" + ")") + "");
+    await _rpc("bb check " + encodeURIComponent("(" + data + ")") + " contains " + encodeURIComponent("(" + "moments" + ")") + "");
+    await _rpc("bb check " + encodeURIComponent("(" + data + ")") + " contains " + encodeURIComponent("(" + "test: logo did something weird" + ")") + "");
 }

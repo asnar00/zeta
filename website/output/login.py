@@ -142,23 +142,6 @@ def _bb_rotate_moment():
         _bb_current_moment = _bb_new_moment()
 
 
-def _bb_record_action(feature, name, args, correlation, result, elapsed):
-    """Append an action to the current moment."""
-    if not _bb_recording or not _bb_current_moment:
-        return
-    with _bb_lock:
-        _bb_current_moment["actions"].append({
-            "time": _bb_elapsed(),
-            "feature": feature,
-            "name": name,
-            "args": args,
-            "correlation": correlation,
-            "result": result,
-            "elapsed": elapsed,
-            "kind": "call"
-        })
-
-
 def _bb_start_server_recording():
     """Start server-side recording with periodic moment rotation."""
     global _bb_recording, _bb_current_moment, _bb_tick_timer
@@ -181,54 +164,110 @@ def _bb_start_server_recording():
     print("[blackbox] server recording started")
 
 
-def _bb_install_rpc_hook():
-    """Wrap fn_handle_remote_request__string to record server-side RPC calls."""
+def _bb_record_action(feature, name, args, correlation, result, elapsed):
+    """Append an action to the current moment."""
+    if not _bb_recording or not _bb_current_moment:
+        return
+    with _bb_lock:
+        _bb_current_moment["actions"].append({
+            "time": _bb_elapsed(),
+            "feature": feature,
+            "name": name,
+            "args": args,
+            "correlation": correlation,
+            "result": result,
+            "elapsed": elapsed,
+            "kind": "call"
+        })
+
+
+_bb_start_server_recording()
+
+
+def _bb_snapshot_server_moments():
+    """Snapshot the server's current buffer."""
+    with _bb_lock:
+        moments = list(_bb_moments)
+        if _bb_current_moment:
+            snap = dict(_bb_current_moment)
+            snap["end_time"] = _bb_elapsed()
+            moments.append(snap)
+    return moments
+
+
+def _bb_collect_other_devices(fault_id, reporter_session):
+    """Ask all other connected clients to freeze and send their buffers.
+    Skips the reporter (identified by session) and uses a short timeout."""
     import sys
+    import queue as _queue
+    device_buffers = []
     mod = sys.modules.get('__main__')
     if mod is None:
-        return
-
-    # find the original handler across all modules
-    original = None
-    for name, m in sys.modules.items():
-        fn = getattr(m, 'fn_handle_remote_request__string', None)
-        if fn and not getattr(fn, '_bb_wrapped', False):
-            original = fn
-            break
-
-    if original is None:
-        return
-
-    def wrapped(command):
-        correlation = _bb_next_correlation()
-        t0 = _bb_elapsed()
-        result = original(command)
-        elapsed = _bb_elapsed() - t0
-        _bb_record_action("rpc", command, "", correlation, str(result)[:200], elapsed)
-        return result
-
-    wrapped._bb_wrapped = True
-
-    # patch it everywhere it appears
-    for name, m in sys.modules.items():
-        if hasattr(m, 'fn_handle_remote_request__string'):
-            try:
-                m.fn_handle_remote_request__string = wrapped
-            except (AttributeError, TypeError):
-                pass
+        return device_buffers
+    list_clients = getattr(mod, '_list_connected_clients', None)
+    if not list_clients:
+        return device_buffers
+    try:
+        clients = list_clients()
+    except Exception:
+        return device_buffers
+    # resolve reporter's route name from session token
+    reporter_name = None
+    resolve_user = getattr(mod, '_resolve_session_user', None)
+    if resolve_user and reporter_session:
+        reporter_name = resolve_user(reporter_session)
+    for client_name in clients:
+        if client_name == reporter_name:
+            continue
+        try:
+            result = _bb_request_with_timeout(
+                f'freeze buffer ("{fault_id}")', client_name, timeout=3
+            )
+            if result and result.startswith("{"):
+                device_buffers.append(json.loads(result))
+        except Exception:
+            pass
+    return device_buffers
 
 
-def _bb_auto_start():
-    """Auto-start server recording after a short delay (lets other platforms load)."""
-    def deferred():
-        _bb_start_server_recording()
-        _bb_install_rpc_hook()
-    t = threading.Timer(2.0, deferred)
-    t.daemon = True
-    t.start()
+def _bb_request_with_timeout(command, client_name, timeout=3):
+    """Send a command to a client with a short timeout. Returns result or empty."""
+    import sys
+    import queue as _queue
+    mod = sys.modules.get('__main__')
+    get_channel = getattr(mod, '_get_client_channel', None)
+    get_ws = getattr(mod, '_get_ws_channel', None)
+    if not get_channel or not get_ws:
+        return ""
+    channel_id = get_channel(client_name)
+    if not channel_id:
+        return ""
+    ch = get_ws(channel_id)
+    if ch is None:
+        return ""
+    import json as _json
+    counter = getattr(mod, '_next_request_id', None)
+    pending = getattr(mod, '_pending_responses', None)
+    if not counter or pending is None:
+        return ""
+    req_id = counter()
+    response_q = _queue.Queue()
+    pending[req_id] = response_q
+    ch.send(_json.dumps({"id": req_id, "cmd": command}))
+    try:
+        return response_q.get(timeout=timeout)
+    except _queue.Empty:
+        return ""
+    finally:
+        pending.pop(req_id, None)
 
 
-_bb_auto_start()
+def _bb_store_report(fault_id, report):
+    """Persist a fault report to the in-memory cache and local store."""
+    _bb_fault_reports[fault_id] = report
+    _init_store_path()
+    _store[f"fault:{fault_id}"] = json.dumps(report)
+    _save_store()
 
 
 # @zero on (string fault) = report fault (string comment)
@@ -240,16 +279,15 @@ def fn_report_fault__string(comment: str) -> str:
             report = json.loads(comment)
             fault_id = report.get("fault_id", "")
             if fault_id:
-                _bb_fault_reports[fault_id] = report
-                # also attach server moments from the same time window
-                with _bb_lock:
-                    report["server_moments"] = list(_bb_moments)
-                    if _bb_current_moment:
-                        report["server_moments"].append(_bb_current_moment)
-                _init_store_path()
-                _store[f"fault:{fault_id}"] = json.dumps(report)
-                _save_store()
-                print(f"[blackbox] fault received: {fault_id}")
+                # attach server moments from the same time window
+                report["server_moments"] = _bb_snapshot_server_moments()
+                # collect buffers from all other connected devices
+                report["device_buffers"] = _bb_collect_other_devices(
+                    fault_id, report.get("session", "")
+                )
+                _bb_store_report(fault_id, report)
+                print(f"[blackbox] fault received: {fault_id} "
+                      f"({len(report['device_buffers'])} other devices)")
                 return fault_id
         except json.JSONDecodeError:
             pass
@@ -257,22 +295,14 @@ def fn_report_fault__string(comment: str) -> str:
     # server-side fault report (not from client)
     import uuid
     fault_id = str(uuid.uuid4())[:8]
-    with _bb_lock:
-        moments = list(_bb_moments)
-        if _bb_current_moment:
-            _bb_current_moment["end_time"] = _bb_elapsed()
-            moments.append(_bb_current_moment)
     report = {
         "fault_id": fault_id,
         "session": _bb_session_id,
         "comment": comment,
-        "moments": moments,
+        "moments": _bb_snapshot_server_moments(),
         "reported_at": _bb_elapsed()
     }
-    _bb_fault_reports[fault_id] = report
-    _init_store_path()
-    _store[f"fault:{fault_id}"] = json.dumps(report)
-    _save_store()
+    _bb_store_report(fault_id, report)
     print(f"[blackbox] server fault reported: {fault_id}")
     return fault_id
 
@@ -662,6 +692,9 @@ def fn_handle_remote_request__string(command: str) -> str:
         return command[5:]
     if command == "connected clients ()":
         return ", ".join(_list_connected_clients()) or "none"
+    # blackbox fault upload via WebSocket (avoids URL length limits)
+    if command.startswith("bb:fault:"):
+        return fn_report_fault__string(command[9:])
     # evaluate as zero expression
     return fn_rpc_eval__string(command)
 
@@ -1836,7 +1869,7 @@ class User(NamedTuple):
     phone: str = ""
     role: str = ""
 
-# @zero on toggle login; website/login/login.zero.md:311
+# @zero on toggle login; website/login/login.zero.md:320
 def fn_toggle_login():
     session = fn_get_cookie__string("session")
     if session == "":
@@ -1844,7 +1877,7 @@ def fn_toggle_login():
     else:
         fn_logout_dialog()
 
-# @zero on login; website/login/login.zero.md:318
+# @zero on login; website/login/login.zero.md:327
 def fn_login():
     try:
         name = fn_input__string("name")
@@ -1861,22 +1894,22 @@ def fn_login():
         else:
             raise
 
-# @zero on logout dialog; website/login/login.zero.md:326
+# @zero on logout dialog; website/login/login.zero.md:335
 def fn_logout_dialog():
     choice = fn_choose__string_or__string("log out", "cancel")
     if choice == "log out":
         fn_clear_cookie__string("session")
         fn_reload_page()
 
-# @zero on unknown user (string name); website/login/login.zero.md:332
+# @zero on unknown user (string name); website/login/login.zero.md:341
 def fn_unknown_user__string(name: str):
     fn_show_message__string("unknown user")
 
-# @zero on invalid code (string code); website/login/login.zero.md:335
+# @zero on invalid code (string code); website/login/login.zero.md:344
 def fn_invalid_code__string(code: str):
     fn_show_message__string("invalid code")
 
-# @zero on (string code) = request login (string name); website/login/login.zero.md:338
+# @zero on (string code) = request login (string name); website/login/login.zero.md:347
 def fn_request_login__string(name: str) -> str:
     found = next((x for x in users_arr if x.name == name), type(users_arr[0])() if users_arr else None)
     if found.name != name:
@@ -1886,7 +1919,7 @@ def fn_request_login__string(name: str) -> str:
     pending_codes_arr[found.phone] = code
     return code
 
-# @zero on (User result) = verify login (string name) with code (string code); website/login/login.zero.md:346
+# @zero on (User result) = verify login (string name) with code (string code); website/login/login.zero.md:355
 def fn_verify_login__string_with_code__string(name: str, code: str) -> User:
     found = next((x for x in users_arr if x.name == name), type(users_arr[0])() if users_arr else None)
     stored = pending_codes_arr[found.phone]
@@ -1896,13 +1929,13 @@ def fn_verify_login__string_with_code__string(name: str, code: str) -> User:
     result = found
     return result
 
-# @zero on (string token) = complete login (string name) with code (string code); website/login/login.zero.md:354
+# @zero on (string token) = complete login (string name) with code (string code); website/login/login.zero.md:363
 def fn_complete_login__string_with_code__string(name: str, code: str) -> str:
     found = fn_verify_login__string_with_code__string(name, code)
     token = fn_create_session__string(name)
     return token
 
-# @zero on (string code) = generate code (User u); website/login/login.zero.md:358
+# @zero on (string code) = generate code (User u); website/login/login.zero.md:367
 def fn_generate_code__User(u: User) -> str:
     code = None
     if u.name == "_alice":
@@ -1913,21 +1946,21 @@ def fn_generate_code__User(u: User) -> str:
         code = fn_random_digits__int(4)
     return code if code is not None else ""
 
-# @zero on logo clicked; website/login/login.zero.md:366
+# @zero on logo clicked; website/login/login.zero.md:375
 def fn_logo_clicked():
     fn_toggle_login()
 
-# @zero on check (string snapshot) contains (string expected); website/login/login.zero.md:369
+# @zero on check (string snapshot) contains (string expected); website/login/login.zero.md:378
 def fn_check__string_contains__string(snapshot: str, expected: str):
     found = fn__string_contains__string(snapshot, expected)
     if found == False:
         raise _ZeroRaise('check failed', ['expected'])
 
-# @zero on check failed (string what); website/login/login.zero.md:374
+# @zero on check failed (string what); website/login/login.zero.md:383
 def fn_check_failed__string(what: str):
     fn_print__string("FAIL: expected " + what)
 
-# @zero on test login; website/login/login.zero.md:377
+# @zero on test login; website/login/login.zero.md:386
 def fn_test_login():
     import threading as _th
     _orig_fn_input__string = globals().get('fn_input__string', fn_input__string)

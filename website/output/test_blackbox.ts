@@ -548,9 +548,6 @@ class _ZeroRaise extends Error {
     }
 }
 
-const users_arr: readonly User[] = [User({ name: "_alice", phone: "+440001", role: "admin" }), User({ name: "_bob", phone: "+440002", role: "user" }), User({ name: "ash", phone: "+447813943023", role: "admin" })];
-const pending_codes_arr: Map<string, string> = new Map();
-
 interface Http_Request {
     readonly path: string;
     readonly method: string;
@@ -580,142 +577,27 @@ export function User(args: Partial<User> = {}): User {
     return { name: args.name ?? "", phone: args.phone ?? "", role: args.role ?? "" };
 }
 
-// @zero on toggle login; website/login/login.zero.md:320
-export function fn_toggle_login(): void {
-    const session = fn_get_cookie__string("session");
-    if (session == "") {
-    fn_login();
-} else {
-    fn_logout_dialog();
-}
-}
-
-// @zero on login; website/login/login.zero.md:327
-export function fn_login(): void {
-    try {
-        const name = fn_input__string("name");
-        const code = fn_request_login__string(name);
-        const entered = fn_input__string("code");
-        const token = fn_complete_login__string_with_code__string(name, entered);
-        fn_set_cookie_of__string_to__string("session", token);
-        fn_reload_page();
-    } catch (_e) {
-        if (_e instanceof _ZeroRaise) {
-            if (_e.zeroName === 'unknown user') {
-                fn_unknown_user__string(_e.argsList[0]);
-            } else if (_e.zeroName === 'invalid code') {
-                fn_invalid_code__string(_e.argsList[0]);
-            } else { throw _e; }
-        } else { throw _e; }
-    }
-}
-
-// @zero on logout dialog; website/login/login.zero.md:335
-export function fn_logout_dialog(): void {
-    const choice = fn_choose__string_or__string("log out", "cancel");
-    if (choice == "log out") {
-    fn_clear_cookie__string("session");
-    fn_reload_page();
-}
-}
-
-// @zero on unknown user (string name); website/login/login.zero.md:341
-export function fn_unknown_user__string(name: string): void {
-    fn_show_message__string("unknown user");
-}
-
-// @zero on invalid code (string code); website/login/login.zero.md:344
-export function fn_invalid_code__string(code: string): void {
-    fn_show_message__string("invalid code");
-}
-
-// @zero on (string code) = request login (string name); website/login/login.zero.md:347
-export function fn_request_login__string(name: string): string {
-    let code: string = undefined!;
-    const found = users_arr.find(x => x.name == name)!;
-    if (found.name != name) {
-    throw new _ZeroRaise('unknown user', ['name']);
-}
-    code = fn_generate_code__User(found);
-    fn_send_sms__string_to__string("Your nøøb code: " + code, found.phone);
-    pending_codes_arr.set(found.phone, code);
-    return code;
-}
-
-// @zero on (User result) = verify login (string name) with code (string code); website/login/login.zero.md:355
-export function fn_verify_login__string_with_code__string(name: string, code: string): User {
-    let result: User = undefined!;
-    const found = users_arr.find(x => x.name == name)!;
-    const stored = pending_codes_arr.get(found.phone) ?? "";
-    if (found.name != name || stored != code || stored == "") {
-    throw new _ZeroRaise('invalid code', ['code']);
-}
-    pending_codes_arr.set(found.phone, "");
-    result = found;
-    return result;
-}
-
-// @zero on (string token) = complete login (string name) with code (string code); website/login/login.zero.md:363
-export function fn_complete_login__string_with_code__string(name: string, code: string): string {
-    const found = fn_verify_login__string_with_code__string(name, code);
-    const token: string = fn_create_session__string(name);
-    return token;
-}
-
-// @zero on (string code) = generate code (User u); website/login/login.zero.md:367
-export function fn_generate_code__User(u: User): string {
-    let code: string = undefined!;
-    if (u.name == "_alice") {
-    code = "1234";
-} else if (u.name == "_bob") {
-    code = "4321";
-} else {
-    code = fn_random_digits__int(4);
-}
-    return code;
-}
-
-// @zero on logo clicked; website/login/login.zero.md:375
-export function fn_logo_clicked(): void {
-    fn_toggle_login();
-}
-
-// @zero on check (string snapshot) contains (string expected); website/login/login.zero.md:378
-export function fn_check__string_contains__string(snapshot: string, expected: string): void {
-    const found = fn__string_contains__string(snapshot, expected);
+// @zero on bb check (string actual) contains (string expected); website/test-blackbox/test-blackbox.zero.md:400
+export function fn_bb_check__string_contains__string(actual: string, expected: string): void {
+    const found = fn__string_contains__string(actual, expected);
     if (found == false) {
-    throw new _ZeroRaise('check failed', ['expected']);
+    throw new _ZeroRaise('bb check failed', ['expected']);
 }
 }
 
-// @zero on check failed (string what); website/login/login.zero.md:383
-export function fn_check_failed__string(what: string): void {
+// @zero on bb check failed (string what); website/test-blackbox/test-blackbox.zero.md:405
+export function fn_bb_check_failed__string(what: string): void {
     fn_print__string("FAIL: expected " + what);
 }
 
-// @zero on test login; website/login/login.zero.md:386
-export function fn_test_login(): void {
-    const _orig_fn_input__string = fn_input__string;
-    const _patched = async function(_prompt: any) {
-        if (_prompt === 'name') {
-            setTimeout(async () => {
-                fn_type__string_into_input_box__string("_alice", "input");
-                fn_press__string_on__string("Enter", "input");
-            }, 500);
-        }
-        if (_prompt === 'code') {
-            setTimeout(async () => {
-                fn_type__string_into_input_box__string("1234", "input");
-                fn_press__string_on__string("Enter", "input");
-            }, 500);
-        }
-        return _orig_fn_input__string(_prompt);
-    };
-    (globalThis as any).fn_input__string = _patched;
-    try {
-        fn_login();
-        fn_check__string_contains__string(fn_describe_page(), "log out");
-    } finally {
-        (globalThis as any).fn_input__string = _orig_fn_input__string;
-    }
+// @zero on test blackbox; website/test-blackbox/test-blackbox.zero.md:408
+export function fn_test_blackbox(): void {
+    fn_click_on__string(".logo");
+    fn_press__string_on__string("Escape", "body");
+    const fault = fn_report_fault__string("test: logo did something weird");
+    fn_upload_pending_faults();
+    const data = fn_get_fault__string(fault);
+    fn_bb_check__string_contains__string(data, "fault_id");
+    fn_bb_check__string_contains__string(data, "moments");
+    fn_bb_check__string_contains__string(data, "test: logo did something weird");
 }

@@ -1,5 +1,3 @@
-from _runtime import register_tests
-
 # Platform implementation: blackbox (Python)
 # Implements the functions declared in blackbox.zero.md
 
@@ -1857,38 +1855,6 @@ class _ZeroRaise(Exception):
         self.args_list = args or []
         super().__init__(f"{name}({', '.join(str(a) for a in self.args_list)})")
 
-def test_rpc_0():
-    '''rpc eval ("port") => "8084"'''
-    _result = fn_rpc_eval__string("port")
-    _expected = "8084"
-    assert _result == _expected, f"expected {_expected}, got {_result}"
-
-def test_rpc_1():
-    '''rpc eval ("logo = hi") => "logo = hi"'''
-    _result = fn_rpc_eval__string("logo = hi")
-    _expected = "logo = hi"
-    assert _result == _expected, f"expected {_expected}, got {_result}"
-
-def test_rpc_2():
-    '''rpc eval ("not found ()") => "not found"'''
-    _result = fn_rpc_eval__string("not found ()")
-    _expected = "not found"
-    assert _result == _expected, f"expected {_expected}, got {_result}"
-
-def test_rpc_3():
-    '''rpc eval ("trim (\"  hello  \")") => "hello"'''
-    _result = fn_rpc_eval__string("trim (\"  hello  \")")
-    _expected = "hello"
-    assert _result == _expected, f"expected {_expected}, got {_result}"
-
-def test_rpc_4():
-    '''rpc eval ("length of (\"test\")") => "4"'''
-    _result = fn_rpc_eval__string("length of (\"test\")")
-    _expected = "4"
-    assert _result == _expected, f"expected {_expected}, got {_result}"
-
-register_tests('rpc', [(test_rpc_0, 'rpc eval ("port") => "8084"'), (test_rpc_1, 'rpc eval ("logo = hi") => "logo = hi"'), (test_rpc_2, 'rpc eval ("not found ()") => "not found"'), (test_rpc_3, 'rpc eval ("trim (\\"  hello  \\")") => "hello"'), (test_rpc_4, 'rpc eval ("length of (\\"test\\")") => "4"')])
-
 class Http_Request(NamedTuple):
     path: str = ""
     method: str = ""
@@ -1902,3 +1868,24 @@ class User(NamedTuple):
     name: str = ""
     phone: str = ""
     role: str = ""
+
+# @zero on bb check (string actual) contains (string expected); website/test-blackbox/test-blackbox.zero.md:400
+def fn_bb_check__string_contains__string(actual: str, expected: str):
+    found = fn__string_contains__string(actual, expected)
+    if found == False:
+        raise _ZeroRaise('bb check failed', ['expected'])
+
+# @zero on bb check failed (string what); website/test-blackbox/test-blackbox.zero.md:405
+def fn_bb_check_failed__string(what: str):
+    fn_print__string("FAIL: expected " + what)
+
+# @zero on test blackbox; website/test-blackbox/test-blackbox.zero.md:408
+def fn_test_blackbox():
+    fn_click_on__string(".logo")
+    fn_press__string_on__string("Escape", "body")
+    fault = fn_report_fault__string("test: logo did something weird")
+    fn_upload_pending_faults()
+    data = fn_get_fault__string(fault)
+    fn_bb_check__string_contains__string(data, "fault_id")
+    fn_bb_check__string_contains__string(data, "moments")
+    fn_bb_check__string_contains__string(data, "test: logo did something weird")

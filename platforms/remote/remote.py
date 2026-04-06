@@ -57,6 +57,9 @@ def fn_handle_remote_request__string(command: str) -> str:
         return command[5:]
     if command == "connected clients ()":
         return ", ".join(_list_connected_clients()) or "none"
+    # blackbox fault upload via WebSocket (avoids URL length limits)
+    if command.startswith("bb:fault:"):
+        return fn_report_fault__string(command[9:])
     # evaluate as zero expression
     return fn_rpc_eval__string(command)
 
