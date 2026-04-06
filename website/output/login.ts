@@ -279,6 +279,12 @@ export function fn__string_starts_with__string(s: string, prefix: string): boole
 }
 
 
+// @zero on (bool result) = (string s) contains (string substring)
+export function fn__string_contains__string(s: string, substring: string): boolean {
+    return s.includes(substring);
+}
+
+
 // @zero on (string result$) = split (string s) by (string delim)
 export function fn_split__string_by__string(s: string, delim: string): string[] {
     return s.split(delim);
@@ -407,7 +413,7 @@ export function User(args: Partial<User> = {}): User {
     return { name: args.name ?? "", phone: args.phone ?? "", role: args.role ?? "" };
 }
 
-// @zero on toggle login; website/login/login.zero.md:270
+// @zero on toggle login; website/login/login.zero.md:278
 export function fn_toggle_login(): void {
     const session = fn_get_cookie__string("session");
     if (session == "") {
@@ -417,7 +423,7 @@ export function fn_toggle_login(): void {
 }
 }
 
-// @zero on login; website/login/login.zero.md:277
+// @zero on login; website/login/login.zero.md:285
 export function fn_login(): void {
     try {
         const name = fn_input__string("name");
@@ -437,7 +443,7 @@ export function fn_login(): void {
     }
 }
 
-// @zero on logout dialog; website/login/login.zero.md:285
+// @zero on logout dialog; website/login/login.zero.md:293
 export function fn_logout_dialog(): void {
     const choice = fn_choose__string_or__string("log out", "cancel");
     if (choice == "log out") {
@@ -446,17 +452,17 @@ export function fn_logout_dialog(): void {
 }
 }
 
-// @zero on unknown user (string name); website/login/login.zero.md:291
+// @zero on unknown user (string name); website/login/login.zero.md:299
 export function fn_unknown_user__string(name: string): void {
     fn_show_message__string("unknown user");
 }
 
-// @zero on invalid code (string code); website/login/login.zero.md:294
+// @zero on invalid code (string code); website/login/login.zero.md:302
 export function fn_invalid_code__string(code: string): void {
     fn_show_message__string("invalid code");
 }
 
-// @zero on (string code) = request login (string name); website/login/login.zero.md:297
+// @zero on (string code) = request login (string name); website/login/login.zero.md:305
 export function fn_request_login__string(name: string): string {
     let code: string = undefined!;
     const found = users_arr.find(x => x.name == name)!;
@@ -469,7 +475,7 @@ export function fn_request_login__string(name: string): string {
     return code;
 }
 
-// @zero on (User result) = verify login (string name) with code (string code); website/login/login.zero.md:305
+// @zero on (User result) = verify login (string name) with code (string code); website/login/login.zero.md:313
 export function fn_verify_login__string_with_code__string(name: string, code: string): User {
     let result: User = undefined!;
     const found = users_arr.find(x => x.name == name)!;
@@ -482,14 +488,14 @@ export function fn_verify_login__string_with_code__string(name: string, code: st
     return result;
 }
 
-// @zero on (string token) = complete login (string name) with code (string code); website/login/login.zero.md:313
+// @zero on (string token) = complete login (string name) with code (string code); website/login/login.zero.md:321
 export function fn_complete_login__string_with_code__string(name: string, code: string): string {
     const found = fn_verify_login__string_with_code__string(name, code);
     const token: string = fn_create_session__string(name);
     return token;
 }
 
-// @zero on (string code) = generate code (User u); website/login/login.zero.md:317
+// @zero on (string code) = generate code (User u); website/login/login.zero.md:325
 export function fn_generate_code__User(u: User): string {
     let code: string = undefined!;
     if (u.name == "_alice") {
@@ -502,7 +508,46 @@ export function fn_generate_code__User(u: User): string {
     return code;
 }
 
-// @zero on logo clicked; website/login/login.zero.md:325
+// @zero on logo clicked; website/login/login.zero.md:333
 export function fn_logo_clicked(): void {
     fn_toggle_login();
+}
+
+// @zero on check (string snapshot) contains (string expected); website/login/login.zero.md:336
+export function fn_check__string_contains__string(snapshot: string, expected: string): void {
+    const found = fn__string_contains__string(snapshot, expected);
+    if (found == false) {
+    throw new _ZeroRaise('check failed', ['expected']);
+}
+}
+
+// @zero on check failed (string what); website/login/login.zero.md:341
+export function fn_check_failed__string(what: string): void {
+    fn_print__string("FAIL: expected " + what);
+}
+
+// @zero on check background of (string route) is (string expected); website/login/login.zero.md:344
+export function fn_check_background_of__string_is__string(route: string, expected: string): void {
+    const snapshot = fn_request__string_on__string("describe page ()", route);
+    fn_check__string_contains__string(snapshot, expected);
+}
+
+// @zero on do login (string name) with code (string code) on (string route); website/login/login.zero.md:348
+export function fn_do_login__string_with_code__string_on__string(name: string, code: string, route: string): void {
+    fn_request__string_on__string("click on (\".logo\")", route);
+    /* TODO: wait for input to appear */;
+    fn_request__string_on__string("type (\"" + name + "\") into (\"input\")", route);
+    fn_request__string_on__string("press (\"Enter\") on (\"input\")", route);
+    /* TODO: wait for code input to appear */;
+    fn_request__string_on__string("type (\"" + code + "\") into (\"input\")", route);
+    fn_request__string_on__string("press (\"Enter\") on (\"input\")", route);
+    /* TODO: wait for login to complete */;
+}
+
+// @zero on do logout on (string route); website/login/login.zero.md:358
+export function fn_do_logout_on__string(route: string): void {
+    fn_request__string_on__string("click on (\".logo\")", route);
+    /* TODO: wait for buttons to appear */;
+    fn_request__string_on__string("click on (\"button\")", route);
+    /* TODO: wait for reload to complete */;
 }

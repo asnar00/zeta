@@ -108,51 +108,38 @@ Wire login into the landing page — when the logo is clicked, start the login f
     on logo clicked ()
         toggle login ()
 
-## integration tests
+Check that a snapshot contains expected text, raise if not:
 
-Three browser tabs, three users, three background colours.
+    on check (string snapshot) contains (string expected)
+        bool found = (snapshot) contains (expected)
+        if (found == false)
+            raise check failed (expected)
 
-Open a default tab (no login). It should show the landing page with the default teal background (#34988b):
+    on check failed (string what)
+        print ("FAIL: expected " + what)
 
-    open tab "default"
-    navigate to "/"
-    check background colour is "#34988b"
+Check the background colour of a browser:
 
-Open a second tab. Click the logo, log in as _alice, set her background to red:
+    on check background of (string route) is (string expected)
+        string snapshot = request ("describe page ()") on (route)
+        check (snapshot) contains (expected)
 
-    open tab "alice"
-    navigate to "/"
-    click logo
-    type "_alice" into input
-    submit
-    type "1234" into input
-    submit
-    set background colour to "#ff0000"
-    check background colour is "#ff0000"
+Do the login flow on a browser via remote commands:
 
-Open a third tab. Click the logo, log in as _bob, set his background to blue:
+    on do login (string name) with code (string code) on (string route)
+        request ("click on (\".logo\")") on (route)
+        ... wait for input to appear
+        request ("type (\"" + name + "\") into (\"input\")") on (route)
+        request ("press (\"Enter\") on (\"input\")") on (route)
+        ... wait for code input to appear
+        request ("type (\"" + code + "\") into (\"input\")") on (route)
+        request ("press (\"Enter\") on (\"input\")") on (route)
+        ... wait for login to complete
 
-    open tab "bob"
-    navigate to "/"
-    click logo
-    type "_bob" into input
-    submit
-    type "4321" into input
-    submit
-    set background colour to "#0000ff"
-    check background colour is "#0000ff"
+Do the logout flow on a browser:
 
-Switch back to the default tab. It should still be teal:
-
-    switch to tab "default"
-    check background colour is "#34988b"
-
-Switch to alice's tab. It should still be red:
-
-    switch to tab "alice"
-    check background colour is "#ff0000"
-
-Switch to bob's tab. It should still be blue:
-
-    switch to tab "bob"
-    check background colour is "#0000ff"
+    on do logout on (string route)
+        request ("click on (\".logo\")") on (route)
+        ... wait for buttons to appear
+        request ("click on (\"button\")") on (route)
+        ... wait for reload to complete

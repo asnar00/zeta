@@ -1092,6 +1092,11 @@ def fn__string_starts_with__string(s: str, prefix: str) -> bool:
     return s.startswith(prefix)
 
 
+# @zero on (bool result) = (string s) contains (string substring)
+def fn__string_contains__string(s: str, substring: str) -> bool:
+    return substring in s
+
+
 # @zero on (string result$) = split (string s) by (string delim)
 def fn_split__string_by__string(s: str, delim: str) -> list[str]:
     return s.split(delim)
@@ -1380,7 +1385,7 @@ class User(NamedTuple):
     phone: str = ""
     role: str = ""
 
-# @zero on (string body) = not found; website/not-found/not-found.zero.md:267
+# @zero on (string body) = not found; website/not-found/not-found.zero.md:275
 def fn_not_found() -> str:
     body = "not found"
     return body

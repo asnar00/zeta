@@ -1092,6 +1092,11 @@ def fn__string_starts_with__string(s: str, prefix: str) -> bool:
     return s.startswith(prefix)
 
 
+# @zero on (bool result) = (string s) contains (string substring)
+def fn__string_contains__string(s: str, substring: str) -> bool:
+    return substring in s
+
+
 # @zero on (string result$) = split (string s) by (string delim)
 def fn_split__string_by__string(s: str, delim: str) -> list[str]:
     return s.split(delim)
@@ -1374,7 +1379,7 @@ class User(NamedTuple):
     phone: str = ""
     role: str = ""
 
-# @zero on (string body) = landing page; website/landing-page/landing-page.zero.md:328
+# @zero on (string body) = landing page; website/landing-page/landing-page.zero.md:364
 def fn_landing_page() -> str:
     body = fn_read_file__string("website/index.html")
     body = fn_replace__string_in__string_with__string("#34988b", body, _get_ctx().background.colour)

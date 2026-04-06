@@ -173,7 +173,7 @@ function fn_describe_page() {
     return lines.join("\n");
 }
 
-// @zero on toggle login; composed:270
+// @zero on toggle login; composed:278
 async function fn_toggle_login(){
     const session = await fn_get_cookie__string("session");
     if (session == "") {
@@ -183,7 +183,7 @@ async function fn_toggle_login(){
 }
 }
 
-// @zero on login; composed:277
+// @zero on login; composed:285
 async function fn_login(){
     try {
         const name = await fn_input__string("name");
@@ -203,7 +203,7 @@ async function fn_login(){
     }
 }
 
-// @zero on logout dialog; composed:285
+// @zero on logout dialog; composed:293
 async function fn_logout_dialog(){
     const choice = await fn_choose__string_or__string("log out", "cancel");
     if (choice == "log out") {
@@ -212,17 +212,17 @@ async function fn_logout_dialog(){
 }
 }
 
-// @zero on unknown user (string name); composed:291
+// @zero on unknown user (string name); composed:299
 async function fn_unknown_user__string(name){
     await fn_show_message__string("unknown user");
 }
 
-// @zero on invalid code (string code); composed:294
+// @zero on invalid code (string code); composed:302
 async function fn_invalid_code__string(code){
     await fn_show_message__string("invalid code");
 }
 
-// @zero on logo clicked; composed:325
+// @zero on logo clicked; composed:333
 async function fn_logo_clicked(){
     await fn_toggle_login();
 }

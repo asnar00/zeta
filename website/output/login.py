@@ -1089,6 +1089,11 @@ def fn__string_starts_with__string(s: str, prefix: str) -> bool:
     return s.startswith(prefix)
 
 
+# @zero on (bool result) = (string s) contains (string substring)
+def fn__string_contains__string(s: str, substring: str) -> bool:
+    return substring in s
+
+
 # @zero on (string result$) = split (string s) by (string delim)
 def fn_split__string_by__string(s: str, delim: str) -> list[str]:
     return s.split(delim)
@@ -1357,7 +1362,7 @@ class User(NamedTuple):
     phone: str = ""
     role: str = ""
 
-# @zero on toggle login; website/login/login.zero.md:270
+# @zero on toggle login; website/login/login.zero.md:278
 def fn_toggle_login():
     session = fn_get_cookie__string("session")
     if session == "":
@@ -1365,7 +1370,7 @@ def fn_toggle_login():
     else:
         fn_logout_dialog()
 
-# @zero on login; website/login/login.zero.md:277
+# @zero on login; website/login/login.zero.md:285
 def fn_login():
     try:
         name = fn_input__string("name")
@@ -1382,22 +1387,22 @@ def fn_login():
         else:
             raise
 
-# @zero on logout dialog; website/login/login.zero.md:285
+# @zero on logout dialog; website/login/login.zero.md:293
 def fn_logout_dialog():
     choice = fn_choose__string_or__string("log out", "cancel")
     if choice == "log out":
         fn_clear_cookie__string("session")
         fn_reload_page()
 
-# @zero on unknown user (string name); website/login/login.zero.md:291
+# @zero on unknown user (string name); website/login/login.zero.md:299
 def fn_unknown_user__string(name: str):
     fn_show_message__string("unknown user")
 
-# @zero on invalid code (string code); website/login/login.zero.md:294
+# @zero on invalid code (string code); website/login/login.zero.md:302
 def fn_invalid_code__string(code: str):
     fn_show_message__string("invalid code")
 
-# @zero on (string code) = request login (string name); website/login/login.zero.md:297
+# @zero on (string code) = request login (string name); website/login/login.zero.md:305
 def fn_request_login__string(name: str) -> str:
     found = next((x for x in users_arr if x.name == name), type(users_arr[0])() if users_arr else None)
     if found.name != name:
@@ -1407,7 +1412,7 @@ def fn_request_login__string(name: str) -> str:
     pending_codes_arr[found.phone] = code
     return code
 
-# @zero on (User result) = verify login (string name) with code (string code); website/login/login.zero.md:305
+# @zero on (User result) = verify login (string name) with code (string code); website/login/login.zero.md:313
 def fn_verify_login__string_with_code__string(name: str, code: str) -> User:
     found = next((x for x in users_arr if x.name == name), type(users_arr[0])() if users_arr else None)
     stored = pending_codes_arr[found.phone]
@@ -1417,13 +1422,13 @@ def fn_verify_login__string_with_code__string(name: str, code: str) -> User:
     result = found
     return result
 
-# @zero on (string token) = complete login (string name) with code (string code); website/login/login.zero.md:313
+# @zero on (string token) = complete login (string name) with code (string code); website/login/login.zero.md:321
 def fn_complete_login__string_with_code__string(name: str, code: str) -> str:
     found = fn_verify_login__string_with_code__string(name, code)
     token = fn_create_session__string(name)
     return token
 
-# @zero on (string code) = generate code (User u); website/login/login.zero.md:317
+# @zero on (string code) = generate code (User u); website/login/login.zero.md:325
 def fn_generate_code__User(u: User) -> str:
     code = None
     if u.name == "_alice":
@@ -1434,9 +1439,42 @@ def fn_generate_code__User(u: User) -> str:
         code = fn_random_digits__int(4)
     return code if code is not None else ""
 
-# @zero on logo clicked; website/login/login.zero.md:325
+# @zero on logo clicked; website/login/login.zero.md:333
 def fn_logo_clicked():
     fn_toggle_login()
+
+# @zero on check (string snapshot) contains (string expected); website/login/login.zero.md:336
+def fn_check__string_contains__string(snapshot: str, expected: str):
+    found = fn__string_contains__string(snapshot, expected)
+    if found == False:
+        raise _ZeroRaise('check failed', ['expected'])
+
+# @zero on check failed (string what); website/login/login.zero.md:341
+def fn_check_failed__string(what: str):
+    fn_print__string("FAIL: expected " + what)
+
+# @zero on check background of (string route) is (string expected); website/login/login.zero.md:344
+def fn_check_background_of__string_is__string(route: str, expected: str):
+    snapshot = fn_request__string_on__string("describe page ()", route)
+    fn_check__string_contains__string(snapshot, expected)
+
+# @zero on do login (string name) with code (string code) on (string route); website/login/login.zero.md:348
+def fn_do_login__string_with_code__string_on__string(name: str, code: str, route: str):
+    fn_request__string_on__string("click on (\".logo\")", route)
+    pass  # TODO: wait for input to appear
+    fn_request__string_on__string("type (\"" + name + "\") into (\"input\")", route)
+    fn_request__string_on__string("press (\"Enter\") on (\"input\")", route)
+    pass  # TODO: wait for code input to appear
+    fn_request__string_on__string("type (\"" + code + "\") into (\"input\")", route)
+    fn_request__string_on__string("press (\"Enter\") on (\"input\")", route)
+    pass  # TODO: wait for login to complete
+
+# @zero on do logout on (string route); website/login/login.zero.md:358
+def fn_do_logout_on__string(route: str):
+    fn_request__string_on__string("click on (\".logo\")", route)
+    pass  # TODO: wait for buttons to appear
+    fn_request__string_on__string("click on (\"button\")", route)
+    pass  # TODO: wait for reload to complete
 
 users_arr: list[User] = [User(name="_alice", phone="+440001", role="admin"), User(name="_bob", phone="+440002", role="user"), User(name="ash", phone="+447813943023", role="admin")]
 pending_codes_arr: dict[str, str] = {}

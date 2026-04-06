@@ -30,6 +30,11 @@ def fn__string_starts_with__string(s: str, prefix: str) -> bool:
     return s.startswith(prefix)
 
 
+# @zero on (bool result) = (string s) contains (string substring)
+def fn__string_contains__string(s: str, substring: str) -> bool:
+    return substring in s
+
+
 # @zero on (string result$) = split (string s) by (string delim)
 def fn_split__string_by__string(s: str, delim: str) -> list[str]:
     return s.split(delim)

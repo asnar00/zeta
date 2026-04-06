@@ -28,6 +28,15 @@ Check if a string starts with a prefix:
     ("hello world") starts with ("hello") => true
     ("hello world") starts with ("world") => false
 
+Check if a string contains a substring:
+
+    on (bool result) = (string s) contains (string substring)
+
+    ("hello world") contains ("world") => true
+    ("hello world") contains ("xyz") => false
+    ("hello") contains ("hello") => true
+    ("hello") contains ("") => true
+
 Split a string by a delimiter:
 
     on (string result$) = split (string s) by (string delim)

@@ -34,6 +34,12 @@ function fn__string_starts_with__string(s: string, prefix: string): boolean {
 }
 
 
+// @zero on (bool result) = (string s) contains (string substring)
+function fn__string_contains__string(s: string, substring: string): boolean {
+    return s.includes(substring);
+}
+
+
 // @zero on (string result$) = split (string s) by (string delim)
 function fn_split__string_by__string(s: string, delim: string): string[] {
     return s.split(delim);

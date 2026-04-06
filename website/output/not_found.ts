@@ -282,6 +282,12 @@ export function fn__string_starts_with__string(s: string, prefix: string): boole
 }
 
 
+// @zero on (bool result) = (string s) contains (string substring)
+export function fn__string_contains__string(s: string, substring: string): boolean {
+    return s.includes(substring);
+}
+
+
 // @zero on (string result$) = split (string s) by (string delim)
 export function fn_split__string_by__string(s: string, delim: string): string[] {
     return s.split(delim);
@@ -430,7 +436,7 @@ export function User(args: Partial<User> = {}): User {
     return { name: args.name ?? "", phone: args.phone ?? "", role: args.role ?? "" };
 }
 
-// @zero on (string body) = not found; website/not-found/not-found.zero.md:267
+// @zero on (string body) = not found; website/not-found/not-found.zero.md:275
 export function fn_not_found(): string {
     const body: string = "not found";
     return body;

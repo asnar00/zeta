@@ -282,6 +282,12 @@ export function fn__string_starts_with__string(s: string, prefix: string): boole
 }
 
 
+// @zero on (bool result) = (string s) contains (string substring)
+export function fn__string_contains__string(s: string, substring: string): boolean {
+    return s.includes(substring);
+}
+
+
 // @zero on (string result$) = split (string s) by (string delim)
 export function fn_split__string_by__string(s: string, delim: string): string[] {
     return s.split(delim);
@@ -423,7 +429,7 @@ export function User(args: Partial<User> = {}): User {
     return { name: args.name ?? "", phone: args.phone ?? "", role: args.role ?? "" };
 }
 
-// @zero on (string body) = landing page; website/landing-page/landing-page.zero.md:328
+// @zero on (string body) = landing page; website/landing-page/landing-page.zero.md:364
 export function fn_landing_page(): string {
     let body: string = undefined!;
     body = fn_read_file__string("website/index.html");
