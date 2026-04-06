@@ -31,15 +31,34 @@ _enum_values = {}  # populated by emit(), maps value -> "type.value"
 # set of feature names that have per-user variables (for context access detection)
 _context_features = set()
 
+# set of emitted function names that are non-deterministic platform functions
+_nondeterministic_fn_names = set()
+
+# platform function name prefixes that are non-deterministic (return values from
+# the outside world: user input, randomness, time, network, sessions)
+_NONDETERMINISTIC_PREFIXES = {
+    "fn_input", "fn_random_digits", "fn_create_session",
+    "fn_get_cookie", "fn_choose",
+    "fn_connect_to", "fn_request__string_on",
+    "fn_receive_message_on",
+    "fn_every__number_do",
+}
+
 
 def _init_globals(ir: dict) -> dict:
     """Initialize module-level enum values and context features. Returns enums dict."""
-    global _enum_values, _context_features
+    global _enum_values, _context_features, _nondeterministic_fn_names
     _context_features = set()
+    _nondeterministic_fn_names = set()
     var_owners = ir.get("_var_owners", {})
     all_user = ir.get("_all_user_vars", [])
     for v in all_user:
         _context_features.add(var_owners.get(v["name"], "default"))
+    for fn in ir["functions"]:
+        if fn.get("_platform") and fn.get("result"):
+            name = _make_function_name(fn["signature_parts"])
+            if any(name.startswith(p) for p in _NONDETERMINISTIC_PREFIXES):
+                _nondeterministic_fn_names.add(name)
     enums = {t["name"]: t for t in ir["types"] if t["kind"] == "enum"}
     _enum_values = {}
     for ename, edata in enums.items():
@@ -152,9 +171,28 @@ def _walk_has_kind(stmts, kind):
     return False
 
 
+_BB_FALLBACK = """\
+# blackbox fallback (overridden when blackbox platform is loaded)
+def _bb_record_stream(_name, _iter):
+    return _iter
+def _bb_record_call(_name, _result):
+    return _result"""
+
+
+def _needs_bb_fallback(ir: dict) -> bool:
+    """Check if the emitted code will use blackbox recording functions."""
+    if ir.get("tasks"):
+        return True
+    if _nondeterministic_fn_names:
+        return True
+    return False
+
+
 def _emit_preamble(ir: dict) -> list[str]:
     """Emit imports and concurrently helper if needed."""
     sections = []
+    if _needs_bb_fallback(ir):
+        sections.append(_BB_FALLBACK)
     imports = _collect_imports(ir)
     if imports:
         sections.append("\n".join(imports))
@@ -797,10 +835,12 @@ def _emit_task_header(task: dict) -> tuple:
 
 
 def _emit_task_for_each(node: dict, uses: list, base_indent: str, extra_indent: str) -> list[str]:
-    """Emit a for_each block inside a task."""
+    """Emit a for_each block inside a task.
+    Wraps the iterator with _bb_record_stream for flight recording."""
     lines = []
     iter_expr = _emit_expr(node["iter"])
-    lines.append(f"{base_indent}{extra_indent}for {node['name']} in {iter_expr}:")
+    iter_name = iter_expr.replace("_arr", "$") if iter_expr.endswith("_arr") else iter_expr
+    lines.append(f"{base_indent}{extra_indent}for {node['name']} in _bb_record_stream({iter_name!r}, {iter_expr}):")
     loop_indent = base_indent + extra_indent + "    "
     for body_node in node["body"]:
         bk = body_node.get("kind", "")
@@ -818,17 +858,20 @@ def _emit_task_for_each(node: dict, uses: list, base_indent: str, extra_indent: 
 
 
 def _emit_task_consume(node: dict, base_indent: str) -> str:
-    """Emit a consume or consume_call loop header."""
+    """Emit a consume or consume_call loop header.
+    Wraps the iterator with _bb_record_stream for flight recording."""
     kind = node.get("kind")
     if kind == "consume":
         stream_name = node["stream"].replace("$", "_arr")
-        return f"{base_indent}for {node['name']} in {stream_name}:"
+        return f"{base_indent}for {node['name']} in _bb_record_stream({stream_name!r}, {stream_name}):"
     call = node["call"]
     if call.get("kind") == "task_call":
         call_fn = make_task_call_fn_name(call)
         args = ", ".join(a.replace("$", "_arr") for a in call["args"])
-        return f"{base_indent}for {node['name']} in {call_fn}({args}):"
-    return f"{base_indent}for {node['name']} in {_emit_expr(call)}:"
+        stream_label = call_fn
+        return f"{base_indent}for {node['name']} in _bb_record_stream({stream_label!r}, {call_fn}({args})):"
+    iter_expr = _emit_expr(call)
+    return f"{base_indent}for {node['name']} in _bb_record_stream(\"stream\", {iter_expr}):"
 
 
 def _is_task_inner_call(node: dict) -> bool:
@@ -1130,7 +1173,11 @@ def _emit_simple_expr(node: dict) -> str | None:
     if kind == "call":
         return f"{_safe(node['name'])}({', '.join(_emit_expr(a) for a in node['args'])})"
     if kind in ("fn_call", "array_fn_call"):
-        return f"{_make_function_name(node['signature_parts'])}({', '.join(_emit_expr(a) for a in node['args'])})"
+        fn_name = _make_function_name(node['signature_parts'])
+        call_expr = f"{fn_name}({', '.join(_emit_expr(a) for a in node['args'])})"
+        if fn_name in _nondeterministic_fn_names:
+            return f"_bb_record_call({fn_name!r}, {call_expr})"
+        return call_expr
     if kind == "task_call":
         return f"list({make_task_call_fn_name(node)}({', '.join(a.replace('$', '_arr') for a in node['args'])}))"
     if kind == "binop":

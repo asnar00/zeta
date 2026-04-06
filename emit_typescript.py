@@ -189,11 +189,19 @@ def _walk_has_kind(stmts, kind):
     return False
 
 
+_BB_FALLBACK_TS = """\
+// blackbox fallback (overridden when blackbox platform is loaded)
+function _bb_record_stream(_name: string, _iter: any): any { return _iter; }
+function _bb_record_call(_name: string, _result: any): any { return _result; }"""
+
+
 def emit(ir: dict) -> str:
     """Emit TypeScript source code from a zero IR dict."""
     _check_compatibility(ir)
     structs, enums = _init_globals_ts(ir)
     sections = []
+    if ir.get("tasks"):
+        sections.append(_BB_FALLBACK_TS)
     if _has_concurrently(ir):
         sections.append(_CONCURRENTLY_HELPER_TS)
     if ir.get("errors"):
@@ -853,11 +861,13 @@ def _emit_task_header_ts(task: dict) -> tuple:
 
 def _emit_task_for_each_ts(node: dict, structs: dict, uses: list, has_platform_streams: bool,
                            base_indent: str, extra_indent: str) -> list[str]:
-    """Emit a for_each block inside a task (TypeScript)."""
+    """Emit a for_each block inside a task (TypeScript).
+    Wraps the iterator with _bb_record_stream for flight recording."""
     lines = []
     iter_expr = _emit_expr(node["iter"], structs)
+    iter_name = iter_expr.replace("_arr", "$") if iter_expr.endswith("_arr") else iter_expr
     for_keyword = "for await" if has_platform_streams else "for"
-    lines.append(f"{base_indent}{extra_indent}{for_keyword} (const {node['name']} of {iter_expr}) {{")
+    lines.append(f'{base_indent}{extra_indent}{for_keyword} (const {node["name"]} of _bb_record_stream("{iter_name}", {iter_expr})) {{')
     loop_indent = base_indent + extra_indent + "    "
     for body_node in node["body"]:
         bk = body_node.get("kind", "")
@@ -878,18 +888,20 @@ def _emit_task_for_each_ts(node: dict, structs: dict, uses: list, has_platform_s
 
 
 def _emit_task_consume_ts(node: dict, structs: dict, base_indent: str) -> str:
-    """Emit a consume or consume_call loop header (TypeScript)."""
+    """Emit a consume or consume_call loop header (TypeScript).
+    Wraps the iterator with _bb_record_stream for flight recording."""
     kind = node.get("kind")
     if kind == "consume":
         stream_name = node["stream"].replace("$", "_arr")
-        return f"{base_indent}for (const {node['name']} of {stream_name}) {{"
+        return f'{base_indent}for (const {node["name"]} of _bb_record_stream("{stream_name}", {stream_name})) {{'
     call = node["call"]
     if call.get("kind") == "task_call":
         call_fn = make_task_call_fn_name(call)
         args = ", ".join(_coerce_task_arg(a, t, call) for a, t in
                          zip(call["args"], _task_call_param_types(call)))
-        return f"{base_indent}for (const {node['name']} of {call_fn}({args})) {{"
-    return f"{base_indent}for (const {node['name']} of {_emit_expr(call, structs)}) {{"
+        return f'{base_indent}for (const {node["name"]} of _bb_record_stream("{call_fn}", {call_fn}({args}))) {{'
+    iter_expr = _emit_expr(call, structs)
+    return f'{base_indent}for (const {node["name"]} of _bb_record_stream("stream", {iter_expr})) {{'
 
 
 def _emit_task_var_decl_ts(node: dict, structs: dict, base_indent: str, extra_indent: str) -> str:

@@ -602,3 +602,75 @@ Cloudflare caching bug: old client.js cached by CDN, new code invisible to users
 - `5b988af` Zero test function works: test login () runs on browser via WebSocket
 - `23f0b7d` Move all client platform code from zeta.py to platform files
 - `cd6a3ab` Test runtime moved to platform files, no hardcoded platform code in zeta.py
+
+---
+
+## 2026-04-06: blackbox — flight recorder for fault diagnosis
+
+### the problem
+
+A user with a patchy connection experiences a fault. By the time they're back online, the moment has passed. We need a way to capture what happened, hold it locally, and upload it when possible — with enough detail to replay the exact sequence of events on the server.
+
+### design session
+
+Started with a requirements conversation. The blackbox needs to:
+1. Record continuously to a local circular buffer (60-second rolling window)
+2. Divide time into 10-second "moments" — keyframe → actions → keyframe → actions
+3. Work on both client and server, across multiple devices
+4. On fault report: freeze buffer, attach user comment, upload when possible
+5. Support deterministic replay via build fingerprint + recorded stream values
+
+### the key insight: record non-deterministic streams
+
+In zero, all computation is deterministic. All non-determinism enters through streams — HTTP requests, user input, random values, clock reads. Therefore: **record every value that enters through a non-deterministic stream, and everything else can be recomputed**.
+
+This is much cleaner than hooking specific functions. The recording layer sits at the stream boundary: wherever the outside world pushes data into the system. First iteration hooked `_rpc` and `_client_eval` individually; refactored to instrument at the stream consumption level in the emitter.
+
+### implementation: minimal platform surface
+
+Split into thin OS primitives (7 functions: clock, timers, local key-value store) plus pure logic built on top. The primitives map to trivial implementations per target:
+
+- Python: `time.monotonic()`, `threading.Timer`, JSON file
+- Browser: `performance.now()`, `setInterval`, `localStorage`
+
+### emitter-level instrumentation
+
+Modified both emitters (`emit_python.py`, `emit_typescript.py`) to auto-instrument at two points:
+
+1. **Stream consumption** — every `for each` in a task wraps its iterator with `_bb_record_stream()`. This records every HTTP request, every terminal input line, every task-produced value.
+
+2. **Non-deterministic calls** — platform functions returning values from the outside world (`random digits`, `create session`, `input`, `connect to`) wrapped with `_bb_record_call()`. Uses an allow-list of non-deterministic prefixes, not a deny-list of deterministic ones.
+
+Both emitters include a no-op fallback that blackbox overrides when loaded. Standalone code works without blackbox.
+
+### client-side hooks
+
+`blackbox.client.js` hooks `_rpc()` (outgoing fetch calls) and `_client_eval()` (incoming WebSocket commands). Auto-starts on page load. Persists fault reports to `localStorage` for offline resilience.
+
+### testing
+
+20 unit tests for the platform primitives (clock, timers, store/retrieve, persistence).
+
+17 integration tests through Cloudflare HTTPS — the actual user experience:
+- Server starts, blackbox auto-starts recording
+- Browser opens, blackbox auto-starts on client
+- User actions (click, keypress) recorded via `_client_eval` hook
+- `report fault` freezes client buffer with user comment
+- `upload pending faults` sends to server
+- Server receives report, attaches its own server-side moments
+- `get fault` retrieves full report with client moments, server moments, actions, keyframes, correlations
+
+All 333+ tests passing (251 core + 65 TS + 20 blackbox primitives + 17 blackbox integration).
+
+### decisions
+
+- **Allow-list over deny-list** for non-deterministic functions. Safer: only explicitly identified non-deterministic calls get recorded. New deterministic platform functions are never accidentally recorded.
+- **Emitter instrumentation over runtime hooks.** The emitter knows the program structure. It wraps streams and non-deterministic calls at compile time, so every zero program gets recording for free without manual instrumentation.
+- **Retired `decisions.md`.** All decision content was already covered in the journal and architecture doc. One less file to maintain.
+
+### what's next
+
+- Build fingerprint: stamp feature tree + source hash + platform versions into compiled output
+- Replay harness: reconstruct build from fingerprint, feed recorded values back through
+- Multi-device collection: server gathers buffers from all participants in a fault
+- UI: "report fault" button in the client, comment dialog

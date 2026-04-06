@@ -289,6 +289,8 @@ Log messages route through the WebSocket for real-time streaming. A debugging to
 
 Minimal overhead when off (one condition check). Instant visibility when on. Per-user so production traffic is unaffected while debugging one user's session.
 
+**Relationship to blackbox:** Feature-granular logging is for *live* debug streaming (developer watches a user's session in real time). Blackbox is for *post-hoc* fault capture (user reports a problem, recording is uploaded later). They share the same `log()` call site — feature-granular logging streams it live, blackbox captures it silently in the ring buffer. Complementary, not competing.
+
 ## emitter deduplication (PARTIALLY RESOLVED)
 
 `emit_base.py` now contains shared logic: function naming, array refs, dispatch groups, underscore replacement, field collection. Both emitters import from it. Further deduplication possible but diminishing returns until a third emitter is added.

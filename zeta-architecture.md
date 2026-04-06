@@ -160,8 +160,88 @@ Platform-specific functions live in `platforms/`:
 
 - `io.zero.md` — declares `read file`, `write file`, `print`
 - `string.zero.md` — declares `trim`, `split at`
+- `blackbox.zero.md` — flight recorder (see below)
 
 Each has `.py` and `.ts` implementation files. Platform code is prepended to all feature output files. Platform functions are excluded from the cross-module map (they're available directly, not via imports).
+
+Platform directories can contain multiple file types:
+- `.zero.md` — interface declarations (prepended as zero source)
+- `.py` / `.ts` — server-side implementations (prepended to compiled output)
+- `.client.js` — browser-side implementations (assembled into client JS bundle)
+- `.main.py` / `.main.ts` — entry-point code (appended, not prepended)
+
+All files are auto-discovered by scanning `platforms/*/`.
+
+## blackbox (flight recorder)
+
+The blackbox platform provides fault diagnosis through continuous recording and replay.
+
+### principle
+
+All computation in zero is deterministic. All non-determinism enters through streams (HTTP requests, user input, random values, clock reads). The blackbox records every value that enters through a non-deterministic stream. Given the recorded stream values and the code fingerprint, the entire execution can be replayed deterministically.
+
+### architecture
+
+Each participant (client or server) runs its own ring buffer. The buffer holds a rolling 60-second window divided into 10-second *moments*:
+
+    state₀ → actions → state₁ → actions → ... → state₅ → actions
+
+Each moment opens with a **keyframe** (full serialized context state) followed by a sequence of timed **actions** (boundary-crossing function calls with correlation IDs, arguments, results, and elapsed time).
+
+### emitter instrumentation
+
+The emitters (`emit_python.py`, `emit_typescript.py`) auto-instrument at two points:
+
+1. **Stream consumption** — every `for each` loop in a task and every `consume_call` wraps its iterator with `_bb_record_stream(name, iterator)`. This records every value that enters from a non-deterministic stream (HTTP requests, terminal input, task-produced sequences).
+
+2. **Non-deterministic platform calls** — platform function calls that return values from the outside world (`random digits`, `create session`, `input`, `connect to`, etc.) are wrapped with `_bb_record_call(name, result)`. An allow-list (`_NONDETERMINISTIC_PREFIXES`) identifies these; deterministic platform functions (`trim`, `starts_with`, `length_of`) are never recorded.
+
+Both emitters include a no-op fallback (`_bb_record_stream` passes through, `_bb_record_call` passes through) that the blackbox platform overrides when loaded. Standalone code works without blackbox.
+
+### client-side hooks
+
+The browser client (`blackbox.client.js`) additionally hooks:
+- `_rpc()` — records every fetch-based RPC call to the server
+- `_client_eval()` — records every command received via WebSocket
+
+Auto-starts on page load, persists fault reports to `localStorage` for offline resilience.
+
+### fault report flow
+
+1. User hits "report fault", types a comment
+2. Client freezes its ring buffer, serialises it with the comment, persists to `localStorage`
+3. On connectivity, client uploads via `/@rpc/report fault (...)`
+4. Server receives the client report, attaches its own server-side moments from the same time window
+5. Bundled report stored server-side, retrievable via `get fault (id)`
+
+### platform surface
+
+The blackbox platform requires only 7 thin OS primitives:
+
+| Primitive | Python | Browser |
+|---|---|---|
+| `elapsed time ()` | `time.monotonic()` | `performance.now()` |
+| `every (ms) do (callback)` | `threading.Timer` | `setInterval` |
+| `cancel timer (id)` | `timer.cancel()` | `clearInterval` |
+| `store locally (key, value)` | JSON file | `localStorage` |
+| `retrieve locally (key)` | JSON file | `localStorage` |
+| `stored keys (prefix)` | JSON file | `localStorage` |
+| `remove locally (key)` | JSON file | `localStorage` |
+
+Everything else (buffer management, moment rotation, freezing, correlation, upload) is built on these primitives plus the existing `remote` and `runtime` platforms.
+
+### multi-device correlation
+
+Every action that crosses a component boundary is tagged with a correlation ID. When Alice's client sends an RPC, it logs `(t, send_rpc, correlation: "c7")`. The server logs `(t, recv_rpc, correlation: "s3")`. Correlation IDs stitch the distributed trace together after the fact, without requiring real-time synchronisation between devices.
+
+### replay (future)
+
+Given a fault package (N device buffers + fingerprints), replay:
+1. Look up build fingerprint → reconstruct exact code
+2. Spin up isolated replica with that build
+3. Inject keyframes as initial state
+4. Feed recorded stream values back through the system
+5. Verify state at moment boundaries — divergence pinpoints the bug
 
 ## self-hosting (ziz/)
 

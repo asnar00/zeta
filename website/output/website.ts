@@ -10,6 +10,144 @@ import * as landing_page from './landing_page.js';
 import './background.js';
 import * as background from './background.js';
 
+// Platform implementation: blackbox (TypeScript)
+// Implements the functions declared in blackbox.zero.md
+
+const _recording_start: number = performance.now();
+const _timers: Map<string, ReturnType<typeof setInterval>> = new Map();
+let _timer_counter: number = 0;
+const _store: Map<string, string> = new Map();
+const _STORAGE_PREFIX: string = "blackbox:";
+
+
+export function _is_browser(): boolean {
+    return typeof window !== "undefined" && typeof localStorage !== "undefined";
+}
+
+
+export function _load_store(): void {
+    if (!_is_browser()) return;
+    for (let i = 0; i < localStorage.length; i++) {
+        const raw_key = localStorage.key(i);
+        if (raw_key && raw_key.startsWith(_STORAGE_PREFIX)) {
+            const key = raw_key.slice(_STORAGE_PREFIX.length);
+            _store.set(key, localStorage.getItem(raw_key) ?? "");
+        }
+    }
+}
+
+
+export function _save_key(key: string, value: string): void {
+    if (_is_browser()) {
+        localStorage.setItem(_STORAGE_PREFIX + key, value);
+    }
+}
+
+
+export function _remove_key(key: string): void {
+    if (_is_browser()) {
+        localStorage.removeItem(_STORAGE_PREFIX + key);
+    }
+}
+
+
+_load_store();
+
+
+export function _bb_record_stream(stream_name: string, iterator: any): any {
+    if (iterator && typeof iterator[Symbol.asyncIterator] === "function") {
+        return (async function* () {
+            for await (const value of iterator) {
+                yield value;
+            }
+        })();
+    }
+    return (function* () {
+        for (const value of iterator) {
+            yield value;
+        }
+    })();
+}
+
+
+export function _bb_record_call(fn_name: string, result: any): any {
+    // record the return value of a non-deterministic call (placeholder)
+    return result;
+}
+
+
+// @zero on (number ms) = elapsed time ()
+export function fn_elapsed_time(): number {
+    return Math.round((performance.now() - _recording_start) * 10) / 10;
+}
+
+
+// @zero on (string timer) = every (number ms) do (string callback)
+export function fn_every__number_do__string(ms: number, callback: string): string {
+    _timer_counter++;
+    const timer_id = `timer-${_timer_counter}`;
+    const interval = setInterval(() => {
+        _resolve_and_call(callback);
+    }, ms);
+    _timers.set(timer_id, interval);
+    return timer_id;
+}
+
+
+export function _resolve_and_call(callback: string): void {
+    const fn_name = "fn_" + callback.replace(/ /g, "_").replace(/-/g, "_");
+    const fn = (globalThis as any)[fn_name];
+    if (typeof fn === "function") {
+        try {
+            fn();
+        } catch (_) {}
+    }
+}
+
+
+// @zero on cancel timer (string timer)
+export function fn_cancel_timer__string(timer_id: string): void {
+    const interval = _timers.get(timer_id);
+    if (interval !== undefined) {
+        clearInterval(interval);
+        _timers.delete(timer_id);
+    }
+}
+
+
+// @zero on store locally (string key, string value)
+export function fn_store_locally__string__string(key: string, value: string): void {
+    _store.set(key, value);
+    _save_key(key, value);
+}
+
+
+// @zero on (string value) = retrieve locally (string key)
+export function fn_retrieve_locally__string(key: string): string {
+    return _store.get(key) ?? "";
+}
+
+
+// @zero on (string result) = stored keys (string prefix)
+export function fn_stored_keys__string(prefix: string): string {
+    const matches: string[] = [];
+    for (const k of _store.keys()) {
+        if (k.startsWith(prefix)) {
+            matches.push(k);
+        }
+    }
+    matches.sort();
+    return matches.join(",");
+}
+
+
+// @zero on remove locally (string key)
+export function fn_remove_locally__string(key: string): void {
+    _store.delete(key);
+    _remove_key(key);
+}
+
+
 // Platform implementation: eval (TypeScript)
 // Implements the functions declared in eval.zero.md
 // Server-side stub — delegates to rpc eval
@@ -384,6 +522,10 @@ export function _get_ctx(): _Context {
 }
 
 
+// blackbox fallback (overridden when blackbox platform is loaded)
+export function _bb_record_stream(_name: string, _iter: any): any { return _iter; }
+export function _bb_record_call(_name: string, _result: any): any { return _result; }
+
 class _ZeroRaise extends Error {
     zeroName: string;
     argsList: any[];
@@ -710,20 +852,27 @@ export function test_website_44(): void {
 }
 
 export function test_website_45(): void {
+    // elapsed time () => 0
+    const _result = fn_elapsed_time();
+    const _expected = 0;
+    if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
+}
+
+export function test_website_46(): void {
     // handle request (Http-Request(path="/")) => "ᕦ(ツ)ᕤ"
     const _result = fn_handle_request__Http_Request(Http_Request({ path: "/" }));
     const _expected = "ᕦ(ツ)ᕤ";
     if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
 }
 
-export function test_website_46(): void {
+export function test_website_47(): void {
     // handle request (Http-Request(path="/nope")) => "ᕦ(ツ)ᕤ"
     const _result = fn_handle_request__Http_Request(Http_Request({ path: "/nope" }));
     const _expected = "ᕦ(ツ)ᕤ";
     if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
 }
 
-register_tests('website', [[test_website_0, 'trim ("  hello  ") => "hello"'], [test_website_1, 'trim ("already") => "already"'], [test_website_2, 'char (0) of ("hello") => "h"'], [test_website_3, 'char (4) of ("hello") => "o"'], [test_website_4, '("hello world") starts with ("hello") => true'], [test_website_5, '("hello world") starts with ("world") => false'], [test_website_6, '("hello world") contains ("world") => true'], [test_website_7, '("hello world") contains ("xyz") => false'], [test_website_8, '("hello") contains ("hello") => true'], [test_website_9, '("hello") contains ("") => true'], [test_website_10, 'split ("a/b/c") by ("/") => ["a", "b", "c"]'], [test_website_11, 'split ("hello") by ("/") => ["hello"]'], [test_website_12, 'length of ("hello") => 5'], [test_website_13, 'length of ("") => 0'], [test_website_14, 'replace ("world") in ("hello world") with ("zero") => "hello zero"'], [test_website_15, 'substring of ("hello world") from (6) => "world"'], [test_website_16, 'substring of ("abc") from (0) => "abc"'], [test_website_17, 'trim ("") => ""'], [test_website_18, 'trim ("  ") => ""'], [test_website_19, 'trim ("no spaces") => "no spaces"'], [test_website_20, 'trim ("  leading") => "leading"'], [test_website_21, 'trim ("trailing  ") => "trailing"'], [test_website_22, 'char (0) of ("a") => "a"'], [test_website_23, 'char (2) of ("abcde") => "c"'], [test_website_24, '("") starts with ("") => true'], [test_website_25, '("hello") starts with ("") => true'], [test_website_26, '("") starts with ("x") => false'], [test_website_27, '("abc") starts with ("abc") => true'], [test_website_28, '("abc") starts with ("abcd") => false'], [test_website_29, 'split ("one") by (",") => ["one"]'], [test_website_30, 'split ("a,b") by (",") => ["a", "b"]'], [test_website_31, 'split ("a,,b") by (",") => ["a", "", "b"]'], [test_website_32, 'length of ("") => 0'], [test_website_33, 'length of ("a") => 1'], [test_website_34, 'length of ("hello world") => 11'], [test_website_35, 'substring of ("hello") from (0) => "hello"'], [test_website_36, 'substring of ("hello") from (3) => "lo"'], [test_website_37, 'substring of ("hello") from (5) => ""'], [test_website_38, 'replace ("a") in ("aaa") with ("b") => "bbb"'], [test_website_39, 'replace ("xy") in ("no match") with ("z") => "no match"'], [test_website_40, 'replace ("") in ("hello") with ("x") => "xhxexlxlxox"'], [test_website_41, 'length of (random digits (1)) => 1'], [test_website_42, 'length of (random digits (4)) => 4'], [test_website_43, 'length of (random digits (10)) => 10'], [test_website_44, 'length of (create session ("test")) => 8'], [test_website_45, 'handle request (Http-Request(path="/")) => "ᕦ(ツ)ᕤ"'], [test_website_46, 'handle request (Http-Request(path="/nope")) => "ᕦ(ツ)ᕤ"']]);
+register_tests('website', [[test_website_0, 'trim ("  hello  ") => "hello"'], [test_website_1, 'trim ("already") => "already"'], [test_website_2, 'char (0) of ("hello") => "h"'], [test_website_3, 'char (4) of ("hello") => "o"'], [test_website_4, '("hello world") starts with ("hello") => true'], [test_website_5, '("hello world") starts with ("world") => false'], [test_website_6, '("hello world") contains ("world") => true'], [test_website_7, '("hello world") contains ("xyz") => false'], [test_website_8, '("hello") contains ("hello") => true'], [test_website_9, '("hello") contains ("") => true'], [test_website_10, 'split ("a/b/c") by ("/") => ["a", "b", "c"]'], [test_website_11, 'split ("hello") by ("/") => ["hello"]'], [test_website_12, 'length of ("hello") => 5'], [test_website_13, 'length of ("") => 0'], [test_website_14, 'replace ("world") in ("hello world") with ("zero") => "hello zero"'], [test_website_15, 'substring of ("hello world") from (6) => "world"'], [test_website_16, 'substring of ("abc") from (0) => "abc"'], [test_website_17, 'trim ("") => ""'], [test_website_18, 'trim ("  ") => ""'], [test_website_19, 'trim ("no spaces") => "no spaces"'], [test_website_20, 'trim ("  leading") => "leading"'], [test_website_21, 'trim ("trailing  ") => "trailing"'], [test_website_22, 'char (0) of ("a") => "a"'], [test_website_23, 'char (2) of ("abcde") => "c"'], [test_website_24, '("") starts with ("") => true'], [test_website_25, '("hello") starts with ("") => true'], [test_website_26, '("") starts with ("x") => false'], [test_website_27, '("abc") starts with ("abc") => true'], [test_website_28, '("abc") starts with ("abcd") => false'], [test_website_29, 'split ("one") by (",") => ["one"]'], [test_website_30, 'split ("a,b") by (",") => ["a", "b"]'], [test_website_31, 'split ("a,,b") by (",") => ["a", "", "b"]'], [test_website_32, 'length of ("") => 0'], [test_website_33, 'length of ("a") => 1'], [test_website_34, 'length of ("hello world") => 11'], [test_website_35, 'substring of ("hello") from (0) => "hello"'], [test_website_36, 'substring of ("hello") from (3) => "lo"'], [test_website_37, 'substring of ("hello") from (5) => ""'], [test_website_38, 'replace ("a") in ("aaa") with ("b") => "bbb"'], [test_website_39, 'replace ("xy") in ("no match") with ("z") => "no match"'], [test_website_40, 'replace ("") in ("hello") with ("x") => "xhxexlxlxox"'], [test_website_41, 'length of (random digits (1)) => 1'], [test_website_42, 'length of (random digits (4)) => 4'], [test_website_43, 'length of (random digits (10)) => 10'], [test_website_44, 'length of (create session ("test")) => 8'], [test_website_45, 'elapsed time () => 0'], [test_website_46, 'handle request (Http-Request(path="/")) => "ᕦ(ツ)ᕤ"'], [test_website_47, 'handle request (Http-Request(path="/nope")) => "ᕦ(ツ)ᕤ"']]);
 
 const port: number = 8084;
 const logo: string = "ᕦ(ツ)ᕤ";
@@ -757,18 +906,18 @@ export function User(args: Partial<User> = {}): User {
     return { name: args.name ?? "", phone: args.phone ?? "", role: args.role ?? "" };
 }
 
-// @zero on main (string args$); website/website.zero.md:256
+// @zero on main (string args$); website/website.zero.md:289
 export async function task_main__string(args_arr: readonly string[]): Promise<void> {
     _push_terminal_out(logo);
     const request_arr = task_serve_http__int(port);
-    for await (const request of request_arr) {
+    for await (const request of _bb_record_stream("request$", request_arr)) {
         _push_terminal_out(request.path);
         const body = fn_handle_request__Http_Request(request);
         _push_http_response(Http_Response({ request: request, body: body }));
     }
 }
 
-// @zero on (string body) = handle request (Http-Request request); website/website.zero.md:264
+// @zero on (string body) = handle request (Http-Request request); website/website.zero.md:297
 export function fn_handle_request__Http_Request(request: Http_Request): string {
     let body: string = undefined!;
     if (_get_ctx().landing_page.enabled && request.path == "/") {
@@ -786,7 +935,7 @@ export function fn_handle_request__Http_Request(request: Http_Request): string {
     return body;
 }
 
-// @zero on stop; website/website.zero.md:272
+// @zero on stop; website/website.zero.md:305
 export function fn_stop(): void {
     fn_print__string("stopping");
 }

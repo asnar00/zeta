@@ -1,3 +1,141 @@
+// Platform implementation: blackbox (TypeScript)
+// Implements the functions declared in blackbox.zero.md
+
+const _recording_start: number = performance.now();
+const _timers: Map<string, ReturnType<typeof setInterval>> = new Map();
+let _timer_counter: number = 0;
+const _store: Map<string, string> = new Map();
+const _STORAGE_PREFIX: string = "blackbox:";
+
+
+export function _is_browser(): boolean {
+    return typeof window !== "undefined" && typeof localStorage !== "undefined";
+}
+
+
+export function _load_store(): void {
+    if (!_is_browser()) return;
+    for (let i = 0; i < localStorage.length; i++) {
+        const raw_key = localStorage.key(i);
+        if (raw_key && raw_key.startsWith(_STORAGE_PREFIX)) {
+            const key = raw_key.slice(_STORAGE_PREFIX.length);
+            _store.set(key, localStorage.getItem(raw_key) ?? "");
+        }
+    }
+}
+
+
+export function _save_key(key: string, value: string): void {
+    if (_is_browser()) {
+        localStorage.setItem(_STORAGE_PREFIX + key, value);
+    }
+}
+
+
+export function _remove_key(key: string): void {
+    if (_is_browser()) {
+        localStorage.removeItem(_STORAGE_PREFIX + key);
+    }
+}
+
+
+_load_store();
+
+
+export function _bb_record_stream(stream_name: string, iterator: any): any {
+    if (iterator && typeof iterator[Symbol.asyncIterator] === "function") {
+        return (async function* () {
+            for await (const value of iterator) {
+                yield value;
+            }
+        })();
+    }
+    return (function* () {
+        for (const value of iterator) {
+            yield value;
+        }
+    })();
+}
+
+
+export function _bb_record_call(fn_name: string, result: any): any {
+    // record the return value of a non-deterministic call (placeholder)
+    return result;
+}
+
+
+// @zero on (number ms) = elapsed time ()
+export function fn_elapsed_time(): number {
+    return Math.round((performance.now() - _recording_start) * 10) / 10;
+}
+
+
+// @zero on (string timer) = every (number ms) do (string callback)
+export function fn_every__number_do__string(ms: number, callback: string): string {
+    _timer_counter++;
+    const timer_id = `timer-${_timer_counter}`;
+    const interval = setInterval(() => {
+        _resolve_and_call(callback);
+    }, ms);
+    _timers.set(timer_id, interval);
+    return timer_id;
+}
+
+
+export function _resolve_and_call(callback: string): void {
+    const fn_name = "fn_" + callback.replace(/ /g, "_").replace(/-/g, "_");
+    const fn = (globalThis as any)[fn_name];
+    if (typeof fn === "function") {
+        try {
+            fn();
+        } catch (_) {}
+    }
+}
+
+
+// @zero on cancel timer (string timer)
+export function fn_cancel_timer__string(timer_id: string): void {
+    const interval = _timers.get(timer_id);
+    if (interval !== undefined) {
+        clearInterval(interval);
+        _timers.delete(timer_id);
+    }
+}
+
+
+// @zero on store locally (string key, string value)
+export function fn_store_locally__string__string(key: string, value: string): void {
+    _store.set(key, value);
+    _save_key(key, value);
+}
+
+
+// @zero on (string value) = retrieve locally (string key)
+export function fn_retrieve_locally__string(key: string): string {
+    return _store.get(key) ?? "";
+}
+
+
+// @zero on (string result) = stored keys (string prefix)
+export function fn_stored_keys__string(prefix: string): string {
+    const matches: string[] = [];
+    for (const k of _store.keys()) {
+        if (k.startsWith(prefix)) {
+            matches.push(k);
+        }
+    }
+    matches.sort();
+    return matches.join(",");
+}
+
+
+// @zero on remove locally (string key)
+export function fn_remove_locally__string(key: string): void {
+    _store.delete(key);
+    _remove_key(key);
+}
+
+
 // Platform implementation: eval (TypeScript)
 // Implements the functions declared in eval.zero.md
 // Server-side stub — delegates to rpc eval
@@ -414,7 +552,7 @@ export function User(args: Partial<User> = {}): User {
     return { name: args.name ?? "", phone: args.phone ?? "", role: args.role ?? "" };
 }
 
-// @zero on toggle login; website/login/login.zero.md:278
+// @zero on toggle login; website/login/login.zero.md:311
 export function fn_toggle_login(): void {
     const session = fn_get_cookie__string("session");
     if (session == "") {
@@ -424,7 +562,7 @@ export function fn_toggle_login(): void {
 }
 }
 
-// @zero on login; website/login/login.zero.md:285
+// @zero on login; website/login/login.zero.md:318
 export function fn_login(): void {
     try {
         const name = fn_input__string("name");
@@ -444,7 +582,7 @@ export function fn_login(): void {
     }
 }
 
-// @zero on logout dialog; website/login/login.zero.md:293
+// @zero on logout dialog; website/login/login.zero.md:326
 export function fn_logout_dialog(): void {
     const choice = fn_choose__string_or__string("log out", "cancel");
     if (choice == "log out") {
@@ -453,17 +591,17 @@ export function fn_logout_dialog(): void {
 }
 }
 
-// @zero on unknown user (string name); website/login/login.zero.md:299
+// @zero on unknown user (string name); website/login/login.zero.md:332
 export function fn_unknown_user__string(name: string): void {
     fn_show_message__string("unknown user");
 }
 
-// @zero on invalid code (string code); website/login/login.zero.md:302
+// @zero on invalid code (string code); website/login/login.zero.md:335
 export function fn_invalid_code__string(code: string): void {
     fn_show_message__string("invalid code");
 }
 
-// @zero on (string code) = request login (string name); website/login/login.zero.md:305
+// @zero on (string code) = request login (string name); website/login/login.zero.md:338
 export function fn_request_login__string(name: string): string {
     let code: string = undefined!;
     const found = users_arr.find(x => x.name == name)!;
@@ -476,7 +614,7 @@ export function fn_request_login__string(name: string): string {
     return code;
 }
 
-// @zero on (User result) = verify login (string name) with code (string code); website/login/login.zero.md:313
+// @zero on (User result) = verify login (string name) with code (string code); website/login/login.zero.md:346
 export function fn_verify_login__string_with_code__string(name: string, code: string): User {
     let result: User = undefined!;
     const found = users_arr.find(x => x.name == name)!;
@@ -489,14 +627,14 @@ export function fn_verify_login__string_with_code__string(name: string, code: st
     return result;
 }
 
-// @zero on (string token) = complete login (string name) with code (string code); website/login/login.zero.md:321
+// @zero on (string token) = complete login (string name) with code (string code); website/login/login.zero.md:354
 export function fn_complete_login__string_with_code__string(name: string, code: string): string {
     const found = fn_verify_login__string_with_code__string(name, code);
     const token: string = fn_create_session__string(name);
     return token;
 }
 
-// @zero on (string code) = generate code (User u); website/login/login.zero.md:325
+// @zero on (string code) = generate code (User u); website/login/login.zero.md:358
 export function fn_generate_code__User(u: User): string {
     let code: string = undefined!;
     if (u.name == "_alice") {
@@ -509,12 +647,12 @@ export function fn_generate_code__User(u: User): string {
     return code;
 }
 
-// @zero on logo clicked; website/login/login.zero.md:333
+// @zero on logo clicked; website/login/login.zero.md:366
 export function fn_logo_clicked(): void {
     fn_toggle_login();
 }
 
-// @zero on check (string snapshot) contains (string expected); website/login/login.zero.md:336
+// @zero on check (string snapshot) contains (string expected); website/login/login.zero.md:369
 export function fn_check__string_contains__string(snapshot: string, expected: string): void {
     const found = fn__string_contains__string(snapshot, expected);
     if (found == false) {
@@ -522,12 +660,12 @@ export function fn_check__string_contains__string(snapshot: string, expected: st
 }
 }
 
-// @zero on check failed (string what); website/login/login.zero.md:341
+// @zero on check failed (string what); website/login/login.zero.md:374
 export function fn_check_failed__string(what: string): void {
     fn_print__string("FAIL: expected " + what);
 }
 
-// @zero on test login; website/login/login.zero.md:344
+// @zero on test login; website/login/login.zero.md:377
 export function fn_test_login(): void {
     const _orig_fn_input__string = fn_input__string;
     const _patched = async function(_prompt: any) {
