@@ -69,6 +69,10 @@ Upload any pending fault reports that were saved while offline:
 
     on upload pending faults ()
 
+Get the build fingerprint (hash, git commit, feature list) as JSON:
+
+    on (string fp) = build fingerprint ()
+
 Freeze the current buffer for multi-device collection. Called by the server on other clients when a fault is reported. Returns the frozen moments as JSON:
 
     on (string buffer) = freeze buffer (string fault-id)

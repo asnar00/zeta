@@ -19,7 +19,7 @@ Check that a string contains expected text, raise if not:
     on bb check failed (string what)
         print ("FAIL: expected " + what)
 
-Test the full blackbox flow — report a fault from the browser, upload it, and verify both client and server moments are in the report:
+Test the full blackbox flow — report a fault from the browser, upload it, and verify client moments, server moments, and build fingerprint are in the report:
 
     on test blackbox ()
         click on (".logo")
@@ -33,3 +33,6 @@ Test the full blackbox flow — report a fault from the browser, upload it, and 
         bb check (data) contains ("server_moments")
         bb check (data) contains ("keyframe")
         bb check (data) contains ("actions")
+        bb check (data) contains ("build_fingerprint")
+        bb check (data) contains ("hash")
+        bb check (data) contains ("git")

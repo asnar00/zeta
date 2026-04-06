@@ -695,7 +695,7 @@ document.addEventListener("DOMContentLoaded", () => {
     _connect_ws();
 });
 
-// @zero on toggle login; composed:320
+// @zero on toggle login; composed:323
 async function fn_toggle_login(){
     const session = await fn_get_cookie__string("session");
     if (session == "") {
@@ -705,7 +705,7 @@ async function fn_toggle_login(){
 }
 }
 
-// @zero on login; composed:327
+// @zero on login; composed:330
 async function fn_login(){
     try {
         const name = await fn_input__string("name");
@@ -725,7 +725,7 @@ async function fn_login(){
     }
 }
 
-// @zero on logout dialog; composed:335
+// @zero on logout dialog; composed:338
 async function fn_logout_dialog(){
     const choice = await fn_choose__string_or__string("log out", "cancel");
     if (choice == "log out") {
@@ -734,22 +734,22 @@ async function fn_logout_dialog(){
 }
 }
 
-// @zero on unknown user (string name); composed:341
+// @zero on unknown user (string name); composed:344
 async function fn_unknown_user__string(name){
     await fn_show_message__string("unknown user");
 }
 
-// @zero on invalid code (string code); composed:344
+// @zero on invalid code (string code); composed:347
 async function fn_invalid_code__string(code){
     await fn_show_message__string("invalid code");
 }
 
-// @zero on logo clicked; composed:375
+// @zero on logo clicked; composed:378
 async function fn_logo_clicked(){
     await fn_toggle_login();
 }
 
-// @zero on test login; composed:386
+// @zero on test login; composed:389
 async function fn_test_login(){
     const _orig_fn_input__string = fn_input__string;
     const _patched = async function(_prompt) {
@@ -776,7 +776,7 @@ async function fn_test_login(){
     }
 }
 
-// @zero on test blackbox; composed:408
+// @zero on test blackbox; composed:411
 async function fn_test_blackbox(){
     await fn_click_on__string(".logo");
     await fn_press__string_on__string("Escape", "body");
@@ -789,4 +789,7 @@ async function fn_test_blackbox(){
     await _rpc("bb check " + encodeURIComponent("(" + data + ")") + " contains " + encodeURIComponent("(" + "server_moments" + ")") + "");
     await _rpc("bb check " + encodeURIComponent("(" + data + ")") + " contains " + encodeURIComponent("(" + "keyframe" + ")") + "");
     await _rpc("bb check " + encodeURIComponent("(" + data + ")") + " contains " + encodeURIComponent("(" + "actions" + ")") + "");
+    await _rpc("bb check " + encodeURIComponent("(" + data + ")") + " contains " + encodeURIComponent("(" + "build_fingerprint" + ")") + "");
+    await _rpc("bb check " + encodeURIComponent("(" + data + ")") + " contains " + encodeURIComponent("(" + "hash" + ")") + "");
+    await _rpc("bb check " + encodeURIComponent("(" + data + ")") + " contains " + encodeURIComponent("(" + "git" + ")") + "");
 }

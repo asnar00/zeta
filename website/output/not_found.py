@@ -265,6 +265,15 @@ def _bb_request_with_timeout(command, client_name, timeout=3):
         pending.pop(req_id, None)
 
 
+def _bb_get_build_fingerprint():
+    """Read _BUILD_FINGERPRINT from the root module."""
+    import sys
+    mod = sys.modules.get('__main__')
+    if mod and hasattr(mod, '_BUILD_FINGERPRINT'):
+        return mod._BUILD_FINGERPRINT
+    return {}
+
+
 def _bb_store_report(fault_id, report):
     """Persist a fault report to the in-memory cache and local store."""
     _bb_fault_reports[fault_id] = report
@@ -282,7 +291,8 @@ def fn_report_fault__string(comment: str) -> str:
             report = json.loads(comment)
             fault_id = report.get("fault_id", "")
             if fault_id:
-                # attach server moments from the same time window
+                # attach build fingerprint and server moments
+                report["build_fingerprint"] = _bb_get_build_fingerprint()
                 report["server_moments"] = _bb_snapshot_server_moments()
                 # collect buffers from all other connected devices
                 report["device_buffers"] = _bb_collect_other_devices(
@@ -301,6 +311,7 @@ def fn_report_fault__string(comment: str) -> str:
     report = {
         "fault_id": fault_id,
         "session": _bb_session_id,
+        "build_fingerprint": _bb_get_build_fingerprint(),
         "comment": comment,
         "moments": _bb_snapshot_server_moments(),
         "reported_at": _bb_elapsed()
@@ -320,6 +331,14 @@ def fn_get_fault__string(fault_id: str) -> str:
     stored = _store.get(f"fault:{fault_id}", "")
     if stored:
         return stored
+    return ""
+
+
+# @zero on (string fp) = build fingerprint ()
+def fn_build_fingerprint() -> str:
+    fp = _bb_get_build_fingerprint()
+    if fp:
+        return json.dumps(fp)
     return ""
 
 
@@ -1892,7 +1911,7 @@ class User(NamedTuple):
     phone: str = ""
     role: str = ""
 
-# @zero on (string body) = not found; website/not-found/not-found.zero.md:317
+# @zero on (string body) = not found; website/not-found/not-found.zero.md:320
 def fn_not_found() -> str:
     body = "not found"
     return body

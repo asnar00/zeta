@@ -136,6 +136,12 @@ export function fn_remove_locally__string(key: string): void {
 }
 
 
+// @zero on (string fp) = build fingerprint ()
+export function fn_build_fingerprint(): string {
+    return JSON.stringify((globalThis as any)._BUILD_FINGERPRINT ?? {});
+}
+
+
 // @zero on upload pending faults ()
 export function fn_upload_pending_faults(): void {
     // client-side implementation is in blackbox.client.js

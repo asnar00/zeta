@@ -802,10 +802,62 @@ def _emit_feature_tree_const(tree_data, ext):
     return ""
 
 
+def _compute_build_fingerprint(per_feature, platform_prepend, feature_tree_data):
+    """Compute a build fingerprint from the composed source and platform code."""
+    import hashlib
+    h = hashlib.sha256()
+    # feature tree (order matters)
+    for name, summary, extends in (feature_tree_data or []):
+        h.update(f"{name}:{extends}\n".encode())
+    # composed zero source per feature
+    for feat_name in sorted(per_feature):
+        h.update(per_feature[feat_name].encode())
+    # platform implementation code
+    for ext in sorted(platform_prepend):
+        for code in platform_prepend[ext]:
+            h.update(code.encode())
+    # git commit if available
+    git_commit = _get_git_commit()
+    if git_commit:
+        h.update(git_commit.encode())
+    return h.hexdigest()[:16], git_commit or ""
+
+
+def _get_git_commit():
+    """Get the current git commit hash, or empty string if not in a repo."""
+    import subprocess
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            capture_output=True, text=True, timeout=5
+        )
+        if result.returncode == 0:
+            return result.stdout.strip()[:12]
+    except Exception:
+        pass
+    return ""
+
+
+def _emit_build_fingerprint(fingerprint, git_commit, feature_tree_data, ext):
+    """Emit the _BUILD_FINGERPRINT constant for the root module."""
+    tree_str = ",".join(f"{n}" for n, _, _ in (feature_tree_data or []))
+    if ext == ".py":
+        return (f'\n_BUILD_FINGERPRINT = {{"hash": "{fingerprint}", '
+                f'"git": "{git_commit}", "features": "{tree_str}"}}\n')
+    elif ext == ".ts":
+        return (f'\nconst _BUILD_FINGERPRINT: {{hash: string, git: string, features: string}} = '
+                f'{{"hash": "{fingerprint}", "git": "{git_commit}", "features": "{tree_str}"}};\n')
+    return ""
+
+
 def _emit_all_features(per_feature, ctx, input_paths,
                        platform_prepend, platform_append, output_dir,
                        feature_tree_data=None):
     """Emit per-feature output files for each target language."""
+    fingerprint, git_commit = _compute_build_fingerprint(
+        per_feature, platform_prepend, feature_tree_data
+    )
+    log.log(f"build fingerprint: {fingerprint} (git: {git_commit or 'none'})")
     for ext in _EMITTERS:
         emitter_module = __import__(_EMITTERS[ext])
         emit = emitter_module.emit
@@ -821,6 +873,9 @@ def _emit_all_features(per_feature, ctx, input_paths,
                 )
                 if feat_name == ctx["root_name"] and feature_tree_data:
                     code += _emit_feature_tree_const(feature_tree_data, ext)
+                    code += _emit_build_fingerprint(
+                        fingerprint, git_commit, feature_tree_data, ext
+                    )
                 safe_name = feat_name.replace("-", "_")
                 out_path = os.path.join(output_dir, f"{safe_name}{pext}")
                 with open(out_path, "w") as f:

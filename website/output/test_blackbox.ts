@@ -136,6 +136,12 @@ export function fn_remove_locally__string(key: string): void {
 }
 
 
+// @zero on (string fp) = build fingerprint ()
+export function fn_build_fingerprint(): string {
+    return JSON.stringify((globalThis as any)._BUILD_FINGERPRINT ?? {});
+}
+
+
 // @zero on upload pending faults ()
 export function fn_upload_pending_faults(): void {
     // client-side implementation is in blackbox.client.js
@@ -577,7 +583,7 @@ export function User(args: Partial<User> = {}): User {
     return { name: args.name ?? "", phone: args.phone ?? "", role: args.role ?? "" };
 }
 
-// @zero on bb check (string actual) contains (string expected); website/test-blackbox/test-blackbox.zero.md:400
+// @zero on bb check (string actual) contains (string expected); website/test-blackbox/test-blackbox.zero.md:403
 export function fn_bb_check__string_contains__string(actual: string, expected: string): void {
     const found = fn__string_contains__string(actual, expected);
     if (found == false) {
@@ -585,12 +591,12 @@ export function fn_bb_check__string_contains__string(actual: string, expected: s
 }
 }
 
-// @zero on bb check failed (string what); website/test-blackbox/test-blackbox.zero.md:405
+// @zero on bb check failed (string what); website/test-blackbox/test-blackbox.zero.md:408
 export function fn_bb_check_failed__string(what: string): void {
     fn_print__string("FAIL: expected " + what);
 }
 
-// @zero on test blackbox; website/test-blackbox/test-blackbox.zero.md:408
+// @zero on test blackbox; website/test-blackbox/test-blackbox.zero.md:411
 export function fn_test_blackbox(): void {
     fn_click_on__string(".logo");
     fn_press__string_on__string("Escape", "body");
@@ -603,4 +609,7 @@ export function fn_test_blackbox(): void {
     fn_bb_check__string_contains__string(data, "server_moments");
     fn_bb_check__string_contains__string(data, "keyframe");
     fn_bb_check__string_contains__string(data, "actions");
+    fn_bb_check__string_contains__string(data, "build_fingerprint");
+    fn_bb_check__string_contains__string(data, "hash");
+    fn_bb_check__string_contains__string(data, "git");
 }

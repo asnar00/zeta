@@ -262,6 +262,15 @@ def _bb_request_with_timeout(command, client_name, timeout=3):
         pending.pop(req_id, None)
 
 
+def _bb_get_build_fingerprint():
+    """Read _BUILD_FINGERPRINT from the root module."""
+    import sys
+    mod = sys.modules.get('__main__')
+    if mod and hasattr(mod, '_BUILD_FINGERPRINT'):
+        return mod._BUILD_FINGERPRINT
+    return {}
+
+
 def _bb_store_report(fault_id, report):
     """Persist a fault report to the in-memory cache and local store."""
     _bb_fault_reports[fault_id] = report
@@ -279,7 +288,8 @@ def fn_report_fault__string(comment: str) -> str:
             report = json.loads(comment)
             fault_id = report.get("fault_id", "")
             if fault_id:
-                # attach server moments from the same time window
+                # attach build fingerprint and server moments
+                report["build_fingerprint"] = _bb_get_build_fingerprint()
                 report["server_moments"] = _bb_snapshot_server_moments()
                 # collect buffers from all other connected devices
                 report["device_buffers"] = _bb_collect_other_devices(
@@ -298,6 +308,7 @@ def fn_report_fault__string(comment: str) -> str:
     report = {
         "fault_id": fault_id,
         "session": _bb_session_id,
+        "build_fingerprint": _bb_get_build_fingerprint(),
         "comment": comment,
         "moments": _bb_snapshot_server_moments(),
         "reported_at": _bb_elapsed()
@@ -317,6 +328,14 @@ def fn_get_fault__string(fault_id: str) -> str:
     stored = _store.get(f"fault:{fault_id}", "")
     if stored:
         return stored
+    return ""
+
+
+# @zero on (string fp) = build fingerprint ()
+def fn_build_fingerprint() -> str:
+    fp = _bb_get_build_fingerprint()
+    if fp:
+        return json.dumps(fp)
     return ""
 
 
@@ -1869,7 +1888,7 @@ class User(NamedTuple):
     phone: str = ""
     role: str = ""
 
-# @zero on toggle login; website/login/login.zero.md:320
+# @zero on toggle login; website/login/login.zero.md:323
 def fn_toggle_login():
     session = fn_get_cookie__string("session")
     if session == "":
@@ -1877,7 +1896,7 @@ def fn_toggle_login():
     else:
         fn_logout_dialog()
 
-# @zero on login; website/login/login.zero.md:327
+# @zero on login; website/login/login.zero.md:330
 def fn_login():
     try:
         name = fn_input__string("name")
@@ -1894,22 +1913,22 @@ def fn_login():
         else:
             raise
 
-# @zero on logout dialog; website/login/login.zero.md:335
+# @zero on logout dialog; website/login/login.zero.md:338
 def fn_logout_dialog():
     choice = fn_choose__string_or__string("log out", "cancel")
     if choice == "log out":
         fn_clear_cookie__string("session")
         fn_reload_page()
 
-# @zero on unknown user (string name); website/login/login.zero.md:341
+# @zero on unknown user (string name); website/login/login.zero.md:344
 def fn_unknown_user__string(name: str):
     fn_show_message__string("unknown user")
 
-# @zero on invalid code (string code); website/login/login.zero.md:344
+# @zero on invalid code (string code); website/login/login.zero.md:347
 def fn_invalid_code__string(code: str):
     fn_show_message__string("invalid code")
 
-# @zero on (string code) = request login (string name); website/login/login.zero.md:347
+# @zero on (string code) = request login (string name); website/login/login.zero.md:350
 def fn_request_login__string(name: str) -> str:
     found = next((x for x in users_arr if x.name == name), type(users_arr[0])() if users_arr else None)
     if found.name != name:
@@ -1919,7 +1938,7 @@ def fn_request_login__string(name: str) -> str:
     pending_codes_arr[found.phone] = code
     return code
 
-# @zero on (User result) = verify login (string name) with code (string code); website/login/login.zero.md:355
+# @zero on (User result) = verify login (string name) with code (string code); website/login/login.zero.md:358
 def fn_verify_login__string_with_code__string(name: str, code: str) -> User:
     found = next((x for x in users_arr if x.name == name), type(users_arr[0])() if users_arr else None)
     stored = pending_codes_arr[found.phone]
@@ -1929,13 +1948,13 @@ def fn_verify_login__string_with_code__string(name: str, code: str) -> User:
     result = found
     return result
 
-# @zero on (string token) = complete login (string name) with code (string code); website/login/login.zero.md:363
+# @zero on (string token) = complete login (string name) with code (string code); website/login/login.zero.md:366
 def fn_complete_login__string_with_code__string(name: str, code: str) -> str:
     found = fn_verify_login__string_with_code__string(name, code)
     token = fn_create_session__string(name)
     return token
 
-# @zero on (string code) = generate code (User u); website/login/login.zero.md:367
+# @zero on (string code) = generate code (User u); website/login/login.zero.md:370
 def fn_generate_code__User(u: User) -> str:
     code = None
     if u.name == "_alice":
@@ -1946,21 +1965,21 @@ def fn_generate_code__User(u: User) -> str:
         code = fn_random_digits__int(4)
     return code if code is not None else ""
 
-# @zero on logo clicked; website/login/login.zero.md:375
+# @zero on logo clicked; website/login/login.zero.md:378
 def fn_logo_clicked():
     fn_toggle_login()
 
-# @zero on check (string snapshot) contains (string expected); website/login/login.zero.md:378
+# @zero on check (string snapshot) contains (string expected); website/login/login.zero.md:381
 def fn_check__string_contains__string(snapshot: str, expected: str):
     found = fn__string_contains__string(snapshot, expected)
     if found == False:
         raise _ZeroRaise('check failed', ['expected'])
 
-# @zero on check failed (string what); website/login/login.zero.md:383
+# @zero on check failed (string what); website/login/login.zero.md:386
 def fn_check_failed__string(what: str):
     fn_print__string("FAIL: expected " + what)
 
-# @zero on test login; website/login/login.zero.md:386
+# @zero on test login; website/login/login.zero.md:389
 def fn_test_login():
     import threading as _th
     _orig_fn_input__string = globals().get('fn_input__string', fn_input__string)
