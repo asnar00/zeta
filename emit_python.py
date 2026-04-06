@@ -371,9 +371,20 @@ def _py_default_for_type(zero_type: str) -> str:
     return f"{_safe(zero_type)}()"
 
 
+_PY_RESERVED = {
+    "and", "as", "assert", "async", "await", "break", "class", "continue",
+    "def", "del", "elif", "else", "except", "finally", "for", "from",
+    "global", "if", "import", "in", "is", "lambda", "nonlocal", "not",
+    "or", "pass", "raise", "return", "try", "while", "with", "yield",
+}
+
+
 def _safe(name: str) -> str:
     """Convert a zero name to a Python-safe name."""
-    return name.replace("-", "_")
+    result = name.replace("-", "_")
+    if result in _PY_RESERVED:
+        result = result + "_"
+    return result
 
 
 def _safe_target(target: str) -> str:

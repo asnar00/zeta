@@ -309,9 +309,22 @@ def _ts_type(zero_type: str) -> str:
     return zero_type.replace("-", "_")
 
 
+_TS_RESERVED = {
+    "new", "class", "let", "const", "var", "for", "if", "else", "while",
+    "do", "switch", "case", "break", "continue", "return", "throw", "try",
+    "catch", "finally", "function", "this", "super", "import", "export",
+    "default", "typeof", "instanceof", "in", "of", "void", "delete",
+    "yield", "await", "async", "enum", "interface", "type", "implements",
+    "extends", "package", "private", "protected", "public", "static",
+}
+
+
 def _safe(name: str) -> str:
     """Convert a zero name to a TypeScript-safe name."""
-    return name.replace("-", "_")
+    result = name.replace("-", "_")
+    if result in _TS_RESERVED:
+        result = result + "_"
+    return result
 
 
 def _is_context_access_ts(object_name: str) -> bool:
@@ -867,7 +880,7 @@ def _emit_task_for_each_ts(node: dict, structs: dict, uses: list, has_platform_s
     iter_expr = _emit_expr(node["iter"], structs)
     iter_name = iter_expr.replace("_arr", "$") if iter_expr.endswith("_arr") else iter_expr
     for_keyword = "for await" if has_platform_streams else "for"
-    lines.append(f'{base_indent}{extra_indent}{for_keyword} (const {node["name"]} of _bb_record_stream("{iter_name}", {iter_expr})) {{')
+    lines.append(f'{base_indent}{extra_indent}{for_keyword} (const {_safe(node["name"])} of _bb_record_stream("{iter_name}", {iter_expr})) {{')
     loop_indent = base_indent + extra_indent + "    "
     for body_node in node["body"]:
         bk = body_node.get("kind", "")
@@ -893,20 +906,20 @@ def _emit_task_consume_ts(node: dict, structs: dict, base_indent: str) -> str:
     kind = node.get("kind")
     if kind == "consume":
         stream_name = node["stream"].replace("$", "_arr")
-        return f'{base_indent}for (const {node["name"]} of _bb_record_stream("{stream_name}", {stream_name})) {{'
+        return f'{base_indent}for (const {_safe(node["name"])} of _bb_record_stream("{stream_name}", {stream_name})) {{'
     call = node["call"]
     if call.get("kind") == "task_call":
         call_fn = make_task_call_fn_name(call)
         args = ", ".join(_coerce_task_arg(a, t, call) for a, t in
                          zip(call["args"], _task_call_param_types(call)))
-        return f'{base_indent}for (const {node["name"]} of _bb_record_stream("{call_fn}", {call_fn}({args}))) {{'
+        return f'{base_indent}for (const {_safe(node["name"])} of _bb_record_stream("{call_fn}", {call_fn}({args}))) {{'
     iter_expr = _emit_expr(call, structs)
-    return f'{base_indent}for (const {node["name"]} of _bb_record_stream("stream", {iter_expr})) {{'
+    return f'{base_indent}for (const {_safe(node["name"])} of _bb_record_stream("stream", {iter_expr})) {{'
 
 
 def _emit_task_var_decl_ts(node: dict, structs: dict, base_indent: str, extra_indent: str) -> str:
     """Emit a var_decl inside a task body (TypeScript)."""
-    name = node["name"] + "_arr" if node.get("array") else node["name"]
+    name = _safe(node["name"]) + "_arr" if node.get("array") else _safe(node["name"])
     val = node.get("value")
     if node.get("array") and isinstance(val, dict) and val.get("kind") == "task_call":
         call_fn = make_task_call_fn_name(val)
@@ -1178,9 +1191,10 @@ def _emit_stmt(node: dict, result_type: str, structs: dict, async_fns: set[str] 
         if "$[" in node["target"]:
             return _emit_assign_expr_ts(node, structs) + ";"
         value = _emit_expr(node["value"], structs)
+        safe_target = _safe(node['target'])
         if result_var and node["target"] == result_var:
-            return f"{node['target']} = {value};"
-        return f"const {node['target']}: {result_type} = {value};"
+            return f"{safe_target} = {value};"
+        return f"const {safe_target}: {result_type} = {value};"
     async_result = _emit_async_check(node, structs, async_fns)
     if async_result:
         return async_result
@@ -1364,7 +1378,7 @@ def _emit_string_build_ts(steps: list, structs: dict) -> str:
 
 def _emit_var_decl_expr_ts(node: dict, structs: dict) -> str:
     """Emit a var_decl expression."""
-    name = node["name"] + "_arr" if node.get("array") else node["name"]
+    name = _safe(node["name"]) + "_arr" if node.get("array") else _safe(node["name"])
     if node.get("array"):
         return _emit_var_decl_array_ts(name, node, structs)
     val = node.get("value")
