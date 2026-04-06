@@ -548,6 +548,106 @@ def _extract_fn_words(s):
     return s[:paren_pos].strip()
 
 
+def _try_match_call(mod, expr):
+    """Try to match expr against all known function signatures.
+    Handles method-style calls like (s) contains (sub)."""
+    sigs = _extract_zero_signatures(mod)
+    # also check child modules
+    for attr in dir(mod):
+        child = getattr(mod, attr, None)
+        if hasattr(child, '__name__') and hasattr(child, '__file__'):
+            sigs.update(_extract_zero_signatures(child))
+    for fn_attr, proto in sigs.items():
+        fn, args = _try_match_proto(expr, proto, fn_attr, mod)
+        if fn is not None:
+            return fn, args
+    return None, None
+
+
+def _try_match_proto(expr, proto, fn_attr, mod):
+    """Try to match an expression against a zero prototype string.
+    Returns (fn, args) or (None, None)."""
+    # parse prototype into word/param pattern
+    # e.g. "on (bool result) = (string s) contains (string substring)"
+    # becomes pattern: [("param",), ("word", "contains"), ("param",)]
+    import re
+    rhs = proto
+    # strip "on " prefix and result declaration
+    if rhs.startswith("on "):
+        rhs = rhs[3:]
+    result_match = re.match(r"\([^)]+\)\s*=\s*(.*)", rhs)
+    if result_match:
+        rhs = result_match.group(1).strip()
+    elif rhs.startswith("(") and "=" in rhs:
+        return None, None
+    pattern = []
+    remaining = rhs.strip()
+    while remaining:
+        remaining = remaining.strip()
+        if not remaining:
+            break
+        param_match = re.match(r"\(\w[\w\s-]*\s+\w[\w-]*\$?\)", remaining)
+        if param_match:
+            pattern.append(("param",))
+            remaining = remaining[param_match.end():]
+            continue
+        word_match = re.match(r"(\w[\w-]*)", remaining)
+        if word_match:
+            pattern.append(("word", word_match.group(1)))
+            remaining = remaining[word_match.end():]
+            continue
+        break
+    if not pattern:
+        return None, None
+    # try to match expr against this pattern
+    args = []
+    pos = 0
+    s = expr.strip()
+    for item in pattern:
+        while pos < len(s) and s[pos] == " ":
+            pos += 1
+        if pos >= len(s) and item[0] == "word":
+            return None, None
+        if item[0] == "word":
+            word = item[1]
+            if not s[pos:].startswith(word):
+                return None, None
+            end = pos + len(word)
+            if end < len(s) and s[end] not in " (":
+                return None, None
+            pos = end
+        elif item[0] == "param":
+            if pos >= len(s) or s[pos] != "(":
+                return None, None
+            depth = 1
+            start = pos + 1
+            pos += 1
+            while pos < len(s) and depth > 0:
+                if s[pos] == "(": depth += 1
+                elif s[pos] == ")": depth -= 1
+                pos += 1
+            inner = s[start:pos - 1].strip()
+            if inner.startswith('"') and inner.endswith('"'):
+                inner = inner[1:-1]
+            args.append(inner)
+    # check we consumed the whole expression
+    remaining = s[pos:].strip()
+    if remaining and remaining != "()":
+        return None, None
+    # find the function
+    fn = getattr(mod, fn_attr, None)
+    if fn is None:
+        for attr in dir(mod):
+            child = getattr(mod, attr, None)
+            if hasattr(child, '__name__') and hasattr(child, '__file__'):
+                fn = getattr(child, fn_attr, None)
+                if fn and callable(fn):
+                    break
+    if fn and callable(fn):
+        return fn, args
+    return None, None
+
+
 def _find_function(mod, fn_words, arg_count=0):
     """Find a compiled function in a module by its zero name words and argument count."""
     safe_prefix = "fn_" + fn_words.replace(" ", "_").replace("-", "_")
@@ -981,14 +1081,15 @@ def fn_rpc_eval__string(expr: str) -> str:
             return _format_value(val)
         return f"error: {name} not found"
 
-    # function call: fn name ("arg1") ("arg2")  or  fn name ()
-    fn_words = _extract_fn_words(expr)
-    args = _extract_args(expr)
-    fn = _find_function(mod, fn_words, len(args))
+    # function call — try signature matching first, then naive fn_words
+    fn, args = _try_match_call(mod, expr)
     if fn is None:
-        return f"error: function '{fn_words}' not found"
+        fn_words = _extract_fn_words(expr)
+        args = _extract_args(expr)
+        fn = _find_function(mod, fn_words, len(args))
+    if fn is None:
+        return f"error: function '{_extract_fn_words(expr)}' not found"
     try:
-        # pass args as strings — the compiled function handles its own types
         result = fn(*args)
         return _format_value(result)
     except Exception as e:
