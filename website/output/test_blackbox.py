@@ -1889,3 +1889,6 @@ def fn_test_blackbox():
     fn_bb_check__string_contains__string(data, "fault_id")
     fn_bb_check__string_contains__string(data, "moments")
     fn_bb_check__string_contains__string(data, "test: logo did something weird")
+    fn_bb_check__string_contains__string(data, "server_moments")
+    fn_bb_check__string_contains__string(data, "keyframe")
+    fn_bb_check__string_contains__string(data, "actions")

@@ -786,4 +786,7 @@ async function fn_test_blackbox(){
     await _rpc("bb check " + encodeURIComponent("(" + data + ")") + " contains " + encodeURIComponent("(" + "fault_id" + ")") + "");
     await _rpc("bb check " + encodeURIComponent("(" + data + ")") + " contains " + encodeURIComponent("(" + "moments" + ")") + "");
     await _rpc("bb check " + encodeURIComponent("(" + data + ")") + " contains " + encodeURIComponent("(" + "test: logo did something weird" + ")") + "");
+    await _rpc("bb check " + encodeURIComponent("(" + data + ")") + " contains " + encodeURIComponent("(" + "server_moments" + ")") + "");
+    await _rpc("bb check " + encodeURIComponent("(" + data + ")") + " contains " + encodeURIComponent("(" + "keyframe" + ")") + "");
+    await _rpc("bb check " + encodeURIComponent("(" + data + ")") + " contains " + encodeURIComponent("(" + "actions" + ")") + "");
 }
