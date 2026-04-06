@@ -528,8 +528,27 @@ export function fn_check_failed__string(what: string): void {
 
 // @zero on test login; website/login/login.zero.md:344
 export function fn_test_login(): void {
-    /* scoped hook (handled at function level) */;
-    /* scoped hook (handled at function level) */;
-    fn_login();
-    fn_check__string_contains__string(fn_describe_page(), "log out");
+    const _orig_fn_input__string = fn_input__string;
+    const _patched = async function(_prompt: any) {
+        if (_prompt === 'name') {
+            setTimeout(async () => {
+                fn_type__string_into__string("_alice", "input");
+                fn_press__string_on__string("Enter", "input");
+            }, 500);
+        }
+        if (_prompt === 'code') {
+            setTimeout(async () => {
+                fn_type__string_into__string("1234", "input");
+                fn_press__string_on__string("Enter", "input");
+            }, 500);
+        }
+        return _orig_fn_input__string(_prompt);
+    };
+    (globalThis as any).fn_input__string = _patched;
+    try {
+        fn_login();
+        fn_check__string_contains__string(fn_describe_page(), "log out");
+    } finally {
+        (globalThis as any).fn_input__string = _orig_fn_input__string;
+    }
 }

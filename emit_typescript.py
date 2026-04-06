@@ -1015,6 +1015,51 @@ def _emit_result_function_ts(fn, name, params, ret_type, result_var, prefix, str
     return "\n".join(lines)
 
 
+def _emit_function_with_hooks_ts(fn, name, params, prefix, structs, async_fns):
+    """Emit a TS function that contains scoped hooks."""
+    hooks = [s for s in fn["body"] if isinstance(s, dict) and s.get("kind") == "scoped_hook"]
+    stmts = [s for s in fn["body"] if not (isinstance(s, dict) and s.get("kind") == "scoped_hook")]
+
+    lines = [f"{prefix} {name}({params}): void {{"]
+
+    # collect hooks by hooked function
+    hooked_fns = {}
+    for h in hooks:
+        hook_fn = "fn_" + h["hook_fn"].replace(" ", "_").replace("-", "_") + "__string"
+        hooked_fns.setdefault(hook_fn, []).append(h)
+
+    # save originals and create patched versions
+    for hook_fn, hook_list in hooked_fns.items():
+        lines.append(f"    const _orig_{hook_fn} = {hook_fn};")
+        # build the patched function
+        lines.append(f"    const _patched = async function(_prompt: any) {{")
+        for h in hook_list:
+            args = h["hook_args"]
+            arg_check = f"_prompt === {repr(args[0])}" if args else "true"
+            body_lines = [_emit_expr(s, structs) for s in h["body"]]
+            lines.append(f"        if ({arg_check}) {{")
+            lines.append(f"            setTimeout(async () => {{")
+            for bl in body_lines:
+                lines.append(f"                {bl};")
+            lines.append(f"            }}, 500);")
+            lines.append(f"        }}")
+        lines.append(f"        return _orig_{hook_fn}(_prompt);")
+        lines.append(f"    }};")
+        lines.append(f"    (globalThis as any).{hook_fn} = _patched;")
+
+    # try/finally
+    lines.append(f"    try {{")
+    for stmt in stmts:
+        code = _emit_stmt(stmt, "void", structs, async_fns)
+        lines.append(f"        {code}")
+    lines.append(f"    }} finally {{")
+    for hook_fn in hooked_fns:
+        lines.append(f"        (globalThis as any).{hook_fn} = _orig_{hook_fn};")
+    lines.append(f"    }}")
+    lines.append("}")
+    return "\n".join(lines)
+
+
 def _build_fn_params_ts(fn: dict) -> str:
     """Build the parameter string for a function."""
     param_strs = []
@@ -1076,6 +1121,8 @@ def _emit_function(fn: dict, structs: dict, async_fns: set[str] = None, ir: dict
             result_var = result_var.replace("$", "_arr")
             ret_type = f"{ret_type}[]"
         return _emit_result_function_ts(fn, name, params, ret_type, result_var, prefix, structs, async_fns, handlers)
+    if any(isinstance(s, dict) and s.get("kind") == "scoped_hook" for s in fn["body"]):
+        return _emit_function_with_hooks_ts(fn, name, params, prefix, structs, async_fns)
     lines = [f"{prefix} {name}({params}): void {{"]
     body_lines = []
     for stmt in fn["body"]:

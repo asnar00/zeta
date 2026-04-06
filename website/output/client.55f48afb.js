@@ -229,10 +229,29 @@ async function fn_logo_clicked(){
 
 // @zero on test login; composed:344
 async function fn_test_login(){
-    /* scoped hook (handled at function level) */;
-    /* scoped hook (handled at function level) */;
-    await fn_login();
-    await _rpc("check " + encodeURIComponent("(" + fn_describe_page() + ")") + " contains " + encodeURIComponent("(" + "log out" + ")") + "");
+    const _orig_fn_input__string = fn_input__string;
+    const _patched = async function(_prompt) {
+        if (_prompt === 'name') {
+            setTimeout(async () => {
+                fn_type__string_into__string("_alice", "input");
+                fn_press__string_on__string("Enter", "input");
+            }, 500);
+        }
+        if (_prompt === 'code') {
+            setTimeout(async () => {
+                fn_type__string_into__string("1234", "input");
+                fn_press__string_on__string("Enter", "input");
+            }, 500);
+        }
+        return _orig_fn_input__string(_prompt);
+    };
+    (globalThis).fn_input__string = _patched;
+    try {
+        await fn_login();
+        await _rpc("check " + encodeURIComponent("(" + fn_describe_page() + ")") + " contains " + encodeURIComponent("(" + "log out" + ")") + "");
+    } finally {
+        (globalThis).fn_input__string = _orig_fn_input__string;
+    }
 }
 
 // expression evaluator — same algorithm as server-side rpc eval
