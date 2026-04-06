@@ -10,8 +10,7 @@ def _call_expr(desc):
     return desc
 
 def run_tests(names=None):
-    # first pass: run all tests, collect results
-    results = []  # (feature, desc, passed, error)
+    results = []
     for feat, tests in _test_registry.items():
         if names and feat not in names:
             continue
@@ -21,14 +20,10 @@ def run_tests(names=None):
                 results.append((feat, desc, True, None))
             except Exception as e:
                 results.append((feat, desc, False, str(e).split("\n")[0]))
-
-    # build set of passing call expressions
     passing_calls = set()
     for feat, desc, passed, err in results:
         if passed:
             passing_calls.add(_call_expr(desc))
-
-    # report with shadowing detection
     total_fail = 0
     current_feat = None
     passed = failed = overridden = 0

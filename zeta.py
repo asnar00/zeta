@@ -170,12 +170,13 @@ def _collect_platform_code(ext):
     with log.section("platform code"):
         for path in _list_platform_files(platform_ext):
             fname = os.path.basename(path)
+            content = _strip_shared_runtime(open(path).read())
             if fname.endswith(main_ext):
                 log.log(f"{fname} (append)")
-                append.append(open(path).read())
+                append.append(content)
             else:
                 log.log(f"{fname} (prepend)")
-                prepend.append(open(path).read())
+                prepend.append(content)
     return prepend, append
 
 
@@ -184,7 +185,7 @@ def _write_runtime(ir, ext, output_path):
     has_tests = bool(ir.get("tests"))
     if not has_tests:
         return False
-    runtime = _RUNTIME_PY if ext == ".py" else _RUNTIME_TS
+    runtime = _load_shared_runtime(ext)
     runtime_path = os.path.join(os.path.dirname(output_path) or ".", f"_runtime{ext}")
     with open(runtime_path, "w") as f:
         f.write(runtime)
@@ -258,101 +259,22 @@ def main():
     _write_and_compile(output, output_path, ext, input_paths)
 
 
-_RUNTIME_PY = '''\
-_test_registry = {}
 
-def register_tests(feature, tests):
-    _test_registry[feature] = tests
 
-def _call_expr(desc):
-    """Extract the call expression (LHS of =>) from a test description."""
-    if " => " in desc:
-        return desc[:desc.index(" => ")].strip()
-    return desc
+def _load_shared_runtime(ext):
+    """Load the shared test runtime code from platform files.
+    Extracts the section between @shared-runtime-start and @shared-runtime-end."""
+    suffix = '.py' if ext == '.py' else '.ts'
+    for path in _list_platform_files(suffix):
+        if 'runtime' in os.path.basename(path):
+            content = open(path).read()
+            start = content.find('# @shared-runtime-start' if ext == '.py' else '// @shared-runtime-start')
+            end = content.find('# @shared-runtime-end' if ext == '.py' else '// @shared-runtime-end')
+            if start >= 0 and end >= 0:
+                start = content.index("\n", start) + 1
+                return content[start:end]
+    return ''
 
-def run_tests(names=None):
-    # first pass: run all tests, collect results
-    results = []  # (feature, desc, passed, error)
-    for feat, tests in _test_registry.items():
-        if names and feat not in names:
-            continue
-        for fn, desc in tests:
-            try:
-                fn()
-                results.append((feat, desc, True, None))
-            except Exception as e:
-                results.append((feat, desc, False, str(e).split("\\n")[0]))
-
-    # build set of passing call expressions
-    passing_calls = set()
-    for feat, desc, passed, err in results:
-        if passed:
-            passing_calls.add(_call_expr(desc))
-
-    # report with shadowing detection
-    total_fail = 0
-    current_feat = None
-    passed = failed = overridden = 0
-    for feat, desc, ok, err in results:
-        if feat != current_feat:
-            if current_feat is not None:
-                _print_feat_summary(current_feat, passed, failed, overridden)
-            current_feat = feat
-            passed = failed = overridden = 0
-            print(f"{feat}:")
-        if ok:
-            passed += 1
-            print(f"  PASS {desc}")
-        elif _call_expr(desc) in passing_calls:
-            overridden += 1
-            print(f"  OVERRIDDEN {desc}")
-        else:
-            failed += 1
-            total_fail += 1
-            print(f"  FAIL {desc}: {err}")
-    if current_feat is not None:
-        _print_feat_summary(current_feat, passed, failed, overridden)
-    return total_fail
-
-def _print_feat_summary(feat, passed, failed, overridden):
-    parts = [f"{passed} passed"]
-    if failed:
-        parts.append(f"{failed} failed")
-    if overridden:
-        parts.append(f"{overridden} overridden")
-    print(f"{feat}: {', '.join(parts)}")
-'''
-
-_RUNTIME_TS = '''\
-export const _test_registry: Map<string, [() => void, string][]> = new Map();
-
-export function register_tests(feature: string, tests: [() => void, string][]): void {
-    _test_registry.set(feature, tests);
-}
-
-export function run_tests(names?: string[]): number {
-    let total = 0;
-    for (const [feat, tests] of _test_registry) {
-        if (names && names.length && !names.includes(feat)) continue;
-        console.log(`${feat}:`);
-        let passed = 0;
-        let failed = 0;
-        for (const [fn, desc] of tests) {
-            try {
-                fn();
-                passed++;
-                console.log(`  PASS ${desc}`);
-            } catch (e: any) {
-                failed++;
-                console.log(`  FAIL ${desc}: ${e.message}`);
-            }
-        }
-        console.log(`${feat}: ${passed} passed, ${failed} failed`);
-        total += failed;
-    }
-    return total;
-}
-'''
 
 
 def _main_entry_point(harness: str, has_tests: bool, ext: str) -> str:
@@ -572,18 +494,29 @@ def _load_platform_interface_code():
     return plat_code, client_fn_bases
 
 
+def _strip_shared_runtime(content):
+    """Remove @shared-runtime-start/end section from platform code."""
+    import re
+    return re.sub(
+        r'(?://|#) @shared-runtime-start\n.*?(?://|#) @shared-runtime-end\n?',
+        '', content, flags=re.DOTALL
+    )
+
+
 def _load_platform_implementations():
-    """Load platform implementation files, split into prepend and append groups."""
+    """Load platform implementation files, split into prepend and append groups.
+    Strips @shared-runtime sections (those go in _runtime files instead)."""
     prepend = {ext: [] for ext in _PLATFORM_EXT}
     append = {ext: [] for ext in _PLATFORM_EXT}
     for ext, pext in _PLATFORM_EXT.items():
         main_ext = ".main" + pext
         for path in _list_platform_files(pext):
             fname = os.path.basename(path)
+            content = _strip_shared_runtime(open(path).read())
             if fname.endswith(main_ext):
-                append[ext].append(open(path).read())
+                append[ext].append(content)
             else:
-                prepend[ext].append(open(path).read())
+                prepend[ext].append(content)
     return prepend, append
 
 
@@ -729,7 +662,7 @@ def _write_runtime_files(features_with_tests, output_dir):
     if not features_with_tests:
         return
     for ext in _PLATFORM_EXT:
-        runtime = _RUNTIME_PY if ext == ".py" else _RUNTIME_TS
+        runtime = _load_shared_runtime(ext)
         runtime_path = os.path.join(output_dir, f"_runtime{ext}")
         with open(runtime_path, "w") as f:
             f.write(runtime)
