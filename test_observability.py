@@ -1,12 +1,7 @@
 """Observability tests: route commands to browser clients via WebSocket.
 
-Tests that the server can:
-1. Associate WebSocket channels with user sessions
-2. Route commands to a specific user's browser
-3. Evaluate zero expressions on the client and return results
-
-Uses Playwright to open a browser with a session cookie (simulating a logged-in user).
-All network traffic goes through the real Cloudflare HTTPS URL.
+No Playwright. Uses Chrome with temporary profiles.
+All tests go through the real Cloudflare HTTPS URL.
 
 Usage: python3 test_observability.py [--headed]
 """
@@ -17,14 +12,27 @@ import time
 import os
 import signal
 import json
+import tempfile
+import shutil
 import urllib.request
 import urllib.parse
 
 BASE_URL = "https://test.xn--nb-lkaa.org"
 WS_URL = "wss://test.xn--nb-lkaa.org/@ws"
+CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+
+
+def kill_test_chromes():
+    """Kill any Chrome instances from previous test runs."""
+    try:
+        subprocess.run(["pkill", "-f", "Chrome.*user-data-dir=/"], capture_output=True)
+        time.sleep(1)
+    except Exception:
+        pass
 
 
 def build_and_start():
+    kill_test_chromes()
     subprocess.run(
         [sys.executable, "zeta.py", "website/features.md", "website/output/"],
         capture_output=True, text=True
@@ -63,18 +71,35 @@ def build_and_start():
     return None
 
 
+class Browser:
+    def __init__(self, headed=False):
+        self.tmpdir = tempfile.mkdtemp()
+        args = [CHROME, f"--user-data-dir={self.tmpdir}",
+                "--no-first-run", "--no-default-browser-check",
+                "--window-size=800,600"]
+        if not headed:
+            args.append("--headless=new")
+        args.append(f"{BASE_URL}/")
+        self.proc = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+    def close(self):
+        self.proc.terminate()
+        try:
+            self.proc.wait(timeout=3)
+        except subprocess.TimeoutExpired:
+            self.proc.kill()
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+
 def rpc(path):
-    """Make an RPC call via HTTP."""
     url = f"{BASE_URL}/@rpc/{urllib.parse.quote(path)}"
     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 Chrome/120"})
-    resp = urllib.request.urlopen(req, timeout=5)
-    return resp.read().decode().strip()
+    return urllib.request.urlopen(req, timeout=5).read().decode().strip()
 
 
-def ws_request(ws, command, to=None, timeout=10):
-    """Send a remote request via WebSocket."""
-    req_id = str(time.monotonic_ns())
-    msg = {"id": req_id, "cmd": command}
+def ws_request(ws, cmd, to=None, timeout=10):
+    rid = str(time.monotonic_ns())
+    msg = {"id": rid, "cmd": cmd}
     if to:
         msg["to"] = to
     ws.send(json.dumps(msg))
@@ -84,18 +109,31 @@ def ws_request(ws, command, to=None, timeout=10):
         try:
             data = ws.recv()
             resp = json.loads(data)
-            if resp.get("id") == req_id:
+            if resp.get("id") == rid:
                 return resp.get("result", "")
         except Exception:
             break
     return "error: timeout"
 
 
+def wait_for_guest(ws, known, timeout=15):
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        clients = ws_request(ws, "connected clients ()")
+        new = [c.strip() for c in clients.split(",")
+               if c.strip().startswith("guest-") and c.strip() not in known]
+        if new:
+            return new[0]
+        time.sleep(0.5)
+    return None
+
+
 def run_tests(headed=False):
     import websocket as ws_lib
-    from playwright.sync_api import sync_playwright
 
     results = []
+    browsers = []
+    known = set()
 
     def check(name, actual, expected):
         ok = actual == expected
@@ -109,50 +147,54 @@ def run_tests(headed=False):
     def check_contains(name, haystack, needle):
         ok = needle in haystack
         results.append((name, ok))
-        print(f"  {'PASS' if ok else 'FAIL'}: {name}" + (f" ({needle!r} not in {haystack[:80]!r}...)" if not ok else ""))
+        print(f"  {'PASS' if ok else 'FAIL'}: {name}" + (f" ({needle!r} not in ...)" if not ok else ""))
 
-    # --- step 1: login _alice via RPC ---
-    print("setup:")
-    rpc('request login ("_alice")')
-    token = rpc('complete login ("_alice") with code ("1234")')
-    check_true("alice logged in", len(token) > 0 and token != "invalid")
+    try:
+        # login alice via RPC
+        print("setup:")
+        rpc('request login ("_alice")')
+        token = rpc('complete login ("_alice") with code ("1234")')
+        check_true("alice logged in", len(token) > 0 and token != "invalid")
 
-    # --- step 2: open browser with alice's session cookie ---
-    print("browser:")
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=not headed)
-        ctx = browser.new_context()
-        ctx.add_cookies([{
-            "name": "session",
-            "value": token,
-            "url": BASE_URL,
-        }])
-        page = ctx.new_page()
-        page.goto(f"{BASE_URL}/")
-        page.wait_for_load_state("networkidle")
-        # wait for client.js to connect WebSocket
-        time.sleep(3)
-        check_true("browser loaded", page.title() != "")
-
-        # --- step 3: connect test WebSocket ---
-        print("routing:")
+        # connect test WebSocket
         ws = ws_lib.create_connection(WS_URL, timeout=5)
-        ws.recv()  # our channel ID
+        first = ws.recv()
+        try:
+            known.add(json.loads(first).get("route", ""))
+        except Exception:
+            pass
 
-        # check alice is listed as connected
+        # open browser — need to set session cookie via a login URL redirect
+        # simpler: open browser, it connects as guest, we login via WS
+        print("browser:")
+        b = Browser(headed)
+        browsers.append(b)
+        guest = wait_for_guest(ws, known)
+        known.add(guest or "")
+        check_true("browser connected", guest is not None)
+
+        # login alice via WS on this browser
+        ws_request(ws, 'click on (".logo")', to=guest)
+        time.sleep(1)
+        ws_request(ws, 'type ("_alice") into ("input")', to=guest)
+        ws_request(ws, 'press ("Enter") on ("input")', to=guest)
+        time.sleep(3)
+        ws_request(ws, 'type ("1234") into ("input")', to=guest)
+        ws_request(ws, 'press ("Enter") on ("input")', to=guest)
+        time.sleep(5)
+
         clients = ws_request(ws, "connected clients ()")
         check_contains("alice connected", clients, "_alice")
 
-        # --- step 4: send command to alice's browser ---
+        # --- test observability ---
         print("client eval:")
         result = ws_request(ws, 'get cookie ("session")', to="_alice")
-        check("client eval: get cookie", result, token)
+        check("get cookie", result, token)
 
         result = ws_request(ws, "functions ()", to="_alice")
-        check_contains("client functions: has login", result, "login")
-        check_contains("client functions: has input", result, "input")
+        check_contains("functions: has login", result, "login")
+        check_contains("functions: has input", result, "input")
 
-        # --- step 5: describe page ---
         print("describe page:")
         snapshot = ws_request(ws, "describe page ()", to="_alice")
         check_contains("snapshot has viewport", snapshot, "viewport")
@@ -160,9 +202,11 @@ def run_tests(headed=False):
         check_contains("snapshot has logo", snapshot, "logo")
         check_contains("snapshot has teal bg", snapshot, "52, 152, 139")
 
-        # --- step 6: clean up ---
         ws.close()
-        browser.close()
+
+    finally:
+        for b in browsers:
+            b.close()
 
     passed = sum(1 for _, ok in results if ok)
     failed = sum(1 for _, ok in results if not ok)
@@ -183,10 +227,12 @@ if __name__ == "__main__":
         success = run_tests(headed)
     finally:
         print("\n=== stopping server ===")
-        server.terminate()
         try:
-            server.wait(timeout=3)
-        except subprocess.TimeoutExpired:
-            server.kill()
+            pids = subprocess.check_output(["lsof", "-ti", ":8084"], text=True).strip()
+            for pid in pids.split("\n"):
+                if pid:
+                    os.kill(int(pid), signal.SIGTERM)
+        except Exception:
+            pass
 
     sys.exit(0 if success else 1)

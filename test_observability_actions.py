@@ -1,9 +1,6 @@
 """Observability action tests: control the browser via WebSocket commands.
 
-Tests the full login flow using WebSocket commands to click, type, and
-press keys. Playwright only opens the browser — all interaction goes
-through the remote channel.
-
+No Playwright. Uses Chrome with temporary profiles.
 All tests go through the real Cloudflare HTTPS URL.
 
 Usage: python3 test_observability_actions.py [--headed]
@@ -15,14 +12,26 @@ import time
 import os
 import signal
 import json
+import tempfile
+import shutil
 import urllib.request
-import urllib.parse
 
 BASE_URL = "https://test.xn--nb-lkaa.org"
 WS_URL = "wss://test.xn--nb-lkaa.org/@ws"
+CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+
+
+def kill_test_chromes():
+    """Kill any Chrome instances from previous test runs."""
+    try:
+        subprocess.run(["pkill", "-f", "Chrome.*user-data-dir=/"], capture_output=True)
+        time.sleep(1)
+    except Exception:
+        pass
 
 
 def build_and_start():
+    kill_test_chromes()
     subprocess.run(
         [sys.executable, "zeta.py", "website/features.md", "website/output/"],
         capture_output=True, text=True
@@ -61,6 +70,26 @@ def build_and_start():
     return None
 
 
+class Browser:
+    def __init__(self, headed=False):
+        self.tmpdir = tempfile.mkdtemp()
+        args = [CHROME, f"--user-data-dir={self.tmpdir}",
+                "--no-first-run", "--no-default-browser-check",
+                "--window-size=800,600"]
+        if not headed:
+            args.append("--headless=new")
+        args.append(f"{BASE_URL}/")
+        self.proc = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+    def close(self):
+        self.proc.terminate()
+        try:
+            self.proc.wait(timeout=3)
+        except subprocess.TimeoutExpired:
+            self.proc.kill()
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+
 def ws_request(ws, cmd, to=None, timeout=10):
     rid = str(time.monotonic_ns())
     msg = {"id": rid, "cmd": cmd}
@@ -80,11 +109,24 @@ def ws_request(ws, cmd, to=None, timeout=10):
     return "error: timeout"
 
 
+def wait_for_guest(ws, known, timeout=15):
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        clients = ws_request(ws, "connected clients ()")
+        new = [c.strip() for c in clients.split(",")
+               if c.strip().startswith("guest-") and c.strip() not in known]
+        if new:
+            return new[0]
+        time.sleep(0.5)
+    return None
+
+
 def run_tests(headed=False):
     import websocket as ws_lib
-    from playwright.sync_api import sync_playwright
 
     results = []
+    browsers = []
+    known = set()
 
     def check(name, actual, expected):
         ok = actual == expected
@@ -100,73 +142,68 @@ def run_tests(headed=False):
         results.append((name, ok))
         print(f"  {'PASS' if ok else 'FAIL'}: {name}" + (f" ({needle!r} not in ...)" if not ok else ""))
 
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=not headed)
-
-        # --- open anonymous browser (no session) ---
-        print("anonymous browser:")
-        ctx = browser.new_context()
-        page = ctx.new_page()
-        page.goto(f"{BASE_URL}/")
-        page.wait_for_load_state("networkidle")
-        time.sleep(3)
-
-        # connect test WebSocket
+    try:
         ws = ws_lib.create_connection(WS_URL, timeout=5)
-        ws.recv()
+        first = ws.recv()
+        try:
+            known.add(json.loads(first).get("route", ""))
+        except Exception:
+            pass
 
-        # find the guest name assigned to the anonymous browser
-        clients = ws_request(ws, "connected clients ()")
-        guest_names = [c.strip() for c in clients.split(",") if c.strip().startswith("guest-")]
-        guest = guest_names[0] if guest_names else "guest-1"
-        check_true("guest connected", len(guest_names) > 0)
+        # --- open anonymous browser ---
+        print("anonymous browser:")
+        b = Browser(headed)
+        browsers.append(b)
+        guest = wait_for_guest(ws, known)
+        known.add(guest or "")
+        check_true("guest connected", guest is not None)
 
-        # describe initial page
         snapshot = ws_request(ws, "describe page ()", to=guest)
         check_contains("initial: has logo", snapshot, "logo")
         check_contains("initial: teal bg", snapshot, "52, 152, 139")
 
-        # --- click logo: should show login (no session) ---
+        # --- login flow via WS ---
         print("login flow via ws:")
         result = ws_request(ws, 'click on (".logo")', to=guest)
         check("click logo", result, "ok")
-        time.sleep(1)
 
-        snapshot = ws_request(ws, "describe page ()", to=guest)
+        # wait for input to appear (async login flow)
+        snapshot = ""
+        for _ in range(10):
+            time.sleep(1)
+            snapshot = ws_request(ws, "describe page ()", to=guest)
+            if "input" in snapshot:
+                break
         check_contains("name input appeared", snapshot, "input")
 
-        # type name
         result = ws_request(ws, 'type ("_alice") into ("input")', to=guest)
         check("type name", result, "ok")
 
-        # press Enter — triggers RPC to server
         result = ws_request(ws, 'press ("Enter") on ("input")', to=guest)
         check("press enter on name", result, "ok")
-        time.sleep(3)
 
-        # code input should appear
-        snapshot = ws_request(ws, "describe page ()", to=guest)
+        # wait for code input (after RPC completes)
+        snapshot = ""
+        for _ in range(10):
+            time.sleep(1)
+            snapshot = ws_request(ws, "describe page ()", to=guest)
+            if "input" in snapshot:
+                break
         check_contains("code input appeared", snapshot, "input")
 
-        # type code
         result = ws_request(ws, 'type ("1234") into ("input")', to=guest)
         check("type code", result, "ok")
 
-        # press Enter — triggers login, cookie set, page reload
         result = ws_request(ws, 'press ("Enter") on ("input")', to=guest)
         check("press enter on code", result, "ok")
         time.sleep(5)
 
-        # after reload, the client WS reconnects with the session cookie
-        # the channel is now associated with _alice, not anonymous
         clients = ws_request(ws, "connected clients ()")
         check_contains("alice connected after login", clients, "_alice")
 
-        # describe page as alice — should show logo, no input
         snapshot = ws_request(ws, "describe page ()", to="_alice")
         check_contains("logged in: has logo", snapshot, "logo")
 
-        # click logo as alice — should show logout buttons
         result = ws_request(ws, 'click on (".logo")', to="_alice")
         check("click logo (toggle)", result, "ok")
         time.sleep(1)
@@ -176,7 +213,10 @@ def run_tests(headed=False):
         check_contains("cancel button", snapshot, '"cancel"')
 
         ws.close()
-        browser.close()
+
+    finally:
+        for b in browsers:
+            b.close()
 
     passed = sum(1 for _, ok in results if ok)
     failed = sum(1 for _, ok in results if not ok)
@@ -197,10 +237,12 @@ if __name__ == "__main__":
         success = run_tests(headed)
     finally:
         print("\n=== stopping server ===")
-        server.terminate()
         try:
-            server.wait(timeout=3)
-        except subprocess.TimeoutExpired:
-            server.kill()
+            pids = subprocess.check_output(["lsof", "-ti", ":8084"], text=True).strip()
+            for pid in pids.split("\n"):
+                if pid:
+                    os.kill(int(pid), signal.SIGTERM)
+        except Exception:
+            pass
 
     sys.exit(0 if success else 1)

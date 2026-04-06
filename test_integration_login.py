@@ -4,9 +4,8 @@ Implements the test spec from website/login/login.zero.md ## integration tests:
 Three browser tabs, three users, three background colours.
 Also tests the toggle login / logout workflow.
 
-Playwright opens browser contexts. All interaction and assertions go
-through the WebSocket remote channel.
-
+No Playwright. Uses Chrome with temporary profiles for isolated cookie jars.
+All interaction and assertions go through the WebSocket remote channel.
 All tests go through the real Cloudflare HTTPS URL.
 
 Usage: python3 test_integration_login.py [--headed]
@@ -18,14 +17,28 @@ import time
 import os
 import signal
 import json
+import re
+import tempfile
+import shutil
 import urllib.request
 import urllib.parse
 
 BASE_URL = "https://test.xn--nb-lkaa.org"
 WS_URL = "wss://test.xn--nb-lkaa.org/@ws"
+CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+
+
+def kill_test_chromes():
+    """Kill any Chrome instances from previous test runs."""
+    try:
+        subprocess.run(["pkill", "-f", "Chrome.*user-data-dir=/"], capture_output=True)
+        time.sleep(1)
+    except Exception:
+        pass
 
 
 def build_and_start():
+    kill_test_chromes()
     subprocess.run(
         [sys.executable, "zeta.py", "website/features.md", "website/output/"],
         capture_output=True, text=True
@@ -64,10 +77,26 @@ def build_and_start():
     return None
 
 
-def rpc(path):
-    url = f"{BASE_URL}/@rpc/{urllib.parse.quote(path)}"
-    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 Chrome/120"})
-    return urllib.request.urlopen(req, timeout=5).read().decode().strip()
+class Browser:
+    """A Chrome instance with an isolated profile (separate cookie jar)."""
+    def __init__(self, headed=False):
+        self.tmpdir = tempfile.mkdtemp()
+        args = [CHROME, f"--user-data-dir={self.tmpdir}",
+                "--no-first-run", "--no-default-browser-check",
+                "--window-size=800,600"]
+        if not headed:
+            args.append("--headless=new")
+        args.append(f"{BASE_URL}/")
+        self.proc = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        self.guest_name = None
+
+    def close(self):
+        self.proc.terminate()
+        try:
+            self.proc.wait(timeout=3)
+        except subprocess.TimeoutExpired:
+            self.proc.kill()
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
 
 
 def ws_request(ws, cmd, to=None, timeout=10):
@@ -89,9 +118,26 @@ def ws_request(ws, cmd, to=None, timeout=10):
     return "error: timeout"
 
 
+def find_new_guests(ws, known):
+    """Find guest names not in known set."""
+    clients = ws_request(ws, "connected clients ()")
+    all_names = [c.strip() for c in clients.split(",") if c.strip()]
+    return [n for n in all_names if n.startswith("guest-") and n not in known]
+
+
+def wait_for_browser(ws, known, timeout=15):
+    """Wait for a new browser to connect and return its guest name."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        new = find_new_guests(ws, known)
+        if new:
+            return new[0]
+        time.sleep(0.5)
+    return None
+
+
 def get_bg(ws, route):
     """Get background colour as hex from a page snapshot."""
-    import re
     snapshot = ws_request(ws, "describe page ()", to=route)
     m = re.search(r"bg:rgb\((\d+),\s*(\d+),\s*(\d+)\)", snapshot)
     if m:
@@ -111,29 +157,8 @@ def set_bg(colour, token):
     urllib.request.urlopen(req, timeout=5)
 
 
-def find_new_guests(ws, known_guests):
-    """Find guest names that weren't in known_guests."""
-    clients = ws_request(ws, "connected clients ()")
-    all_names = [c.strip() for c in clients.split(",")]
-    return [n for n in all_names if n.startswith("guest-") and n not in known_guests]
-
-
-def open_tab(browser, ws, known_guests):
-    """Open a new browser tab and return (context, page, guest_name)."""
-    ctx = browser.new_context()
-    page = ctx.new_page()
-    page.goto(f"{BASE_URL}/")
-    page.wait_for_load_state("networkidle")
-    time.sleep(3)
-    new_guests = find_new_guests(ws, known_guests)
-    name = new_guests[0] if new_guests else None
-    if name:
-        known_guests.add(name)
-    return ctx, page, name
-
-
 def login_via_ws(ws, route, name, code):
-    """Login flow via WebSocket commands. Returns the user's route name after login."""
+    """Login flow via WebSocket commands."""
     ws_request(ws, 'click on (".logo")', to=route)
     time.sleep(1)
     ws_request(ws, f'type ("{name}") into ("input")', to=route)
@@ -142,15 +167,13 @@ def login_via_ws(ws, route, name, code):
     ws_request(ws, f'type ("{code}") into ("input")', to=route)
     ws_request(ws, 'press ("Enter") on ("input")', to=route)
     time.sleep(5)
-    # after login + reload, the route changes from guest-N to the user name
-    return name
 
 
 def run_tests(headed=False):
     import websocket as ws_lib
-    from playwright.sync_api import sync_playwright
 
     results = []
+    browsers = []
     known_guests = set()
 
     def check(name, actual, expected):
@@ -167,40 +190,43 @@ def run_tests(headed=False):
         results.append((name, ok))
         print(f"  {'PASS' if ok else 'FAIL'}: {name}" + (f" ({needle!r} not in ...)" if not ok else ""))
 
-    ws = ws_lib.create_connection(WS_URL, timeout=5)
-    first_msg = ws.recv()
     try:
-        info = json.loads(first_msg)
-        test_route = info.get("route", "")
-    except Exception:
-        test_route = ""
-    known_guests.add(test_route)  # exclude our own connection from guest discovery
+        # connect test WebSocket
+        ws = ws_lib.create_connection(WS_URL, timeout=5)
+        first_msg = ws.recv()
+        try:
+            info = json.loads(first_msg)
+            known_guests.add(info.get("route", ""))
+        except Exception:
+            pass
 
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=not headed)
-
-        # --- default tab: no login, teal ---
+        # --- default tab ---
         print("default tab:")
-        ctx_default, _, default_route = open_tab(browser, ws, known_guests)
-        check_true("default: has route", default_route is not None)
+        b_default = Browser(headed)
+        browsers.append(b_default)
+        default_route = wait_for_browser(ws, known_guests)
+        known_guests.add(default_route or "")
+        check_true("default: connected", default_route is not None)
         check("default: teal", get_bg(ws, default_route), "#34988b")
 
-        # --- alice: login, set red ---
+        # --- alice tab: login, set red ---
         print("alice tab:")
-        ctx_alice, _, alice_guest = open_tab(browser, ws, known_guests)
-        check_true("alice tab: has route", alice_guest is not None)
+        b_alice = Browser(headed)
+        browsers.append(b_alice)
+        alice_guest = wait_for_browser(ws, known_guests)
+        known_guests.add(alice_guest or "")
+        check_true("alice: connected", alice_guest is not None)
         login_via_ws(ws, alice_guest, "_alice", "1234")
-        # alice's route should now be "_alice"
         clients = ws_request(ws, "connected clients ()")
-        check_contains("alice connected", clients, "_alice")
+        check_contains("alice: logged in", clients, "_alice")
         alice_token = ws_request(ws, 'get cookie ("session")', to="_alice")
-        check_true("alice has token", len(alice_token) > 0 and alice_token != "error: timeout")
+        check_true("alice: has token", len(alice_token) > 0 and "error" not in alice_token)
         set_bg("#ff0000", alice_token)
         ws_request(ws, "reload page ()", to="_alice")
         time.sleep(3)
         check("alice: red", get_bg(ws, "_alice"), "#ff0000")
 
-        # --- alice toggle: logo shows logout ---
+        # --- alice toggle ---
         print("alice toggle:")
         ws_request(ws, 'click on (".logo")', to="_alice")
         time.sleep(1)
@@ -209,15 +235,18 @@ def run_tests(headed=False):
         ws_request(ws, "reload page ()", to="_alice")
         time.sleep(3)
 
-        # --- bob: login, set blue ---
+        # --- bob tab: login, set blue ---
         print("bob tab:")
-        ctx_bob, _, bob_guest = open_tab(browser, ws, known_guests)
-        check_true("bob tab: has route", bob_guest is not None)
+        b_bob = Browser(headed)
+        browsers.append(b_bob)
+        bob_guest = wait_for_browser(ws, known_guests)
+        known_guests.add(bob_guest or "")
+        check_true("bob: connected", bob_guest is not None)
         login_via_ws(ws, bob_guest, "_bob", "4321")
         clients = ws_request(ws, "connected clients ()")
-        check_contains("bob connected", clients, "_bob")
+        check_contains("bob: logged in", clients, "_bob")
         bob_token = ws_request(ws, 'get cookie ("session")', to="_bob")
-        check_true("bob has token", len(bob_token) > 0 and bob_token != "error: timeout")
+        check_true("bob: has token", len(bob_token) > 0 and "error" not in bob_token)
         set_bg("#0000ff", bob_token)
         ws_request(ws, "reload page ()", to="_bob")
         time.sleep(3)
@@ -234,23 +263,23 @@ def run_tests(headed=False):
         ws_request(ws, 'click on (".logo")', to="_alice")
         time.sleep(1)
         ws_request(ws, 'click on ("button")', to="_alice")
-        time.sleep(3)
-        # after logout + reload, alice's browser reconnects as a new guest
-        time.sleep(3)
+        time.sleep(5)
         new_guests = find_new_guests(ws, known_guests)
         alice_after = new_guests[0] if new_guests else None
         if alice_after:
             known_guests.add(alice_after)
-        check_true("alice: got new guest route", alice_after is not None)
+        check_true("alice: new guest after logout", alice_after is not None)
         if alice_after:
             check("alice: teal after logout", get_bg(ws, alice_after), "#34988b")
 
         # bob still blue
         check("bob: still blue", get_bg(ws, "_bob"), "#0000ff")
 
-        browser.close()
+        ws.close()
 
-    ws.close()
+    finally:
+        for b in browsers:
+            b.close()
 
     passed = sum(1 for _, ok in results if ok)
     failed = sum(1 for _, ok in results if not ok)
