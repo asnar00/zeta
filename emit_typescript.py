@@ -38,6 +38,9 @@ _rpc_targets_ts = set()
 # set of function names that are async in client context (gui platform functions)
 _client_async_fns_ts = set()
 
+# set of void task names (for task_ prefix in calls)
+_void_task_names_ts = set()
+
 
 _CONCURRENTLY_HELPER_TS = """\
 async function _concurrently(...fns: (() => any)[]) {
@@ -49,8 +52,12 @@ async function _concurrently(...fns: (() => any)[]) {
 
 def _init_globals_ts(ir: dict) -> tuple:
     """Initialize module-level state from IR. Returns (structs, enums)."""
-    global _enum_values, _context_features_ts, _map_vars_ts, _rpc_targets_ts, _client_async_fns_ts
+    global _enum_values, _context_features_ts, _map_vars_ts, _rpc_targets_ts, _client_async_fns_ts, _void_task_names_ts
     _context_features_ts = set()
+    _void_task_names_ts = set()
+    for task in ir.get("tasks", []):
+        if task.get("output") is None:
+            _void_task_names_ts.add("_".join(task["name_parts"]))
     var_owners = ir.get("_var_owners", {})
     all_user = ir.get("_all_user_vars", [])
     for v in all_user:
@@ -1450,6 +1457,8 @@ def _emit_call_expr_ts(node: dict, structs: dict) -> str:
     """Emit a call expression, handling struct constructors."""
     name = node["name"]
     safe_name = _safe(name)
+    if safe_name in _void_task_names_ts:
+        safe_name = "task_" + safe_name
     if name in structs:
         args = node["args"]
         parts = []
@@ -1666,6 +1675,10 @@ def _emit_simple_expr_ts(node: dict, structs: dict) -> str | None:
         fn_name = _make_function_name(node["signature_parts"])
         if fn_name in _rpc_targets_ts:
             return _emit_rpc_call(node, structs)
+        # check if this is a void task
+        base = fn_name[3:] if fn_name.startswith("fn_") else fn_name
+        if base in _void_task_names_ts:
+            fn_name = "task_" + base
         args = ", ".join(_emit_expr(a, structs) for a in node["args"])
         return f"{fn_name}({args})"
     if kind == "task_call":

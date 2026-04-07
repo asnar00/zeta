@@ -380,10 +380,95 @@ def process(source: str, recover: bool = False, source_file: str = None) -> dict
     errors = _process_lines(lines, ir, fn_signatures, task_signatures, _src_line, recover)
     if errors:
         ir["errors"] = errors
+    _propagate_taskness(ir)
     _mark_platform_streams(ir)
     _check_undefined_calls(ir)
     ir["features"] = _detect_features(ir)
     return ir
+
+
+def _propagate_taskness(ir):
+    """Promote functions to tasks if they call tasks.
+    A function that calls a task must itself be a task (tasks can wait, functions can't)."""
+    task_names = {" ".join(t["name_parts"]) for t in ir.get("tasks", [])}
+    if not task_names:
+        return
+    changed = True
+    while changed:
+        changed = False
+        promote = []
+        for fn in ir["functions"]:
+            if fn.get("abstract"):
+                continue
+            if _body_calls_task(fn.get("body", []), task_names):
+                promote.append(fn)
+        for fn in promote:
+            ir["functions"].remove(fn)
+            # convert function to void task
+            _, sig_parts = _parse_signature(" ".join(
+                p if not p.startswith("(") else p
+                for p in fn["signature_parts"]
+            ))
+            name_parts = [p for p in fn["signature_parts"]
+                          if not p.startswith("(") and not p.startswith("[")]
+            params = fn.get("params", [])
+            task = {
+                "name_parts": name_parts, "output": None,
+                "input_streams": [], "params": params,
+                "body": fn["body"], "source_line": fn.get("source_line", 0),
+            }
+            ir["tasks"].append(task)
+            task_names.add(" ".join(name_parts))
+            changed = True
+
+
+def _body_calls_task(body, task_names):
+    """Check if a function body contains calls to any known task."""
+    for node in body:
+        if not isinstance(node, dict):
+            continue
+        if _node_calls_task(node, task_names):
+            return True
+    return False
+
+
+def _node_calls_task(node, task_names):
+    """Recursively check if a node calls a task."""
+    if not isinstance(node, dict):
+        return False
+    kind = node.get("kind", "")
+    # check fn_call nodes — if the name matches a task
+    if kind in ("fn_call", "call"):
+        call_name = ""
+        if "signature_parts" in node:
+            call_name = " ".join(p for p in node["signature_parts"]
+                                 if not p.startswith("(") and not p.startswith("["))
+        elif "name" in node:
+            call_name = node["name"]
+        if call_name in task_names:
+            return True
+    # recurse into sub-expressions
+    for key in ("value", "condition", "left", "right", "true", "false"):
+        child = node.get(key)
+        if isinstance(child, dict) and _node_calls_task(child, task_names):
+            return True
+    for key in ("args", "body", "blocks"):
+        children = node.get(key, [])
+        if isinstance(children, list):
+            for child in children:
+                if isinstance(child, dict) and _node_calls_task(child, task_names):
+                    return True
+                if isinstance(child, list):
+                    for item in child:
+                        if isinstance(item, dict) and _node_calls_task(item, task_names):
+                            return True
+    # check branches (if/else)
+    for branch in node.get("branches", []):
+        if isinstance(branch, dict):
+            for child in branch.get("body", []):
+                if isinstance(child, dict) and _node_calls_task(child, task_names):
+                    return True
+    return False
 
 
 def parse_tests(test_pairs: list[dict], source: str) -> list[dict]:

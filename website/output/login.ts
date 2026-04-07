@@ -733,13 +733,26 @@ export async function task_logout_dialog(): Promise<void> {
 }
 
 // @zero on toggle login; website/login/login.zero.md:394
-export function fn_toggle_login(): void {
-    const session = cookie_arr["session"];
+export function task_toggle_login(): void {
+    let session = cookie_arr["session"];
     if (session == "") {
-    fn_login();
-} else {
-    fn_logout_dialog();
+        task_login();
+    } else {
+        task_logout_dialog();
+    }
 }
+
+// @zero on test login; website/login/login.zero.md:460
+export function task_test_login(): void {
+    /* scoped hook (handled at function level) */;
+    /* scoped hook (handled at function level) */;
+    task_login();
+    fn_check__string_contains__string(fn_describe_page(), "log out");
+}
+
+// @zero on logo clicked; website/login/login.zero.md:449
+export function task_logo_clicked(): void {
+    task_toggle_login();
 }
 
 // @zero on unknown user (string name); website/login/login.zero.md:415
@@ -798,11 +811,6 @@ export function fn_generate_code__User(u: User): string {
     return code;
 }
 
-// @zero on logo clicked; website/login/login.zero.md:449
-export function fn_logo_clicked(): void {
-    fn_toggle_login();
-}
-
 // @zero on check (string snapshot) contains (string expected); website/login/login.zero.md:452
 export function fn_check__string_contains__string(snapshot: string, expected: string): void {
     const found = fn__string_contains__string(snapshot, expected);
@@ -814,31 +822,4 @@ export function fn_check__string_contains__string(snapshot: string, expected: st
 // @zero on check failed (string what); website/login/login.zero.md:457
 export function fn_check_failed__string(what: string): void {
     fn_print__string("FAIL: expected " + what);
-}
-
-// @zero on test login; website/login/login.zero.md:460
-export function fn_test_login(): void {
-    const _orig_fn_input__string = fn_input__string;
-    const _patched = async function(_prompt: any) {
-        if (_prompt === 'name') {
-            setTimeout(async () => {
-                fn_type__string_into_input_box__string("_alice", "input");
-                fn_press__string_on__string("Enter", "input");
-            }, 500);
-        }
-        if (_prompt === 'code') {
-            setTimeout(async () => {
-                fn_type__string_into_input_box__string("1234", "input");
-                fn_press__string_on__string("Enter", "input");
-            }, 500);
-        }
-        return _orig_fn_input__string(_prompt);
-    };
-    (globalThis as any).fn_input__string = _patched;
-    try {
-        fn_login();
-        fn_check__string_contains__string(fn_describe_page(), "log out");
-    } finally {
-        (globalThis as any).fn_input__string = _orig_fn_input__string;
-    }
 }

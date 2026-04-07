@@ -37,13 +37,20 @@ _input_fn_names = set()
 # set of input stream variable names (for getter call emission)
 _input_stream_names = set()
 
+# set of void task names (for task_ prefix in calls)
+_void_task_names = set()
+
 
 def _init_globals(ir: dict) -> dict:
     """Initialize module-level enum values and context features. Returns enums dict."""
-    global _enum_values, _context_features, _input_fn_names, _input_stream_names
+    global _enum_values, _context_features, _input_fn_names, _input_stream_names, _void_task_names
     _context_features = set()
     _input_fn_names = set()
     _input_stream_names = set()
+    _void_task_names = set()
+    for task in ir.get("tasks", []):
+        if task.get("output") is None:
+            _void_task_names.add("_".join(task["name_parts"]))
     var_owners = ir.get("_var_owners", {})
     all_user = ir.get("_all_user_vars", [])
     for v in all_user:
@@ -1432,9 +1439,16 @@ def _emit_simple_expr(node: dict) -> str | None:
     if kind == "assign":
         return f"{_safe_target(node['target'])} = {_emit_expr(node['value'])}"
     if kind == "call":
-        return f"{_safe(node['name'])}({', '.join(_emit_expr(a) for a in node['args'])})"
+        name = _safe(node['name'])
+        if name in _void_task_names:
+            name = "task_" + name
+        return f"{name}({', '.join(_emit_expr(a) for a in node['args'])})"
     if kind in ("fn_call", "array_fn_call"):
         fn_name = _make_function_name(node['signature_parts'])
+        # check if this is a void task
+        base = fn_name[3:] if fn_name.startswith("fn_") else fn_name
+        if base in _void_task_names:
+            fn_name = "task_" + base
         call_expr = f"{fn_name}({', '.join(_emit_expr(a) for a in node['args'])})"
         if fn_name in _input_fn_names:
             return f"_bb_record_call({fn_name!r}, {call_expr})"
