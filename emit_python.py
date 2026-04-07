@@ -207,9 +207,19 @@ def _has_timed_streams(ir: dict) -> bool:
             return True
     for task in ir.get("tasks", []):
         for node in task.get("body", []):
-            if isinstance(node, dict) and node.get("kind") == "var_decl":
+            if not isinstance(node, dict):
+                continue
+            if node.get("kind") == "var_decl":
                 if _value_has_timing(node.get("value")):
                     return True
+            if node.get("kind") in ("emit", "emit_external"):
+                if _value_has_timing(node.get("value")):
+                    return True
+            if node.get("kind") == "for_each":
+                for bn in node.get("body", []):
+                    if isinstance(bn, dict) and bn.get("kind") in ("emit", "emit_external"):
+                        if _value_has_timing(bn.get("value")):
+                            return True
     return False
 
 
@@ -1038,6 +1048,21 @@ def _emit_task_body_node(node, uses, base_indent, extra_indent):
     if kind == "emit_external":
         handler = _platform_stream_fn(node["stream"], uses)
         val = node["value"]
+        # anonymous timed stream: out$ <- task() at ((1) hz)
+        if isinstance(val, dict) and val.get("kind") == "timed_step":
+            inner = val["value"]
+            if inner.get("kind") == "task_call":
+                fn_name = make_task_call_fn_name(inner)
+                args = ", ".join(a.replace("$", "_arr") for a in inner["args"])
+                tmp = "_anon_stream"
+                lines = [f"{base_indent}{extra_indent}{tmp} = _Stream(list({fn_name}({args})))"]
+                if val.get("dt"):
+                    lines.append(f"{base_indent}{extra_indent}{tmp}.dt = {_emit_expr(val['dt'])}")
+                if val.get("length"):
+                    lines.append(f"{base_indent}{extra_indent}{tmp}.length = {_emit_expr(val['length'])}")
+                lines.append(f"{base_indent}{extra_indent}for _v in _bb_record_stream('{tmp}', {tmp}):")
+                lines.append(f"{base_indent}{extra_indent}    {handler}(_v)")
+                return lines, extra_indent
         val_expr = _emit_expr(val)
         # if the value is a stream variable, iterate it with timing
         if isinstance(val, dict) and val.get("kind") == "name" and val.get("value", "").endswith("$"):

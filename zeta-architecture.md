@@ -159,7 +159,9 @@ The build pipeline automatically validates all output:
 Platform-specific functions live in `platforms/`:
 
 - `io.zero.md` — declares `read file`, `write file`, `print`
-- `string.zero.md` — declares `trim`, `split at`
+- `string.zero.md` — declares `trim`, `split at`, `to int`
+- `time.zero.md` — declares `seconds`, `ms`, `hz`, `bpm`, `now`
+- `terminal.zero.md` — declares `out$`, `in$` (stdout/stdin streams)
 - `blackbox.zero.md` — flight recorder (see below)
 
 Each has `.py` and `.ts` implementation files. Platform code is prepended to all feature output files. Platform functions are excluded from the cross-module map (they're available directly, not via imports).
@@ -251,6 +253,44 @@ The `ziz/` directory contains zero programs that implement parts of zeta itself:
 - `parser.zero.md` — parser functions (bracket matching, split stream parts)
 
 Built via `python3 zeta.py ziz/features.md ziz/output/`. Output includes per-feature `.py` and `.ts` files, `_runtime` test infrastructure, and a `package.json` for ESM support.
+
+## timed streams
+
+The `time` type represents a duration. Unit functions (`seconds`, `ms`, `hz`, `bpm`) construct time values. The `at` modifier attaches timing to any stream:
+
+```zero
+int i$ <- count down from (10) at ((1) hz)
+out$ <- count down from (10) at ((1) hz)
+int data$ <- [1, 2, 3] at ((44100) hz)
+int i$(dt = (1) hz)
+```
+
+### how timing works
+
+Every stream `$` is a sequence of values. Timing is optional metadata:
+- No timing: iterate instantly (plain array)
+- Regular timing (`dt`): timestamps computed as `t = t0 + i * dt`
+- Sparse timing: per-element timestamps (merged concurrent streams)
+
+The `_Stream(list)` class in Python extends `list` with `dt`, `length`, and `t0` properties. The `_bb_record_stream` wrapper checks `dt` and sleeps between values for real-time playback.
+
+### stream piping
+
+`sink$ <- source$` iterates the source with timing and pushes each value to the sink:
+
+```zero
+out$ <- count down from (10) at ((1) hz)
+```
+
+Compiles to an anonymous `_Stream` with `dt` attached, iterated through `_bb_record_stream`, pushing each value to `_push_terminal_out`.
+
+### forms
+
+Three equivalent ways to create a timed stream:
+
+1. **Inline `at`**: `int i$ <- expr at ((1) hz)`
+2. **Declaration properties**: `int i$(dt = (1) hz)` then `i$ <- expr`
+3. **Anonymous piping**: `out$ <- task() at ((1) hz)` — no named variable needed
 
 ## key decisions
 

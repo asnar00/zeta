@@ -1532,7 +1532,7 @@ def _parse_task_consume(stripped, fn_sigs, task_sigs):
     return None
 
 
-def _parse_task_emit(stripped, output_stream, platform_streams, fn_sigs):
+def _parse_task_emit(stripped, output_stream, platform_streams, fn_sigs, task_sigs=None):
     """Try to parse an 'emit' task body line."""
     emit_match = re.match(rf"({W}\$)\s*<-\s*(.*)", stripped)
     if not emit_match:
@@ -1542,11 +1542,22 @@ def _parse_task_emit(stripped, output_stream, platform_streams, fn_sigs):
     # check if RHS is a multi-step stream (contains <- outside parens/quotes)
     if "<-" in expr_str:
         stream = _parse_stream("<-" + expr_str, stream_name.replace("$", ""), fn_sigs)
-        kind = "emit_stream" if stream_name == output_stream else "emit_external_stream"
         if stream_name == output_stream:
             return {"kind": "emit_stream", "stream": stream}
         if platform_streams and stream_name in platform_streams:
             return {"kind": "emit_external_stream", "stream_name": stream_name, "stream": stream}
+    # check if RHS is a task call with at/keep modifiers (anonymous timed stream)
+    if task_sigs:
+        clean_expr, dt, length = _strip_trailing_stream_modifiers(expr_str, fn_sigs)
+        task_call = _try_parse_task_call(clean_expr, task_sigs)
+        if task_call:
+            value = task_call
+            if dt or length:
+                value = {"kind": "timed_step", "value": task_call, "dt": dt, "length": length}
+            if stream_name == output_stream:
+                return {"kind": "emit", "value": value}
+            if platform_streams and stream_name in platform_streams:
+                return {"kind": "emit_external", "stream": stream_name, "value": value}
     if stream_name == output_stream:
         return {"kind": "emit", "value": _parse_expr(expr_str, fn_sigs)}
     if platform_streams and stream_name in platform_streams:
@@ -1575,7 +1586,7 @@ def _parse_task_body_line(stripped, output_stream, platform_streams, fn_sigs, ta
     node = _parse_task_consume(stripped, fn_sigs, task_sigs)
     if node:
         return node
-    node = _parse_task_emit(stripped, output_stream, platform_streams, fn_sigs)
+    node = _parse_task_emit(stripped, output_stream, platform_streams, fn_sigs, task_sigs)
     if node:
         return node
     node = _parse_task_conditional(stripped, fn_sigs)

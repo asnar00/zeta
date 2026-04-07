@@ -674,3 +674,68 @@ All 333+ tests passing (251 core + 65 TS + 20 blackbox primitives + 17 blackbox 
 - Replay harness: reconstruct build from fingerprint, feed recorded values back through
 - Multi-device collection: server gathers buffers from all participants in a fault
 - UI: "report fault" button in the client, comment dialog
+
+---
+
+## 2026-04-07: timed streams — values over time
+
+### the insight
+
+The blackbox flight recorder needed hundreds of lines of buffer management code (moment rotation, index bumping, keyed collections). The reason: zero didn't have a way to express "a sequence of values over time." All that buffer code was compensating for the missing primitive.
+
+The fix: timed streams. Every `$` sequence can carry timing metadata — `dt` (sample interval), `t0` (start time), `length` (circular buffer window). The `at` modifier attaches timing to any stream: `int i$ <- count down from (10) at ((1) hz)`.
+
+### from stream theory to working code
+
+Started with the analogy between streams and GPU texture samplers: both map from a continuous domain (time/UV coordinates) to discrete samples. Both have storage (buffer/texture), addressing (t/UV), sampling mode (hold/interpolate), and wrapping (circular/clamp).
+
+Designed the `time` type with unit functions (`seconds`, `ms`, `hz`, `bpm`). Added `at` and `keep` as per-step stream modifiers in the parser. Each `<-` step can have its own rate, enabling mid-stream tempo changes.
+
+The key design principle: `$` means "a sequence" — whether it has timing is an implementation detail invisible to zero code.
+
+### hello.zero.md — the timed countdown
+
+```zero
+use terminal.out$
+
+on (int i$) <- count down from (int n)
+    i$ <- n <- (i$ - 1) while (i$ > 0)
+
+on main (string args$)
+    out$ <- count down from (10) at ((1) hz)
+```
+
+Six lines. Compiles to Python. Prints 10 through 0, one per second. No intermediate variables, no for-each loop. `out$ <- task() at (rate)` pipes a timed anonymous stream directly into stdout.
+
+Three forms of timed stream creation:
+1. `int i$ <- expr at ((1) hz)` — inline timing on call site
+2. `int i$(dt = (1) hz)` then `i$ <- expr` — timing on declaration
+3. `out$ <- task() at ((1) hz)` — anonymous stream, piped directly
+
+### language features added
+
+- `time` built-in type + platform (`seconds`, `ms`, `hz`, `bpm`, `now`)
+- `at`/`keep` per-step stream modifiers (parser + both emitters)
+- `<-` string build operator: `string s <- "value: " <- x <- " done"`
+- Conversion operator syntax: `on (string s) <- (number n)`
+- `to int` in string platform
+- Stream property declarations: `int i$(dt = (1) hz)`
+- Stream piping: `out$ <- stream$` iterates with timing
+- Anonymous timed streams: `out$ <- task() at ((1) hz)`
+- `_Stream(list)` runtime class for timing metadata
+- Platform signatures auto-loaded in parser (single code path)
+- Reserved word escaping in both emitters
+
+### toolchain fixes
+
+- `_Stream` class detection covers task bodies, not just top-level variables
+- Void task detection: `for each` triggers task parsing without platform streams
+- `emit_stream` in task bodies: inline streaming yields all values
+- Standalone compilation produces self-contained runnable programs
+- Blackbox silent auto-start (no print noise)
+
+### what's next
+
+- Concurrent timed streams: `concurrently` with multiple timed sources feeding `out$`
+- Rewrite blackbox using timed streams (the original goal)
+- Stream transport: send timed streams between devices
