@@ -30,7 +30,7 @@ The user database and pending verification codes:
 Toggle between login and logout based on session state:
 
     on toggle login ()
-        string session = get cookie ("session")
+        string session = cookie$["session"]
         if (session == "")
             login ()
         else
@@ -39,18 +39,18 @@ Toggle between login and logout based on session state:
 The interactive login flow — input name, request a code, input code, log in:
 
     on login ()
-        string name = input ("name")
-        string code = request login (name)
-        string entered = input ("code")
-        string token = complete login (name) with code (entered)
-        set cookie of ("session") to (token)
+        string name$ <- input ("name")
+        string code$ <- request login (name$)
+        string entered$ <- input ("code")
+        string token$ <- complete login (name$) with code (entered$)
+        set cookie of ("session") to (token$)
         reload page ()
 
 Log out — confirm with the user, then clear the session cookie:
 
     on logout dialog ()
-        string choice = choose ("log out") or ("cancel")
-        if (choice == "log out")
+        string choice$ <- choose ("log out") or ("cancel")
+        if (choice$ == "log out")
             clear cookie ("session")
             reload page ()
 

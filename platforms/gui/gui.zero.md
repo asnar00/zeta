@@ -7,11 +7,29 @@
 
 Platform functions for user interaction. Implementations vary by target: web (DOM), iOS (UIKit), Android (Views). Zero code calls these without knowing which platform is underneath.
 
+User interactions are input streams. Actions (set cookie, click, etc.) are output functions.
+
 ## interface
+
+User text submissions (arrives when the user types and hits enter):
+
+    input string user-text$
+
+User choice selections (arrives when the user picks a button):
+
+    input string user-choice$
+
+Browser cookies (keyed by name, read on demand):
+
+    input string cookie$[string]
 
 Show a text input and wait for the user to submit a value:
 
-    on (string result) = input (string prompt)
+    on (string result$) <- input (string prompt)
+
+Show a choice dialog with labelled buttons, return the chosen label:
+
+    on (string choice$) <- choose (string option-a) or (string option-b)
 
 Set a browser cookie (or equivalent session token on native):
 
@@ -21,17 +39,9 @@ Show a message to the user:
 
     on show message (string text)
 
-Get a cookie value (returns "" if not set):
-
-    on (string value) = get cookie (string name)
-
 Remove a cookie:
 
     on clear cookie (string name)
-
-Show a choice dialog with labelled buttons, return the chosen label:
-
-    on (string choice) = choose (string option-a) or (string option-b)
 
 Reload the current page (or refresh the current view on native):
 
@@ -52,37 +62,3 @@ Type text into an input element:
 Press a key on an element:
 
     on press (string key) on (string selector)
-
-## integration tests
-
-Input shows a labelled text field, returns the typed value, then removes itself:
-
-    call input ("name")
-    check element "div" contains text "name"
-    check element "input" exists
-    check element "input" is focused
-    type "alice" into element "input"
-    press "Enter" on element "input"
-    check result is "alice"
-    check element "input" does not exist
-
-Input works with an empty submission:
-
-    call input ("code")
-    press "Enter" on element "input"
-    check result is ""
-
-Show message displays an alert dialog:
-
-    call show message ("hello")
-    check alert appears with text "hello"
-
-Set cookie stores a value accessible to subsequent requests:
-
-    call set cookie of ("test") to ("abc")
-    check cookie "test" is "abc"
-
-Reload page triggers a page navigation:
-
-    call reload page ()
-    check page reloads
