@@ -1115,4 +1115,4 @@ try {
 
 const _FEATURE_TREE: [string, string, string | null][] = [["website", "the nøøb website", null], ["not-found", "default 404 response", "website"], ["login", "SMS code authentication", "website"], ["rpc", "RPC endpoint for runtime evaluation", "website"], ["landing-page", "serves the noob landing page at root", "website"], ["background", "per-user background colour", "landing-page"], ["test-blackbox", "integration tests for the flight recorder", "website"]];
 
-const _BUILD_FINGERPRINT: {hash: string, git: string, features: string} = {"hash": "92f54f6663cd5295", "git": "44868250221f", "features": "website,not-found,login,rpc,landing-page,background,test-blackbox"};
+const _BUILD_FINGERPRINT: {hash: string, git: string, features: string} = {"hash": "53a214522ce94a88", "git": "e6445ed298bd", "features": "website,not-found,login,rpc,landing-page,background,test-blackbox"};

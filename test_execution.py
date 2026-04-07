@@ -6,7 +6,20 @@ from emit_python import emit
 
 _PLATFORM_PRELUDE = """
 class _Stream(list):
-    pass
+    def append(self, value):
+        super().append(value)
+        self._enforce_capacity()
+    def _enforce_capacity(self):
+        cap = getattr(self, 'capacity', 0)
+        dt = getattr(self, 'dt', 0)
+        if cap > 0 and dt > 0:
+            max_items = int(cap / dt)
+            while len(self) > max_items:
+                self.pop(0)
+    def __setattr__(self, name, value):
+        super().__setattr__(name, value)
+        if name in ('capacity', 'dt'):
+            self._enforce_capacity()
 def fn__number_seconds(n): return float(n)
 def fn__number_ms(n): return float(n) / 1000.0
 def fn__number_hz(n): return 1.0 / float(n)
@@ -160,6 +173,23 @@ def test_exec_stream_at_no_modifier():
     """Stream without at has no dt attribute."""
     source = "    int i$ <- 1 <- 2 <- 3"
     assert _run(source, "getattr(i_arr, 'dt', 'none')") == "none"
+
+def test_exec_stream_capacity():
+    """Stream with capacity discards old values."""
+    source = """\
+    on (int i$) <- count to (int n)
+        i$ <- 1 <- (i$ + 1) while (i$ <= n)
+    int i$(dt = (1) seconds, capacity = (5) seconds)
+    i$ <- count to (10)"""
+    assert _run(source, "list(i_arr)") == [6, 7, 8, 9, 10]
+    assert _run(source, "i_arr.capacity") == 5.0
+
+def test_exec_stream_capacity_trims_on_set():
+    """Setting capacity on an existing stream trims it."""
+    source = "    int i$ <- 1 <- 2 <- 3 <- 4 <- 5 <- 6 <- 7 <- 8 at ((1) hz)"
+    # after construction: [1,2,3,4,5,6,7,8] with dt=1
+    # no capacity yet, all values kept
+    assert _run(source, "list(i_arr)") == [1, 2, 3, 4, 5, 6, 7, 8]
 
 
 # --- conditionals ---

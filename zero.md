@@ -304,25 +304,27 @@ The keywords `while` and `until` repeat a streaming operation:
 
 ### stream timing
 
-Every stream has three timing properties:
+Every stream has timing properties:
 
 - `t0` — start time (when the first sample was taken)
 - `dt` — time between samples (a `time` value)
-- `length` — how much history to keep (a `time` value, for circular buffers)
+- `capacity` — how much history to keep (a `time` value); the stream discards values older than this
 
-By default, `dt` is zero (instantaneous — computed as fast as possible), `t0` is the time of creation, and `length` is unlimited (the full array is kept).
+By default, `dt` is zero (instantaneous — computed as fast as possible), `t0` is the time of creation, and `capacity` is unlimited (the full array is kept).
 
-Setting `dt` attaches a time scale to the stream. Setting `length` makes it a circular buffer that discards values older than the window:
+Setting `dt` attaches a time scale to the stream. Setting `capacity` makes it a circular buffer:
 
     int countdown$
     countdown$.dt = (1) seconds
     countdown$ <- 10 <- (countdown$ - 1) while (countdown$ > 0)
     # countdown$ = [10, 9, 8, ..., 1], dt = 1 second, t0 = now
 
-    Action action$
-    action$.dt = (1) ms
-    action$.length = (60) seconds
-    # sparse circular buffer: 1ms resolution, 60-second window, 60000 slots
+    Action action$(dt = (1) ms, capacity = (60) seconds)
+    # sparse circular buffer: 1ms resolution, 60-second capacity, max 60000 slots
+
+Stream properties can be set at declaration:
+
+    int i$(dt = (1) hz, capacity = (30) seconds)
 
 The time of any element is `t0 + (i * dt)`. To read the value at a given time `t`, compute `i = (t - t0) / dt` and sample the buffer. A stream is just data — the consumer decides whether to play it back in real time or process it instantly.
 

@@ -918,7 +918,7 @@ def _parse_stream_properties(rest, fn_sigs):
         if eq > 0:
             key = part[:eq].strip()
             val_str = part[eq+1:].strip()
-            if key in ("dt", "length", "t0"):
+            if key in ("dt", "length", "t0", "capacity"):
                 props[key] = _parse_expr(val_str, fn_sigs)
     return props, remaining
 
@@ -929,7 +929,7 @@ def _parse_array_variable(type_name: str, var_name: str, rest: str, fn_sigs: lis
     value = None
     # stream properties: int i$(dt = (1) hz, length = (60) seconds)
     stream_props = {}
-    if rest.startswith("(") and ("dt" in rest or "length" in rest or "t0" in rest):
+    if rest.startswith("(") and ("dt" in rest or "length" in rest or "t0" in rest or "capacity" in rest):
         stream_props, rest = _parse_stream_properties(rest, fn_sigs)
     if rest.startswith("="):
         rhs = rest[1:].strip()

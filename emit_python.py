@@ -141,8 +141,21 @@ def _apply_module_prefixes(result: str, ir: dict) -> str:
 
 _STREAM_HELPER = """\
 class _Stream(list):
-    \"\"\"A list that supports stream timing properties (dt, length, t0).\"\"\"
-    pass"""
+    \"\"\"A list that supports stream timing properties (dt, capacity, t0).\"\"\"
+    def append(self, value):
+        super().append(value)
+        self._enforce_capacity()
+    def _enforce_capacity(self):
+        cap = getattr(self, 'capacity', 0)
+        dt = getattr(self, 'dt', 0)
+        if cap > 0 and dt > 0:
+            max_items = int(cap / dt)
+            while len(self) > max_items:
+                self.pop(0)
+    def __setattr__(self, name, value):
+        super().__setattr__(name, value)
+        if name in ('capacity', 'dt'):
+            self._enforce_capacity()"""
 
 _UNDEFINED_HELPER = """\
 def _raise_undefined(name):
