@@ -3,9 +3,9 @@
 # Server-side fallback — in production, these run on the client.
 
 
-# @zero on (string result) = input (string prompt)
-def fn_input__string(prompt: str) -> str:
-    return input(f"{prompt}: ")
+# @zero on (string result$) <- input (string prompt)
+def task_input__string(prompt: str):
+    yield input(f"{prompt}: ")
 
 
 # @zero on show message (string text)
@@ -13,9 +13,8 @@ def fn_show_message__string(text: str):
     print(text)  # server fallback: print to terminal
 
 
-# @zero on (string value) = get cookie (string name)
-def fn_get_cookie__string(name: str) -> str:
-    return ""  # server fallback: no cookies
+# @zero input string cookie$[string]
+cookie_arr: dict[str, str] = {}  # server fallback: empty
 
 
 # @zero on clear cookie (string name)
@@ -23,9 +22,9 @@ def fn_clear_cookie__string(name: str):
     pass  # server fallback: no-op
 
 
-# @zero on (string choice) = choose (string option_a) or (string option_b)
-def fn_choose__string_or__string(option_a: str, option_b: str) -> str:
-    return option_a  # server fallback: return first option
+# @zero on (string choice$) <- choose (string option-a) or (string option-b)
+def task_choose__string_or__string(option_a: str, option_b: str):
+    yield option_a  # server fallback: return first option
 
 
 # @zero on set cookie of (string name) to (string value)

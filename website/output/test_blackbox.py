@@ -440,9 +440,9 @@ def fn_eval__string(expr: str) -> str:
 # Server-side fallback — in production, these run on the client.
 
 
-# @zero on (string result) = input (string prompt)
-def fn_input__string(prompt: str) -> str:
-    return input(f"{prompt}: ")
+# @zero on (string result$) <- input (string prompt)
+def task_input__string(prompt: str):
+    yield input(f"{prompt}: ")
 
 
 # @zero on show message (string text)
@@ -450,9 +450,8 @@ def fn_show_message__string(text: str):
     print(text)  # server fallback: print to terminal
 
 
-# @zero on (string value) = get cookie (string name)
-def fn_get_cookie__string(name: str) -> str:
-    return ""  # server fallback: no cookies
+# @zero input string cookie$[string]
+cookie_arr: dict[str, str] = {}  # server fallback: empty
 
 
 # @zero on clear cookie (string name)
@@ -460,9 +459,9 @@ def fn_clear_cookie__string(name: str):
     pass  # server fallback: no-op
 
 
-# @zero on (string choice) = choose (string option_a) or (string option_b)
-def fn_choose__string_or__string(option_a: str, option_b: str) -> str:
-    return option_a  # server fallback: return first option
+# @zero on (string choice$) <- choose (string option-a) or (string option-b)
+def task_choose__string_or__string(option_a: str, option_b: str):
+    yield option_a  # server fallback: return first option
 
 
 # @zero on set cookie of (string name) to (string value)
@@ -2034,17 +2033,17 @@ class User(NamedTuple):
     phone: str = ""
     role: str = ""
 
-# @zero on bb check (string actual) contains (string expected); website/test-blackbox/test-blackbox.zero.md:468
+# @zero on bb check (string actual) contains (string expected); website/test-blackbox/test-blackbox.zero.md:474
 def fn_bb_check__string_contains__string(actual: str, expected: str):
     found = fn__string_contains__string(actual, expected)
     if found == False:
         raise _ZeroRaise('bb check failed', ['expected'])
 
-# @zero on bb check failed (string what); website/test-blackbox/test-blackbox.zero.md:473
+# @zero on bb check failed (string what); website/test-blackbox/test-blackbox.zero.md:479
 def fn_bb_check_failed__string(what: str):
     fn_print__string("FAIL: expected " + what)
 
-# @zero on test blackbox; website/test-blackbox/test-blackbox.zero.md:476
+# @zero on test blackbox; website/test-blackbox/test-blackbox.zero.md:482
 def fn_test_blackbox():
     fn_click_on__string(".logo")
     fn_press__string_on__string("Escape", "body")

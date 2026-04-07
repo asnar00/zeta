@@ -448,9 +448,9 @@ def fn_eval__string(expr: str) -> str:
 # Server-side fallback — in production, these run on the client.
 
 
-# @zero on (string result) = input (string prompt)
-def fn_input__string(prompt: str) -> str:
-    return input(f"{prompt}: ")
+# @zero on (string result$) <- input (string prompt)
+def task_input__string(prompt: str):
+    yield input(f"{prompt}: ")
 
 
 # @zero on show message (string text)
@@ -458,9 +458,8 @@ def fn_show_message__string(text: str):
     print(text)  # server fallback: print to terminal
 
 
-# @zero on (string value) = get cookie (string name)
-def fn_get_cookie__string(name: str) -> str:
-    return ""  # server fallback: no cookies
+# @zero input string cookie$[string]
+cookie_arr: dict[str, str] = {}  # server fallback: empty
 
 
 # @zero on clear cookie (string name)
@@ -468,9 +467,9 @@ def fn_clear_cookie__string(name: str):
     pass  # server fallback: no-op
 
 
-# @zero on (string choice) = choose (string option_a) or (string option_b)
-def fn_choose__string_or__string(option_a: str, option_b: str) -> str:
-    return option_a  # server fallback: return first option
+# @zero on (string choice$) <- choose (string option-a) or (string option-b)
+def task_choose__string_or__string(option_a: str, option_b: str):
+    yield option_a  # server fallback: return first option
 
 
 # @zero on set cookie of (string name) to (string value)
@@ -2405,7 +2404,7 @@ class User(NamedTuple):
     phone: str = ""
     role: str = ""
 
-# @zero on main (string args$); website/website.zero.md:366
+# @zero on main (string args$); website/website.zero.md:372
 def task_main__string(args_arr: str):
     _push_terminal_out(logo)
     request_arr = task_serve_http__int(port)
@@ -2414,7 +2413,7 @@ def task_main__string(args_arr: str):
         body = fn_handle_request__Http_Request(request)
         _push_http_response(Http_Response(request, body))
 
-# @zero on (string body) = handle request (Http-Request request); website/website.zero.md:374
+# @zero on (string body) = handle request (Http-Request request); website/website.zero.md:380
 def fn_handle_request__Http_Request(request: Http_Request) -> str:
     body = None
     if _get_ctx().landing_page.enabled and request.path == "/":
@@ -2427,7 +2426,7 @@ def fn_handle_request__Http_Request(request: Http_Request) -> str:
         body = not_found.fn_not_found()
     return body if body is not None else ""
 
-# @zero on stop; website/website.zero.md:382
+# @zero on stop; website/website.zero.md:388
 def fn_stop():
     fn_print__string("stopping")
 
@@ -2450,4 +2449,4 @@ if __name__ == '__main__':
 
 _FEATURE_TREE = [("website", "the nøøb website", None), ("not-found", "default 404 response", 'website'), ("login", "SMS code authentication", 'website'), ("rpc", "RPC endpoint for runtime evaluation", 'website'), ("landing-page", "serves the noob landing page at root", 'website'), ("background", "per-user background colour", 'landing-page'), ("test-blackbox", "integration tests for the flight recorder", 'website')]
 
-_BUILD_FINGERPRINT = {"hash": "0c171ed5940dc98f", "git": "a49644628637", "features": "website,not-found,login,rpc,landing-page,background,test-blackbox"}
+_BUILD_FINGERPRINT = {"hash": "6b7f9feab861ce2e", "git": "9cedb25d6947", "features": "website,not-found,login,rpc,landing-page,background,test-blackbox"}

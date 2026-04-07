@@ -1,9 +1,9 @@
 // Platform implementation: gui (TypeScript/web)
 // Implements the functions declared in gui.zero.md
 
-// @zero on (string result) = input (string prompt)
-function fn_input__string(prompt: string): string {
-    return (globalThis as any).prompt?.(prompt) ?? "";
+// @zero on (string result$) <- input (string prompt)
+function* task_input__string(prompt: string): Generator<string> {
+    yield (globalThis as any).prompt?.(prompt) ?? "";
 }
 
 // @zero on show message (string text)
@@ -15,18 +15,16 @@ function fn_show_message__string(text: string): void {
     }
 }
 
-// @zero on (string value) = get cookie (string name)
-function fn_get_cookie__string(name: string): string {
-    return "";
-}
+// @zero input string cookie$[string]
+const cookie_arr: Map<string, string> = new Map();
 
 // @zero on clear cookie (string name)
 function fn_clear_cookie__string(name: string): void {
 }
 
-// @zero on (string choice) = choose (string option_a) or (string option_b)
-function fn_choose__string_or__string(option_a: string, option_b: string): string {
-    return option_a;
+// @zero on (string choice$) <- choose (string option-a) or (string option-b)
+function* task_choose__string_or__string(option_a: string, option_b: string): Generator<string> {
+    yield option_a;
 }
 
 // @zero on set cookie of (string name) to (string value)

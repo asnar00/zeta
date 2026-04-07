@@ -187,9 +187,9 @@ export function fn_eval__string(expr: string): string {
 // Platform implementation: gui (TypeScript/web)
 // Implements the functions declared in gui.zero.md
 
-// @zero on (string result) = input (string prompt)
-export function fn_input__string(prompt: string): string {
-    return (globalThis as any).prompt?.(prompt) ?? "";
+// @zero on (string result$) <- input (string prompt)
+export function* task_input__string(prompt: string): Generator<string> {
+    yield (globalThis as any).prompt?.(prompt) ?? "";
 }
 
 // @zero on show message (string text)
@@ -201,18 +201,16 @@ export function fn_show_message__string(text: string): void {
     }
 }
 
-// @zero on (string value) = get cookie (string name)
-export function fn_get_cookie__string(name: string): string {
-    return "";
-}
+// @zero input string cookie$[string]
+const cookie_arr: Map<string, string> = new Map();
 
 // @zero on clear cookie (string name)
 export function fn_clear_cookie__string(name: string): void {
 }
 
-// @zero on (string choice) = choose (string option_a) or (string option_b)
-export function fn_choose__string_or__string(option_a: string, option_b: string): string {
-    return option_a;
+// @zero on (string choice$) <- choose (string option-a) or (string option-b)
+export function* task_choose__string_or__string(option_a: string, option_b: string): Generator<string> {
+    yield option_a;
 }
 
 // @zero on set cookie of (string name) to (string value)
@@ -710,7 +708,7 @@ export function User(args: Partial<User> = {}): User {
     return { name: args.name ?? "", phone: args.phone ?? "", role: args.role ?? "" };
 }
 
-// @zero on bb check (string actual) contains (string expected); website/test-blackbox/test-blackbox.zero.md:468
+// @zero on bb check (string actual) contains (string expected); website/test-blackbox/test-blackbox.zero.md:474
 export function fn_bb_check__string_contains__string(actual: string, expected: string): void {
     const found = fn__string_contains__string(actual, expected);
     if (found == false) {
@@ -718,12 +716,12 @@ export function fn_bb_check__string_contains__string(actual: string, expected: s
 }
 }
 
-// @zero on bb check failed (string what); website/test-blackbox/test-blackbox.zero.md:473
+// @zero on bb check failed (string what); website/test-blackbox/test-blackbox.zero.md:479
 export function fn_bb_check_failed__string(what: string): void {
     fn_print__string("FAIL: expected " + what);
 }
 
-// @zero on test blackbox; website/test-blackbox/test-blackbox.zero.md:476
+// @zero on test blackbox; website/test-blackbox/test-blackbox.zero.md:482
 export function fn_test_blackbox(): void {
     fn_click_on__string(".logo");
     fn_press__string_on__string("Escape", "body");

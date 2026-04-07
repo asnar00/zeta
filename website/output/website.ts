@@ -201,9 +201,9 @@ export function fn_eval__string(expr: string): string {
 // Platform implementation: gui (TypeScript/web)
 // Implements the functions declared in gui.zero.md
 
-// @zero on (string result) = input (string prompt)
-export function fn_input__string(prompt: string): string {
-    return (globalThis as any).prompt?.(prompt) ?? "";
+// @zero on (string result$) <- input (string prompt)
+export function* task_input__string(prompt: string): Generator<string> {
+    yield (globalThis as any).prompt?.(prompt) ?? "";
 }
 
 // @zero on show message (string text)
@@ -215,18 +215,16 @@ export function fn_show_message__string(text: string): void {
     }
 }
 
-// @zero on (string value) = get cookie (string name)
-export function fn_get_cookie__string(name: string): string {
-    return "";
-}
+// @zero input string cookie$[string]
+const cookie_arr: Map<string, string> = new Map();
 
 // @zero on clear cookie (string name)
 export function fn_clear_cookie__string(name: string): void {
 }
 
-// @zero on (string choice) = choose (string option_a) or (string option_b)
-export function fn_choose__string_or__string(option_a: string, option_b: string): string {
-    return option_a;
+// @zero on (string choice$) <- choose (string option-a) or (string option-b)
+export function* task_choose__string_or__string(option_a: string, option_b: string): Generator<string> {
+    yield option_a;
 }
 
 // @zero on set cookie of (string name) to (string value)
@@ -1135,7 +1133,7 @@ export function User(args: Partial<User> = {}): User {
     return { name: args.name ?? "", phone: args.phone ?? "", role: args.role ?? "" };
 }
 
-// @zero on main (string args$); website/website.zero.md:366
+// @zero on main (string args$); website/website.zero.md:372
 export async function task_main__string(args_arr: readonly string[]): Promise<void> {
     _push_terminal_out(logo);
     const request_arr = task_serve_http__int(port);
@@ -1146,7 +1144,7 @@ export async function task_main__string(args_arr: readonly string[]): Promise<vo
     }
 }
 
-// @zero on (string body) = handle request (Http-Request request); website/website.zero.md:374
+// @zero on (string body) = handle request (Http-Request request); website/website.zero.md:380
 export function fn_handle_request__Http_Request(request: Http_Request): string {
     let body: string = undefined!;
     if (_get_ctx().landing_page.enabled && request.path == "/") {
@@ -1164,7 +1162,7 @@ export function fn_handle_request__Http_Request(request: Http_Request): string {
     return body;
 }
 
-// @zero on stop; website/website.zero.md:382
+// @zero on stop; website/website.zero.md:388
 export function fn_stop(): void {
     fn_print__string("stopping");
 }
@@ -1194,4 +1192,4 @@ try {
 
 const _FEATURE_TREE: [string, string, string | null][] = [["website", "the nøøb website", null], ["not-found", "default 404 response", "website"], ["login", "SMS code authentication", "website"], ["rpc", "RPC endpoint for runtime evaluation", "website"], ["landing-page", "serves the noob landing page at root", "website"], ["background", "per-user background colour", "landing-page"], ["test-blackbox", "integration tests for the flight recorder", "website"]];
 
-const _BUILD_FINGERPRINT: {hash: string, git: string, features: string} = {"hash": "0c171ed5940dc98f", "git": "a49644628637", "features": "website,not-found,login,rpc,landing-page,background,test-blackbox"};
+const _BUILD_FINGERPRINT: {hash: string, git: string, features: string} = {"hash": "6b7f9feab861ce2e", "git": "9cedb25d6947", "features": "website,not-found,login,rpc,landing-page,background,test-blackbox"};

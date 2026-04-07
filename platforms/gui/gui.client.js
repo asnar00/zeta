@@ -2,8 +2,8 @@
 // Implements the functions declared in gui.zero.md
 // These run in the browser, not on the server.
 
-// @zero on (string result) = input (string prompt)
-async function fn_input__string(prompt) {
+// @zero on (string result$) <- input (string prompt)
+async function task_input__string(prompt) {
     return new Promise((resolve) => {
         const container = document.createElement("div");
         container.style.cssText = "text-align:center; margin-top:20px;";
@@ -32,11 +32,13 @@ function fn_show_message__string(text) {
     alert(text);
 }
 
-// @zero on (string value) = get cookie (string name)
-function fn_get_cookie__string(name) {
-    const match = document.cookie.match(new RegExp("(?:^|; )" + name + "=([^;]*)"));
-    return match ? match[1] : "";
-}
+// @zero input string cookie$[string]
+const cookie_arr = new Proxy({}, {
+    get(_, name) {
+        const match = document.cookie.match(new RegExp("(?:^|; )" + name + "=([^;]*)"));
+        return match ? match[1] : "";
+    }
+});
 
 // @zero on clear cookie (string name)
 function fn_clear_cookie__string(name) {
@@ -44,8 +46,8 @@ function fn_clear_cookie__string(name) {
     document.cookie = name + "=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax" + secure;
 }
 
-// @zero on (string choice) = choose (string option_a) or (string option_b)
-async function fn_choose__string_or__string(optionA, optionB) {
+// @zero on (string choice$) <- choose (string option-a) or (string option-b)
+async function task_choose__string_or__string(optionA, optionB) {
     return new Promise((resolve) => {
         const container = document.createElement("div");
         container.style.cssText = "text-align:center; margin-top:20px;";
