@@ -5,19 +5,36 @@ from emit_python import emit
 
 
 _PLATFORM_PRELUDE = """
+import time as _stream_time
 class _Stream(list):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        super().__setattr__('_timestamps', [])
     def append(self, value):
         super().append(value)
+        dt = getattr(self, 'dt', 0)
+        if not dt or dt == 0:
+            self._timestamps.append(_stream_time.time())
         self._enforce_capacity()
     def _enforce_capacity(self):
         cap = getattr(self, 'capacity', 0)
+        if cap <= 0:
+            return
         dt = getattr(self, 'dt', 0)
-        if cap > 0 and dt > 0:
+        if dt and dt > 0:
             max_items = int(cap / dt)
             while len(self) > max_items:
                 self.pop(0)
+        elif self._timestamps:
+            newest = self._timestamps[-1]
+            while self._timestamps and newest - self._timestamps[0] > cap:
+                self.pop(0)
+                self._timestamps.pop(0)
     def __setattr__(self, name, value):
         super().__setattr__(name, value)
+        if name == 'capacity' and len(self) > 0 and not self._timestamps:
+            now = _stream_time.time()
+            self._timestamps.extend([now] * len(self))
         if name in ('capacity', 'dt'):
             self._enforce_capacity()
 def fn__number_seconds(n): return float(n)
@@ -176,6 +193,34 @@ def test_exec_stream_at_no_modifier():
     """Stream without at has no dt attribute."""
     source = "    int i$ <- 1 <- 2 <- 3"
     assert _run(source, "getattr(i_arr, 'dt', 'none')") == "none"
+
+def test_exec_sparse_stream():
+    """Sparse stream: no dt, each append is timestamped automatically."""
+    source = "    int i$(capacity = (10) seconds)"
+    # append values — each gets a timestamp
+    result = _run(source, "list(i_arr)")
+    assert result == []
+    # capacity is set, dt is absent (sparse)
+    assert _run(source, "fn_capacity_of(i_arr)") == 10.0
+    assert _run(source, "fn_dt_of(i_arr)") == 0.0
+
+def test_exec_sparse_stream_append():
+    """Sparse stream timestamps are recorded on append."""
+    source = """\
+    int i$(capacity = (100) seconds)
+    i$ <- 1 <- 2 <- 3"""
+    assert _run(source, "list(i_arr)") == [1, 2, 3]
+    assert _run(source, "len(i_arr._timestamps)") == 3
+    # timestamps should be monotonically increasing
+    assert _run(source, "i_arr._timestamps[0] <= i_arr._timestamps[1] <= i_arr._timestamps[2]")
+
+def test_exec_sparse_stream_capacity():
+    """Sparse stream capacity discards by time, not count."""
+    source = """\
+    int i$(capacity = (1) seconds)
+    i$ <- 1 <- 2 <- 3"""
+    # all three appended nearly simultaneously, all within 1 second
+    assert _run(source, "list(i_arr)") == [1, 2, 3]
 
 def test_exec_dt_of():
     """dt of [stream$] returns the stream's sample interval."""

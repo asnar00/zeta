@@ -140,20 +140,37 @@ def _apply_module_prefixes(result: str, ir: dict) -> str:
 
 
 _STREAM_HELPER = """\
+import time as _stream_time
 class _Stream(list):
     \"\"\"A list that supports stream timing properties (dt, capacity, t0).\"\"\"
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        super().__setattr__('_timestamps', [])
     def append(self, value):
         super().append(value)
+        dt = getattr(self, 'dt', 0)
+        if not dt or dt == 0:
+            self._timestamps.append(_stream_time.time())
         self._enforce_capacity()
     def _enforce_capacity(self):
         cap = getattr(self, 'capacity', 0)
+        if cap <= 0:
+            return
         dt = getattr(self, 'dt', 0)
-        if cap > 0 and dt > 0:
+        if dt and dt > 0:
             max_items = int(cap / dt)
             while len(self) > max_items:
                 self.pop(0)
+        elif self._timestamps:
+            newest = self._timestamps[-1]
+            while self._timestamps and newest - self._timestamps[0] > cap:
+                self.pop(0)
+                self._timestamps.pop(0)
     def __setattr__(self, name, value):
         super().__setattr__(name, value)
+        if name == 'capacity' and len(self) > 0 and not self._timestamps:
+            now = _stream_time.time()
+            self._timestamps.extend([now] * len(self))
         if name in ('capacity', 'dt'):
             self._enforce_capacity()"""
 
