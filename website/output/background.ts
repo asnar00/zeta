@@ -539,6 +539,24 @@ export function fn_now(): number {
 }
 
 
+// @zero on (time t) = dt of [items$]
+export function fn_dt_of(items: any): number {
+    return items?.dt ?? 0;
+}
+
+
+// @zero on (time t) = capacity of [items$]
+export function fn_capacity_of(items: any): number {
+    return items?.capacity ?? 0;
+}
+
+
+// @zero on (time t) = t0 of [items$]
+export function fn_t0_of(items: any): number {
+    return items?.t0 ?? 0;
+}
+
+
 // Platform implementation: websocket (TypeScript)
 // Implements the functions declared in websocket.zero.md
 // Server-side stub — the real client implementation lives in the client bundle.

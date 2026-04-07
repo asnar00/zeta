@@ -30,3 +30,21 @@ function fn__number_bpm(n: number): number {
 function fn_now(): number {
     return Date.now() / 1000;
 }
+
+
+// @zero on (time t) = dt of [items$]
+function fn_dt_of(items: any): number {
+    return items?.dt ?? 0;
+}
+
+
+// @zero on (time t) = capacity of [items$]
+function fn_capacity_of(items: any): number {
+    return items?.capacity ?? 0;
+}
+
+
+// @zero on (time t) = t0 of [items$]
+function fn_t0_of(items: any): number {
+    return items?.t0 ?? 0;
+}

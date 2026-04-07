@@ -695,7 +695,7 @@ document.addEventListener("DOMContentLoaded", () => {
     _connect_ws();
 });
 
-// @zero on toggle login; composed:358
+// @zero on toggle login; composed:367
 async function fn_toggle_login(){
     const session = await fn_get_cookie__string("session");
     if (session == "") {
@@ -705,7 +705,7 @@ async function fn_toggle_login(){
 }
 }
 
-// @zero on login; composed:365
+// @zero on login; composed:374
 async function fn_login(){
     try {
         const name = await fn_input__string("name");
@@ -725,7 +725,7 @@ async function fn_login(){
     }
 }
 
-// @zero on logout dialog; composed:373
+// @zero on logout dialog; composed:382
 async function fn_logout_dialog(){
     const choice = await fn_choose__string_or__string("log out", "cancel");
     if (choice == "log out") {
@@ -734,22 +734,22 @@ async function fn_logout_dialog(){
 }
 }
 
-// @zero on unknown user (string name); composed:379
+// @zero on unknown user (string name); composed:388
 async function fn_unknown_user__string(name){
     await fn_show_message__string("unknown user");
 }
 
-// @zero on invalid code (string code); composed:382
+// @zero on invalid code (string code); composed:391
 async function fn_invalid_code__string(code){
     await fn_show_message__string("invalid code");
 }
 
-// @zero on logo clicked; composed:413
+// @zero on logo clicked; composed:422
 async function fn_logo_clicked(){
     await fn_toggle_login();
 }
 
-// @zero on test login; composed:424
+// @zero on test login; composed:433
 async function fn_test_login(){
     const _orig_fn_input__string = fn_input__string;
     const _patched = async function(_prompt) {
@@ -776,7 +776,7 @@ async function fn_test_login(){
     }
 }
 
-// @zero on test blackbox; composed:446
+// @zero on test blackbox; composed:455
 async function fn_test_blackbox(){
     await fn_click_on__string(".logo");
     await fn_press__string_on__string("Escape", "body");

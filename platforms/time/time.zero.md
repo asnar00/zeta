@@ -38,3 +38,15 @@ Beats per minute — musical tempo to period:
 Get the current wall-clock time:
 
     on (time t) = now ()
+
+Get the sample interval of a stream:
+
+    on (time t) = dt of [items$]
+
+Get the capacity of a stream:
+
+    on (time t) = capacity of [items$]
+
+Get the start time of a stream:
+
+    on (time t) = t0 of [items$]

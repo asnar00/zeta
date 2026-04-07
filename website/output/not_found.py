@@ -1702,6 +1702,21 @@ def fn_now() -> float:
     return _time.time()
 
 
+# @zero on (time t) = dt of [items$]
+def fn_dt_of(items) -> float:
+    return getattr(items, 'dt', 0.0)
+
+
+# @zero on (time t) = capacity of [items$]
+def fn_capacity_of(items) -> float:
+    return getattr(items, 'capacity', 0.0)
+
+
+# @zero on (time t) = t0 of [items$]
+def fn_t0_of(items) -> float:
+    return getattr(items, 't0', 0.0)
+
+
 # Platform implementation: websocket (Python)
 # Implements the functions declared in websocket.zero.md
 # Server-side WebSocket using the standard library (no dependencies).
@@ -1951,7 +1966,7 @@ class User(NamedTuple):
     phone: str = ""
     role: str = ""
 
-# @zero on (string body) = not found; website/not-found/not-found.zero.md:355
+# @zero on (string body) = not found; website/not-found/not-found.zero.md:364
 def fn_not_found() -> str:
     body = "not found"
     return body

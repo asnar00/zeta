@@ -542,6 +542,24 @@ export function fn_now(): number {
 }
 
 
+// @zero on (time t) = dt of [items$]
+export function fn_dt_of(items: any): number {
+    return items?.dt ?? 0;
+}
+
+
+// @zero on (time t) = capacity of [items$]
+export function fn_capacity_of(items: any): number {
+    return items?.capacity ?? 0;
+}
+
+
+// @zero on (time t) = t0 of [items$]
+export function fn_t0_of(items: any): number {
+    return items?.t0 ?? 0;
+}
+
+
 // Platform implementation: websocket (TypeScript)
 // Implements the functions declared in websocket.zero.md
 // Server-side stub — the real client implementation lives in the client bundle.
@@ -650,7 +668,7 @@ export function User(args: Partial<User> = {}): User {
     return { name: args.name ?? "", phone: args.phone ?? "", role: args.role ?? "" };
 }
 
-// @zero on (string body) = not found; website/not-found/not-found.zero.md:355
+// @zero on (string body) = not found; website/not-found/not-found.zero.md:364
 export function fn_not_found(): string {
     const body: string = "not found";
     return body;

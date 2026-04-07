@@ -27,6 +27,9 @@ def fn__number_bpm(n): return 60.0 / float(n)
 def fn_to_int__string(s):
     try: return int(s)
     except (ValueError, TypeError): return 0
+def fn_dt_of(items): return getattr(items, 'dt', 0.0)
+def fn_capacity_of(items): return getattr(items, 'capacity', 0.0)
+def fn_t0_of(items): return getattr(items, 't0', 0.0)
 """
 
 
@@ -173,6 +176,21 @@ def test_exec_stream_at_no_modifier():
     """Stream without at has no dt attribute."""
     source = "    int i$ <- 1 <- 2 <- 3"
     assert _run(source, "getattr(i_arr, 'dt', 'none')") == "none"
+
+def test_exec_dt_of():
+    """dt of [stream$] returns the stream's sample interval."""
+    source = "    int i$ <- 1 <- 2 <- 3 at ((10) hz)"
+    assert _run(source, "fn_dt_of(i_arr)") == 0.1
+
+def test_exec_capacity_of():
+    """capacity of [stream$] returns the stream's capacity."""
+    source = "    int i$(dt = (1) hz, capacity = (30) seconds)"
+    assert _run(source, "fn_capacity_of(i_arr)") == 30.0
+
+def test_exec_dt_of_no_timing():
+    """dt of an untimed stream returns 0."""
+    source = "    int i$ <- 1 <- 2 <- 3"
+    assert _run(source, "fn_dt_of(i_arr)") == 0.0
 
 def test_exec_stream_capacity():
     """Stream with capacity discards old values."""

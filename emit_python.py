@@ -587,9 +587,9 @@ def _emit_variable(var: dict) -> str:
                 lines[0] = lines[0].replace(f"{name} = list(", f"{name} = _Stream(list(")
                 if lines[0] != base and lines[0].endswith(")"):
                     lines[0] = lines[0] + ")"
-                # handle plain [...] from literals
-                elif f"{name} = [" in lines[0]:
-                    lines[0] = lines[0].replace(f"{name} = [", f"{name} = _Stream([")
+                # handle plain [...] (with or without type annotation)
+                elif "= [" in lines[0]:
+                    lines[0] = lines[0].replace("= [", "= _Stream([")
                     if lines[0].endswith("]"):
                         lines[0] = lines[0] + ")"
             for key, expr in stream_props.items():

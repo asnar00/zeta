@@ -1702,6 +1702,21 @@ def fn_now() -> float:
     return _time.time()
 
 
+# @zero on (time t) = dt of [items$]
+def fn_dt_of(items) -> float:
+    return getattr(items, 'dt', 0.0)
+
+
+# @zero on (time t) = capacity of [items$]
+def fn_capacity_of(items) -> float:
+    return getattr(items, 'capacity', 0.0)
+
+
+# @zero on (time t) = t0 of [items$]
+def fn_t0_of(items) -> float:
+    return getattr(items, 't0', 0.0)
+
+
 # Platform implementation: websocket (Python)
 # Implements the functions declared in websocket.zero.md
 # Server-side WebSocket using the standard library (no dependencies).
@@ -1945,7 +1960,7 @@ class User(NamedTuple):
     phone: str = ""
     role: str = ""
 
-# @zero on (string body) = landing page; website/landing-page/landing-page.zero.md:434
+# @zero on (string body) = landing page; website/landing-page/landing-page.zero.md:443
 def fn_landing_page() -> str:
     body = fn_read_file__string("website/index.html")
     body = fn_replace__string_in__string_with__string("#34988b", body, _get_ctx().background.colour)
