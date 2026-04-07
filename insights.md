@@ -143,6 +143,29 @@ They're all the same thing: values evolving over time, at different rates, deriv
 
 ---
 
+## the $ is just a sequence
+
+From the zero programmer's perspective, `$` means "a sequence of values." Period. How it's stored, whether it has timing, and how it's iterated are all implementation details the runtime handles.
+
+```zero
+int i$ = [1, 2, 3]                            # a sequence
+int countdown$ <- count down from (10)          # a sequence
+int timed$ <- [1, 2, 3] at ((1) hz)            # a sequence, with timing
+out$ <- timed$                                  # pipe one sequence into another
+```
+
+All the same `$`. The `at` modifier doesn't change what's in the sequence — it changes when. It works on any sequence: literal arrays, ranges, task results, function results.
+
+Three implementation strategies, invisible to zero code:
+
+- **No timing** (`dt` absent): iterate instantly. Plain array.
+- **Regular timing** (`dt` from rate): timestamps computed as `t = t0 + i * dt`. Dense, compact. Audio, video, fixed-rate sensors.
+- **Sparse timing** (per-element `t`): timestamps stored with each value. User input, network events, merged concurrent streams.
+
+Conversion between them is just resampling — the same operation a GPU texture sampler does.
+
+---
+
 ## the game
 
 We're groping towards a new way of expressing behaviour over time that lets us think more clearly. The imperative model (mutable state, execution order, callbacks) forces you to simulate the machine. The zero model (streams, SSA, explicit time) lets you see the structure.
