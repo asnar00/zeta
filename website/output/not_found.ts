@@ -560,6 +560,17 @@ export function fn_t0_of(items: any): number {
 }
 
 
+// @zero on (items$) = snapshot [items$]
+export function fn_snapshot(items: any): any {
+    const copy = [...items];
+    if (items.dt !== undefined) (copy as any).dt = items.dt;
+    if (items.capacity !== undefined) (copy as any).capacity = items.capacity;
+    if (items.t0 !== undefined) (copy as any).t0 = items.t0;
+    if (items._timestamps) (copy as any)._timestamps = [...items._timestamps];
+    return copy;
+}
+
+
 // Platform implementation: websocket (TypeScript)
 // Implements the functions declared in websocket.zero.md
 // Server-side stub — the real client implementation lives in the client bundle.
@@ -668,7 +679,7 @@ export function User(args: Partial<User> = {}): User {
     return { name: args.name ?? "", phone: args.phone ?? "", role: args.role ?? "" };
 }
 
-// @zero on (string body) = not found; website/not-found/not-found.zero.md:364
+// @zero on (string body) = not found; website/not-found/not-found.zero.md:367
 export function fn_not_found(): string {
     const body: string = "not found";
     return body;

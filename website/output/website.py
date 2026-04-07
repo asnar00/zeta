@@ -1722,6 +1722,20 @@ def fn_t0_of(items) -> float:
     return getattr(items, 't0', 0.0)
 
 
+# @zero on (items$) = snapshot [items$]
+def fn_snapshot(items):
+    cls = type(items) if hasattr(items, '_timestamps') else list
+    copy = cls(list(items))
+    for attr in ('dt', 'capacity', 't0'):
+        val = getattr(items, attr, None)
+        if val is not None:
+            object.__setattr__(copy, attr, val)
+    ts = getattr(items, '_timestamps', [])
+    if ts:
+        object.__setattr__(copy, '_timestamps', list(ts))
+    return copy
+
+
 # Platform implementation: websocket (Python)
 # Implements the functions declared in websocket.zero.md
 # Server-side WebSocket using the standard library (no dependencies).
@@ -2318,7 +2332,7 @@ class User(NamedTuple):
     phone: str = ""
     role: str = ""
 
-# @zero on main (string args$); website/website.zero.md:345
+# @zero on main (string args$); website/website.zero.md:348
 def task_main__string(args_arr: str):
     _push_terminal_out(logo)
     request_arr = task_serve_http__int(port)
@@ -2327,7 +2341,7 @@ def task_main__string(args_arr: str):
         body = fn_handle_request__Http_Request(request)
         _push_http_response(Http_Response(request, body))
 
-# @zero on (string body) = handle request (Http-Request request); website/website.zero.md:353
+# @zero on (string body) = handle request (Http-Request request); website/website.zero.md:356
 def fn_handle_request__Http_Request(request: Http_Request) -> str:
     body = None
     if _get_ctx().landing_page.enabled and request.path == "/":
@@ -2340,7 +2354,7 @@ def fn_handle_request__Http_Request(request: Http_Request) -> str:
         body = not_found.fn_not_found()
     return body if body is not None else ""
 
-# @zero on stop; website/website.zero.md:361
+# @zero on stop; website/website.zero.md:364
 def fn_stop():
     fn_print__string("stopping")
 
@@ -2363,4 +2377,4 @@ if __name__ == '__main__':
 
 _FEATURE_TREE = [("website", "the nøøb website", None), ("not-found", "default 404 response", 'website'), ("login", "SMS code authentication", 'website'), ("rpc", "RPC endpoint for runtime evaluation", 'website'), ("landing-page", "serves the noob landing page at root", 'website'), ("background", "per-user background colour", 'landing-page'), ("test-blackbox", "integration tests for the flight recorder", 'website')]
 
-_BUILD_FINGERPRINT = {"hash": "45e6667a03ff05d4", "git": "04a05aa70ce0", "features": "website,not-found,login,rpc,landing-page,background,test-blackbox"}
+_BUILD_FINGERPRINT = {"hash": "60891d2533e0ff3f", "git": "f0d8ffd930e9", "features": "website,not-found,login,rpc,landing-page,background,test-blackbox"}

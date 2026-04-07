@@ -47,6 +47,17 @@ def fn_to_int__string(s):
 def fn_dt_of(items): return getattr(items, 'dt', 0.0)
 def fn_capacity_of(items): return getattr(items, 'capacity', 0.0)
 def fn_t0_of(items): return getattr(items, 't0', 0.0)
+def fn_snapshot(items):
+    cls = type(items) if hasattr(items, '_timestamps') else list
+    copy = cls(list(items))
+    for attr in ('dt', 'capacity', 't0'):
+        val = getattr(items, attr, None)
+        if val is not None:
+            object.__setattr__(copy, attr, val)
+    ts = getattr(items, '_timestamps', [])
+    if ts:
+        object.__setattr__(copy, '_timestamps', list(ts))
+    return copy
 """
 
 
@@ -221,6 +232,38 @@ def test_exec_sparse_stream_capacity():
     i$ <- 1 <- 2 <- 3"""
     # all three appended nearly simultaneously, all within 1 second
     assert _run(source, "list(i_arr)") == [1, 2, 3]
+
+def test_exec_snapshot_values():
+    """Snapshot copies the stream's current values."""
+    source = """\
+    int i$ <- 1 <- 2 <- 3 at ((1) hz)
+    int j$ = snapshot [i$]"""
+    assert _run(source, "list(j_arr)") == [1, 2, 3]
+
+def test_exec_snapshot_timing():
+    """Snapshot preserves timing metadata."""
+    source = """\
+    int i$ <- 1 <- 2 <- 3 at ((10) hz)
+    int j$ = snapshot [i$]"""
+    assert _run(source, "fn_dt_of(j_arr)") == 0.1
+
+def test_exec_snapshot_is_independent():
+    """Snapshot is a static copy — mutating original doesn't affect it."""
+    source = """\
+    int i$ <- 1 <- 2 <- 3 at ((1) hz)
+    int j$ = snapshot [i$]"""
+    # both have same values
+    assert _run(source, "list(j_arr)") == [1, 2, 3]
+    # mutating j doesn't affect i (they're independent lists)
+    assert _run(source, "(j_arr.append(99), list(i_arr))[-1]") == [1, 2, 3]
+
+def test_exec_snapshot_sparse_timestamps():
+    """Snapshot of sparse stream copies timestamps."""
+    source = """\
+    int i$(capacity = (100) seconds)
+    i$ <- 1 <- 2 <- 3
+    int j$ = snapshot [i$]"""
+    assert _run(source, "len(j_arr._timestamps)") == 3
 
 def test_exec_dt_of():
     """dt of [stream$] returns the stream's sample interval."""

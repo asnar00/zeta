@@ -1714,6 +1714,20 @@ def fn_t0_of(items) -> float:
     return getattr(items, 't0', 0.0)
 
 
+# @zero on (items$) = snapshot [items$]
+def fn_snapshot(items):
+    cls = type(items) if hasattr(items, '_timestamps') else list
+    copy = cls(list(items))
+    for attr in ('dt', 'capacity', 't0'):
+        val = getattr(items, attr, None)
+        if val is not None:
+            object.__setattr__(copy, attr, val)
+    ts = getattr(items, '_timestamps', [])
+    if ts:
+        object.__setattr__(copy, '_timestamps', list(ts))
+    return copy
+
+
 # Platform implementation: websocket (Python)
 # Implements the functions declared in websocket.zero.md
 # Server-side WebSocket using the standard library (no dependencies).
@@ -1943,17 +1957,17 @@ class User(NamedTuple):
     phone: str = ""
     role: str = ""
 
-# @zero on bb check (string actual) contains (string expected); website/test-blackbox/test-blackbox.zero.md:447
+# @zero on bb check (string actual) contains (string expected); website/test-blackbox/test-blackbox.zero.md:450
 def fn_bb_check__string_contains__string(actual: str, expected: str):
     found = fn__string_contains__string(actual, expected)
     if found == False:
         raise _ZeroRaise('bb check failed', ['expected'])
 
-# @zero on bb check failed (string what); website/test-blackbox/test-blackbox.zero.md:452
+# @zero on bb check failed (string what); website/test-blackbox/test-blackbox.zero.md:455
 def fn_bb_check_failed__string(what: str):
     fn_print__string("FAIL: expected " + what)
 
-# @zero on test blackbox; website/test-blackbox/test-blackbox.zero.md:455
+# @zero on test blackbox; website/test-blackbox/test-blackbox.zero.md:458
 def fn_test_blackbox():
     fn_click_on__string(".logo")
     fn_press__string_on__string("Escape", "body")

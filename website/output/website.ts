@@ -571,6 +571,17 @@ export function fn_t0_of(items: any): number {
 }
 
 
+// @zero on (items$) = snapshot [items$]
+export function fn_snapshot(items: any): any {
+    const copy = [...items];
+    if (items.dt !== undefined) (copy as any).dt = items.dt;
+    if (items.capacity !== undefined) (copy as any).capacity = items.capacity;
+    if (items.t0 !== undefined) (copy as any).t0 = items.t0;
+    if (items._timestamps) (copy as any)._timestamps = [...items._timestamps];
+    return copy;
+}
+
+
 // Platform implementation: websocket (TypeScript)
 // Implements the functions declared in websocket.zero.md
 // Server-side stub — the real client implementation lives in the client bundle.
@@ -1074,7 +1085,7 @@ export function User(args: Partial<User> = {}): User {
     return { name: args.name ?? "", phone: args.phone ?? "", role: args.role ?? "" };
 }
 
-// @zero on main (string args$); website/website.zero.md:345
+// @zero on main (string args$); website/website.zero.md:348
 export async function task_main__string(args_arr: readonly string[]): Promise<void> {
     _push_terminal_out(logo);
     const request_arr = task_serve_http__int(port);
@@ -1085,7 +1096,7 @@ export async function task_main__string(args_arr: readonly string[]): Promise<vo
     }
 }
 
-// @zero on (string body) = handle request (Http-Request request); website/website.zero.md:353
+// @zero on (string body) = handle request (Http-Request request); website/website.zero.md:356
 export function fn_handle_request__Http_Request(request: Http_Request): string {
     let body: string = undefined!;
     if (_get_ctx().landing_page.enabled && request.path == "/") {
@@ -1103,7 +1114,7 @@ export function fn_handle_request__Http_Request(request: Http_Request): string {
     return body;
 }
 
-// @zero on stop; website/website.zero.md:361
+// @zero on stop; website/website.zero.md:364
 export function fn_stop(): void {
     fn_print__string("stopping");
 }
@@ -1133,4 +1144,4 @@ try {
 
 const _FEATURE_TREE: [string, string, string | null][] = [["website", "the nøøb website", null], ["not-found", "default 404 response", "website"], ["login", "SMS code authentication", "website"], ["rpc", "RPC endpoint for runtime evaluation", "website"], ["landing-page", "serves the noob landing page at root", "website"], ["background", "per-user background colour", "landing-page"], ["test-blackbox", "integration tests for the flight recorder", "website"]];
 
-const _BUILD_FINGERPRINT: {hash: string, git: string, features: string} = {"hash": "45e6667a03ff05d4", "git": "04a05aa70ce0", "features": "website,not-found,login,rpc,landing-page,background,test-blackbox"};
+const _BUILD_FINGERPRINT: {hash: string, git: string, features: string} = {"hash": "60891d2533e0ff3f", "git": "f0d8ffd930e9", "features": "website,not-found,login,rpc,landing-page,background,test-blackbox"};

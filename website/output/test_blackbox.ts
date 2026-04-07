@@ -557,6 +557,17 @@ export function fn_t0_of(items: any): number {
 }
 
 
+// @zero on (items$) = snapshot [items$]
+export function fn_snapshot(items: any): any {
+    const copy = [...items];
+    if (items.dt !== undefined) (copy as any).dt = items.dt;
+    if (items.capacity !== undefined) (copy as any).capacity = items.capacity;
+    if (items.t0 !== undefined) (copy as any).t0 = items.t0;
+    if (items._timestamps) (copy as any)._timestamps = [...items._timestamps];
+    return copy;
+}
+
+
 // Platform implementation: websocket (TypeScript)
 // Implements the functions declared in websocket.zero.md
 // Server-side stub — the real client implementation lives in the client bundle.
@@ -642,7 +653,7 @@ export function User(args: Partial<User> = {}): User {
     return { name: args.name ?? "", phone: args.phone ?? "", role: args.role ?? "" };
 }
 
-// @zero on bb check (string actual) contains (string expected); website/test-blackbox/test-blackbox.zero.md:447
+// @zero on bb check (string actual) contains (string expected); website/test-blackbox/test-blackbox.zero.md:450
 export function fn_bb_check__string_contains__string(actual: string, expected: string): void {
     const found = fn__string_contains__string(actual, expected);
     if (found == false) {
@@ -650,12 +661,12 @@ export function fn_bb_check__string_contains__string(actual: string, expected: s
 }
 }
 
-// @zero on bb check failed (string what); website/test-blackbox/test-blackbox.zero.md:452
+// @zero on bb check failed (string what); website/test-blackbox/test-blackbox.zero.md:455
 export function fn_bb_check_failed__string(what: string): void {
     fn_print__string("FAIL: expected " + what);
 }
 
-// @zero on test blackbox; website/test-blackbox/test-blackbox.zero.md:455
+// @zero on test blackbox; website/test-blackbox/test-blackbox.zero.md:458
 export function fn_test_blackbox(): void {
     fn_click_on__string(".logo");
     fn_press__string_on__string("Escape", "body");

@@ -557,6 +557,17 @@ export function fn_t0_of(items: any): number {
 }
 
 
+// @zero on (items$) = snapshot [items$]
+export function fn_snapshot(items: any): any {
+    const copy = [...items];
+    if (items.dt !== undefined) (copy as any).dt = items.dt;
+    if (items.capacity !== undefined) (copy as any).capacity = items.capacity;
+    if (items.t0 !== undefined) (copy as any).t0 = items.t0;
+    if (items._timestamps) (copy as any)._timestamps = [...items._timestamps];
+    return copy;
+}
+
+
 // Platform implementation: websocket (TypeScript)
 // Implements the functions declared in websocket.zero.md
 // Server-side stub — the real client implementation lives in the client bundle.

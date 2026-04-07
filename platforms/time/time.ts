@@ -48,3 +48,14 @@ function fn_capacity_of(items: any): number {
 function fn_t0_of(items: any): number {
     return items?.t0 ?? 0;
 }
+
+
+// @zero on (items$) = snapshot [items$]
+function fn_snapshot(items: any): any {
+    const copy = [...items];
+    if (items.dt !== undefined) (copy as any).dt = items.dt;
+    if (items.capacity !== undefined) (copy as any).capacity = items.capacity;
+    if (items.t0 !== undefined) (copy as any).t0 = items.t0;
+    if (items._timestamps) (copy as any)._timestamps = [...items._timestamps];
+    return copy;
+}

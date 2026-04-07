@@ -1717,6 +1717,20 @@ def fn_t0_of(items) -> float:
     return getattr(items, 't0', 0.0)
 
 
+# @zero on (items$) = snapshot [items$]
+def fn_snapshot(items):
+    cls = type(items) if hasattr(items, '_timestamps') else list
+    copy = cls(list(items))
+    for attr in ('dt', 'capacity', 't0'):
+        val = getattr(items, attr, None)
+        if val is not None:
+            object.__setattr__(copy, attr, val)
+    ts = getattr(items, '_timestamps', [])
+    if ts:
+        object.__setattr__(copy, '_timestamps', list(ts))
+    return copy
+
+
 # Platform implementation: websocket (Python)
 # Implements the functions declared in websocket.zero.md
 # Server-side WebSocket using the standard library (no dependencies).
@@ -1960,7 +1974,7 @@ class User(NamedTuple):
     phone: str = ""
     role: str = ""
 
-# @zero on (string body) = landing page; website/landing-page/landing-page.zero.md:443
+# @zero on (string body) = landing page; website/landing-page/landing-page.zero.md:446
 def fn_landing_page() -> str:
     body = fn_read_file__string("website/index.html")
     body = fn_replace__string_in__string_with__string("#34988b", body, _get_ctx().background.colour)

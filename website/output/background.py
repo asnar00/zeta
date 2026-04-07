@@ -1714,6 +1714,20 @@ def fn_t0_of(items) -> float:
     return getattr(items, 't0', 0.0)
 
 
+# @zero on (items$) = snapshot [items$]
+def fn_snapshot(items):
+    cls = type(items) if hasattr(items, '_timestamps') else list
+    copy = cls(list(items))
+    for attr in ('dt', 'capacity', 't0'):
+        val = getattr(items, attr, None)
+        if val is not None:
+            object.__setattr__(copy, attr, val)
+    ts = getattr(items, '_timestamps', [])
+    if ts:
+        object.__setattr__(copy, '_timestamps', list(ts))
+    return copy
+
+
 # Platform implementation: websocket (Python)
 # Implements the functions declared in websocket.zero.md
 # Server-side WebSocket using the standard library (no dependencies).

@@ -50,3 +50,7 @@ Get the capacity of a stream:
 Get the start time of a stream:
 
     on (time t) = t0 of [items$]
+
+Take a static copy of a stream's current contents, preserving timing:
+
+    on (int result$) = snapshot [items$]
