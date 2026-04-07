@@ -1449,6 +1449,23 @@ def fn_features() -> str:
     return _build_feature_tree(tree)
 
 
+# @zero Call input$
+# The input stream — receives a Call for every input-tagged function call.
+_input_stream = None
+
+
+def _push_runtime_input(call):
+    """Push a Call into the input$ stream (if it exists)."""
+    if _input_stream is not None:
+        _input_stream.append(call)
+
+
+def _register_input_stream(stream):
+    """Register the input$ stream. Called by the compiled module."""
+    global _input_stream
+    _input_stream = stream
+
+
 # @zero on (string result) = rpc eval (string expr)
 def fn_rpc_eval__string(expr: str) -> str:
     expr = urllib.parse.unquote(expr).strip()
@@ -1744,8 +1761,8 @@ def fn__number_bpm(n: float) -> float:
     return 60.0 / float(n)
 
 
-# @zero on (time t) = now ()
-def fn_now() -> float:
+# @zero input time now$
+def _get_now() -> float:
     return _time.time()
 
 
@@ -1993,6 +2010,11 @@ class _ZeroRaise(Exception):
         self.args_list = args or []
         super().__init__(f"{name}({', '.join(str(a) for a in self.args_list)})")
 
+class Call(NamedTuple):
+    name: str = ""
+    args: str = ""
+    result: str = ""
+
 class Http_Request(NamedTuple):
     path: str = ""
     method: str = ""
@@ -2007,7 +2029,7 @@ class User(NamedTuple):
     phone: str = ""
     role: str = ""
 
-# @zero on toggle login; website/login/login.zero.md:376
+# @zero on toggle login; website/login/login.zero.md:385
 def fn_toggle_login():
     session = fn_get_cookie__string("session")
     if session == "":
@@ -2015,7 +2037,7 @@ def fn_toggle_login():
     else:
         fn_logout_dialog()
 
-# @zero on login; website/login/login.zero.md:383
+# @zero on login; website/login/login.zero.md:392
 def fn_login():
     try:
         name = fn_input__string("name")
@@ -2032,22 +2054,22 @@ def fn_login():
         else:
             raise
 
-# @zero on logout dialog; website/login/login.zero.md:391
+# @zero on logout dialog; website/login/login.zero.md:400
 def fn_logout_dialog():
     choice = fn_choose__string_or__string("log out", "cancel")
     if choice == "log out":
         fn_clear_cookie__string("session")
         fn_reload_page()
 
-# @zero on unknown user (string name); website/login/login.zero.md:397
+# @zero on unknown user (string name); website/login/login.zero.md:406
 def fn_unknown_user__string(name: str):
     fn_show_message__string("unknown user")
 
-# @zero on invalid code (string code); website/login/login.zero.md:400
+# @zero on invalid code (string code); website/login/login.zero.md:409
 def fn_invalid_code__string(code: str):
     fn_show_message__string("invalid code")
 
-# @zero on (string code) = request login (string name); website/login/login.zero.md:403
+# @zero on (string code) = request login (string name); website/login/login.zero.md:412
 def fn_request_login__string(name: str) -> str:
     found = next((x for x in users_arr if x.name == name), type(users_arr[0])() if users_arr else None)
     if found.name != name:
@@ -2057,7 +2079,7 @@ def fn_request_login__string(name: str) -> str:
     pending_codes_arr[found.phone] = code
     return code
 
-# @zero on (User result) = verify login (string name) with code (string code); website/login/login.zero.md:411
+# @zero on (User result) = verify login (string name) with code (string code); website/login/login.zero.md:420
 def fn_verify_login__string_with_code__string(name: str, code: str) -> User:
     found = next((x for x in users_arr if x.name == name), type(users_arr[0])() if users_arr else None)
     stored = pending_codes_arr[found.phone]
@@ -2067,13 +2089,13 @@ def fn_verify_login__string_with_code__string(name: str, code: str) -> User:
     result = found
     return result
 
-# @zero on (string token) = complete login (string name) with code (string code); website/login/login.zero.md:419
+# @zero on (string token) = complete login (string name) with code (string code); website/login/login.zero.md:428
 def fn_complete_login__string_with_code__string(name: str, code: str) -> str:
     found = fn_verify_login__string_with_code__string(name, code)
     token = fn_create_session__string(name)
     return token
 
-# @zero on (string code) = generate code (User u); website/login/login.zero.md:423
+# @zero on (string code) = generate code (User u); website/login/login.zero.md:432
 def fn_generate_code__User(u: User) -> str:
     code = None
     if u.name == "_alice":
@@ -2084,21 +2106,21 @@ def fn_generate_code__User(u: User) -> str:
         code = fn_random_digits__int(4)
     return code if code is not None else ""
 
-# @zero on logo clicked; website/login/login.zero.md:431
+# @zero on logo clicked; website/login/login.zero.md:440
 def fn_logo_clicked():
     fn_toggle_login()
 
-# @zero on check (string snapshot) contains (string expected); website/login/login.zero.md:434
+# @zero on check (string snapshot) contains (string expected); website/login/login.zero.md:443
 def fn_check__string_contains__string(snapshot: str, expected: str):
     found = fn__string_contains__string(snapshot, expected)
     if found == False:
         raise _ZeroRaise('check failed', ['expected'])
 
-# @zero on check failed (string what); website/login/login.zero.md:439
+# @zero on check failed (string what); website/login/login.zero.md:448
 def fn_check_failed__string(what: str):
     fn_print__string("FAIL: expected " + what)
 
-# @zero on test login; website/login/login.zero.md:442
+# @zero on test login; website/login/login.zero.md:451
 def fn_test_login():
     import threading as _th
     _orig_fn_input__string = globals().get('fn_input__string', fn_input__string)

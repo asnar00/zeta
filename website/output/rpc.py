@@ -1451,6 +1451,23 @@ def fn_features() -> str:
     return _build_feature_tree(tree)
 
 
+# @zero Call input$
+# The input stream — receives a Call for every input-tagged function call.
+_input_stream = None
+
+
+def _push_runtime_input(call):
+    """Push a Call into the input$ stream (if it exists)."""
+    if _input_stream is not None:
+        _input_stream.append(call)
+
+
+def _register_input_stream(stream):
+    """Register the input$ stream. Called by the compiled module."""
+    global _input_stream
+    _input_stream = stream
+
+
 # @zero on (string result) = rpc eval (string expr)
 def fn_rpc_eval__string(expr: str) -> str:
     expr = urllib.parse.unquote(expr).strip()
@@ -1746,8 +1763,8 @@ def fn__number_bpm(n: float) -> float:
     return 60.0 / float(n)
 
 
-# @zero on (time t) = now ()
-def fn_now() -> float:
+# @zero input time now$
+def _get_now() -> float:
     return _time.time()
 
 
@@ -2026,6 +2043,11 @@ def test_rpc_4():
     assert _result == _expected, f"expected {_expected}, got {_result}"
 
 register_tests('rpc', [(test_rpc_0, 'rpc eval ("port") => "8084"'), (test_rpc_1, 'rpc eval ("logo = hi") => "logo = hi"'), (test_rpc_2, 'rpc eval ("not found ()") => "not found"'), (test_rpc_3, 'rpc eval ("trim (\\"  hello  \\")") => "hello"'), (test_rpc_4, 'rpc eval ("length of (\\"test\\")") => "4"')])
+
+class Call(NamedTuple):
+    name: str = ""
+    args: str = ""
+    result: str = ""
 
 class Http_Request(NamedTuple):
     path: str = ""

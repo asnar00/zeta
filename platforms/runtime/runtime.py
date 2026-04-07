@@ -668,6 +668,23 @@ def fn_features() -> str:
     return _build_feature_tree(tree)
 
 
+# @zero Call input$
+# The input stream — receives a Call for every input-tagged function call.
+_input_stream = None
+
+
+def _push_runtime_input(call):
+    """Push a Call into the input$ stream (if it exists)."""
+    if _input_stream is not None:
+        _input_stream.append(call)
+
+
+def _register_input_stream(stream):
+    """Register the input$ stream. Called by the compiled module."""
+    global _input_stream
+    _input_stream = stream
+
+
 # @zero on (string result) = rpc eval (string expr)
 def fn_rpc_eval__string(expr: str) -> str:
     expr = urllib.parse.unquote(expr).strip()

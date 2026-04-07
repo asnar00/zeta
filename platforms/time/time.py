@@ -24,8 +24,8 @@ def fn__number_bpm(n: float) -> float:
     return 60.0 / float(n)
 
 
-# @zero on (time t) = now ()
-def fn_now() -> float:
+# @zero input time now$
+def _get_now() -> float:
     return _time.time()
 
 

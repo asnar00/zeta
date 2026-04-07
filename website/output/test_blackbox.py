@@ -1449,6 +1449,23 @@ def fn_features() -> str:
     return _build_feature_tree(tree)
 
 
+# @zero Call input$
+# The input stream — receives a Call for every input-tagged function call.
+_input_stream = None
+
+
+def _push_runtime_input(call):
+    """Push a Call into the input$ stream (if it exists)."""
+    if _input_stream is not None:
+        _input_stream.append(call)
+
+
+def _register_input_stream(stream):
+    """Register the input$ stream. Called by the compiled module."""
+    global _input_stream
+    _input_stream = stream
+
+
 # @zero on (string result) = rpc eval (string expr)
 def fn_rpc_eval__string(expr: str) -> str:
     expr = urllib.parse.unquote(expr).strip()
@@ -1744,8 +1761,8 @@ def fn__number_bpm(n: float) -> float:
     return 60.0 / float(n)
 
 
-# @zero on (time t) = now ()
-def fn_now() -> float:
+# @zero input time now$
+def _get_now() -> float:
     return _time.time()
 
 
@@ -1993,6 +2010,11 @@ class _ZeroRaise(Exception):
         self.args_list = args or []
         super().__init__(f"{name}({', '.join(str(a) for a in self.args_list)})")
 
+class Call(NamedTuple):
+    name: str = ""
+    args: str = ""
+    result: str = ""
+
 class Http_Request(NamedTuple):
     path: str = ""
     method: str = ""
@@ -2007,17 +2029,17 @@ class User(NamedTuple):
     phone: str = ""
     role: str = ""
 
-# @zero on bb check (string actual) contains (string expected); website/test-blackbox/test-blackbox.zero.md:456
+# @zero on bb check (string actual) contains (string expected); website/test-blackbox/test-blackbox.zero.md:465
 def fn_bb_check__string_contains__string(actual: str, expected: str):
     found = fn__string_contains__string(actual, expected)
     if found == False:
         raise _ZeroRaise('bb check failed', ['expected'])
 
-# @zero on bb check failed (string what); website/test-blackbox/test-blackbox.zero.md:461
+# @zero on bb check failed (string what); website/test-blackbox/test-blackbox.zero.md:470
 def fn_bb_check_failed__string(what: str):
     fn_print__string("FAIL: expected " + what)
 
-# @zero on test blackbox; website/test-blackbox/test-blackbox.zero.md:464
+# @zero on test blackbox; website/test-blackbox/test-blackbox.zero.md:473
 def fn_test_blackbox():
     fn_click_on__string(".logo")
     fn_press__string_on__string("Escape", "body")

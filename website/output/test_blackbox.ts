@@ -665,6 +665,16 @@ class _ZeroRaise extends Error {
     }
 }
 
+interface Call {
+    readonly name: string;
+    readonly args: string;
+    readonly result: string;
+}
+
+export function Call(args: Partial<Call> = {}): Call {
+    return { name: args.name ?? "", args: args.args ?? "", result: args.result ?? "" };
+}
+
 interface Http_Request {
     readonly path: string;
     readonly method: string;
@@ -694,7 +704,7 @@ export function User(args: Partial<User> = {}): User {
     return { name: args.name ?? "", phone: args.phone ?? "", role: args.role ?? "" };
 }
 
-// @zero on bb check (string actual) contains (string expected); website/test-blackbox/test-blackbox.zero.md:456
+// @zero on bb check (string actual) contains (string expected); website/test-blackbox/test-blackbox.zero.md:465
 export function fn_bb_check__string_contains__string(actual: string, expected: string): void {
     const found = fn__string_contains__string(actual, expected);
     if (found == false) {
@@ -702,12 +712,12 @@ export function fn_bb_check__string_contains__string(actual: string, expected: s
 }
 }
 
-// @zero on bb check failed (string what); website/test-blackbox/test-blackbox.zero.md:461
+// @zero on bb check failed (string what); website/test-blackbox/test-blackbox.zero.md:470
 export function fn_bb_check_failed__string(what: string): void {
     fn_print__string("FAIL: expected " + what);
 }
 
-// @zero on test blackbox; website/test-blackbox/test-blackbox.zero.md:464
+// @zero on test blackbox; website/test-blackbox/test-blackbox.zero.md:473
 export function fn_test_blackbox(): void {
     fn_click_on__string(".logo");
     fn_press__string_on__string("Escape", "body");

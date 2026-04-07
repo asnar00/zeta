@@ -44,6 +44,7 @@ def fn__number_bpm(n): return 60.0 / float(n)
 def fn_to_int__string(s):
     try: return int(s)
     except (ValueError, TypeError): return 0
+def _get_now(): return _stream_time.time()
 def fn_dt_of(items): return getattr(items, 'dt', 0.0)
 def fn_capacity_of(items): return getattr(items, 'capacity', 0.0)
 def fn_t0_of(items): return getattr(items, 't0', 0.0)
@@ -289,6 +290,12 @@ def test_exec_serialise_sparse():
     data = json.loads(result)
     assert data["values"] == [1, 2, 3]
     assert len(data["timestamps"]) == 3
+
+def test_exec_input_stream_now():
+    """now$ returns the current time when read."""
+    source = "    time t = now$"
+    result = _run(source, "t")
+    assert result > 0
 
 def test_exec_deserialise_roundtrip():
     """Deserialise recovers original values."""

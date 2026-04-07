@@ -689,7 +689,7 @@ def _build_feat_ir(feat_name, ctx, input_paths):
     feat_ir["current_module"] = feat_name.replace("-", "_")
     feat_ir["_var_owners"] = ctx["ir_var_owners"]
     feat_ir["_all_user_vars"] = [v for v in ir["variables"]
-                                  if v.get("scope") != "shared" and not v.get("_platform")]
+                                  if v.get("scope") not in ("shared", "input") and not v.get("_platform")]
     if ir_by_feature[feat_name].get("tests"):
         feat_ir["tests"] = ir_by_feature[feat_name]["tests"]
         feat_ir["test_feature"] = feat_name

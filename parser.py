@@ -299,9 +299,35 @@ def _process_lines(lines, ir, fn_signatures, task_signatures, _src_line, recover
     return errors
 
 
+def _load_platform_input_streams():
+    """Load input stream declarations from all platform .zero.md files."""
+    import os
+    plat_dir = os.path.join(os.path.dirname(__file__), "platforms")
+    if not os.path.isdir(plat_dir):
+        return []
+    input_vars = []
+    for entry in sorted(os.listdir(plat_dir)):
+        subdir = os.path.join(plat_dir, entry)
+        if not os.path.isdir(subdir) or entry.startswith("_"):
+            continue
+        for fname in sorted(os.listdir(subdir)):
+            if fname.endswith(".zero.md"):
+                with open(os.path.join(subdir, fname)) as f:
+                    src = f.read()
+                    if _is_markdown(src):
+                        src, _ = _extract_code(src)
+                    for line in src.split("\n"):
+                        stripped = line.strip()
+                        if stripped.startswith("input "):
+                            var = _parse_variable(stripped)
+                            if var:
+                                input_vars.append(var)
+    return input_vars
+
+
 def _load_platform_signatures():
     """Load function signatures from all platform .zero.md files."""
-    import os, glob
+    import os
     plat_dir = os.path.join(os.path.dirname(__file__), "platforms")
     if not os.path.isdir(plat_dir):
         return []
@@ -321,6 +347,7 @@ def _load_platform_signatures():
 
 
 _platform_sigs_cache = None
+_platform_input_streams_cache = None
 
 
 def _get_platform_signatures():
@@ -329,6 +356,14 @@ def _get_platform_signatures():
     if _platform_sigs_cache is None:
         _platform_sigs_cache = _load_platform_signatures()
     return _platform_sigs_cache
+
+
+def _get_platform_input_streams():
+    """Get cached platform input stream declarations (loaded once)."""
+    global _platform_input_streams_cache
+    if _platform_input_streams_cache is None:
+        _platform_input_streams_cache = _load_platform_input_streams()
+    return _platform_input_streams_cache
 
 
 def process(source: str, recover: bool = False, source_file: str = None) -> dict:
@@ -684,9 +719,11 @@ def _parse_struct_fields(line: str) -> list[dict]:
 
 
 def _extract_scope_prefix(line):
-    """Extract optional scope prefix (shared) from a line."""
+    """Extract optional scope prefix (shared, input) from a line."""
     if line.startswith("shared "):
         return "shared", line[7:]
+    if line.startswith("input "):
+        return "input", line[6:]
     return None, line
 
 
@@ -1145,28 +1182,27 @@ def _is_conversion_operator(line):
 
 
 def _parse_fn_signature(line, line_num):
-    """Parse the 'on' line to extract result, params, and signature_parts."""
+    """Parse the 'on' line to extract result, params, signature_parts, and is_input flag."""
     line, is_input = _strip_input_modifier(line)
     # conversion operator: on (string s) <- (number n)
     conv_match = re.match(rf"on\s+\(({W})\s+({W})\)\s*<-\s*\(({W})\s+({W})\)", line)
     if conv_match:
         result = {"name": conv_match.group(2), "type": conv_match.group(1)}
         param = {"name": conv_match.group(4), "type": conv_match.group(3)}
-        # signature: (result_type) <- (param_type)
         sig_parts = [f"({conv_match.group(1)})", "<-", f"({conv_match.group(3)})"]
-        return result, [param], sig_parts
+        return result, [param], sig_parts, is_input
     result_match = re.match(rf"on\s+\(({W})\s+({W}\$?)\)\s*=\s*(.*)", line)
     if result_match:
         result = {"name": result_match.group(2), "type": result_match.group(1)}
         rhs = result_match.group(3).strip()
         params, signature_parts = _parse_signature(rhs)
-        return result, params, signature_parts
+        return result, params, signature_parts, is_input
     void_match = re.match(r"on\s+(.*)", line)
     if not void_match or not void_match.group(1).strip():
         raise ZeroParseError("expected function signature after 'on'", line_num, line, column=3)
     rhs = void_match.group(1).strip()
     params, signature_parts = _parse_signature(rhs)
-    return None, params, signature_parts
+    return None, params, signature_parts, is_input
 
 
 def _collect_indented_body(lines, start):
@@ -1215,20 +1251,22 @@ def _parse_function(lines: list[str], start: int, fn_signatures: list = None, sr
     """Parse a function definition starting with 'on'."""
     line = lines[start].strip()
     line_num = src_line(start) if src_line else start + 1
-    result, params, signature_parts = _parse_fn_signature(line, line_num)
+    result, params, signature_parts, is_input = _parse_fn_signature(line, line_num)
     raw_body_lines, i = _collect_indented_body(lines, start)
     body_lines = [l.strip() for l in raw_body_lines]
     if not body_lines:
-        return {
-            "result": result, "params": params, "signature_parts": signature_parts,
-            "body": [], "abstract": True, "source_line": line_num,
-        }, i - start
+        fn = {"result": result, "params": params, "signature_parts": signature_parts,
+              "body": [], "abstract": True, "source_line": line_num}
+        if is_input:
+            fn["is_input"] = True
+        return fn, i - start
     grouped = _group_blocks(body_lines, raw_body_lines, fn_signatures)
     body = _parse_fn_body(grouped, fn_signatures, task_signatures, result, src_line, start)
-    return {
-        "result": result, "params": params, "signature_parts": signature_parts,
-        "body": body, "source_line": line_num,
-    }, i - start
+    fn = {"result": result, "params": params, "signature_parts": signature_parts,
+          "body": body, "source_line": line_num}
+    if is_input:
+        fn["is_input"] = True
+    return fn, i - start
 
 
 def _group_concurrently_block(body_lines, raw_body_lines, i):

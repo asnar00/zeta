@@ -1457,6 +1457,23 @@ def fn_features() -> str:
     return _build_feature_tree(tree)
 
 
+# @zero Call input$
+# The input stream — receives a Call for every input-tagged function call.
+_input_stream = None
+
+
+def _push_runtime_input(call):
+    """Push a Call into the input$ stream (if it exists)."""
+    if _input_stream is not None:
+        _input_stream.append(call)
+
+
+def _register_input_stream(stream):
+    """Register the input$ stream. Called by the compiled module."""
+    global _input_stream
+    _input_stream = stream
+
+
 # @zero on (string result) = rpc eval (string expr)
 def fn_rpc_eval__string(expr: str) -> str:
     expr = urllib.parse.unquote(expr).strip()
@@ -1752,8 +1769,8 @@ def fn__number_bpm(n: float) -> float:
     return 60.0 / float(n)
 
 
-# @zero on (time t) = now ()
-def fn_now() -> float:
+# @zero input time now$
+def _get_now() -> float:
     return _time.time()
 
 
@@ -2002,6 +2019,8 @@ def _bb_record_stream(_name, _iter):
         if _dt and _dt > 0:
             _time.sleep(_dt)
 def _bb_record_call(_name, _result):
+    try: _push_runtime_input(Call(name=_name, args='', result=str(_result)))
+    except: pass
     return _result
 
 from typing import NamedTuple
@@ -2344,7 +2363,7 @@ def test_website_54():
 
 def test_website_55():
     '''elapsed time () => 0'''
-    _result = fn_elapsed_time()
+    _result = _bb_record_call('fn_elapsed_time', fn_elapsed_time())
     _expected = 0
     assert _result == _expected, f"expected {_expected}, got {_result}"
 
@@ -2368,6 +2387,11 @@ def test_website_58():
 
 register_tests('website', [(test_website_0, '(1) seconds => 1'), (test_website_1, '(0.5) seconds => 0.5'), (test_website_2, '(1000) ms => 1'), (test_website_3, '(500) ms => 0.5'), (test_website_4, '(1) hz => 1'), (test_website_5, '(10) hz => 0.1'), (test_website_6, '(60) bpm => 1'), (test_website_7, '(120) bpm => 0.5'), (test_website_8, 'trim ("  hello  ") => "hello"'), (test_website_9, 'trim ("already") => "already"'), (test_website_10, 'char (0) of ("hello") => "h"'), (test_website_11, 'char (4) of ("hello") => "o"'), (test_website_12, '("hello world") starts with ("hello") => true'), (test_website_13, '("hello world") starts with ("world") => false'), (test_website_14, '("hello world") contains ("world") => true'), (test_website_15, '("hello world") contains ("xyz") => false'), (test_website_16, '("hello") contains ("hello") => true'), (test_website_17, '("hello") contains ("") => true'), (test_website_18, 'split ("a/b/c") by ("/") => ["a", "b", "c"]'), (test_website_19, 'split ("hello") by ("/") => ["hello"]'), (test_website_20, 'length of ("hello") => 5'), (test_website_21, 'length of ("") => 0'), (test_website_22, 'replace ("world") in ("hello world") with ("zero") => "hello zero"'), (test_website_23, 'substring of ("hello world") from (6) => "world"'), (test_website_24, 'substring of ("abc") from (0) => "abc"'), (test_website_25, 'to int ("42") => 42'), (test_website_26, 'to int ("0") => 0'), (test_website_27, 'trim ("") => ""'), (test_website_28, 'trim ("  ") => ""'), (test_website_29, 'trim ("no spaces") => "no spaces"'), (test_website_30, 'trim ("  leading") => "leading"'), (test_website_31, 'trim ("trailing  ") => "trailing"'), (test_website_32, 'char (0) of ("a") => "a"'), (test_website_33, 'char (2) of ("abcde") => "c"'), (test_website_34, '("") starts with ("") => true'), (test_website_35, '("hello") starts with ("") => true'), (test_website_36, '("") starts with ("x") => false'), (test_website_37, '("abc") starts with ("abc") => true'), (test_website_38, '("abc") starts with ("abcd") => false'), (test_website_39, 'split ("one") by (",") => ["one"]'), (test_website_40, 'split ("a,b") by (",") => ["a", "b"]'), (test_website_41, 'split ("a,,b") by (",") => ["a", "", "b"]'), (test_website_42, 'length of ("") => 0'), (test_website_43, 'length of ("a") => 1'), (test_website_44, 'length of ("hello world") => 11'), (test_website_45, 'substring of ("hello") from (0) => "hello"'), (test_website_46, 'substring of ("hello") from (3) => "lo"'), (test_website_47, 'substring of ("hello") from (5) => ""'), (test_website_48, 'replace ("a") in ("aaa") with ("b") => "bbb"'), (test_website_49, 'replace ("xy") in ("no match") with ("z") => "no match"'), (test_website_50, 'replace ("") in ("hello") with ("x") => "xhxexlxlxox"'), (test_website_51, 'length of (random digits (1)) => 1'), (test_website_52, 'length of (random digits (4)) => 4'), (test_website_53, 'length of (random digits (10)) => 10'), (test_website_54, 'length of (create session ("test")) => 8'), (test_website_55, 'elapsed time () => 0'), (test_website_56, 'length of (report fault ("test")) => 8'), (test_website_57, 'handle request (Http-Request(path="/")) => "ᕦ(ツ)ᕤ"'), (test_website_58, 'handle request (Http-Request(path="/nope")) => "ᕦ(ツ)ᕤ"')])
 
+class Call(NamedTuple):
+    name: str = ""
+    args: str = ""
+    result: str = ""
+
 class Http_Request(NamedTuple):
     path: str = ""
     method: str = ""
@@ -2382,7 +2406,7 @@ class User(NamedTuple):
     phone: str = ""
     role: str = ""
 
-# @zero on main (string args$); website/website.zero.md:354
+# @zero on main (string args$); website/website.zero.md:363
 def task_main__string(args_arr: str):
     _push_terminal_out(logo)
     request_arr = task_serve_http__int(port)
@@ -2391,7 +2415,7 @@ def task_main__string(args_arr: str):
         body = fn_handle_request__Http_Request(request)
         _push_http_response(Http_Response(request, body))
 
-# @zero on (string body) = handle request (Http-Request request); website/website.zero.md:362
+# @zero on (string body) = handle request (Http-Request request); website/website.zero.md:371
 def fn_handle_request__Http_Request(request: Http_Request) -> str:
     body = None
     if _get_ctx().landing_page.enabled and request.path == "/":
@@ -2404,7 +2428,7 @@ def fn_handle_request__Http_Request(request: Http_Request) -> str:
         body = not_found.fn_not_found()
     return body if body is not None else ""
 
-# @zero on stop; website/website.zero.md:370
+# @zero on stop; website/website.zero.md:379
 def fn_stop():
     fn_print__string("stopping")
 
@@ -2427,4 +2451,4 @@ if __name__ == '__main__':
 
 _FEATURE_TREE = [("website", "the nøøb website", None), ("not-found", "default 404 response", 'website'), ("login", "SMS code authentication", 'website'), ("rpc", "RPC endpoint for runtime evaluation", 'website'), ("landing-page", "serves the noob landing page at root", 'website'), ("background", "per-user background colour", 'landing-page'), ("test-blackbox", "integration tests for the flight recorder", 'website')]
 
-_BUILD_FINGERPRINT = {"hash": "8127acd6144f38cc", "git": "c5501bfc2e93", "features": "website,not-found,login,rpc,landing-page,background,test-blackbox"}
+_BUILD_FINGERPRINT = {"hash": "0ef02fee65cbebda", "git": "c8f2c2467d38", "features": "website,not-found,login,rpc,landing-page,background,test-blackbox"}

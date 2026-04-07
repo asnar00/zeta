@@ -1449,6 +1449,23 @@ def fn_features() -> str:
     return _build_feature_tree(tree)
 
 
+# @zero Call input$
+# The input stream — receives a Call for every input-tagged function call.
+_input_stream = None
+
+
+def _push_runtime_input(call):
+    """Push a Call into the input$ stream (if it exists)."""
+    if _input_stream is not None:
+        _input_stream.append(call)
+
+
+def _register_input_stream(stream):
+    """Register the input$ stream. Called by the compiled module."""
+    global _input_stream
+    _input_stream = stream
+
+
 # @zero on (string result) = rpc eval (string expr)
 def fn_rpc_eval__string(expr: str) -> str:
     expr = urllib.parse.unquote(expr).strip()
@@ -1744,8 +1761,8 @@ def fn__number_bpm(n: float) -> float:
     return 60.0 / float(n)
 
 
-# @zero on (time t) = now ()
-def fn_now() -> float:
+# @zero input time now$
+def _get_now() -> float:
     return _time.time()
 
 
@@ -1992,6 +2009,11 @@ class _ZeroRaise(Exception):
         self.name = name
         self.args_list = args or []
         super().__init__(f"{name}({', '.join(str(a) for a in self.args_list)})")
+
+class Call(NamedTuple):
+    name: str = ""
+    args: str = ""
+    result: str = ""
 
 class Http_Request(NamedTuple):
     path: str = ""

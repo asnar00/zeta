@@ -665,6 +665,16 @@ class _ZeroRaise extends Error {
     }
 }
 
+interface Call {
+    readonly name: string;
+    readonly args: string;
+    readonly result: string;
+}
+
+export function Call(args: Partial<Call> = {}): Call {
+    return { name: args.name ?? "", args: args.args ?? "", result: args.result ?? "" };
+}
+
 interface Http_Request {
     readonly path: string;
     readonly method: string;

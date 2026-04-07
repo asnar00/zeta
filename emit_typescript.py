@@ -102,6 +102,8 @@ def _emit_variables_section_ts(ir: dict, structs: dict) -> list[str]:
     for var in ir["variables"]:
         if var["name"] in user_var_names:
             continue
+        if var.get("scope") == "input":
+            continue
         if var["name"] in platform_stream_names and var.get("array") and var.get("value") is None:
             continue
         if var.get("_platform") and var.get("array") and var.get("value") is None:

@@ -1097,6 +1097,16 @@ register_tests('website', [[test_website_0, '(1) seconds => 1'], [test_website_1
 const port: number = 8084;
 const logo: string = "ᕦ(ツ)ᕤ";
 
+interface Call {
+    readonly name: string;
+    readonly args: string;
+    readonly result: string;
+}
+
+export function Call(args: Partial<Call> = {}): Call {
+    return { name: args.name ?? "", args: args.args ?? "", result: args.result ?? "" };
+}
+
 interface Http_Request {
     readonly path: string;
     readonly method: string;
@@ -1126,7 +1136,7 @@ export function User(args: Partial<User> = {}): User {
     return { name: args.name ?? "", phone: args.phone ?? "", role: args.role ?? "" };
 }
 
-// @zero on main (string args$); website/website.zero.md:354
+// @zero on main (string args$); website/website.zero.md:363
 export async function task_main__string(args_arr: readonly string[]): Promise<void> {
     _push_terminal_out(logo);
     const request_arr = task_serve_http__int(port);
@@ -1137,7 +1147,7 @@ export async function task_main__string(args_arr: readonly string[]): Promise<vo
     }
 }
 
-// @zero on (string body) = handle request (Http-Request request); website/website.zero.md:362
+// @zero on (string body) = handle request (Http-Request request); website/website.zero.md:371
 export function fn_handle_request__Http_Request(request: Http_Request): string {
     let body: string = undefined!;
     if (_get_ctx().landing_page.enabled && request.path == "/") {
@@ -1155,7 +1165,7 @@ export function fn_handle_request__Http_Request(request: Http_Request): string {
     return body;
 }
 
-// @zero on stop; website/website.zero.md:370
+// @zero on stop; website/website.zero.md:379
 export function fn_stop(): void {
     fn_print__string("stopping");
 }
@@ -1185,4 +1195,4 @@ try {
 
 const _FEATURE_TREE: [string, string, string | null][] = [["website", "the nøøb website", null], ["not-found", "default 404 response", "website"], ["login", "SMS code authentication", "website"], ["rpc", "RPC endpoint for runtime evaluation", "website"], ["landing-page", "serves the noob landing page at root", "website"], ["background", "per-user background colour", "landing-page"], ["test-blackbox", "integration tests for the flight recorder", "website"]];
 
-const _BUILD_FINGERPRINT: {hash: string, git: string, features: string} = {"hash": "8127acd6144f38cc", "git": "c5501bfc2e93", "features": "website,not-found,login,rpc,landing-page,background,test-blackbox"};
+const _BUILD_FINGERPRINT: {hash: string, git: string, features: string} = {"hash": "0ef02fee65cbebda", "git": "c8f2c2467d38", "features": "website,not-found,login,rpc,landing-page,background,test-blackbox"};

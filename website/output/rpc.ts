@@ -704,6 +704,16 @@ export function test_rpc_4(): void {
 
 register_tests('rpc', [[test_rpc_0, 'rpc eval ("port") => "8084"'], [test_rpc_1, 'rpc eval ("logo = hi") => "logo = hi"'], [test_rpc_2, 'rpc eval ("not found ()") => "not found"'], [test_rpc_3, 'rpc eval ("trim (\\"  hello  \\")") => "hello"'], [test_rpc_4, 'rpc eval ("length of (\\"test\\")") => "4"']]);
 
+interface Call {
+    readonly name: string;
+    readonly args: string;
+    readonly result: string;
+}
+
+export function Call(args: Partial<Call> = {}): Call {
+    return { name: args.name ?? "", args: args.args ?? "", result: args.result ?? "" };
+}
+
 interface Http_Request {
     readonly path: string;
     readonly method: string;

@@ -7,6 +7,17 @@ Runtime platform for introspecting and modifying the running system. Provides RP
 
 ## interface
 
+A record of a function call from outside the system:
+
+    type Call
+        string name = ""
+        string args = ""
+        string result = ""
+
+The input stream — every call to an `input`-tagged function pushes a Call here:
+
+    Call input$
+
 Evaluate a zero expression at runtime (get/set variables, call functions):
 
     on (string result) = rpc eval (string expr)

@@ -31,34 +31,33 @@ _enum_values = {}  # populated by emit(), maps value -> "type.value"
 # set of feature names that have per-user variables (for context access detection)
 _context_features = set()
 
-# set of emitted function names that are non-deterministic platform functions
-_nondeterministic_fn_names = set()
+# set of emitted function names that are input (non-deterministic) functions
+_input_fn_names = set()
 
-# platform function name prefixes that are non-deterministic (return values from
-# the outside world: user input, randomness, time, network, sessions)
-_NONDETERMINISTIC_PREFIXES = {
-    "fn_input", "fn_random_digits", "fn_create_session",
-    "fn_get_cookie", "fn_choose",
-    "fn_connect_to", "fn_request__string_on",
-    "fn_receive_message_on",
-    "fn_every__number_do",
-}
+# set of input stream variable names (for getter call emission)
+_input_stream_names = set()
 
 
 def _init_globals(ir: dict) -> dict:
     """Initialize module-level enum values and context features. Returns enums dict."""
-    global _enum_values, _context_features, _nondeterministic_fn_names
+    global _enum_values, _context_features, _input_fn_names, _input_stream_names
     _context_features = set()
-    _nondeterministic_fn_names = set()
+    _input_fn_names = set()
+    _input_stream_names = set()
     var_owners = ir.get("_var_owners", {})
     all_user = ir.get("_all_user_vars", [])
     for v in all_user:
         _context_features.add(var_owners.get(v["name"], "default"))
     for fn in ir["functions"]:
-        if fn.get("_platform") and fn.get("result"):
-            name = _make_function_name(fn["signature_parts"])
-            if any(name.startswith(p) for p in _NONDETERMINISTIC_PREFIXES):
-                _nondeterministic_fn_names.add(name)
+        if fn.get("is_input") and fn.get("result"):
+            _input_fn_names.add(_make_function_name(fn["signature_parts"]))
+    for var in ir["variables"]:
+        if var.get("scope") == "input":
+            _input_stream_names.add(var["name"])
+    # also pick up platform input streams
+    from parser import _get_platform_input_streams
+    for var in _get_platform_input_streams():
+        _input_stream_names.add(var["name"])
     enums = {t["name"]: t for t in ir["types"] if t["kind"] == "enum"}
     _enum_values = {}
     for ename, edata in enums.items():
@@ -117,6 +116,8 @@ def _emit_variables_section(ir: dict) -> list[str]:
     var_lines = []
     for var in ir["variables"]:
         if var["name"] in user_var_names:
+            continue
+        if var.get("scope") == "input":
             continue
         if var["name"] in platform_stream_names and var.get("array") and var.get("value") is None:
             continue
@@ -219,6 +220,8 @@ def _bb_record_stream(_name, _iter):
         if _dt and _dt > 0:
             _time.sleep(_dt)
 def _bb_record_call(_name, _result):
+    try: _push_runtime_input(Call(name=_name, args='', result=str(_result)))
+    except: pass
     return _result"""
 
 
@@ -226,7 +229,7 @@ def _needs_bb_fallback(ir: dict) -> bool:
     """Check if the emitted code will use blackbox recording functions."""
     if ir.get("tasks"):
         return True
-    if _nondeterministic_fn_names:
+    if _input_fn_names:
         return True
     return False
 
@@ -1416,6 +1419,9 @@ def _emit_name_expr(node: dict) -> str:
     if val in _enum_values:
         return _enum_values[val]
     if val.endswith("$"):
+        name = val[:-1]  # strip $
+        if name in _input_stream_names:
+            return f"_get_{_safe(name)}()"
         return _safe(val.replace("$", "_arr"))
     return _safe(val)
 
@@ -1430,7 +1436,7 @@ def _emit_simple_expr(node: dict) -> str | None:
     if kind in ("fn_call", "array_fn_call"):
         fn_name = _make_function_name(node['signature_parts'])
         call_expr = f"{fn_name}({', '.join(_emit_expr(a) for a in node['args'])})"
-        if fn_name in _nondeterministic_fn_names:
+        if fn_name in _input_fn_names:
             return f"_bb_record_call({fn_name!r}, {call_expr})"
         return call_expr
     if kind == "task_call":
