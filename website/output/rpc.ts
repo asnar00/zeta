@@ -70,8 +70,8 @@ export function _bb_record_call(fn_name: string, result: any): any {
 }
 
 
-// @zero on (number ms) = elapsed time ()
-export function fn_elapsed_time(): number {
+// @zero input number elapsed$
+export function _get_elapsed(): number {
     return Math.round((performance.now() - _recording_start) * 10) / 10;
 }
 

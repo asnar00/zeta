@@ -14,11 +14,11 @@ Each component has:
 
 Connect to another component and return a channel:
 
-    on input (string channel) = connect to (string url)
+    on (string channel) = connect to (string url)
 
 Send a zero expression to a component and wait for the result:
 
-    on input (string result) = request (string command) on (string channel)
+    on (string result) = request (string command) on (string channel)
 
 Disconnect from a component:
 

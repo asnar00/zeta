@@ -340,8 +340,8 @@ def fn_build_fingerprint() -> str:
     return ""
 
 
-# @zero on (number ms) = elapsed time ()
-def fn_elapsed_time() -> float:
+# @zero input number elapsed$
+def _get_elapsed() -> float:
     return round((time.monotonic() - _recording_start) * 1000, 1)
 
 

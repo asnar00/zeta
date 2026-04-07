@@ -9,7 +9,7 @@ Provides a persistent channel between components (client and server). Used by th
 
 Open a WebSocket connection on a path:
 
-    on input (string channel) = open channel (string path)
+    on (string channel) = open channel (string path)
 
 Send a message on a channel:
 
@@ -17,7 +17,7 @@ Send a message on a channel:
 
 Wait for and return the next message on a channel:
 
-    on input (string data) = receive message on (string channel)
+    on (string data) = receive message on (string channel)
 
 Close a channel:
 

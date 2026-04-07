@@ -82,8 +82,8 @@ export function _bb_record_call(fn_name: string, result: any): any {
 }
 
 
-// @zero on (number ms) = elapsed time ()
-export function fn_elapsed_time(): number {
+// @zero input number elapsed$
+export function _get_elapsed(): number {
     return Math.round((performance.now() - _recording_start) * 10) / 10;
 }
 
@@ -1071,34 +1071,27 @@ export function test_website_54(): void {
 }
 
 export function test_website_55(): void {
-    // elapsed time () => 0
-    const _result = fn_elapsed_time();
-    const _expected = 0;
-    if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
-}
-
-export function test_website_56(): void {
     // length of (report fault ("test")) => 8
     const _result = fn_length_of__string(fn_report_fault__string("test"));
     const _expected = 8;
     if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
 }
 
-export function test_website_57(): void {
+export function test_website_56(): void {
     // handle request (Http-Request(path="/")) => "ᕦ(ツ)ᕤ"
     const _result = fn_handle_request__Http_Request(Http_Request({ path: "/" }));
     const _expected = "ᕦ(ツ)ᕤ";
     if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
 }
 
-export function test_website_58(): void {
+export function test_website_57(): void {
     // handle request (Http-Request(path="/nope")) => "ᕦ(ツ)ᕤ"
     const _result = fn_handle_request__Http_Request(Http_Request({ path: "/nope" }));
     const _expected = "ᕦ(ツ)ᕤ";
     if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
 }
 
-register_tests('website', [[test_website_0, '(1) seconds => 1'], [test_website_1, '(0.5) seconds => 0.5'], [test_website_2, '(1000) ms => 1'], [test_website_3, '(500) ms => 0.5'], [test_website_4, '(1) hz => 1'], [test_website_5, '(10) hz => 0.1'], [test_website_6, '(60) bpm => 1'], [test_website_7, '(120) bpm => 0.5'], [test_website_8, 'trim ("  hello  ") => "hello"'], [test_website_9, 'trim ("already") => "already"'], [test_website_10, 'char (0) of ("hello") => "h"'], [test_website_11, 'char (4) of ("hello") => "o"'], [test_website_12, '("hello world") starts with ("hello") => true'], [test_website_13, '("hello world") starts with ("world") => false'], [test_website_14, '("hello world") contains ("world") => true'], [test_website_15, '("hello world") contains ("xyz") => false'], [test_website_16, '("hello") contains ("hello") => true'], [test_website_17, '("hello") contains ("") => true'], [test_website_18, 'split ("a/b/c") by ("/") => ["a", "b", "c"]'], [test_website_19, 'split ("hello") by ("/") => ["hello"]'], [test_website_20, 'length of ("hello") => 5'], [test_website_21, 'length of ("") => 0'], [test_website_22, 'replace ("world") in ("hello world") with ("zero") => "hello zero"'], [test_website_23, 'substring of ("hello world") from (6) => "world"'], [test_website_24, 'substring of ("abc") from (0) => "abc"'], [test_website_25, 'to int ("42") => 42'], [test_website_26, 'to int ("0") => 0'], [test_website_27, 'trim ("") => ""'], [test_website_28, 'trim ("  ") => ""'], [test_website_29, 'trim ("no spaces") => "no spaces"'], [test_website_30, 'trim ("  leading") => "leading"'], [test_website_31, 'trim ("trailing  ") => "trailing"'], [test_website_32, 'char (0) of ("a") => "a"'], [test_website_33, 'char (2) of ("abcde") => "c"'], [test_website_34, '("") starts with ("") => true'], [test_website_35, '("hello") starts with ("") => true'], [test_website_36, '("") starts with ("x") => false'], [test_website_37, '("abc") starts with ("abc") => true'], [test_website_38, '("abc") starts with ("abcd") => false'], [test_website_39, 'split ("one") by (",") => ["one"]'], [test_website_40, 'split ("a,b") by (",") => ["a", "b"]'], [test_website_41, 'split ("a,,b") by (",") => ["a", "", "b"]'], [test_website_42, 'length of ("") => 0'], [test_website_43, 'length of ("a") => 1'], [test_website_44, 'length of ("hello world") => 11'], [test_website_45, 'substring of ("hello") from (0) => "hello"'], [test_website_46, 'substring of ("hello") from (3) => "lo"'], [test_website_47, 'substring of ("hello") from (5) => ""'], [test_website_48, 'replace ("a") in ("aaa") with ("b") => "bbb"'], [test_website_49, 'replace ("xy") in ("no match") with ("z") => "no match"'], [test_website_50, 'replace ("") in ("hello") with ("x") => "xhxexlxlxox"'], [test_website_51, 'length of (random digits (1)) => 1'], [test_website_52, 'length of (random digits (4)) => 4'], [test_website_53, 'length of (random digits (10)) => 10'], [test_website_54, 'length of (create session ("test")) => 8'], [test_website_55, 'elapsed time () => 0'], [test_website_56, 'length of (report fault ("test")) => 8'], [test_website_57, 'handle request (Http-Request(path="/")) => "ᕦ(ツ)ᕤ"'], [test_website_58, 'handle request (Http-Request(path="/nope")) => "ᕦ(ツ)ᕤ"']]);
+register_tests('website', [[test_website_0, '(1) seconds => 1'], [test_website_1, '(0.5) seconds => 0.5'], [test_website_2, '(1000) ms => 1'], [test_website_3, '(500) ms => 0.5'], [test_website_4, '(1) hz => 1'], [test_website_5, '(10) hz => 0.1'], [test_website_6, '(60) bpm => 1'], [test_website_7, '(120) bpm => 0.5'], [test_website_8, 'trim ("  hello  ") => "hello"'], [test_website_9, 'trim ("already") => "already"'], [test_website_10, 'char (0) of ("hello") => "h"'], [test_website_11, 'char (4) of ("hello") => "o"'], [test_website_12, '("hello world") starts with ("hello") => true'], [test_website_13, '("hello world") starts with ("world") => false'], [test_website_14, '("hello world") contains ("world") => true'], [test_website_15, '("hello world") contains ("xyz") => false'], [test_website_16, '("hello") contains ("hello") => true'], [test_website_17, '("hello") contains ("") => true'], [test_website_18, 'split ("a/b/c") by ("/") => ["a", "b", "c"]'], [test_website_19, 'split ("hello") by ("/") => ["hello"]'], [test_website_20, 'length of ("hello") => 5'], [test_website_21, 'length of ("") => 0'], [test_website_22, 'replace ("world") in ("hello world") with ("zero") => "hello zero"'], [test_website_23, 'substring of ("hello world") from (6) => "world"'], [test_website_24, 'substring of ("abc") from (0) => "abc"'], [test_website_25, 'to int ("42") => 42'], [test_website_26, 'to int ("0") => 0'], [test_website_27, 'trim ("") => ""'], [test_website_28, 'trim ("  ") => ""'], [test_website_29, 'trim ("no spaces") => "no spaces"'], [test_website_30, 'trim ("  leading") => "leading"'], [test_website_31, 'trim ("trailing  ") => "trailing"'], [test_website_32, 'char (0) of ("a") => "a"'], [test_website_33, 'char (2) of ("abcde") => "c"'], [test_website_34, '("") starts with ("") => true'], [test_website_35, '("hello") starts with ("") => true'], [test_website_36, '("") starts with ("x") => false'], [test_website_37, '("abc") starts with ("abc") => true'], [test_website_38, '("abc") starts with ("abcd") => false'], [test_website_39, 'split ("one") by (",") => ["one"]'], [test_website_40, 'split ("a,b") by (",") => ["a", "b"]'], [test_website_41, 'split ("a,,b") by (",") => ["a", "", "b"]'], [test_website_42, 'length of ("") => 0'], [test_website_43, 'length of ("a") => 1'], [test_website_44, 'length of ("hello world") => 11'], [test_website_45, 'substring of ("hello") from (0) => "hello"'], [test_website_46, 'substring of ("hello") from (3) => "lo"'], [test_website_47, 'substring of ("hello") from (5) => ""'], [test_website_48, 'replace ("a") in ("aaa") with ("b") => "bbb"'], [test_website_49, 'replace ("xy") in ("no match") with ("z") => "no match"'], [test_website_50, 'replace ("") in ("hello") with ("x") => "xhxexlxlxox"'], [test_website_51, 'length of (random digits (1)) => 1'], [test_website_52, 'length of (random digits (4)) => 4'], [test_website_53, 'length of (random digits (10)) => 10'], [test_website_54, 'length of (create session ("test")) => 8'], [test_website_55, 'length of (report fault ("test")) => 8'], [test_website_56, 'handle request (Http-Request(path="/")) => "ᕦ(ツ)ᕤ"'], [test_website_57, 'handle request (Http-Request(path="/nope")) => "ᕦ(ツ)ᕤ"']]);
 
 const port: number = 8084;
 const logo: string = "ᕦ(ツ)ᕤ";
@@ -1201,4 +1194,4 @@ try {
 
 const _FEATURE_TREE: [string, string, string | null][] = [["website", "the nøøb website", null], ["not-found", "default 404 response", "website"], ["login", "SMS code authentication", "website"], ["rpc", "RPC endpoint for runtime evaluation", "website"], ["landing-page", "serves the noob landing page at root", "website"], ["background", "per-user background colour", "landing-page"], ["test-blackbox", "integration tests for the flight recorder", "website"]];
 
-const _BUILD_FINGERPRINT: {hash: string, git: string, features: string} = {"hash": "749d0d80103830e1", "git": "d3be8baff7b6", "features": "website,not-found,login,rpc,landing-page,background,test-blackbox"};
+const _BUILD_FINGERPRINT: {hash: string, git: string, features: string} = {"hash": "0c171ed5940dc98f", "git": "a49644628637", "features": "website,not-found,login,rpc,landing-page,background,test-blackbox"};

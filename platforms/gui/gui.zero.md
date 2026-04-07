@@ -11,7 +11,7 @@ Platform functions for user interaction. Implementations vary by target: web (DO
 
 Show a text input and wait for the user to submit a value:
 
-    on input (string result) = input (string prompt)
+    on (string result) = input (string prompt)
 
 Set a browser cookie (or equivalent session token on native):
 
@@ -23,7 +23,7 @@ Show a message to the user:
 
 Get a cookie value (returns "" if not set):
 
-    on input (string value) = get cookie (string name)
+    on (string value) = get cookie (string name)
 
 Remove a cookie:
 
@@ -31,7 +31,7 @@ Remove a cookie:
 
 Show a choice dialog with labelled buttons, return the chosen label:
 
-    on input (string choice) = choose (string option-a) or (string option-b)
+    on (string choice) = choose (string option-a) or (string option-b)
 
 Reload the current page (or refresh the current view on native):
 
