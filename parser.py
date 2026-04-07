@@ -136,8 +136,37 @@ def _parse_test_line(line, ir, fn_signatures, task_signatures, _src_line, i):
         })
 
 
+def _try_parse_stream_assignment(line, ir, fn_sigs, task_sigs):
+    """Try to parse 'name$ <- expr' as an update to an existing stream variable."""
+    m = re.match(rf"({W})\$\s*<-\s*(.*)", line)
+    if not m:
+        return False
+    var_name = m.group(1)
+    rest = "<-" + m.group(2)
+    # find the existing variable
+    for var in ir["variables"]:
+        if var["name"] == var_name and var.get("array"):
+            # strip at/keep modifiers, try task call first
+            clean_rhs = m.group(2).strip()
+            clean_rhs, dt, length = _strip_trailing_stream_modifiers(clean_rhs, fn_sigs)
+            if task_sigs:
+                task_call = _try_parse_task_call(clean_rhs, task_sigs)
+                if task_call:
+                    if dt or length:
+                        var["value"] = {"kind": "timed_step", "value": task_call, "dt": dt, "length": length}
+                    else:
+                        var["value"] = task_call
+                    return True
+            # fall back to stream parse
+            var["value"] = _parse_stream(rest, var_name, fn_sigs)
+            return True
+    return False
+
+
 def _parse_variable_or_statement(line, ir, fn_signatures, task_signatures):
     """Parse a non-empty, non-comment line as variable, call, or statement."""
+    if _try_parse_stream_assignment(line, ir, fn_signatures, task_signatures):
+        return True
     if "(" in line and "=" not in line:
         fn_call = _try_parse_fn_call(line, fn_signatures)
         if fn_call:
@@ -841,12 +870,29 @@ def _parse_array_rhs(rhs, fn_sigs):
     return _parse_literal(rhs)
 
 
+def _strip_trailing_stream_modifiers(rhs, fn_sigs):
+    """Strip at/keep modifiers from the end of a stream RHS. Returns (clean_rhs, dt, length)."""
+    dt = None
+    length = None
+    rhs, keep_str = _strip_stream_modifier(rhs, "keep")
+    if keep_str:
+        length = _parse_expr(keep_str, fn_sigs)
+    rhs, at_str = _strip_stream_modifier(rhs, "at")
+    if at_str:
+        dt = _parse_expr(at_str, fn_sigs)
+    return rhs.strip(), dt, length
+
+
 def _try_parse_array_stream_or_task(type_name, var_name, rest, fn_sigs, task_sigs):
     """Try to parse an array variable with <- (stream or task call). Returns result or None."""
     if rest.startswith("<-") and task_sigs:
         rhs = rest[2:].strip()
-        task_call = _try_parse_task_call(rhs, task_sigs)
+        # strip at/keep modifiers before trying task call match
+        clean_rhs, dt, length = _strip_trailing_stream_modifiers(rhs, fn_sigs)
+        task_call = _try_parse_task_call(clean_rhs, task_sigs)
         if task_call:
+            if dt or length:
+                task_call = {"kind": "timed_step", "value": task_call, "dt": dt, "length": length}
             return {"name": var_name, "type": type_name, "array": True, "size": None, "value": task_call}
     if rest.startswith("<-"):
         value = _parse_stream(rest, var_name, fn_sigs)
@@ -857,17 +903,45 @@ def _try_parse_array_stream_or_task(type_name, var_name, rest, fn_sigs, task_sig
 _BUILTIN_TYPES = {"string", "int", "uint", "float", "number", "bool", "char", "time"}
 
 
+def _parse_stream_properties(rest, fn_sigs):
+    """Parse (dt = expr, length = expr) stream property declarations.
+    Returns a dict of properties and the remaining text."""
+    props = {}
+    m = re.match(r"\((.+)\)\s*(.*)", rest)
+    if not m:
+        return props, rest
+    inner = m.group(1)
+    remaining = m.group(2).strip()
+    for part in inner.split(","):
+        part = part.strip()
+        eq = part.find("=")
+        if eq > 0:
+            key = part[:eq].strip()
+            val_str = part[eq+1:].strip()
+            if key in ("dt", "length", "t0"):
+                props[key] = _parse_expr(val_str, fn_sigs)
+    return props, remaining
+
+
 def _parse_array_variable(type_name: str, var_name: str, rest: str, fn_sigs: list = None, task_sigs: list = None) -> dict:
     """Parse an array variable from its type, name (without $), and remaining text."""
     size = None
     value = None
+    # stream properties: int i$(dt = (1) hz, length = (60) seconds)
+    stream_props = {}
+    if rest.startswith("(") and ("dt" in rest or "length" in rest or "t0" in rest):
+        stream_props, rest = _parse_stream_properties(rest, fn_sigs)
     if rest.startswith("="):
         rhs = rest[1:].strip()
         early = _parse_array_with_assignment(type_name, var_name, rhs, fn_sigs, task_sigs)
         if early:
+            if stream_props:
+                early["stream_props"] = stream_props
             return early
     stream_result = _try_parse_array_stream_or_task(type_name, var_name, rest, fn_sigs, task_sigs)
     if stream_result:
+        if stream_props:
+            stream_result["stream_props"] = stream_props
         return stream_result
     key_type_match = re.match(rf"\[({W})\]\s*(.*)", rest)
     if key_type_match and key_type_match.group(1) in _BUILTIN_TYPES:
@@ -878,7 +952,10 @@ def _parse_array_variable(type_name: str, var_name: str, rest: str, fn_sigs: lis
         rest = size_match.group(2).strip()
     if rest.startswith("="):
         value = _parse_array_rhs(rest[1:].strip(), fn_sigs)
-    return {"name": var_name, "type": type_name, "array": True, "size": size, "value": value}
+    result = {"name": var_name, "type": type_name, "array": True, "size": size, "value": value}
+    if stream_props:
+        result["stream_props"] = stream_props
+    return result
 
 
 def _parse_array_keyed_collection(type_name, var_name, key_type_match, fn_sigs):
@@ -1462,6 +1539,14 @@ def _parse_task_emit(stripped, output_stream, platform_streams, fn_sigs):
         return None
     stream_name = emit_match.group(1)
     expr_str = emit_match.group(2).strip()
+    # check if RHS is a multi-step stream (contains <- outside parens/quotes)
+    if "<-" in expr_str:
+        stream = _parse_stream("<-" + expr_str, stream_name.replace("$", ""), fn_sigs)
+        kind = "emit_stream" if stream_name == output_stream else "emit_external_stream"
+        if stream_name == output_stream:
+            return {"kind": "emit_stream", "stream": stream}
+        if platform_streams and stream_name in platform_streams:
+            return {"kind": "emit_external_stream", "stream_name": stream_name, "stream": stream}
     if stream_name == output_stream:
         return {"kind": "emit", "value": _parse_expr(expr_str, fn_sigs)}
     if platform_streams and stream_name in platform_streams:

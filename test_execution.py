@@ -576,6 +576,28 @@ def test_exec_to_int_invalid():
     assert _run(source, 'fn_parse__string("abc")') == 0
 
 
+# --- timed streams ---
+
+def test_exec_timed_countdown_at_call():
+    """Timing attached at the call site via at modifier."""
+    source = """\
+    on (int i$) <- count down from (int n)
+        i$ <- n <- (i$ - 1) while (i$ > 1)
+    int i$ <- count down from (10) at ((1) hz)"""
+    assert _run(source, "i_arr") == [10, 9, 8, 7, 6, 5, 4, 3, 2, 1]
+    assert _run(source, "i_arr.dt") == 1.0
+
+def test_exec_timed_countdown_at_declaration():
+    """Timing attached at declaration, inherited by streaming."""
+    source = """\
+    on (int i$) <- count down from (int n)
+        i$ <- n <- (i$ - 1) while (i$ > 1)
+    int i$(dt = (1) hz)
+    i$ <- count down from (10)"""
+    assert _run(source, "i_arr") == [10, 9, 8, 7, 6, 5, 4, 3, 2, 1]
+    assert _run(source, "i_arr.dt") == 1.0
+
+
 def test_exec_sort_descending():
     source = """\
     type person =

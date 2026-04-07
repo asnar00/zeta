@@ -519,7 +519,25 @@ def _emit_variable(var: dict) -> str:
     name = _safe(var["name"] + "_arr" if var["array"] else var["name"])
     type_ann = _py_type_ann(var["type"])
     if var["array"]:
-        return _emit_array_variable(name, type_ann, var)
+        base = _emit_array_variable(name, type_ann, var)
+        stream_props = var.get("stream_props", {})
+        if stream_props:
+            lines = [base]
+            # wrap in _Stream if not already
+            if "_Stream" not in base:
+                # handle list(...) from task calls
+                lines[0] = lines[0].replace(f"{name} = list(", f"{name} = _Stream(list(")
+                if lines[0] != base and lines[0].endswith(")"):
+                    lines[0] = lines[0] + ")"
+                # handle plain [...] from literals
+                elif f"{name} = [" in lines[0]:
+                    lines[0] = lines[0].replace(f"{name} = [", f"{name} = _Stream([")
+                    if lines[0].endswith("]"):
+                        lines[0] = lines[0] + ")"
+            for key, expr in stream_props.items():
+                lines.append(f"{name}.{key} = {_emit_expr(expr)}")
+            return "\n".join(lines)
+        return base
     else:
         value_str = _emit_value(var["value"], var["type"])
         return f"{name}: {type_ann} = {value_str}"
@@ -532,6 +550,20 @@ def _emit_dict_array_variable(name: str, type_ann: str, val: dict) -> str | None
     kind = val.get("kind")
     if kind == "stream":
         return _emit_stream(name, val)
+    if kind == "timed_step":
+        inner = val["value"]
+        lines = []
+        if inner.get("kind") == "task_call":
+            fn_name = make_task_call_fn_name(inner)
+            args = ", ".join(a.replace("$", "_arr") for a in inner["args"])
+            lines.append(f"{name} = _Stream(list({fn_name}({args})))")
+        else:
+            lines.append(f"{name} = _Stream({_emit_expr(inner)})")
+        if val.get("dt"):
+            lines.append(f"{name}.dt = {_emit_expr(val['dt'])}")
+        if val.get("length"):
+            lines.append(f"{name}.length = {_emit_expr(val['length'])}")
+        return "\n".join(lines)
     if kind == "task_call":
         return _emit_task_call(name, type_ann, val)
     if kind == "where":
@@ -953,6 +985,14 @@ def _emit_task_body_node(node, uses, base_indent, extra_indent):
         return [_emit_task_consume(node, base_indent)], "    "
     if kind == "emit":
         return [f"{base_indent}{extra_indent}yield {_emit_expr(node['value'])}"], extra_indent
+    if kind == "emit_stream":
+        # inline stream: yield all values from it
+        tmp = "_stream_tmp"
+        stream_code = _emit_stream(tmp, node["stream"])
+        lines = [f"{base_indent}{extra_indent}{line}" for line in stream_code.split("\n")]
+        lines.append(f"{base_indent}{extra_indent}for _v in {tmp}:")
+        lines.append(f"{base_indent}{extra_indent}    yield _v")
+        return lines, extra_indent
     if kind == "emit_external":
         handler = _platform_stream_fn(node["stream"], uses)
         return [f"{base_indent}{extra_indent}{handler}({_emit_expr(node['value'])})"], extra_indent
