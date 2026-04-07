@@ -1659,8 +1659,29 @@ def _group_task_if_branch(nodes_with_indent, i, indent):
     return {"kind": "if_block", "branches": branches}, i
 
 
+def _group_task_concurrently(nodes_with_indent, i, indent):
+    """Group a concurrently/and block from task nodes."""
+    blocks = []
+    current_block = []
+    i += 1  # skip 'concurrently'
+    while i < len(nodes_with_indent):
+        ni, nn = nodes_with_indent[i]
+        if ni == indent and isinstance(nn, dict) and nn.get("kind") == "name" and nn.get("value") == "and":
+            blocks.append(current_block)
+            current_block = []
+            i += 1
+            continue
+        if ni <= indent and not (isinstance(nn, dict) and nn.get("kind") == "name" and nn.get("value") == "and"):
+            break
+        current_block.append(nn)
+        i += 1
+    blocks.append(current_block)
+    blocks = [b for b in blocks if b]
+    return {"kind": "concurrently", "blocks": blocks}, i
+
+
 def _group_task_if_blocks(nodes_with_indent: list) -> list:
-    """Group task_if/task_elif/task_else/for_each nodes into structured blocks."""
+    """Group task_if/task_elif/task_else/for_each/concurrently nodes into structured blocks."""
     result = []
     i = 0
     while i < len(nodes_with_indent):
@@ -1670,6 +1691,9 @@ def _group_task_if_blocks(nodes_with_indent: list) -> list:
             result.append(grouped)
         elif node["kind"] == "task_if":
             grouped, i = _group_task_if_branch(nodes_with_indent, i, indent)
+            result.append(grouped)
+        elif node.get("kind") == "name" and node.get("value") == "concurrently":
+            grouped, i = _group_task_concurrently(nodes_with_indent, i, indent)
             result.append(grouped)
         else:
             result.append(node)

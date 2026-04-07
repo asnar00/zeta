@@ -69,11 +69,14 @@ def _init_globals(ir: dict) -> dict:
 
 
 def _has_concurrently(ir: dict) -> bool:
-    """Check if any function uses concurrently blocks."""
-    return any(
-        any(stmt.get("kind") == "concurrently" for stmt in fn.get("body", []))
-        for fn in ir["functions"]
-    )
+    """Check if any function or task uses concurrently blocks."""
+    for fn in ir["functions"]:
+        if any(stmt.get("kind") == "concurrently" for stmt in fn.get("body", [])):
+            return True
+    for task in ir.get("tasks", []):
+        if any(stmt.get("kind") == "concurrently" for stmt in task.get("body", [])):
+            return True
+    return False
 
 
 def _emit_tests_sections(ir: dict) -> list[str]:
@@ -206,20 +209,30 @@ def _has_timed_streams(ir: dict) -> bool:
         if var.get("stream_props"):
             return True
     for task in ir.get("tasks", []):
-        for node in task.get("body", []):
-            if not isinstance(node, dict):
-                continue
-            if node.get("kind") == "var_decl":
-                if _value_has_timing(node.get("value")):
+        if _body_has_timing(task.get("body", [])):
+            return True
+    return False
+
+
+def _body_has_timing(nodes):
+    """Recursively check if any node in a body contains timed streams."""
+    for node in nodes:
+        if not isinstance(node, dict):
+            continue
+        if node.get("kind") == "var_decl" and _value_has_timing(node.get("value")):
+            return True
+        if node.get("kind") in ("emit", "emit_external") and _value_has_timing(node.get("value")):
+            return True
+        if node.get("kind") == "concurrently":
+            for block in node.get("blocks", []):
+                if _body_has_timing(block):
                     return True
-            if node.get("kind") in ("emit", "emit_external"):
-                if _value_has_timing(node.get("value")):
-                    return True
-            if node.get("kind") == "for_each":
-                for bn in node.get("body", []):
-                    if isinstance(bn, dict) and bn.get("kind") in ("emit", "emit_external"):
-                        if _value_has_timing(bn.get("value")):
-                            return True
+        if node.get("kind") == "for_each":
+            if _body_has_timing(node.get("body", [])):
+                return True
+        for branch in node.get("branches", []):
+            if isinstance(branch, dict) and _body_has_timing(branch.get("body", [])):
+                return True
     return False
 
 
@@ -1036,6 +1049,21 @@ def _emit_task_inner_call(node: dict, base_indent: str, extra_indent: str) -> st
     return f"{base_indent}{extra_indent}{name} = {call_fn}({args})"
 
 
+def _emit_task_concurrently(node, uses, base_indent, extra_indent):
+    """Emit a concurrently block inside a task body."""
+    lines = []
+    block_fns = []
+    for idx, block in enumerate(node["blocks"]):
+        fn_name = f"_conc_{idx}"
+        lines.append(f"{base_indent}{extra_indent}def {fn_name}():")
+        for block_node in block:
+            block_lines, _ = _emit_task_body_node(block_node, uses, base_indent + extra_indent, "    ")
+            lines.extend(block_lines)
+        block_fns.append(fn_name)
+    lines.append(f"{base_indent}{extra_indent}_concurrently({', '.join(block_fns)})")
+    return lines
+
+
 def _emit_task_body_node(node, uses, base_indent, extra_indent):
     """Emit a single task body node. Returns (lines, new_extra_indent)."""
     kind = node.get("kind")
@@ -1081,6 +1109,8 @@ def _emit_task_body_node(node, uses, base_indent, extra_indent):
             ]
             return lines, extra_indent
         return [f"{base_indent}{extra_indent}{handler}({val_expr})"], extra_indent
+    if kind == "concurrently":
+        return _emit_task_concurrently(node, uses, base_indent, extra_indent), extra_indent
     if kind == "if_block":
         block_lines = [f"{base_indent}{extra_indent}{bl}"
                        for bl in _emit_if_block(node, is_task=True).split("\n")]
