@@ -133,13 +133,13 @@ def test_exec_stream_until():
 
 def test_exec_stream_while():
     source = "    int i$ <- 0 <- (i$ + 1) while (i$ < 4)"
-    assert _run(source, "i_arr") == [0, 1, 2, 3, 4]
+    assert _run(source, "i_arr") == [0, 1, 2, 3]
 
 def test_exec_stream_at():
     """Stream with at modifier preserves values, attaches dt."""
     source = "    int i$ <- 10 <- (i$ - 1) while (i$ > 0) at ((1) seconds)"
     result = _run(source, "i_arr")
-    assert result == [10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0]
+    assert result == [10, 9, 8, 7, 6, 5, 4, 3, 2, 1]
     dt = _run(source, "i_arr.dt")
     assert dt == 1.0
 
@@ -448,7 +448,7 @@ def test_exec_3step_stream_with_while():
     source = "    int i$ <- 5 <- 10 <- (i$ + 1) while (i$ < 14)"
     result = _run(source, "i_arr")
     assert result[:2] == [5, 10]
-    assert result == [5, 10, 11, 12, 13, 14]
+    assert result == [5, 10, 11, 12, 13]
 
 def test_exec_4step_stream_no_terminator():
     """4 literal steps with no loop."""
@@ -582,7 +582,7 @@ def test_exec_timed_countdown_at_call():
     """Timing attached at the call site via at modifier."""
     source = """\
     on (int i$) <- count down from (int n)
-        i$ <- n <- (i$ - 1) while (i$ > 1)
+        i$ <- n <- (i$ - 1) while (i$ > 0)
     int i$ <- count down from (10) at ((1) hz)"""
     assert _run(source, "i_arr") == [10, 9, 8, 7, 6, 5, 4, 3, 2, 1]
     assert _run(source, "i_arr.dt") == 1.0
@@ -591,7 +591,7 @@ def test_exec_timed_countdown_at_declaration():
     """Timing attached at declaration, inherited by streaming."""
     source = """\
     on (int i$) <- count down from (int n)
-        i$ <- n <- (i$ - 1) while (i$ > 1)
+        i$ <- n <- (i$ - 1) while (i$ > 0)
     int i$(dt = (1) hz)
     i$ <- count down from (10)"""
     assert _run(source, "i_arr") == [10, 9, 8, 7, 6, 5, 4, 3, 2, 1]

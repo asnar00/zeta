@@ -167,15 +167,17 @@ def test_emit_stream_until(report):
     _check(report, "stream with until",
            "    int i$ <- 1 <- (i$ + 1) until (i$ == 4)",
            lambda out: _assert_in("i_arr = [1]", out),
-           lambda out: _assert_in("while not (i_arr[-1] == 4):", out),
-           lambda out: _assert_in("i_arr.append(i_arr[-1] + 1)", out))
+           lambda out: _assert_in("while True:", out),
+           lambda out: _assert_in("i_arr.append(_next)", out),
+           lambda out: _assert_in("if _next == 4:", out))
 
 def test_emit_stream_while(report):
     _check(report, "stream with while",
            "    int i$ <- 0 <- (i$ + 1) while (i$ < 4)",
            lambda out: _assert_in("i_arr = [0]", out),
-           lambda out: _assert_in("while i_arr[-1] < 4:", out),
-           lambda out: _assert_in("i_arr.append(i_arr[-1] + 1)", out))
+           lambda out: _assert_in("while True:", out),
+           lambda out: _assert_in("if not (_next < 4):", out),
+           lambda out: _assert_in("i_arr.append(_next)", out))
 
 
 # --- array mapping ---

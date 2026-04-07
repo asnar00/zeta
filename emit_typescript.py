@@ -504,20 +504,27 @@ def _emit_array_variable(name: str, type_ann: str, var: dict, structs: dict = No
 # --- streams ---
 
 def _emit_stream_loop_ts(name: str, steps: list, terminate: dict, emit_fn) -> list[str]:
-    """Emit the loop portion of a streaming expression (TypeScript)."""
+    """Emit the loop portion of a streaming expression (TypeScript).
+    while: gates the next value (exclude boundary). Compute, check, append if true.
+    until: includes the triggering value. Compute, append, check, break if true."""
     lines = []
+    last = f"{name}[{name}.length - 1]"
     for step in steps[1:-1]:
         lines.append(f"{name}.push({emit_fn(step)});")
     repeat_expr = emit_fn(steps[-1])
     if terminate["kind"] == "until":
         cond = emit_fn(terminate["condition"])
-        lines.append(f"while (!({cond})) {{")
-        lines.append(f"    {name}.push({repeat_expr});")
+        lines.append("while (true) {")
+        lines.append(f"    const _next = {repeat_expr};")
+        lines.append(f"    {name}.push(_next);")
+        lines.append(f"    if ({cond.replace(last, '_next')}) break;")
         lines.append("}")
     elif terminate["kind"] == "while":
         cond = emit_fn(terminate["condition"])
-        lines.append(f"while ({cond}) {{")
-        lines.append(f"    {name}.push({repeat_expr});")
+        lines.append("while (true) {")
+        lines.append(f"    const _next = {repeat_expr};")
+        lines.append(f"    if (!({cond.replace(last, '_next')})) break;")
+        lines.append(f"    {name}.push(_next);")
         lines.append("}")
     return lines
 

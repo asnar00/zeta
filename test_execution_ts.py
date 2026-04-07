@@ -140,7 +140,7 @@ def test_ts_exec_stream_until():
 
 def test_ts_exec_stream_while():
     source = "    int i$ <- 0 <- (i$ + 1) while (i$ < 4)"
-    assert _run(source, "i_arr") == [0, 1, 2, 3, 4]
+    assert _run(source, "i_arr") == [0, 1, 2, 3]
 
 
 # --- 3-step streaming ---
@@ -393,7 +393,7 @@ def test_ts_exec_time_ms():
 
 def test_ts_exec_stream_at():
     source = "    int i$ <- 10 <- (i$ - 1) while (i$ > 0) at ((1) seconds)"
-    assert _run(source, "i_arr") == [10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0]
+    assert _run(source, "i_arr") == [10, 9, 8, 7, 6, 5, 4, 3, 2, 1]
     assert _run(source, "(i_arr as any).dt") == 1.0
 
 def test_ts_exec_stream_at_per_step():

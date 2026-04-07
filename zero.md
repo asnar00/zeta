@@ -292,11 +292,15 @@ Using the target variable on the right-hand-side of a streaming operation, the m
 
     int i$ <- 1 <- (i$ + 1)             # i$ = [1, 2]
 
-The keywords `while` and `until` repeat a streaming operation until some termination condition is achieved:
+The keywords `while` and `until` repeat a streaming operation:
 
-    int i$ <- 1 <- (i$ + 1) until (i$==4)   # i$ = [1, 2, 3, 4]
+`while` excludes the boundary — the condition gates the *next* value, like a while loop:
 
     int i$ <- 0 <- (i$ + 1) while (i$ < 4)  # i$ = [0, 1, 2, 3]
+
+`until` includes the boundary — the triggering value enters the stream, then the stream stops:
+
+    int i$ <- 1 <- (i$ + 1) until (i$==4)   # i$ = [1, 2, 3, 4]
 
 ### stream timing
 
@@ -329,7 +333,7 @@ A *task* is like a function, except it is defined using the `<-` operator, and o
 Tasks can produce streams from scalar inputs:
 
     on (int i$) <- count down from (int n)
-        i$ <- n <- (i$ - 1) while (i$ > 1)
+        i$ <- n <- (i$ - 1) while (i$ > 0)
 
     int i$ <- count down from (4)           # i$ = [4, 3, 2, 1]
 

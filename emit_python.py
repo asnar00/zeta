@@ -633,19 +633,27 @@ def _emit_array_variable(name: str, type_ann: str, var: dict) -> str:
 # --- streams ---
 
 def _emit_stream_loop(name: str, steps: list, terminate: dict, emit_fn) -> list[str]:
-    """Emit the loop portion of a streaming expression."""
+    """Emit the loop portion of a streaming expression.
+    while: gates the next value (exclude boundary). Compute, check, append if true.
+    until: includes the triggering value. Compute, append, check, break if true."""
     lines = []
     for step in steps[1:-1]:
         lines.append(f"{name}.append({emit_fn(step)})")
     repeat_expr = emit_fn(steps[-1])
     if terminate["kind"] == "until":
         cond = emit_fn(terminate["condition"])
-        lines.append(f"while not ({cond}):")
-        lines.append(f"    {name}.append({repeat_expr})")
+        lines.append("while True:")
+        lines.append(f"    _next = {repeat_expr}")
+        lines.append(f"    {name}.append(_next)")
+        lines.append(f"    if {cond.replace(f'{name}[-1]', '_next')}:")
+        lines.append("        break")
     elif terminate["kind"] == "while":
         cond = emit_fn(terminate["condition"])
-        lines.append(f"while {cond}:")
-        lines.append(f"    {name}.append({repeat_expr})")
+        lines.append("while True:")
+        lines.append(f"    _next = {repeat_expr}")
+        lines.append(f"    if not ({cond.replace(f'{name}[-1]', '_next')}):")
+        lines.append("        break")
+        lines.append(f"    {name}.append(_next)")
     return lines
 
 
