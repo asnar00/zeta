@@ -57,10 +57,14 @@ _load_store();
 
 
 export function _bb_record_stream(stream_name: string, iterator: any): any {
-    if (iterator && typeof iterator[Symbol.asyncIterator] === "function") {
+    const dt = iterator?.dt ?? 0;
+    if (dt > 0 || (iterator && typeof iterator[Symbol.asyncIterator] === "function")) {
         return (async function* () {
-            for await (const value of iterator) {
+            for (const value of iterator) {
                 yield value;
+                if (dt > 0) {
+                    await new Promise(resolve => setTimeout(resolve, dt * 1000));
+                }
             }
         })();
     }
@@ -1144,4 +1148,4 @@ try {
 
 const _FEATURE_TREE: [string, string, string | null][] = [["website", "the nøøb website", null], ["not-found", "default 404 response", "website"], ["login", "SMS code authentication", "website"], ["rpc", "RPC endpoint for runtime evaluation", "website"], ["landing-page", "serves the noob landing page at root", "website"], ["background", "per-user background colour", "landing-page"], ["test-blackbox", "integration tests for the flight recorder", "website"]];
 
-const _BUILD_FINGERPRINT: {hash: string, git: string, features: string} = {"hash": "da9ae53821624872", "git": "127d98dc2a60", "features": "website,not-found,login,rpc,landing-page,background,test-blackbox"};
+const _BUILD_FINGERPRINT: {hash: string, git: string, features: string} = {"hash": "14a20f3f0e63a732", "git": "437f36af86f7", "features": "website,not-found,login,rpc,landing-page,background,test-blackbox"};

@@ -43,10 +43,14 @@ _load_store();
 
 
 function _bb_record_stream(stream_name: string, iterator: any): any {
-    if (iterator && typeof iterator[Symbol.asyncIterator] === "function") {
+    const dt = iterator?.dt ?? 0;
+    if (dt > 0 || (iterator && typeof iterator[Symbol.asyncIterator] === "function")) {
         return (async function* () {
-            for await (const value of iterator) {
+            for (const value of iterator) {
                 yield value;
+                if (dt > 0) {
+                    await new Promise(resolve => setTimeout(resolve, dt * 1000));
+                }
             }
         })();
     }

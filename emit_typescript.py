@@ -69,11 +69,14 @@ def _init_globals_ts(ir: dict) -> tuple:
 
 
 def _has_concurrently(ir: dict) -> bool:
-    """Check if any function uses concurrently blocks."""
-    return any(
-        any(stmt.get("kind") == "concurrently" for stmt in fn.get("body", []))
-        for fn in ir["functions"]
-    )
+    """Check if any function or task uses concurrently blocks."""
+    for fn in ir["functions"]:
+        if any(stmt.get("kind") == "concurrently" for stmt in fn.get("body", [])):
+            return True
+    for task in ir.get("tasks", []):
+        if any(stmt.get("kind") == "concurrently" for stmt in task.get("body", [])):
+            return True
+    return False
 
 
 # --- emit orchestrator ---
@@ -280,12 +283,12 @@ def emit(ir: dict) -> str:
     sections = []
     if _has_timed_streams_ts(ir):
         sections.append(_STREAM_HELPER_TS)
-    # emit blackbox fallback for standalone builds (no platform prepend).
-    # feature-modular builds have blackbox.ts prepended, so skip to avoid redeclaration.
-    if ir.get("tasks") and not ir.get("module_map"):
+    # blackbox fallback: only for standalone emit() calls (execution tests).
+    # zeta.py builds always prepend platform .ts files which provide these.
+    if ir.get("tasks") and not ir.get("module_map") and not ir.get("source_file"):
         sections.append(
             "// blackbox fallback (standalone build)\n"
-            "function _bb_record_stream(_name: string, _iter: any): any { return _iter; }\n"
+            "function* _bb_record_stream(_name: string, _iter: any): any { yield* _iter; }\n"
             "function _bb_record_call(_name: string, _result: any): any { return _result; }"
         )
     if _has_concurrently(ir):
@@ -1108,6 +1111,23 @@ def _emit_task_var_decl_ts(node: dict, structs: dict, base_indent: str, extra_in
     return f"{base_indent}{extra_indent}let {name} = {val};"
 
 
+def _emit_task_concurrently_ts(node, structs, uses, has_platform_streams, base_indent, extra_indent):
+    """Emit a concurrently block inside a task body (TypeScript).
+    Inner functions are async so they can use for-await on timed streams."""
+    lines = []
+    block_fns = []
+    for idx, block in enumerate(node["blocks"]):
+        fn_name = f"_conc_{idx}"
+        lines.append(f"{base_indent}{extra_indent}async function {fn_name}() {{")
+        for block_node in block:
+            block_lines, _ = _emit_task_body_node_ts(block_node, structs, uses, True, base_indent + extra_indent, "    ")
+            lines.extend(block_lines)
+        lines.append(f"{base_indent}{extra_indent}}}")
+        block_fns.append(fn_name)
+    lines.append(f"{base_indent}{extra_indent}await _concurrently({', '.join(block_fns)});")
+    return lines
+
+
 def _emit_task_body_node_ts(node, structs, uses, has_platform_streams, base_indent, extra_indent):
     """Emit a single task body node. Returns (lines, new_extra_indent)."""
     kind = node.get("kind")
@@ -1125,9 +1145,40 @@ def _emit_task_body_node_ts(node, structs, uses, has_platform_streams, base_inde
         lines.append(f"{base_indent}{extra_indent}    yield _v;")
         lines.append(f"{base_indent}{extra_indent}}}")
         return lines, extra_indent
+    if kind == "concurrently":
+        return _emit_task_concurrently_ts(node, structs, uses, has_platform_streams, base_indent, extra_indent), extra_indent
     if kind == "emit_external":
         handler = _platform_stream_fn_ts(node["stream"], uses)
-        return [f"{base_indent}{extra_indent}{handler}({_emit_expr(node['value'], structs)});"], extra_indent
+        val = node["value"]
+        # anonymous timed stream: out$ <- task() at ((1) hz)
+        if isinstance(val, dict) and val.get("kind") == "timed_step":
+            inner = val["value"]
+            if inner.get("kind") == "task_call":
+                fn_name = make_task_call_fn_name(inner)
+                args = ", ".join(_coerce_task_arg(a, t, inner) for a, t in
+                                 zip(inner["args"], _task_call_param_types(inner)))
+                tmp = "_anon_stream"
+                lines = [f"{base_indent}{extra_indent}const {tmp} = new _Stream([...{fn_name}({args})]);"]
+                if val.get("dt"):
+                    lines.append(f"{base_indent}{extra_indent}{tmp}.dt = {_emit_expr(val['dt'], structs)};")
+                if val.get("length"):
+                    lines.append(f"{base_indent}{extra_indent}{tmp}.capacity = {_emit_expr(val['length'], structs)};")
+                for_kw = "for await" if has_platform_streams else "for"
+                lines.append(f"{base_indent}{extra_indent}{for_kw} (const _v of _bb_record_stream('{tmp}', {tmp})) {{")
+                lines.append(f"{base_indent}{extra_indent}    {handler}(_v);")
+                lines.append(f"{base_indent}{extra_indent}}}")
+                return lines, extra_indent
+        # stream variable piping: out$ <- stream$
+        if isinstance(val, dict) and val.get("kind") == "name" and val.get("value", "").endswith("$"):
+            arr_name = _emit_expr(val, structs)
+            for_kw = "for await" if has_platform_streams else "for"
+            lines = [
+                f"{base_indent}{extra_indent}{for_kw} (const _v of _bb_record_stream('{arr_name}', {arr_name})) {{",
+                f"{base_indent}{extra_indent}    {handler}(_v);",
+                f"{base_indent}{extra_indent}}}",
+            ]
+            return lines, extra_indent
+        return [f"{base_indent}{extra_indent}{handler}({_emit_expr(val, structs)});"], extra_indent
     if kind == "if_block":
         block_lines = [f"{base_indent}{extra_indent}{bl}"
                        for bl in _emit_task_if_block_ts(node, structs).split("\n")]
