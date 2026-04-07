@@ -380,11 +380,17 @@ export function fn_create_session__string(name: string): string {
     return token;
 }
 
+// @zero input uint random$
+export function _get_random(): number {
+    return Math.floor(Math.random() * 4294967296);
+}
+
+
 // @zero on (string result) = random digits (int n)
 export function fn_random_digits__int(n: number): string {
     let result = "";
     for (let i = 0; i < n; i++) {
-        result += Math.floor(Math.random() * 10).toString();
+        result += (_get_random() % 10).toString();
     }
     return result;
 }
@@ -704,7 +710,7 @@ export function User(args: Partial<User> = {}): User {
     return { name: args.name ?? "", phone: args.phone ?? "", role: args.role ?? "" };
 }
 
-// @zero on bb check (string actual) contains (string expected); website/test-blackbox/test-blackbox.zero.md:465
+// @zero on bb check (string actual) contains (string expected); website/test-blackbox/test-blackbox.zero.md:468
 export function fn_bb_check__string_contains__string(actual: string, expected: string): void {
     const found = fn__string_contains__string(actual, expected);
     if (found == false) {
@@ -712,12 +718,12 @@ export function fn_bb_check__string_contains__string(actual: string, expected: s
 }
 }
 
-// @zero on bb check failed (string what); website/test-blackbox/test-blackbox.zero.md:470
+// @zero on bb check failed (string what); website/test-blackbox/test-blackbox.zero.md:473
 export function fn_bb_check_failed__string(what: string): void {
     fn_print__string("FAIL: expected " + what);
 }
 
-// @zero on test blackbox; website/test-blackbox/test-blackbox.zero.md:473
+// @zero on test blackbox; website/test-blackbox/test-blackbox.zero.md:476
 export function fn_test_blackbox(): void {
     fn_click_on__string(".logo");
     fn_press__string_on__string("Escape", "body");

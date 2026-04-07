@@ -1224,10 +1224,15 @@ def _get_session_names():
     return mod._session_names
 
 
+# @zero input uint random$
+def _get_random() -> int:
+    import random
+    return random.getrandbits(32)
+
+
 # @zero on (string result) = random digits (int n)
 def fn_random_digits__int(n: int) -> str:
-    import random
-    return "".join(str(random.randint(0, 9)) for _ in range(n))
+    return "".join(str(_get_random() % 10) for _ in range(n))
 
 
 # @zero on set session (string token)
@@ -2339,19 +2344,19 @@ def test_website_50():
 
 def test_website_51():
     '''length of (random digits (1)) => 1'''
-    _result = fn_length_of__string(_bb_record_call('fn_random_digits__int', fn_random_digits__int(1)))
+    _result = fn_length_of__string(fn_random_digits__int(1))
     _expected = 1
     assert _result == _expected, f"expected {_expected}, got {_result}"
 
 def test_website_52():
     '''length of (random digits (4)) => 4'''
-    _result = fn_length_of__string(_bb_record_call('fn_random_digits__int', fn_random_digits__int(4)))
+    _result = fn_length_of__string(fn_random_digits__int(4))
     _expected = 4
     assert _result == _expected, f"expected {_expected}, got {_result}"
 
 def test_website_53():
     '''length of (random digits (10)) => 10'''
-    _result = fn_length_of__string(_bb_record_call('fn_random_digits__int', fn_random_digits__int(10)))
+    _result = fn_length_of__string(fn_random_digits__int(10))
     _expected = 10
     assert _result == _expected, f"expected {_expected}, got {_result}"
 
@@ -2406,7 +2411,7 @@ class User(NamedTuple):
     phone: str = ""
     role: str = ""
 
-# @zero on main (string args$); website/website.zero.md:363
+# @zero on main (string args$); website/website.zero.md:366
 def task_main__string(args_arr: str):
     _push_terminal_out(logo)
     request_arr = task_serve_http__int(port)
@@ -2415,7 +2420,7 @@ def task_main__string(args_arr: str):
         body = fn_handle_request__Http_Request(request)
         _push_http_response(Http_Response(request, body))
 
-# @zero on (string body) = handle request (Http-Request request); website/website.zero.md:371
+# @zero on (string body) = handle request (Http-Request request); website/website.zero.md:374
 def fn_handle_request__Http_Request(request: Http_Request) -> str:
     body = None
     if _get_ctx().landing_page.enabled and request.path == "/":
@@ -2428,7 +2433,7 @@ def fn_handle_request__Http_Request(request: Http_Request) -> str:
         body = not_found.fn_not_found()
     return body if body is not None else ""
 
-# @zero on stop; website/website.zero.md:379
+# @zero on stop; website/website.zero.md:382
 def fn_stop():
     fn_print__string("stopping")
 
@@ -2451,4 +2456,4 @@ if __name__ == '__main__':
 
 _FEATURE_TREE = [("website", "the nøøb website", None), ("not-found", "default 404 response", 'website'), ("login", "SMS code authentication", 'website'), ("rpc", "RPC endpoint for runtime evaluation", 'website'), ("landing-page", "serves the noob landing page at root", 'website'), ("background", "per-user background colour", 'landing-page'), ("test-blackbox", "integration tests for the flight recorder", 'website')]
 
-_BUILD_FINGERPRINT = {"hash": "0ef02fee65cbebda", "git": "c8f2c2467d38", "features": "website,not-found,login,rpc,landing-page,background,test-blackbox"}
+_BUILD_FINGERPRINT = {"hash": "dd029fc4a1c6e2cb", "git": "8718b361287a", "features": "website,not-found,login,rpc,landing-page,background,test-blackbox"}

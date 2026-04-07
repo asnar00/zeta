@@ -1216,10 +1216,15 @@ def _get_session_names():
     return mod._session_names
 
 
+# @zero input uint random$
+def _get_random() -> int:
+    import random
+    return random.getrandbits(32)
+
+
 # @zero on (string result) = random digits (int n)
 def fn_random_digits__int(n: int) -> str:
-    import random
-    return "".join(str(random.randint(0, 9)) for _ in range(n))
+    return "".join(str(_get_random() % 10) for _ in range(n))
 
 
 # @zero on set session (string token)
@@ -2029,17 +2034,17 @@ class User(NamedTuple):
     phone: str = ""
     role: str = ""
 
-# @zero on bb check (string actual) contains (string expected); website/test-blackbox/test-blackbox.zero.md:465
+# @zero on bb check (string actual) contains (string expected); website/test-blackbox/test-blackbox.zero.md:468
 def fn_bb_check__string_contains__string(actual: str, expected: str):
     found = fn__string_contains__string(actual, expected)
     if found == False:
         raise _ZeroRaise('bb check failed', ['expected'])
 
-# @zero on bb check failed (string what); website/test-blackbox/test-blackbox.zero.md:470
+# @zero on bb check failed (string what); website/test-blackbox/test-blackbox.zero.md:473
 def fn_bb_check_failed__string(what: str):
     fn_print__string("FAIL: expected " + what)
 
-# @zero on test blackbox; website/test-blackbox/test-blackbox.zero.md:473
+# @zero on test blackbox; website/test-blackbox/test-blackbox.zero.md:476
 def fn_test_blackbox():
     fn_click_on__string(".logo")
     fn_press__string_on__string("Escape", "body")

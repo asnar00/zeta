@@ -383,11 +383,17 @@ export function fn_create_session__string(name: string): string {
     return token;
 }
 
+// @zero input uint random$
+export function _get_random(): number {
+    return Math.floor(Math.random() * 4294967296);
+}
+
+
 // @zero on (string result) = random digits (int n)
 export function fn_random_digits__int(n: number): string {
     let result = "";
     for (let i = 0; i < n; i++) {
-        result += Math.floor(Math.random() * 10).toString();
+        result += (_get_random() % 10).toString();
     }
     return result;
 }
@@ -723,7 +729,7 @@ export function User(args: Partial<User> = {}): User {
     return { name: args.name ?? "", phone: args.phone ?? "", role: args.role ?? "" };
 }
 
-// @zero on (string body) = landing page; website/landing-page/landing-page.zero.md:461
+// @zero on (string body) = landing page; website/landing-page/landing-page.zero.md:464
 export function fn_landing_page(): string {
     let body: string = undefined!;
     body = fn_read_file__string("website/index.html");

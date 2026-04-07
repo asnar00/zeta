@@ -39,9 +39,13 @@ Find or create a named session, returns a token. If the user has logged in befor
 
     on input (string token) = create session (string name)
 
-Generate a random string of digits of the given length:
+Stream of random unsigned integers (pull one value per read):
 
-    on input (string result) = random digits (int n)
+    input uint random$
+
+Generate a random string of digits of the given length (reads from random$):
+
+    on (string result) = random digits (int n)
 
 Switch the current request to a session's context by token:
 

@@ -1219,10 +1219,15 @@ def _get_session_names():
     return mod._session_names
 
 
+# @zero input uint random$
+def _get_random() -> int:
+    import random
+    return random.getrandbits(32)
+
+
 # @zero on (string result) = random digits (int n)
 def fn_random_digits__int(n: int) -> str:
-    import random
-    return "".join(str(random.randint(0, 9)) for _ in range(n))
+    return "".join(str(_get_random() % 10) for _ in range(n))
 
 
 # @zero on set session (string token)
@@ -2052,7 +2057,7 @@ class User(NamedTuple):
     phone: str = ""
     role: str = ""
 
-# @zero on (string body) = not found; website/not-found/not-found.zero.md:382
+# @zero on (string body) = not found; website/not-found/not-found.zero.md:385
 def fn_not_found() -> str:
     body = "not found"
     return body

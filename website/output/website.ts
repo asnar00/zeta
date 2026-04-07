@@ -394,11 +394,17 @@ export function fn_create_session__string(name: string): string {
     return token;
 }
 
+// @zero input uint random$
+export function _get_random(): number {
+    return Math.floor(Math.random() * 4294967296);
+}
+
+
 // @zero on (string result) = random digits (int n)
 export function fn_random_digits__int(n: number): string {
     let result = "";
     for (let i = 0; i < n; i++) {
-        result += Math.floor(Math.random() * 10).toString();
+        result += (_get_random() % 10).toString();
     }
     return result;
 }
@@ -1136,7 +1142,7 @@ export function User(args: Partial<User> = {}): User {
     return { name: args.name ?? "", phone: args.phone ?? "", role: args.role ?? "" };
 }
 
-// @zero on main (string args$); website/website.zero.md:363
+// @zero on main (string args$); website/website.zero.md:366
 export async function task_main__string(args_arr: readonly string[]): Promise<void> {
     _push_terminal_out(logo);
     const request_arr = task_serve_http__int(port);
@@ -1147,7 +1153,7 @@ export async function task_main__string(args_arr: readonly string[]): Promise<vo
     }
 }
 
-// @zero on (string body) = handle request (Http-Request request); website/website.zero.md:371
+// @zero on (string body) = handle request (Http-Request request); website/website.zero.md:374
 export function fn_handle_request__Http_Request(request: Http_Request): string {
     let body: string = undefined!;
     if (_get_ctx().landing_page.enabled && request.path == "/") {
@@ -1165,7 +1171,7 @@ export function fn_handle_request__Http_Request(request: Http_Request): string {
     return body;
 }
 
-// @zero on stop; website/website.zero.md:379
+// @zero on stop; website/website.zero.md:382
 export function fn_stop(): void {
     fn_print__string("stopping");
 }
@@ -1195,4 +1201,4 @@ try {
 
 const _FEATURE_TREE: [string, string, string | null][] = [["website", "the nøøb website", null], ["not-found", "default 404 response", "website"], ["login", "SMS code authentication", "website"], ["rpc", "RPC endpoint for runtime evaluation", "website"], ["landing-page", "serves the noob landing page at root", "website"], ["background", "per-user background colour", "landing-page"], ["test-blackbox", "integration tests for the flight recorder", "website"]];
 
-const _BUILD_FINGERPRINT: {hash: string, git: string, features: string} = {"hash": "0ef02fee65cbebda", "git": "c8f2c2467d38", "features": "website,not-found,login,rpc,landing-page,background,test-blackbox"};
+const _BUILD_FINGERPRINT: {hash: string, git: string, features: string} = {"hash": "dd029fc4a1c6e2cb", "git": "8718b361287a", "features": "website,not-found,login,rpc,landing-page,background,test-blackbox"};
