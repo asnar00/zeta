@@ -529,6 +529,7 @@ def _collect_signatures(lines: list[str]) -> list[dict]:
         stripped = line.strip()
         if not stripped.startswith("on "):
             continue
+        stripped, _ = _strip_input_modifier(stripped)
         match = re.match(rf"on\s+\(({W})\s+({W}\$?)\)\s*=\s*(.*)", stripped)
         if match:
             rhs = match.group(3).strip()
@@ -1129,13 +1130,23 @@ def _parse_literal(s: str):
 
 # --- functions ---
 
+def _strip_input_modifier(line):
+    """Strip the 'input' modifier after 'on', returning (clean_line, is_input)."""
+    m = re.match(r"(on\s+)input\s+(.*)", line)
+    if m:
+        return m.group(1) + m.group(2), True
+    return line, False
+
+
 def _is_conversion_operator(line):
     """Check if a line is a conversion operator: on (type name) <- (other_type param)"""
+    line, _ = _strip_input_modifier(line)
     return bool(re.match(rf"on\s+\({W}\s+{W}\)\s*<-\s*\(", line))
 
 
 def _parse_fn_signature(line, line_num):
     """Parse the 'on' line to extract result, params, and signature_parts."""
+    line, is_input = _strip_input_modifier(line)
     # conversion operator: on (string s) <- (number n)
     conv_match = re.match(rf"on\s+\(({W})\s+({W})\)\s*<-\s*\(({W})\s+({W})\)", line)
     if conv_match:
@@ -1367,6 +1378,7 @@ def _collect_indented(body_lines, raw_body_lines, start, parent_indent, fn_sigs=
 
 def _is_task_def(line: str) -> bool:
     """Check if a line is a task definition: on (type name$) <- ..."""
+    line, _ = _strip_input_modifier(line)
     return bool(re.match(rf"on\s+\({W}\s+{W}\$\)\s*<-", line))
 
 
@@ -1400,7 +1412,8 @@ def _is_void_task(line: str, lines: list[str], start: int, uses: list[dict]) -> 
     or consume patterns."""
     if not line.startswith("on ") or _is_task_def(line):
         return False
-    if re.match(rf"on\s+\({W}\s+{W}\$?\)\s*=", line):
+    clean, _ = _strip_input_modifier(line)
+    if re.match(rf"on\s+\({W}\s+{W}\$?\)\s*=", clean):
         return False
     platform_streams = {u["name"] for u in uses}
     return _scan_body_for_platform_streams(lines, start, platform_streams)

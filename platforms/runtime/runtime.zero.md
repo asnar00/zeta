@@ -26,11 +26,11 @@ Run all tests, or tests for a specific feature:
 
 Find or create a named session, returns a token. If the user has logged in before, their context is restored:
 
-    on (string token) = create session (string name)
+    on input (string token) = create session (string name)
 
 Generate a random string of digits of the given length:
 
-    on (string result) = random digits (int n)
+    on input (string result) = random digits (int n)
 
 Switch the current request to a session's context by token:
 

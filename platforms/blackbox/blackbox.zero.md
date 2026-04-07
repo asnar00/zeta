@@ -31,7 +31,7 @@ Everything else (buffer management, moment rotation, freezing, correlation, uplo
 
 Milliseconds since recording started:
 
-    on (number ms) = elapsed time ()
+    on input (number ms) = elapsed time ()
 
 Call a function repeatedly at an interval. Returns a timer ID:
 

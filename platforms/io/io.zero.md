@@ -9,7 +9,7 @@ Basic file I/O operations for reading and writing text files, and printing to st
 
 Read the contents of a text file:
 
-    on (string content) = read file (string path)
+    on input (string content) = read file (string path)
 
 Write a string to a text file:
 

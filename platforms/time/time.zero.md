@@ -37,7 +37,7 @@ Beats per minute — musical tempo to period:
 
 Get the current wall-clock time:
 
-    on (time t) = now ()
+    on input (time t) = now ()
 
 Get the sample interval of a stream:
 
