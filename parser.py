@@ -1480,6 +1480,7 @@ def _classify_sig_parts(sig_parts):
 def _parse_void_task(lines: list[str], start: int, src_line=None, fn_signatures: list = None, task_signatures: list = None, platform_streams: set = None) -> tuple[dict, int]:
     """Parse a void task: on name (params) with body that emits to platform streams."""
     line = lines[start].strip()
+    line, _ = _strip_input_modifier(line)
     line_num = src_line(start) if src_line else start + 1
     void_match = re.match(r"on\s+(.*)", line)
     rhs = void_match.group(1).strip()
@@ -1501,6 +1502,7 @@ def _collect_task_signatures(lines: list[str]) -> list[dict]:
     signatures = []
     for line in lines:
         stripped = line.strip()
+        stripped, _ = _strip_input_modifier(stripped)
         match = re.match(rf"on\s+\({W}\s+{W}\$\)\s*<-\s*(.*)", stripped)
         if not match:
             continue
@@ -1535,6 +1537,7 @@ def _build_task_result(name_parts, output, input_streams, scalar_params, body, l
 def _parse_task(lines: list[str], start: int, src_line=None, fn_signatures: list = None, task_signatures: list = None, platform_streams: set = None) -> tuple[dict, int]:
     """Parse a task definition: on (type name$) <- signature"""
     line = lines[start].strip()
+    line, _ = _strip_input_modifier(line)
     line_num = src_line(start) if src_line else start + 1
     match = re.match(rf"on\s+\(({W})\s+({W})\$\)\s*<-\s*(.*)", line)
     if not match:

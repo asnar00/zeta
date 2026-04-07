@@ -18,4 +18,4 @@ HTTP server platform. `serve http` listens on a port and produces a stream of re
 
     Http-Response response$
 
-    on (Http-Request request$) <- serve http (int port)
+    on input (Http-Request request$) <- serve http (int port)
