@@ -149,6 +149,90 @@ def _maybe_prepend_context(sections: list[str], ir: dict):
         sections.insert(0, _emit_context_class_ts(user_vars, ir))
 
 
+def _value_has_timing_ts(val):
+    """Check if a value node contains timed_step markers."""
+    if not isinstance(val, dict):
+        return False
+    if val.get("kind") == "timed_step":
+        return True
+    if val.get("kind") == "stream":
+        for step in val.get("steps", []):
+            if isinstance(step, dict) and step.get("kind") == "timed_step":
+                return True
+    return False
+
+
+def _body_has_timing_ts(nodes):
+    """Recursively check if any node contains timed streams."""
+    for node in nodes:
+        if not isinstance(node, dict):
+            continue
+        if node.get("kind") == "var_decl" and _value_has_timing_ts(node.get("value")):
+            return True
+        if node.get("kind") in ("emit", "emit_external") and _value_has_timing_ts(node.get("value")):
+            return True
+        if node.get("kind") == "concurrently":
+            for block in node.get("blocks", []):
+                if _body_has_timing_ts(block):
+                    return True
+        if node.get("kind") == "for_each" and _body_has_timing_ts(node.get("body", [])):
+            return True
+        for branch in node.get("branches", []):
+            if isinstance(branch, dict) and _body_has_timing_ts(branch.get("body", [])):
+                return True
+    return False
+
+
+def _has_timed_streams_ts(ir: dict) -> bool:
+    """Check if any variable or task body uses timed streams."""
+    for var in ir.get("variables", []):
+        if _value_has_timing_ts(var.get("value")):
+            return True
+        if var.get("stream_props"):
+            return True
+    for task in ir.get("tasks", []):
+        if _body_has_timing_ts(task.get("body", [])):
+            return True
+    return False
+
+
+_STREAM_HELPER_TS = """\
+class _Stream extends Array<any> {
+    dt: number = 0;
+    capacity: number = 0;
+    t0: number = 0;
+    _timestamps: number[] = [];
+    constructor(items?: any[]) {
+        super();
+        this._timestamps = [];
+        if (items) {
+            for (const item of items) super.push(item);
+        }
+    }
+    push(...items: any[]): number {
+        const result = super.push(...items);
+        if (!this.dt || this.dt === 0) {
+            const now = Date.now() / 1000;
+            for (const _ of items) this._timestamps.push(now);
+        }
+        this._enforceCapacity();
+        return result;
+    }
+    _enforceCapacity(): void {
+        if (this.capacity <= 0) return;
+        if (this.dt && this.dt > 0) {
+            const maxItems = Math.floor(this.capacity / this.dt);
+            while (this.length > maxItems) this.shift();
+        } else if (this._timestamps.length > 0) {
+            const newest = this._timestamps[this._timestamps.length - 1];
+            while (this._timestamps.length > 0 && newest - this._timestamps[0] > this.capacity) {
+                this.shift();
+                this._timestamps.shift();
+            }
+        }
+    }
+}"""
+
 _UNDEFINED_HELPER_TS = """\
 function _raise_undefined(name: string): never {
     throw new Error(`function not defined: ${name}`);
@@ -194,6 +278,8 @@ def emit(ir: dict) -> str:
     _check_compatibility(ir)
     structs, enums = _init_globals_ts(ir)
     sections = []
+    if _has_timed_streams_ts(ir):
+        sections.append(_STREAM_HELPER_TS)
     # emit blackbox fallback for standalone builds (no platform prepend).
     # feature-modular builds have blackbox.ts prepended, so skip to avoid redeclaration.
     if ir.get("tasks") and not ir.get("module_map"):
@@ -444,7 +530,24 @@ def _emit_variable(var: dict, structs: dict) -> str:
     name = _safe(var["name"] + "_arr" if var["array"] else var["name"])
     type_ann = _ts_type(var["type"])
     if var["array"]:
-        return _emit_array_variable(name, type_ann, var, structs)
+        base = _emit_array_variable(name, type_ann, var, structs)
+        stream_props = var.get("stream_props", {})
+        if stream_props:
+            lines = [base]
+            if "_Stream" not in base:
+                if "= [" in lines[0]:
+                    # remove type annotation and wrap with _Stream
+                    import re as _re
+                    lines[0] = _re.sub(r'const (\w+):.*= \[', r'const \1 = new _Stream([', lines[0])
+                    if lines[0].rstrip().endswith("];"):
+                        lines[0] = lines[0].rstrip()[:-2] + "]);"
+                elif "= list(" in lines[0] or "= [..." in lines[0]:
+                    lines[0] = lines[0].replace(f"const {name}", f"const {name}: any")
+            for key, expr in stream_props.items():
+                lines.append(f"{name}.{key} = {_emit_expr(expr, structs)};")
+            lines.append(f"{name}._enforceCapacity();")
+            return "\n".join(lines)
+        return base
     else:
         value_str = _emit_value(var["value"], var["type"], structs)
         return f"const {name}: {type_ann} = {value_str};"
@@ -549,19 +652,29 @@ def _emit_stream_ts(name: str, type_ann: str, stream: dict, structs: dict = None
         return s.replace("__last__", last)
 
     # collect timing from all steps upfront
+    has_timing = False
     for step in steps:
         _, dt, length = _unwrap_timed_step_ts(step)
         if dt:
-            timing_lines.append(f"({name} as any).dt = {_emit_expr(dt, structs or {})};")
+            timing_lines.append(f"{name}.dt = {_emit_expr(dt, structs or {})};")
+            has_timing = True
         if length:
-            timing_lines.append(f"({name} as any).length = {_emit_expr(length, structs or {})};")
+            timing_lines.append(f"{name}.capacity = {_emit_expr(length, structs or {})};")
+            has_timing = True
 
+    ctor = "new _Stream" if has_timing else ""
     plain_steps = [_unwrap_timed_step_ts(s)[0] for s in steps]
     if terminate is None and all(s.get("kind") == "literal" for s in plain_steps):
         items = ", ".join(str(s["value"]) for s in plain_steps)
-        lines = [f"const {name}: {type_ann}[] = [{items}];"]
+        if has_timing:
+            lines = [f"const {name} = new _Stream([{items}]);"]
+        else:
+            lines = [f"const {name}: {type_ann}[] = [{items}];"]
     else:
-        lines = [f"const {name}: {type_ann}[] = [{_emit_ts_stream_expr(steps[0])}];"]
+        if has_timing:
+            lines = [f"const {name} = new _Stream([{_emit_ts_stream_expr(steps[0])}]);"]
+        else:
+            lines = [f"const {name}: {type_ann}[] = [{_emit_ts_stream_expr(steps[0])}];"]
         if len(steps) > 1:
             if terminate is None:
                 for step in steps[1:]:
@@ -974,6 +1087,14 @@ def _emit_task_body_node_ts(node, structs, uses, has_platform_streams, base_inde
         return [_emit_task_consume_ts(node, structs, base_indent)], "    "
     if kind == "emit":
         return [f"{base_indent}{extra_indent}yield {_emit_expr(node['value'], structs)};"], extra_indent
+    if kind == "emit_stream":
+        tmp = "_stream_tmp"
+        stream_code = _emit_stream_ts(tmp, "any", node["stream"], structs)
+        lines = [f"{base_indent}{extra_indent}{line}" for line in stream_code.split("\n")]
+        lines.append(f"{base_indent}{extra_indent}for (const _v of {tmp}) {{")
+        lines.append(f"{base_indent}{extra_indent}    yield _v;")
+        lines.append(f"{base_indent}{extra_indent}}}")
+        return lines, extra_indent
     if kind == "emit_external":
         handler = _platform_stream_fn_ts(node["stream"], uses)
         return [f"{base_indent}{extra_indent}{handler}({_emit_expr(node['value'], structs)});"], extra_indent

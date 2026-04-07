@@ -17,6 +17,24 @@ function fn__number_ms(n: number): number { return n / 1000; }
 function fn__number_hz(n: number): number { return 1 / n; }
 function fn__number_bpm(n: number): number { return 60 / n; }
 function fn_to_int__string(s: string): number { const n = parseInt(s, 10); return isNaN(n) ? 0 : n; }
+function fn_dt_of(items: any): number { return items?.dt ?? 0; }
+function fn_capacity_of(items: any): number { return items?.capacity ?? 0; }
+function fn_t0_of(items: any): number { return items?.t0 ?? 0; }
+"""
+
+# functions that depend on _Stream (defined in emitter output, must come after)
+_TS_PLATFORM_SUFFIX = """
+function fn_snapshot(items: any): any {
+    if (typeof _Stream !== 'undefined') {
+        const copy = new _Stream([...items]);
+        if (items.dt !== undefined) copy.dt = items.dt;
+        if (items.capacity !== undefined) copy.capacity = items.capacity;
+        if (items.t0 !== undefined) copy.t0 = items.t0;
+        if (items._timestamps) copy._timestamps = [...items._timestamps];
+        return copy;
+    }
+    return [...items];
+}
 """
 
 
@@ -25,7 +43,7 @@ def _run(source: str, expression: str):
     ir = process(source)
     code = emit(ir)
     # append a console.log that outputs JSON for the expression
-    full = _TS_PLATFORM_PRELUDE + code + f"\nconsole.log(JSON.stringify({expression}));\n"
+    full = _TS_PLATFORM_PRELUDE + code + _TS_PLATFORM_SUFFIX + f"\nconsole.log(JSON.stringify({expression}));\n"
 
     with tempfile.NamedTemporaryFile(suffix=".ts", mode="w", delete=False) as f:
         f.write(full)
@@ -393,13 +411,46 @@ def test_ts_exec_time_ms():
 
 def test_ts_exec_stream_at():
     source = "    int i$ <- 10 <- (i$ - 1) while (i$ > 0) at ((1) seconds)"
-    assert _run(source, "i_arr") == [10, 9, 8, 7, 6, 5, 4, 3, 2, 1]
-    assert _run(source, "(i_arr as any).dt") == 1.0
+    assert _run(source, "[...i_arr]") == [10, 9, 8, 7, 6, 5, 4, 3, 2, 1]
+    assert _run(source, "i_arr.dt") == 1.0
 
 def test_ts_exec_stream_at_per_step():
     source = "    int i$ <- 10 at ((1) hz) <- 20 at ((100) hz)"
-    assert _run(source, "i_arr") == [10, 20]
-    assert _run(source, "(i_arr as any).dt") == 0.01
+    assert _run(source, "[...i_arr]") == [10, 20]
+    assert _run(source, "i_arr.dt") == 0.01
+
+def test_ts_exec_stream_capacity():
+    source = """\
+    on (int i$) <- count to (int n)
+        i$ <- 1 <- (i$ + 1) while (i$ <= n)
+    int i$(dt = (1) seconds, capacity = (5) seconds)
+    i$ <- count to (10)"""
+    assert _run(source, "[...i_arr]") == [6, 7, 8, 9, 10]
+
+def test_ts_exec_dt_of():
+    source = "    int i$ <- 1 <- 2 <- 3 at ((10) hz)"
+    assert _run(source, "fn_dt_of(i_arr)") == 0.1
+
+def test_ts_exec_capacity_of():
+    source = "    int i$(dt = (1) hz, capacity = (30) seconds)"
+    assert _run(source, "fn_capacity_of(i_arr)") == 30.0
+
+def test_ts_exec_sparse_stream():
+    source = "    int i$(capacity = (100) seconds)"
+    assert _run(source, "fn_capacity_of(i_arr)") == 100.0
+    assert _run(source, "fn_dt_of(i_arr)") == 0
+
+def test_ts_exec_snapshot_values():
+    source = """\
+    int i$ <- 1 <- 2 <- 3 at ((1) hz)
+    int j$ = snapshot [i$]"""
+    assert _run(source, "[...j_arr]") == [1, 2, 3]
+
+def test_ts_exec_snapshot_timing():
+    source = """\
+    int i$ <- 1 <- 2 <- 3 at ((10) hz)
+    int j$ = snapshot [i$]"""
+    assert _run(source, "fn_dt_of(j_arr)") == 0.1
 
 
 # --- to int ---
