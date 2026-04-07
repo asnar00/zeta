@@ -1037,7 +1037,17 @@ def _emit_task_body_node(node, uses, base_indent, extra_indent):
         return lines, extra_indent
     if kind == "emit_external":
         handler = _platform_stream_fn(node["stream"], uses)
-        return [f"{base_indent}{extra_indent}{handler}({_emit_expr(node['value'])})"], extra_indent
+        val = node["value"]
+        val_expr = _emit_expr(val)
+        # if the value is a stream variable, iterate it with timing
+        if isinstance(val, dict) and val.get("kind") == "name" and val.get("value", "").endswith("$"):
+            arr_name = val_expr
+            lines = [
+                f"{base_indent}{extra_indent}for _v in _bb_record_stream({arr_name!r}, {arr_name}):",
+                f"{base_indent}{extra_indent}    {handler}(_v)",
+            ]
+            return lines, extra_indent
+        return [f"{base_indent}{extra_indent}{handler}({val_expr})"], extra_indent
     if kind == "if_block":
         block_lines = [f"{base_indent}{extra_indent}{bl}"
                        for bl in _emit_if_block(node, is_task=True).split("\n")]

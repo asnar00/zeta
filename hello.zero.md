@@ -10,5 +10,4 @@
 
     on main (string args$)
         int i$ <- count down from (10) at ((1) hz)
-        for each (i) in (i$)
-            out$ <- i
+        out$ <- i$
