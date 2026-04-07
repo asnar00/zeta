@@ -338,12 +338,16 @@ export function fn_print__string(message: string): void {
 // Implements the functions declared in remote.zero.md
 // Server-side stub.
 
-// @zero on (string channel) = connect to (string url)
-export function fn_connect_to__string(url: string): string {
-    return "";
+// @zero on input (string channel$) <- connect to (string url)
+export function* task_connect_to__string(url: string): Generator<string> {
+    yield "";
 }
 
-// @zero on (string result) = request (string command) on (string channel)
+// @zero on input (string result$) <- request (string command) on (string channel)
+export function* task_request_on__string__string(command: string, channel: string): Generator<string> {
+    yield fn_request__string_on__string(command, channel);
+}
+
 export function fn_request__string_on__string(command: string, channel: string): string {
     return "";
 }
@@ -617,18 +621,18 @@ export function fn_snapshot(items: any): any {
 // Implements the functions declared in websocket.zero.md
 // Server-side stub — the real client implementation lives in the client bundle.
 
-// @zero on (string channel) = open channel (string path)
-export function fn_open_channel__string(path: string): string {
-    return "";
+// @zero on input (string channel$) <- open channel (string path)
+export function* task_open_channel__string(path: string): Generator<string> {
+    yield "";
 }
 
 // @zero on send message (string data) on (string channel)
 export function fn_send_message__string_on__string(data: string, channel: string): void {
 }
 
-// @zero on (string data) = receive message on (string channel)
-export function fn_receive_message_on__string(channel: string): string {
-    return "";
+// @zero on input (string data$) <- receive message on (string channel)
+export function* task_receive_message_on__string(channel: string): Generator<string> {
+    yield "";
 }
 
 // @zero on close channel (string channel)

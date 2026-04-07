@@ -154,11 +154,9 @@ def websocket_handshake(handler):
     return channel, channel_id
 
 
-# @zero on (string channel) = open channel (string path)
-def fn_open_channel__string(path: str) -> str:
-    # server-side: channels are opened by the client connecting,
-    # not by the server. This returns "" on the server.
-    return ""
+# @zero on input (string channel$) <- open channel (string path)
+def task_open_channel__string(path: str):
+    yield ""  # server-side: channels are opened by the client
 
 
 # @zero on send message (string data) on (string channel)
@@ -168,12 +166,13 @@ def fn_send_message__string_on__string(data: str, channel: str):
         ch.send(data)
 
 
-# @zero on (string data) = receive message on (string channel)
-def fn_receive_message_on__string(channel: str) -> str:
+# @zero on input (string data$) <- receive message on (string channel)
+def task_receive_message_on__string(channel: str):
     ch = _get_channel(channel)
     if ch:
-        return ch.receive()
-    return ""
+        yield ch.receive()
+    else:
+        yield ""
 
 
 # @zero on close channel (string channel)

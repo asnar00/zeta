@@ -6,14 +6,17 @@ import json
 import threading
 
 
-# @zero on (string channel) = connect to (string url)
-def fn_connect_to__string(url: str) -> str:
+# @zero on input (string channel$) <- connect to (string url)
+def task_connect_to__string(url: str):
     # server-side: connections are initiated by clients, not by the server.
     # a server-to-client channel is obtained when the client connects.
-    return ""
+    yield ""
 
 
-# @zero on (string result) = request (string command) on (string channel)
+# @zero on input (string result$) <- request (string command) on (string channel)
+def task_request_on__string__string(command: str, channel: str):
+    yield fn_request__string_on__string(command, channel)
+
 def fn_request__string_on__string(command: str, channel: str) -> str:
     """Send a command to a remote component and wait for the response.
     Channel can be a channel ID or a user name (routes to their browser)."""

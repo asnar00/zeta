@@ -668,14 +668,17 @@ import json
 import threading
 
 
-# @zero on (string channel) = connect to (string url)
-def fn_connect_to__string(url: str) -> str:
+# @zero on input (string channel$) <- connect to (string url)
+def task_connect_to__string(url: str):
     # server-side: connections are initiated by clients, not by the server.
     # a server-to-client channel is obtained when the client connects.
-    return ""
+    yield ""
 
 
-# @zero on (string result) = request (string command) on (string channel)
+# @zero on input (string result$) <- request (string command) on (string channel)
+def task_request_on__string__string(command: str, channel: str):
+    yield fn_request__string_on__string(command, channel)
+
 def fn_request__string_on__string(command: str, channel: str) -> str:
     """Send a command to a remote component and wait for the response.
     Channel can be a channel ID or a user name (routes to their browser)."""
@@ -1963,11 +1966,9 @@ def websocket_handshake(handler):
     return channel, channel_id
 
 
-# @zero on (string channel) = open channel (string path)
-def fn_open_channel__string(path: str) -> str:
-    # server-side: channels are opened by the client connecting,
-    # not by the server. This returns "" on the server.
-    return ""
+# @zero on input (string channel$) <- open channel (string path)
+def task_open_channel__string(path: str):
+    yield ""  # server-side: channels are opened by the client
 
 
 # @zero on send message (string data) on (string channel)
@@ -1977,12 +1978,13 @@ def fn_send_message__string_on__string(data: str, channel: str):
         ch.send(data)
 
 
-# @zero on (string data) = receive message on (string channel)
-def fn_receive_message_on__string(channel: str) -> str:
+# @zero on input (string data$) <- receive message on (string channel)
+def task_receive_message_on__string(channel: str):
     ch = _get_channel(channel)
     if ch:
-        return ch.receive()
-    return ""
+        yield ch.receive()
+    else:
+        yield ""
 
 
 # @zero on close channel (string channel)
@@ -2449,4 +2451,4 @@ if __name__ == '__main__':
 
 _FEATURE_TREE = [("website", "the nøøb website", None), ("not-found", "default 404 response", 'website'), ("login", "SMS code authentication", 'website'), ("rpc", "RPC endpoint for runtime evaluation", 'website'), ("landing-page", "serves the noob landing page at root", 'website'), ("background", "per-user background colour", 'landing-page'), ("test-blackbox", "integration tests for the flight recorder", 'website')]
 
-_BUILD_FINGERPRINT = {"hash": "e2a8ffabeb0bd7d4", "git": "4595a56e8fec", "features": "website,not-found,login,rpc,landing-page,background,test-blackbox"}
+_BUILD_FINGERPRINT = {"hash": "d509d44ae671a143", "git": "938cf45260af", "features": "website,not-found,login,rpc,landing-page,background,test-blackbox"}
