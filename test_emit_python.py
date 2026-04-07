@@ -72,9 +72,9 @@ def test_emit_struct(report):
            source,
            lambda out: _assert_in("from typing import NamedTuple", out),
            lambda out: _assert_in("class vector(NamedTuple):", out),
-           lambda out: _assert_in("    x: number = 0", out),
-           lambda out: _assert_in("    y: number = 0", out),
-           lambda out: _assert_in("    z: number = 0", out))
+           lambda out: _assert_in("    x: float = 0", out),
+           lambda out: _assert_in("    y: float = 0", out),
+           lambda out: _assert_in("    z: float = 0", out))
 
 
 # --- struct with enum default ---
@@ -300,7 +300,7 @@ def test_emit_function_named(report):
         n = (a) if (a < b) else (b)"""
     _check(report, "named function",
            source,
-           lambda out: _assert_in("def fn_smaller_of__number_and__number(a: number, b: number) -> number:", out),
+           lambda out: _assert_in("def fn_smaller_of__number_and__number(a: float, b: float) -> float:", out),
            lambda out: _assert_in("    return n", out))
 
 
@@ -593,7 +593,7 @@ def test_emit_fn_call_in_scalar_var(report):
     number d = length of (vector(1, 2, 3))"""
     _check(report, "fn call assigned to scalar variable",
            source,
-           lambda out: _assert_in("d: number = fn_length_of__vector(vector(1, 2, 3))", out))
+           lambda out: _assert_in("d: float = fn_length_of__vector(vector(1, 2, 3))", out))
 
 
 # --- tasks ---
@@ -649,9 +649,9 @@ class tri_state(Enum):
     maybe = "maybe"
 
 class vector(NamedTuple):
-    x: number = 0
-    y: number = 0
-    z: number = 0
+    x: float = 0
+    y: float = 0
+    z: float = 0
 
 # @zero on (vector v) = (vector a) + (vector b)
 def fn__vector_plus__vector(a: vector, b: vector) -> vector:
@@ -659,7 +659,7 @@ def fn__vector_plus__vector(a: vector, b: vector) -> vector:
     return v
 
 # @zero on (number n) = smaller of (number a) and (number b)
-def fn_smaller_of__number_and__number(a: number, b: number) -> number:
+def fn_smaller_of__number_and__number(a: float, b: float) -> float:
     n = (a) if (a < b) else (b)
     return n
 """

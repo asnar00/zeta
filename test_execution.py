@@ -4,11 +4,25 @@ from parser import process
 from emit_python import emit
 
 
+_PLATFORM_PRELUDE = """
+class _Stream(list):
+    pass
+def fn__number_seconds(n): return float(n)
+def fn__number_ms(n): return float(n) / 1000.0
+def fn__number_hz(n): return 1.0 / float(n)
+def fn__number_bpm(n): return 60.0 / float(n)
+def fn_to_int__string(s):
+    try: return int(s)
+    except (ValueError, TypeError): return 0
+"""
+
+
 def _run(source: str, expression: str):
     """Compile zero source to Python, execute it, and evaluate an expression."""
     ir = process(source)
     code = emit(ir)
     env = {}
+    exec(_PLATFORM_PRELUDE, env)
     exec(code, env)
     return eval(expression, env)
 
@@ -120,6 +134,32 @@ def test_exec_stream_until():
 def test_exec_stream_while():
     source = "    int i$ <- 0 <- (i$ + 1) while (i$ < 4)"
     assert _run(source, "i_arr") == [0, 1, 2, 3, 4]
+
+def test_exec_stream_at():
+    """Stream with at modifier preserves values, attaches dt."""
+    source = "    int i$ <- 10 <- (i$ - 1) while (i$ > 0) at ((1) seconds)"
+    result = _run(source, "i_arr")
+    assert result == [10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0]
+    dt = _run(source, "i_arr.dt")
+    assert dt == 1.0
+
+def test_exec_stream_at_per_step():
+    """Each step can have its own at modifier."""
+    source = "    int i$ <- 10 at ((1) hz) <- 20 at ((100) hz)"
+    assert _run(source, "i_arr") == [10, 20]
+    assert _run(source, "i_arr.dt") == 0.01
+
+def test_exec_stream_keep():
+    """Stream with keep modifier attaches length."""
+    source = "    int i$ <- 0 at ((10) ms) keep ((60) seconds)"
+    assert _run(source, "i_arr") == [0]
+    assert _run(source, "i_arr.dt") == 0.01
+    assert _run(source, "getattr(i_arr, 'length', None)") == 60.0
+
+def test_exec_stream_at_no_modifier():
+    """Stream without at has no dt attribute."""
+    source = "    int i$ <- 1 <- 2 <- 3"
+    assert _run(source, "getattr(i_arr, 'dt', 'none')") == "none"
 
 
 # --- conditionals ---
@@ -446,6 +486,95 @@ def test_exec_map_variable_key():
         result = data$[key]
     """
     assert _run(source, 'fn_test_map__string("hello")') == "found"
+
+# --- string build operator ---
+
+def test_exec_string_build_literals():
+    """String build with only literals."""
+    source = '    string s <- "hello" <- " " <- "world"'
+    assert _run(source, "s") == "hello world"
+
+def test_exec_string_build_number():
+    """String build converts numbers to strings."""
+    source = '    string s <- "value: " <- 42'
+    assert _run(source, "s") == "value: 42"
+
+def test_exec_string_build_mixed():
+    """String build with expressions and conversions."""
+    source = """\
+    on (string s) = describe (int x) and (int y)
+        string s <- "(" <- x <- ", " <- y <- ")"
+    """
+    assert _run(source, 'fn_describe__int_and__int(3, 7)') == "(3, 7)"
+
+def test_exec_string_build_bool():
+    """String build converts booleans."""
+    source = '    string s <- "is: " <- true'
+    assert _run(source, "s") == "is: True"
+
+def test_exec_string_build_single():
+    """String build with a single value."""
+    source = '    string s <- "hello"'
+    assert _run(source, "s") == "hello"
+
+
+# --- time expressions ---
+
+def test_exec_time_seconds():
+    source = "    time t = (1) seconds"
+    assert _run(source, "t") == 1.0
+
+def test_exec_time_ms():
+    source = "    time t = (500) ms"
+    assert _run(source, "t") == 0.5
+
+def test_exec_time_hz():
+    source = "    time t = (10) hz"
+    assert _run(source, "t") == 0.1
+
+def test_exec_time_bpm():
+    source = "    time t = (120) bpm"
+    assert _run(source, "t") == 0.5
+
+def test_exec_time_hz_in_expression():
+    """Time expression used inside a function."""
+    source = """\
+    on (time t) = interval for (number rate)
+        t = (rate) hz
+    """
+    assert _run(source, "fn_interval_for__number(44100)") == 1.0 / 44100
+
+
+# --- to int ---
+
+def test_exec_to_int_basic():
+    source = """\
+    on (int n) = parse (string s)
+        n = to int (s)
+    """
+    assert _run(source, 'fn_parse__string("42")') == 42
+
+def test_exec_to_int_zero():
+    source = """\
+    on (int n) = parse (string s)
+        n = to int (s)
+    """
+    assert _run(source, 'fn_parse__string("0")') == 0
+
+def test_exec_to_int_negative():
+    source = """\
+    on (int n) = parse (string s)
+        n = to int (s)
+    """
+    assert _run(source, 'fn_parse__string("-7")') == -7
+
+def test_exec_to_int_invalid():
+    source = """\
+    on (int n) = parse (string s)
+        n = to int (s)
+    """
+    assert _run(source, 'fn_parse__string("abc")') == 0
+
 
 def test_exec_sort_descending():
     source = """\

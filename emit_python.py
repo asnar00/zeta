@@ -23,7 +23,7 @@ from emit_base import (
 _BUILTINS = {"int", "float", "string"}
 
 # Zero type names to Python type names
-_PY_TYPE_MAP = {"string": "str", "char": "str", "time": "float"}
+_PY_TYPE_MAP = {"string": "str", "char": "str", "time": "float", "number": "float"}
 
 
 _enum_values = {}  # populated by emit(), maps value -> "type.value"
@@ -136,6 +136,11 @@ def _apply_module_prefixes(result: str, ir: dict) -> str:
     return result
 
 
+_STREAM_HELPER = """\
+class _Stream(list):
+    \"\"\"A list that supports stream timing properties (dt, length, t0).\"\"\"
+    pass"""
+
 _UNDEFINED_HELPER = """\
 def _raise_undefined(name):
     raise RuntimeError(f"function not defined: {name}")"""
@@ -188,11 +193,24 @@ def _needs_bb_fallback(ir: dict) -> bool:
     return False
 
 
+def _has_timed_streams(ir: dict) -> bool:
+    """Check if any variable has a stream with timing modifiers."""
+    for var in ir.get("variables", []):
+        val = var.get("value")
+        if isinstance(val, dict) and val.get("kind") == "stream":
+            for step in val.get("steps", []):
+                if isinstance(step, dict) and step.get("kind") == "timed_step":
+                    return True
+    return False
+
+
 def _emit_preamble(ir: dict) -> list[str]:
     """Emit imports and concurrently helper if needed."""
     sections = []
     if _needs_bb_fallback(ir):
         sections.append(_BB_FALLBACK)
+    if _has_timed_streams(ir):
+        sections.append(_STREAM_HELPER)
     imports = _collect_imports(ir)
     if imports:
         sections.append("\n".join(imports))
@@ -587,19 +605,24 @@ def _emit_stream(name: str, stream: dict) -> str:
         return s.replace("__last__", f"{name}[-1]")
 
     # collect timing from all steps (even on the literal fast path)
+    has_timing = False
     for step in steps:
         _, dt, length = _unwrap_timed_step(step)
         if dt:
             timing_lines.append(f"{name}.dt = {_emit_expr(dt)}")
+            has_timing = True
         if length:
             timing_lines.append(f"{name}.length = {_emit_expr(length)}")
+            has_timing = True
 
+    # use _Stream instead of plain list when timing is present
+    ctor = "_Stream" if has_timing else ""
     plain_steps = [_unwrap_timed_step(s)[0] for s in steps]
     if terminate is None and all(s.get("kind") == "literal" for s in plain_steps):
         items = ", ".join(str(s["value"]) for s in plain_steps)
-        lines = [f"{name} = [{items}]"]
+        lines = [f"{name} = {ctor}([{items}])"] if has_timing else [f"{name} = [{items}]"]
     else:
-        lines = [f"{name} = [{_emit_stream_expr(steps[0])}]"]
+        lines = [f"{name} = {ctor}([{_emit_stream_expr(steps[0])}])"] if has_timing else [f"{name} = [{_emit_stream_expr(steps[0])}]"]
         if len(steps) > 1:
             if terminate is None:
                 for step in steps[1:]:

@@ -11,12 +11,21 @@ from parser import process
 from emit_typescript import emit
 
 
+_TS_PLATFORM_PRELUDE = """
+function fn__number_seconds(n: number): number { return n; }
+function fn__number_ms(n: number): number { return n / 1000; }
+function fn__number_hz(n: number): number { return 1 / n; }
+function fn__number_bpm(n: number): number { return 60 / n; }
+function fn_to_int__string(s: string): number { const n = parseInt(s, 10); return isNaN(n) ? 0 : n; }
+"""
+
+
 def _run(source: str, expression: str):
     """Compile zero source to TypeScript, run it, and evaluate an expression."""
     ir = process(source)
     code = emit(ir)
     # append a console.log that outputs JSON for the expression
-    full = code + f"\nconsole.log(JSON.stringify({expression}));\n"
+    full = _TS_PLATFORM_PRELUDE + code + f"\nconsole.log(JSON.stringify({expression}));\n"
 
     with tempfile.NamedTemporaryFile(suffix=".ts", mode="w", delete=False) as f:
         f.write(full)
@@ -345,3 +354,66 @@ def test_ts_exec_named_fn_reduce():
     int i$ = [3, 1, 4, 1, 5]
     int min = smaller of (i$) and (_)"""
     assert _run(source, "min") == 1
+
+
+# --- string build operator ---
+
+def test_ts_exec_string_build_literals():
+    source = '    string s <- "hello" <- " " <- "world"'
+    assert _run(source, "s") == "hello world"
+
+def test_ts_exec_string_build_number():
+    source = '    string s <- "value: " <- 42'
+    assert _run(source, "s") == "value: 42"
+
+def test_ts_exec_string_build_mixed():
+    source = """\
+    on (string s) = describe (int x) and (int y)
+        string s <- "(" <- x <- ", " <- y <- ")"
+    """
+    assert _run(source, 'fn_describe__int_and__int(3, 7)') == "(3, 7)"
+
+
+# --- time expressions ---
+
+def test_ts_exec_time_seconds():
+    source = "    time t = (1) seconds"
+    assert _run(source, "t") == 1.0
+
+def test_ts_exec_time_hz():
+    source = "    time t = (10) hz"
+    assert _run(source, "t") == 0.1
+
+def test_ts_exec_time_ms():
+    source = "    time t = (500) ms"
+    assert _run(source, "t") == 0.5
+
+
+# --- stream timing ---
+
+def test_ts_exec_stream_at():
+    source = "    int i$ <- 10 <- (i$ - 1) while (i$ > 0) at ((1) seconds)"
+    assert _run(source, "i_arr") == [10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0]
+    assert _run(source, "(i_arr as any).dt") == 1.0
+
+def test_ts_exec_stream_at_per_step():
+    source = "    int i$ <- 10 at ((1) hz) <- 20 at ((100) hz)"
+    assert _run(source, "i_arr") == [10, 20]
+    assert _run(source, "(i_arr as any).dt") == 0.01
+
+
+# --- to int ---
+
+def test_ts_exec_to_int():
+    source = """\
+    on (int n) = parse (string s)
+        n = to int (s)
+    """
+    assert _run(source, 'fn_parse__string("42")') == 42
+
+def test_ts_exec_to_int_invalid():
+    source = """\
+    on (int n) = parse (string s)
+        n = to int (s)
+    """
+    assert _run(source, 'fn_parse__string("abc")') == 0

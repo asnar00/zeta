@@ -305,10 +305,10 @@ type colour +=
     ir = process(composed)
     py = emit_py(ir)
     assert "class colour(NamedTuple):" in py
-    assert "    r: number = 0" in py
-    assert "    g: number = 0" in py
-    assert "    b: number = 0" in py
-    assert "    alpha: number = 1" in py
+    assert "    r: float = 0" in py
+    assert "    g: float = 0" in py
+    assert "    b: float = 0" in py
+    assert "    alpha: float = 1" in py
 
 def test_e2e_hello_world():
     """Full pipeline: hello world features → Python output."""

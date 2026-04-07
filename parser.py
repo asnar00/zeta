@@ -270,6 +270,38 @@ def _process_lines(lines, ir, fn_signatures, task_signatures, _src_line, recover
     return errors
 
 
+def _load_platform_signatures():
+    """Load function signatures from all platform .zero.md files."""
+    import os, glob
+    plat_dir = os.path.join(os.path.dirname(__file__), "platforms")
+    if not os.path.isdir(plat_dir):
+        return []
+    lines = []
+    for entry in sorted(os.listdir(plat_dir)):
+        subdir = os.path.join(plat_dir, entry)
+        if not os.path.isdir(subdir) or entry.startswith("_"):
+            continue
+        for fname in sorted(os.listdir(subdir)):
+            if fname.endswith(".zero.md"):
+                with open(os.path.join(subdir, fname)) as f:
+                    src = f.read()
+                    if _is_markdown(src):
+                        src, _ = _extract_code(src)
+                    lines.extend(src.split("\n"))
+    return _collect_signatures(lines)
+
+
+_platform_sigs_cache = None
+
+
+def _get_platform_signatures():
+    """Get cached platform signatures (loaded once)."""
+    global _platform_sigs_cache
+    if _platform_sigs_cache is None:
+        _platform_sigs_cache = _load_platform_signatures()
+    return _platform_sigs_cache
+
+
 def process(source: str, recover: bool = False, source_file: str = None) -> dict:
     """Parse zero source text and return an IR dict.
     If recover=True, collects errors and continues instead of raising on first error."""
@@ -279,7 +311,7 @@ def process(source: str, recover: bool = False, source_file: str = None) -> dict
         source, line_map = _extract_code(source)
     lines = source.split("\n")
     _src_line = _make_src_line_fn(line_map)
-    fn_signatures = _collect_signatures(lines)
+    fn_signatures = _collect_signatures(lines) + _get_platform_signatures()
     task_signatures = _collect_task_signatures(lines)
     errors = _process_lines(lines, ir, fn_signatures, task_signatures, _src_line, recover)
     if errors:
@@ -958,18 +990,26 @@ def _parse_stream(rest: str, var_name: str, fn_sigs: list = None) -> dict:
 
 
 def _split_stream_parts(rest: str) -> list[str]:
-    """Split a stream expression on top-level <- tokens."""
+    """Split a stream expression on top-level <- tokens.
+    Respects parenthesis depth and quoted strings."""
     parts = []
     depth = 0
+    in_quote = False
     current = ""
     i = 0
     while i < len(rest):
-        if rest[i] == "(":
+        ch = rest[i]
+        if ch == '"' and (i == 0 or rest[i-1] != '\\'):
+            in_quote = not in_quote
+            current += ch
+        elif in_quote:
+            current += ch
+        elif ch == "(":
             depth += 1
-            current += rest[i]
-        elif rest[i] == ")":
+            current += ch
+        elif ch == ")":
             depth -= 1
-            current += rest[i]
+            current += ch
         elif rest[i:i+2] == "<-" and depth == 0:
             if current.strip():
                 parts.append(current.strip())
@@ -1850,19 +1890,6 @@ def _try_parse_filter_expr(s, fn_sigs):
     return None
 
 
-_TIME_UNITS = {"seconds", "ms", "hz", "bpm"}
-
-
-def _try_parse_time_expr(s, fn_sigs):
-    """Try to parse a time unit expression: (number) unit, e.g. (1) hz, (500) ms."""
-    m = re.match(r"\((.+?)\)\s+(seconds|ms|hz|bpm)$", s)
-    if m:
-        arg = _parse_expr(m.group(1).strip(), fn_sigs)
-        unit = m.group(2)
-        return {"kind": "fn_call", "signature_parts": [f"(number)", unit], "args": [arg]}
-    return None
-
-
 def _parse_expr(s: str, fn_sigs: list = None) -> dict:
     """Parse a zero expression string into an AST node."""
     s = s.strip()
@@ -1873,9 +1900,6 @@ def _parse_expr(s: str, fn_sigs: list = None) -> dict:
     filter_expr = _try_parse_filter_expr(s, fn_sigs)
     if filter_expr:
         return filter_expr
-    time_expr = _try_parse_time_expr(s, fn_sigs)
-    if time_expr:
-        return time_expr
     bracket_match = re.match(rf"({W}\$?)\[(.+)\]$", s)
     if bracket_match:
         return _parse_bracket_expr(bracket_match.group(1), bracket_match.group(2), fn_sigs)
