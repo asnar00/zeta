@@ -522,26 +522,46 @@ def _emit_stream_loop_ts(name: str, steps: list, terminate: dict, emit_fn) -> li
     return lines
 
 
+def _unwrap_timed_step_ts(node):
+    """Unwrap a timed_step node, returning (value_node, dt_expr, length_expr)."""
+    if isinstance(node, dict) and node.get("kind") == "timed_step":
+        return node["value"], node.get("dt"), node.get("length")
+    return node, None, None
+
+
 def _emit_stream_ts(name: str, type_ann: str, stream: dict, structs: dict = None) -> str:
-    """Emit a streaming expression in TypeScript."""
+    """Emit a streaming expression in TypeScript. Timed steps emit dt/length metadata."""
     steps = stream["steps"]
     terminate = stream["terminate"]
     last = f"{name}[{name}.length - 1]"
+    timing_lines = []
 
     def _emit_ts_stream_expr(node):
-        s = _emit_expr(node, structs or {})
+        inner, _, _ = _unwrap_timed_step_ts(node)
+        s = _emit_expr(inner, structs or {})
         return s.replace("__last__", last)
 
-    if terminate is None and all(s.get("kind") == "literal" for s in steps):
-        items = ", ".join(str(s["value"]) for s in steps)
-        return f"const {name}: {type_ann}[] = [{items}];"
-    lines = [f"const {name}: {type_ann}[] = [{_emit_ts_stream_expr(steps[0])}];"]
-    if len(steps) > 1:
-        if terminate is None:
-            for step in steps[1:]:
-                lines.append(f"{name}.push({_emit_ts_stream_expr(step)});")
-        else:
-            lines.extend(_emit_stream_loop_ts(name, steps, terminate, _emit_ts_stream_expr))
+    # collect timing from all steps upfront
+    for step in steps:
+        _, dt, length = _unwrap_timed_step_ts(step)
+        if dt:
+            timing_lines.append(f"({name} as any).dt = {_emit_expr(dt, structs or {})};")
+        if length:
+            timing_lines.append(f"({name} as any).length = {_emit_expr(length, structs or {})};")
+
+    plain_steps = [_unwrap_timed_step_ts(s)[0] for s in steps]
+    if terminate is None and all(s.get("kind") == "literal" for s in plain_steps):
+        items = ", ".join(str(s["value"]) for s in plain_steps)
+        lines = [f"const {name}: {type_ann}[] = [{items}];"]
+    else:
+        lines = [f"const {name}: {type_ann}[] = [{_emit_ts_stream_expr(steps[0])}];"]
+        if len(steps) > 1:
+            if terminate is None:
+                for step in steps[1:]:
+                    lines.append(f"{name}.push({_emit_ts_stream_expr(step)});")
+            else:
+                lines.extend(_emit_stream_loop_ts(name, steps, terminate, _emit_ts_stream_expr))
+    lines.extend(timing_lines)
     return "\n".join(lines)
 
 

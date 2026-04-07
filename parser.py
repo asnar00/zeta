@@ -896,38 +896,63 @@ def _parse_array_element(s: str, fn_sigs: list = None) -> any:
     return _parse_expr(s, fn_sigs)
 
 
+def _strip_stream_modifier(part, keyword):
+    """Strip a trailing 'keyword (expr)' from a stream part. Returns (remaining, expr_str) or (part, None)."""
+    pattern = r"(.+?)\s+" + keyword + r"\s+\((.+)\)\s*$"
+    m = re.match(pattern, part)
+    if m:
+        return m.group(1).strip(), m.group(2).strip()
+    return part, None
+
+
 def _parse_stream_part(part, var_name, fn_sigs):
-    """Process a single stream part, returning (step_or_none, terminate_or_none)."""
+    """Process a single stream part, extracting modifiers (at, keep, while, until).
+    Returns a dict with value, dt, length, terminate — or None if the part is only a modifier."""
     part = part.strip()
+    # standalone while/until (no value expression, just a terminator)
     while_match = re.match(r"(while|until)\s+\((.+)\)\s*$", part)
     if while_match:
         kind = while_match.group(1)
         cond_str = while_match.group(2).replace(var_name + "$", "__last__")
-        return None, {"kind": kind, "condition": _parse_expr(cond_str, fn_sigs)}
+        return {"value": None, "terminate": {"kind": kind, "condition": _parse_expr(cond_str, fn_sigs)}}
+    # strip modifiers right-to-left: keep, at, while/until
+    dt_expr = None
+    length_expr = None
+    terminate = None
+    part, keep_str = _strip_stream_modifier(part, "keep")
+    if keep_str:
+        length_expr = _parse_expr(keep_str, fn_sigs)
+    part, at_str = _strip_stream_modifier(part, "at")
+    if at_str:
+        dt_expr = _parse_expr(at_str, fn_sigs)
     for kw in ("until", "while"):
-        kw_match = re.match(r"(.+?)\s+" + kw + r"\s+\((.+)\)\s*$", part)
-        if kw_match:
-            part = kw_match.group(1).strip()
-            cond_str = kw_match.group(2).replace(var_name + "$", "__last__")
+        part, cond_str = _strip_stream_modifier(part, kw)
+        if cond_str:
+            cond_str = cond_str.replace(var_name + "$", "__last__")
             terminate = {"kind": kw, "condition": _parse_expr(cond_str, fn_sigs)}
-            expr_str = part.replace(var_name + "$", "__last__")
-            return _parse_expr(expr_str, fn_sigs), terminate
-    if part:
-        expr_str = part.replace(var_name + "$", "__last__")
-        return _parse_expr(expr_str, fn_sigs), None
-    return None, None
+            break
+    if not part:
+        return {"value": None, "dt": dt_expr, "length": length_expr, "terminate": terminate}
+    expr_str = part.replace(var_name + "$", "__last__")
+    return {"value": _parse_expr(expr_str, fn_sigs), "dt": dt_expr, "length": length_expr, "terminate": terminate}
 
 
 def _parse_stream(rest: str, var_name: str, fn_sigs: list = None) -> dict:
-    """Parse a streaming expression: <- expr <- expr ... [while/until (cond)]"""
+    """Parse a streaming expression: <- expr [at (dt)] [keep (len)] [while/until (cond)] <- ...
+    Each step can have its own dt, length, and terminate modifiers."""
     parts = _split_stream_parts(rest)
     steps = []
     terminate = None
     for part in parts:
-        step, term = _parse_stream_part(part, var_name, fn_sigs)
-        if term:
-            terminate = term
-        if step:
+        parsed = _parse_stream_part(part, var_name, fn_sigs)
+        if parsed.get("terminate"):
+            terminate = parsed["terminate"]
+        if parsed.get("value") is not None:
+            step = parsed["value"]
+            # attach per-step modifiers to the step expression
+            if parsed.get("dt") or parsed.get("length"):
+                step = {"kind": "timed_step", "value": step,
+                        "dt": parsed.get("dt"), "length": parsed.get("length")}
             steps.append(step)
     return {"kind": "stream", "steps": steps, "terminate": terminate}
 
@@ -1825,6 +1850,19 @@ def _try_parse_filter_expr(s, fn_sigs):
     return None
 
 
+_TIME_UNITS = {"seconds", "ms", "hz", "bpm"}
+
+
+def _try_parse_time_expr(s, fn_sigs):
+    """Try to parse a time unit expression: (number) unit, e.g. (1) hz, (500) ms."""
+    m = re.match(r"\((.+?)\)\s+(seconds|ms|hz|bpm)$", s)
+    if m:
+        arg = _parse_expr(m.group(1).strip(), fn_sigs)
+        unit = m.group(2)
+        return {"kind": "fn_call", "signature_parts": [f"(number)", unit], "args": [arg]}
+    return None
+
+
 def _parse_expr(s: str, fn_sigs: list = None) -> dict:
     """Parse a zero expression string into an AST node."""
     s = s.strip()
@@ -1835,6 +1873,9 @@ def _parse_expr(s: str, fn_sigs: list = None) -> dict:
     filter_expr = _try_parse_filter_expr(s, fn_sigs)
     if filter_expr:
         return filter_expr
+    time_expr = _try_parse_time_expr(s, fn_sigs)
+    if time_expr:
+        return time_expr
     bracket_match = re.match(rf"({W}\$?)\[(.+)\]$", s)
     if bracket_match:
         return _parse_bracket_expr(bracket_match.group(1), bracket_match.group(2), fn_sigs)

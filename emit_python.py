@@ -567,25 +567,46 @@ def _emit_stream_loop(name: str, steps: list, terminate: dict, emit_fn) -> list[
     return lines
 
 
+def _unwrap_timed_step(node):
+    """Unwrap a timed_step node, returning (value_node, dt_expr, length_expr).
+    For non-timed steps, returns (node, None, None)."""
+    if isinstance(node, dict) and node.get("kind") == "timed_step":
+        return node["value"], node.get("dt"), node.get("length")
+    return node, None, None
+
+
 def _emit_stream(name: str, stream: dict) -> str:
-    """Emit a streaming expression."""
+    """Emit a streaming expression. Timed steps emit dt/length metadata on the array."""
     steps = stream["steps"]
     terminate = stream["terminate"]
+    timing_lines = []
 
     def _emit_stream_expr(node):
-        s = _emit_expr(node)
+        inner, _, _ = _unwrap_timed_step(node)
+        s = _emit_expr(inner)
         return s.replace("__last__", f"{name}[-1]")
 
-    if terminate is None and all(s.get("kind") == "literal" for s in steps):
-        items = ", ".join(str(s["value"]) for s in steps)
-        return f"{name} = [{items}]"
-    lines = [f"{name} = [{_emit_stream_expr(steps[0])}]"]
-    if len(steps) > 1:
-        if terminate is None:
-            for step in steps[1:]:
-                lines.append(f"{name}.append({_emit_stream_expr(step)})")
-        else:
-            lines.extend(_emit_stream_loop(name, steps, terminate, _emit_stream_expr))
+    # collect timing from all steps (even on the literal fast path)
+    for step in steps:
+        _, dt, length = _unwrap_timed_step(step)
+        if dt:
+            timing_lines.append(f"{name}.dt = {_emit_expr(dt)}")
+        if length:
+            timing_lines.append(f"{name}.length = {_emit_expr(length)}")
+
+    plain_steps = [_unwrap_timed_step(s)[0] for s in steps]
+    if terminate is None and all(s.get("kind") == "literal" for s in plain_steps):
+        items = ", ".join(str(s["value"]) for s in plain_steps)
+        lines = [f"{name} = [{items}]"]
+    else:
+        lines = [f"{name} = [{_emit_stream_expr(steps[0])}]"]
+        if len(steps) > 1:
+            if terminate is None:
+                for step in steps[1:]:
+                    lines.append(f"{name}.append({_emit_stream_expr(step)})")
+            else:
+                lines.extend(_emit_stream_loop(name, steps, terminate, _emit_stream_expr))
+    lines.extend(timing_lines)
     return "\n".join(lines)
 
 
