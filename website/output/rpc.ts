@@ -211,7 +211,7 @@ export function fn_clear_cookie__string(name: string): void {
 }
 
 // @zero on (string choice$) <- choose (string option-a) or (string option-b)
-export function* task_choose__string_or__string(option_a: string, option_b: string): Generator<string> {
+export function* task_choose_or__string__string(option_a: string, option_b: string): Generator<string> {
     yield option_a;
 }
 

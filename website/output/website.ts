@@ -223,7 +223,7 @@ export function fn_clear_cookie__string(name: string): void {
 }
 
 // @zero on (string choice$) <- choose (string option-a) or (string option-b)
-export function* task_choose__string_or__string(option_a: string, option_b: string): Generator<string> {
+export function* task_choose_or__string__string(option_a: string, option_b: string): Generator<string> {
     yield option_a;
 }
 
@@ -1136,7 +1136,7 @@ export function User(args: Partial<User> = {}): User {
 // @zero on main (string args$); website/website.zero.md:372
 export async function task_main__string(args_arr: readonly string[]): Promise<void> {
     _push_terminal_out(logo);
-    const request_arr = task_serve_http__int(port);
+    const request_arr: any = task_serve_http__int(port);
     for await (const request of _bb_record_stream("request$", request_arr)) {
         _push_terminal_out(request.path);
         const body = fn_handle_request__Http_Request(request);
@@ -1192,4 +1192,4 @@ try {
 
 const _FEATURE_TREE: [string, string, string | null][] = [["website", "the nøøb website", null], ["not-found", "default 404 response", "website"], ["login", "SMS code authentication", "website"], ["rpc", "RPC endpoint for runtime evaluation", "website"], ["landing-page", "serves the noob landing page at root", "website"], ["background", "per-user background colour", "landing-page"], ["test-blackbox", "integration tests for the flight recorder", "website"]];
 
-const _BUILD_FINGERPRINT: {hash: string, git: string, features: string} = {"hash": "048eb4a3870fa34b", "git": "755c50d4ff21", "features": "website,not-found,login,rpc,landing-page,background,test-blackbox"};
+const _BUILD_FINGERPRINT: {hash: string, git: string, features: string} = {"hash": "e2a8ffabeb0bd7d4", "git": "4595a56e8fec", "features": "website,not-found,login,rpc,landing-page,background,test-blackbox"};

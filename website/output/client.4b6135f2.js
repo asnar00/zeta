@@ -389,8 +389,8 @@ document.addEventListener("DOMContentLoaded", () => {
 // Implements the functions declared in gui.zero.md
 // These run in the browser, not on the server.
 
-// @zero on (string result) = input (string prompt)
-async function fn_input__string(prompt) {
+// @zero on (string result$) <- input (string prompt)
+async function task_input__string(prompt) {
     return new Promise((resolve) => {
         const container = document.createElement("div");
         container.style.cssText = "text-align:center; margin-top:20px;";
@@ -419,11 +419,13 @@ function fn_show_message__string(text) {
     alert(text);
 }
 
-// @zero on (string value) = get cookie (string name)
-function fn_get_cookie__string(name) {
-    const match = document.cookie.match(new RegExp("(?:^|; )" + name + "=([^;]*)"));
-    return match ? match[1] : "";
-}
+// @zero input string cookie$[string]
+const cookie_arr = new Proxy({}, {
+    get(_, name) {
+        const match = document.cookie.match(new RegExp("(?:^|; )" + name + "=([^;]*)"));
+        return match ? match[1] : "";
+    }
+});
 
 // @zero on clear cookie (string name)
 function fn_clear_cookie__string(name) {
@@ -431,8 +433,8 @@ function fn_clear_cookie__string(name) {
     document.cookie = name + "=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax" + secure;
 }
 
-// @zero on (string choice) = choose (string option_a) or (string option_b)
-async function fn_choose__string_or__string(optionA, optionB) {
+// @zero on (string choice$) <- choose (string option-a) or (string option-b)
+async function task_choose_or__string__string(optionA, optionB) {
     return new Promise((resolve) => {
         const container = document.createElement("div");
         container.style.cssText = "text-align:center; margin-top:20px;";
@@ -695,88 +697,17 @@ document.addEventListener("DOMContentLoaded", () => {
     _connect_ws();
 });
 
-// @zero on toggle login; composed:388
-async function fn_toggle_login(){
-    const session = await fn_get_cookie__string("session");
-    if (session == "") {
-    await fn_login();
-} else {
-    await fn_logout_dialog();
-}
-}
-
-// @zero on login; composed:395
-async function fn_login(){
-    try {
-        const name = await fn_input__string("name");
-        const code = await _rpc("request login " + encodeURIComponent("(" + name + ")") + "");
-        const entered = await fn_input__string("code");
-        const token = await _rpc("complete login " + encodeURIComponent("(" + name + ")") + " with code " + encodeURIComponent("(" + entered + ")") + "");
-        await fn_set_cookie_of__string_to__string("session", token);
-        await fn_reload_page();
-    } catch (_e) {
-        if (_e instanceof _ZeroRaise) {
-            if (_e.zeroName === 'unknown user') {
-                fn_unknown_user__string(_e.argsList[0]);
-            } else if (_e.zeroName === 'invalid code') {
-                fn_invalid_code__string(_e.argsList[0]);
-            } else { throw _e; }
-        } else { throw _e; }
-    }
-}
-
-// @zero on logout dialog; composed:403
-async function fn_logout_dialog(){
-    const choice = await fn_choose__string_or__string("log out", "cancel");
-    if (choice == "log out") {
-    await fn_clear_cookie__string("session");
-    await fn_reload_page();
-}
-}
-
-// @zero on unknown user (string name); composed:409
+// @zero on unknown user (string name); composed:415
 async function fn_unknown_user__string(name){
     await fn_show_message__string("unknown user");
 }
 
-// @zero on invalid code (string code); composed:412
+// @zero on invalid code (string code); composed:418
 async function fn_invalid_code__string(code){
     await fn_show_message__string("invalid code");
 }
 
-// @zero on logo clicked; composed:443
-async function fn_logo_clicked(){
-    await fn_toggle_login();
-}
-
-// @zero on test login; composed:454
-async function fn_test_login(){
-    const _orig_fn_input__string = fn_input__string;
-    const _patched = async function(_prompt) {
-        if (_prompt === 'name') {
-            setTimeout(async () => {
-                fn_type__string_into_input_box__string("_alice", "input");
-                fn_press__string_on__string("Enter", "input");
-            }, 500);
-        }
-        if (_prompt === 'code') {
-            setTimeout(async () => {
-                fn_type__string_into_input_box__string("1234", "input");
-                fn_press__string_on__string("Enter", "input");
-            }, 500);
-        }
-        return _orig_fn_input__string(_prompt);
-    };
-    (globalThis).fn_input__string = _patched;
-    try {
-        await fn_login();
-        await _rpc("check " + encodeURIComponent("(" + fn_describe_page() + ")") + " contains " + encodeURIComponent("(" + "log out" + ")") + "");
-    } finally {
-        (globalThis).fn_input__string = _orig_fn_input__string;
-    }
-}
-
-// @zero on test blackbox; composed:476
+// @zero on test blackbox; composed:482
 async function fn_test_blackbox(){
     await fn_click_on__string(".logo");
     await fn_press__string_on__string("Escape", "body");

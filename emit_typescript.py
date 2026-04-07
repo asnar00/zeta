@@ -14,6 +14,7 @@ from emit_base import (
     replace_underscore as _replace_underscore,
     collect_all_fields as _collect_all_fields,
     compute_dispatch_groups,
+    make_task_fn_name,
     make_task_call_fn_name,
     source_comment,
 )
@@ -52,12 +53,40 @@ async function _concurrently(...fns: (() => any)[]) {
 
 def _init_globals_ts(ir: dict) -> tuple:
     """Initialize module-level state from IR. Returns (structs, enums)."""
-    global _enum_values, _context_features_ts, _map_vars_ts, _rpc_targets_ts, _client_async_fns_ts, _void_task_names_ts
+    global _enum_values, _context_features_ts, _map_vars_ts, _rpc_targets_ts, _client_async_fns_ts, _void_task_names_ts, _output_task_names_ts
     _context_features_ts = set()
-    _void_task_names_ts = set()
-    for task in ir.get("tasks", []):
+    _void_task_names_ts = {}  # fn_call base name -> task fn name
+    _output_task_names_ts = {}
+    for task in ir.get("_all_tasks", ir.get("tasks", [])):
+        if task.get("output") is not None:
+            task_fn = make_task_fn_name(task)
+            base = "_".join(task["name_parts"])
+            _output_task_names_ts[base] = task_fn
+            all_params = task.get("input_streams", []) + task.get("params", [])
+            sig_parts = []
+            pi = 0
+            for np in task["name_parts"]:
+                sig_parts.append(np)
+                if pi < len(all_params):
+                    sig_parts.append(f"({all_params[pi]['type']})")
+                    pi += 1
+            fn_style = _make_function_name(sig_parts)[3:]
+            _output_task_names_ts[fn_style] = task_fn
         if task.get("output") is None:
-            _void_task_names_ts.add("_".join(task["name_parts"]))
+            task_fn = make_task_fn_name(task)
+            base = "_".join(task["name_parts"])
+            _void_task_names_ts[base] = task_fn
+            # also build fn_call-style name from signature
+            all_params = task.get("input_streams", []) + task.get("params", [])
+            sig_parts = []
+            pi = 0
+            for np in task["name_parts"]:
+                sig_parts.append(np)
+                if pi < len(all_params):
+                    sig_parts.append(f"({all_params[pi]['type']})")
+                    pi += 1
+            fn_style = _make_function_name(sig_parts)[3:]  # strip fn_
+            _void_task_names_ts[fn_style] = task_fn
     var_owners = ir.get("_var_owners", {})
     all_user = ir.get("_all_user_vars", [])
     for v in all_user:
@@ -70,6 +99,11 @@ def _init_globals_ts(ir: dict) -> tuple:
         for val in edata["values"]:
             _enum_values[val] = f"{ts_name}.{val}"
     _map_vars_ts = {_safe(v["name"] + "_arr") for v in ir["variables"] if v.get("map")}
+    # also pick up platform input keyed streams
+    from parser import _get_platform_input_streams
+    for v in _get_platform_input_streams():
+        if v.get("map"):
+            _map_vars_ts.add(_safe(v["name"] + "_arr"))
     _rpc_targets_ts = ir.get("_rpc_targets", set())
     _client_async_fns_ts = ir.get("_client_async_fns", set())
     return structs, enums
@@ -583,6 +617,13 @@ def _emit_dict_array_variable_ts(name: str, type_ann: str, val: dict, structs: d
         return _emit_range_array_ts(name, type_ann, val)
     kind = val.get("kind")
     if kind == "stream":
+        steps = val.get("steps", [])
+        # single fn_call step with no terminator: just call the function
+        if len(steps) == 1 and val.get("terminate") is None:
+            step = steps[0]
+            if isinstance(step, dict) and step.get("kind") in ("fn_call", "call"):
+                expr = _emit_expr(step, structs)
+                return f"const {name}: {type_ann}[] = [{expr}];"
         return _emit_stream_ts(name, type_ann, val, structs)
     if kind == "timed_step":
         inner = val["value"]
@@ -1103,11 +1144,19 @@ def _emit_task_var_decl_ts(node: dict, structs: dict, base_indent: str, extra_in
         if val.get("length"):
             lines.append(f"{base_indent}{extra_indent}{name}.capacity = {_emit_expr(val['length'], structs)};")
         return "\n".join(lines)
+    # single fn_call step stream: just call the function
+    if node.get("array") and isinstance(val, dict) and val.get("kind") == "stream":
+        steps = val.get("steps", [])
+        if len(steps) == 1 and val.get("terminate") is None:
+            step = steps[0]
+            if isinstance(step, dict) and step.get("kind") in ("fn_call", "call"):
+                expr = _emit_expr(step, structs)
+                return f"{base_indent}{extra_indent}const {name} = [{expr}];"
     if node.get("array") and isinstance(val, dict) and val.get("kind") == "task_call":
         call_fn = make_task_call_fn_name(val)
         args = ", ".join(_coerce_task_arg(a, t, val) for a, t in
                          zip(val["args"], _task_call_param_types(val)))
-        return f"{base_indent}{extra_indent}const {name} = {call_fn}({args});"
+        return f"{base_indent}{extra_indent}const {name}: any = {call_fn}({args});"
     if node.get("array") and isinstance(val, dict) and "range" in val:
         return f"{base_indent}{extra_indent}{_emit_range_expr_ts(name, val)};"
     if node.get("array") and isinstance(val, list):
@@ -1196,6 +1245,24 @@ def _emit_task_body_node_ts(node, structs, uses, has_platform_streams, base_inde
         return [_emit_task_var_decl_ts(node, structs, base_indent, extra_indent)], extra_indent
     if kind == "assign":
         return [f"{base_indent}{extra_indent}{node['target']} = {_emit_expr(node['value'], structs)};"], extra_indent
+    # void function call with array args: map the function over array elements
+    if kind in ("fn_call", "call") and node.get("args"):
+        array_args = [(i, a) for i, a in enumerate(node["args"])
+                      if isinstance(a, dict) and a.get("kind") == "name" and a.get("value", "").endswith("$")]
+        if array_args:
+            idx, arr_arg = array_args[0]
+            arr_expr = _emit_expr(arr_arg, structs)
+            loop_var = "_v"
+            new_args = list(node["args"])
+            new_args[idx] = {"kind": "name", "value": "_v_scalar"}
+            new_node = dict(node, args=new_args)
+            call_expr = _emit_expr(new_node, structs).replace("_v_scalar", loop_var)
+            lines = [
+                f"{base_indent}{extra_indent}for (const {loop_var} of {arr_expr}) {{",
+                f"{base_indent}{extra_indent}    {call_expr};",
+                f"{base_indent}{extra_indent}}}",
+            ]
+            return lines, extra_indent
     return [f"{base_indent}{extra_indent}{_emit_expr(node, structs)};"], extra_indent
 
 
@@ -1458,7 +1525,11 @@ def _emit_call_expr_ts(node: dict, structs: dict) -> str:
     name = node["name"]
     safe_name = _safe(name)
     if safe_name in _void_task_names_ts:
-        safe_name = "task_" + safe_name
+        safe_name = _void_task_names_ts[safe_name]
+    elif safe_name in _output_task_names_ts:
+        safe_name = _output_task_names_ts[safe_name]
+        args = ", ".join(_emit_expr(a, structs) for a in node["args"])
+        return f"[...{safe_name}({args})]"
     if name in structs:
         args = node["args"]
         parts = []
@@ -1678,7 +1749,11 @@ def _emit_simple_expr_ts(node: dict, structs: dict) -> str | None:
         # check if this is a void task
         base = fn_name[3:] if fn_name.startswith("fn_") else fn_name
         if base in _void_task_names_ts:
-            fn_name = "task_" + base
+            fn_name = _void_task_names_ts[base]
+        elif base in _output_task_names_ts:
+            fn_name = _output_task_names_ts[base]
+            args = ", ".join(_emit_expr(a, structs) for a in node["args"])
+            return f"[...{fn_name}({args})]"
         args = ", ".join(_emit_expr(a, structs) for a in node["args"])
         return f"{fn_name}({args})"
     if kind == "task_call":

@@ -43,14 +43,43 @@ _void_task_names = set()
 
 def _init_globals(ir: dict) -> dict:
     """Initialize module-level enum values and context features. Returns enums dict."""
-    global _enum_values, _context_features, _input_fn_names, _input_stream_names, _void_task_names
+    global _enum_values, _context_features, _input_fn_names, _input_stream_names, _void_task_names, _output_task_names
     _context_features = set()
     _input_fn_names = set()
     _input_stream_names = set()
-    _void_task_names = set()
-    for task in ir.get("tasks", []):
+    _void_task_names = {}  # fn_call base name -> task fn name
+    _output_task_names = {}  # fn_call base name -> task fn name (for materialisation)
+    for task in ir.get("_all_tasks", ir.get("tasks", [])):
+        if task.get("output") is not None:
+            task_fn = make_task_fn_name(task)
+            base = "_".join(task["name_parts"])
+            _output_task_names[base] = task_fn
+            all_params = task.get("input_streams", []) + task.get("params", [])
+            sig_parts = []
+            pi = 0
+            for np in task["name_parts"]:
+                sig_parts.append(np)
+                if pi < len(all_params):
+                    sig_parts.append(f"({all_params[pi]['type']})")
+                    pi += 1
+            fn_style = _make_function_name(sig_parts)[3:]
+            _output_task_names[fn_style] = task_fn
         if task.get("output") is None:
-            _void_task_names.add("_".join(task["name_parts"]))
+            task_fn = make_task_fn_name(task)
+            # map both the simple name and the fn_call-style name
+            base = "_".join(task["name_parts"])
+            _void_task_names[base] = task_fn
+            # also build fn_call-style name from signature
+            all_params = task.get("input_streams", []) + task.get("params", [])
+            sig_parts = []
+            pi = 0
+            for np in task["name_parts"]:
+                sig_parts.append(np)
+                if pi < len(all_params):
+                    sig_parts.append(f"({all_params[pi]['type']})")
+                    pi += 1
+            fn_style = _make_function_name(sig_parts)[3:]  # strip fn_
+            _void_task_names[fn_style] = task_fn
     var_owners = ir.get("_var_owners", {})
     all_user = ir.get("_all_user_vars", [])
     for v in all_user:
@@ -634,6 +663,13 @@ def _emit_dict_array_variable(name: str, type_ann: str, val: dict) -> str | None
         return f"{name}: list[{type_ann}] = {_emit_range(val)}"
     kind = val.get("kind")
     if kind == "stream":
+        steps = val.get("steps", [])
+        # single fn_call step with no terminator: just call the function
+        if len(steps) == 1 and val.get("terminate") is None:
+            step = steps[0]
+            if isinstance(step, dict) and step.get("kind") in ("fn_call", "call"):
+                expr = _emit_expr(step)
+                return f"{name} = [{expr}]"
         return _emit_stream(name, val)
     if kind == "timed_step":
         inner = val["value"]
@@ -1441,14 +1477,22 @@ def _emit_simple_expr(node: dict) -> str | None:
     if kind == "call":
         name = _safe(node['name'])
         if name in _void_task_names:
-            name = "task_" + name
+            name = _void_task_names[name]
+        elif name in _output_task_names:
+            name = _output_task_names[name]
+            args = ', '.join(_emit_expr(a) for a in node['args'])
+            return f"list({name}({args}))"
         return f"{name}({', '.join(_emit_expr(a) for a in node['args'])})"
     if kind in ("fn_call", "array_fn_call"):
         fn_name = _make_function_name(node['signature_parts'])
-        # check if this is a void task
+        # check if this is a task
         base = fn_name[3:] if fn_name.startswith("fn_") else fn_name
         if base in _void_task_names:
-            fn_name = "task_" + base
+            fn_name = _void_task_names[base]
+        elif base in _output_task_names:
+            fn_name = _output_task_names[base]
+            args = ', '.join(_emit_expr(a) for a in node['args'])
+            return f"list({fn_name}({args}))"
         call_expr = f"{fn_name}({', '.join(_emit_expr(a) for a in node['args'])})"
         if fn_name in _input_fn_names:
             return f"_bb_record_call({fn_name!r}, {call_expr})"

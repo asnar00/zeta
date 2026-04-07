@@ -460,7 +460,7 @@ def fn_clear_cookie__string(name: str):
 
 
 # @zero on (string choice$) <- choose (string option-a) or (string option-b)
-def task_choose__string_or__string(option_a: str, option_b: str):
+def task_choose_or__string__string(option_a: str, option_b: str):
     yield option_a  # server fallback: return first option
 
 

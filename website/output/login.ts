@@ -211,7 +211,7 @@ export function fn_clear_cookie__string(name: string): void {
 }
 
 // @zero on (string choice$) <- choose (string option-a) or (string option-b)
-export function* task_choose__string_or__string(option_a: string, option_b: string): Generator<string> {
+export function* task_choose_or__string__string(option_a: string, option_b: string): Generator<string> {
     yield option_a;
 }
 
@@ -715,17 +715,19 @@ export function User(args: Partial<User> = {}): User {
 
 // @zero on login; website/login/login.zero.md:401
 export async function task_login(): Promise<void> {
-    const name_arr = website.task_input__string("name");
-    let code_arr = {'kind': 'stream', 'steps': [{'kind': 'fn_call', 'signature_parts': ['request', 'login', '(string)'], 'args': [{'kind': 'name', 'value': 'name$'}]}], 'terminate': None};
-    const entered_arr = website.task_input__string("code");
-    let token_arr = {'kind': 'stream', 'steps': [{'kind': 'fn_call', 'signature_parts': ['complete', 'login', '(string)', 'with', 'code', '(string)'], 'args': [{'kind': 'name', 'value': 'name$'}, {'kind': 'name', 'value': 'entered$'}]}], 'terminate': None};
-    fn_set_cookie_of__string_to__string("session", token_arr);
+    const name_arr: any = website.task_input__string("name");
+    const code_arr = [fn_request_login__string(name_arr)];
+    const entered_arr: any = website.task_input__string("code");
+    const token_arr = [fn_complete_login__string_with_code__string(name_arr, entered_arr)];
+    for (const _v of token_arr) {
+        fn_set_cookie_of__string_to__string("session", _v);
+    }
     fn_reload_page();
 }
 
 // @zero on logout dialog; website/login/login.zero.md:409
 export async function task_logout_dialog(): Promise<void> {
-    const choice_arr = website.task_choose_or__string__string("log out", "cancel");
+    const choice_arr: any = website.task_choose_or__string__string("log out", "cancel");
     if (choice_arr == "log out") {
         fn_clear_cookie__string("session");
         fn_reload_page();
@@ -734,7 +736,7 @@ export async function task_logout_dialog(): Promise<void> {
 
 // @zero on toggle login; website/login/login.zero.md:394
 export function task_toggle_login(): void {
-    let session = cookie_arr["session"];
+    let session = cookie_arr.get("session") ?? "";
     if (session == "") {
         task_login();
     } else {

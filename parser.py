@@ -381,6 +381,7 @@ def process(source: str, recover: bool = False, source_file: str = None) -> dict
     if errors:
         ir["errors"] = errors
     _propagate_taskness(ir)
+    _check_function_task_calls(ir)
     _mark_platform_streams(ir)
     _check_undefined_calls(ir)
     ir["features"] = _detect_features(ir)
@@ -420,6 +421,73 @@ def _propagate_taskness(ir):
             ir["tasks"].append(task)
             task_names.add(" ".join(name_parts))
             changed = True
+
+
+def _check_function_task_calls(ir):
+    """Error if any remaining function calls a task. After propagation,
+    this should only trigger if something was missed."""
+    task_names = {" ".join(t["name_parts"]) for t in ir.get("tasks", [])}
+    if not task_names:
+        return
+    for fn in ir["functions"]:
+        if fn.get("abstract"):
+            continue
+        called = _find_task_call_in_body(fn.get("body", []), task_names)
+        if called:
+            sig = " ".join(str(p) for p in fn.get("signature_parts", []))
+            line = fn.get("source_line", 0)
+            ir.setdefault("errors", [])
+            ir.setdefault("warnings", []).append(
+                f"line {line}: function '{sig}' calls task '{called}' — it should be a task"
+            )
+
+
+def _find_task_call_in_body(body, task_names):
+    """Find the first task call in a function body. Returns the task name or None."""
+    for node in body:
+        if isinstance(node, dict):
+            result = _node_finds_task(node, task_names)
+            if result:
+                return result
+    return None
+
+
+def _node_finds_task(node, task_names):
+    """Find a task call in a node tree. Returns task name or None."""
+    if not isinstance(node, dict):
+        return None
+    kind = node.get("kind", "")
+    if kind in ("fn_call", "call"):
+        call_name = ""
+        if "signature_parts" in node:
+            call_name = " ".join(p for p in node["signature_parts"]
+                                 if not p.startswith("(") and not p.startswith("["))
+        elif "name" in node:
+            call_name = node["name"]
+        if call_name in task_names:
+            return call_name
+    for key in ("value", "condition", "left", "right", "true", "false"):
+        child = node.get(key)
+        if isinstance(child, dict):
+            result = _node_finds_task(child, task_names)
+            if result:
+                return result
+    for key in ("args", "body", "blocks"):
+        children = node.get(key, [])
+        if isinstance(children, list):
+            for child in children:
+                if isinstance(child, dict):
+                    result = _node_finds_task(child, task_names)
+                    if result:
+                        return result
+    for branch in node.get("branches", []):
+        if isinstance(branch, dict):
+            for child in branch.get("body", []):
+                if isinstance(child, dict):
+                    result = _node_finds_task(child, task_names)
+                    if result:
+                        return result
+    return None
 
 
 def _body_calls_task(body, task_names):

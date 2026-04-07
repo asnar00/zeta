@@ -47,7 +47,7 @@ function fn_clear_cookie__string(name) {
 }
 
 // @zero on (string choice$) <- choose (string option-a) or (string option-b)
-async function task_choose__string_or__string(optionA, optionB) {
+async function task_choose_or__string__string(optionA, optionB) {
     return new Promise((resolve) => {
         const container = document.createElement("div");
         container.style.cssText = "text-align:center; margin-top:20px;";

@@ -690,6 +690,7 @@ def _build_feat_ir(feat_name, ctx, input_paths):
     feat_ir["_var_owners"] = ctx["ir_var_owners"]
     feat_ir["_all_user_vars"] = [v for v in ir["variables"]
                                   if v.get("scope") not in ("shared", "input") and not v.get("_platform")]
+    feat_ir["_all_tasks"] = ir.get("tasks", [])
     if ir_by_feature[feat_name].get("tests"):
         feat_ir["tests"] = ir_by_feature[feat_name]["tests"]
         feat_ir["test_feature"] = feat_name
