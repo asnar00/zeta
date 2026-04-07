@@ -82,10 +82,14 @@ def _bb_elapsed():
 
 
 def _bb_record_stream(stream_name, iterator):
-    """Wrap a stream iterator to record each yielded value."""
+    """Wrap a stream iterator to record each yielded value.
+    If the iterator has a dt property, sleep between values for real-time playback."""
+    dt = getattr(iterator, 'dt', 0)
     for value in iterator:
         _bb_record_action("stream", stream_name, _bb_serialize_value(value), "", "", 0)
         yield value
+        if dt and dt > 0:
+            time.sleep(dt)
 
 
 def _bb_record_call(fn_name, result):
@@ -169,7 +173,7 @@ def _bb_start_server_recording():
     _bb_tick_timer = threading.Timer(_bb_moment_duration, tick)
     _bb_tick_timer.daemon = True
     _bb_tick_timer.start()
-    print("[blackbox] server recording started")
+_bb_start_server_recording()
 
 
 def _bb_record_action(feature, name, args, correlation, result, elapsed):
@@ -187,9 +191,6 @@ def _bb_record_action(feature, name, args, correlation, result, elapsed):
             "elapsed": elapsed,
             "kind": "call"
         })
-
-
-_bb_start_server_recording()
 
 
 def _bb_snapshot_server_moments():
@@ -1914,8 +1915,13 @@ def _get_ctx() -> '_Context':
 
 
 # blackbox fallback (overridden when blackbox platform is loaded)
+import time as _time
 def _bb_record_stream(_name, _iter):
-    return _iter
+    _dt = getattr(_iter, 'dt', 0)
+    for _v in _iter:
+        yield _v
+        if _dt and _dt > 0:
+            _time.sleep(_dt)
 def _bb_record_call(_name, _result):
     return _result
 
@@ -2342,4 +2348,4 @@ if __name__ == '__main__':
 
 _FEATURE_TREE = [("website", "the nøøb website", None), ("not-found", "default 404 response", 'website'), ("login", "SMS code authentication", 'website'), ("rpc", "RPC endpoint for runtime evaluation", 'website'), ("landing-page", "serves the noob landing page at root", 'website'), ("background", "per-user background colour", 'landing-page'), ("test-blackbox", "integration tests for the flight recorder", 'website')]
 
-_BUILD_FINGERPRINT = {"hash": "9866c00b2ed1618d", "git": "4ae6b7ee4c7e", "features": "website,not-found,login,rpc,landing-page,background,test-blackbox"}
+_BUILD_FINGERPRINT = {"hash": "9da3e198b1904730", "git": "79566cab8267", "features": "website,not-found,login,rpc,landing-page,background,test-blackbox"}

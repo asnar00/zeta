@@ -178,8 +178,13 @@ def _walk_has_kind(stmts, kind):
 
 _BB_FALLBACK = """\
 # blackbox fallback (overridden when blackbox platform is loaded)
+import time as _time
 def _bb_record_stream(_name, _iter):
-    return _iter
+    _dt = getattr(_iter, 'dt', 0)
+    for _v in _iter:
+        yield _v
+        if _dt and _dt > 0:
+            _time.sleep(_dt)
 def _bb_record_call(_name, _result):
     return _result"""
 
@@ -194,13 +199,30 @@ def _needs_bb_fallback(ir: dict) -> bool:
 
 
 def _has_timed_streams(ir: dict) -> bool:
-    """Check if any variable has a stream with timing modifiers."""
+    """Check if any variable or task body uses timed streams."""
     for var in ir.get("variables", []):
-        val = var.get("value")
-        if isinstance(val, dict) and val.get("kind") == "stream":
-            for step in val.get("steps", []):
-                if isinstance(step, dict) and step.get("kind") == "timed_step":
+        if _value_has_timing(var.get("value")):
+            return True
+        if var.get("stream_props"):
+            return True
+    for task in ir.get("tasks", []):
+        for node in task.get("body", []):
+            if isinstance(node, dict) and node.get("kind") == "var_decl":
+                if _value_has_timing(node.get("value")):
                     return True
+    return False
+
+
+def _value_has_timing(val):
+    """Check if a value node contains timed_step markers."""
+    if not isinstance(val, dict):
+        return False
+    if val.get("kind") == "timed_step":
+        return True
+    if val.get("kind") == "stream":
+        for step in val.get("steps", []):
+            if isinstance(step, dict) and step.get("kind") == "timed_step":
+                return True
     return False
 
 
@@ -962,17 +984,37 @@ def _emit_task_consume(node: dict, base_indent: str) -> str:
 
 
 def _is_task_inner_call(node: dict) -> bool:
-    """Check if node is a task call inside a task body."""
-    return (node.get("kind") == "var_decl" and node.get("array")
-            and isinstance(node.get("value"), dict) and node["value"].get("kind") == "task_call")
+    """Check if node is a task call (or timed task call) inside a task body."""
+    if node.get("kind") != "var_decl" or not node.get("array"):
+        return False
+    val = node.get("value")
+    if not isinstance(val, dict):
+        return False
+    if val.get("kind") == "task_call":
+        return True
+    if val.get("kind") == "timed_step" and isinstance(val.get("value"), dict) and val["value"].get("kind") == "task_call":
+        return True
+    return False
 
 
 def _emit_task_inner_call(node: dict, base_indent: str, extra_indent: str) -> str:
     """Emit a task call assignment inside a task body."""
-    call = node["value"]
+    val = node["value"]
+    name = node["name"] + "_arr"
+    # unwrap timed_step if present
+    if val.get("kind") == "timed_step":
+        call = val["value"]
+        call_fn = make_task_call_fn_name(call)
+        args = ", ".join(a.replace("$", "_arr") for a in call["args"])
+        lines = [f"{base_indent}{extra_indent}{name} = _Stream({call_fn}({args}))"]
+        if val.get("dt"):
+            lines.append(f"{base_indent}{extra_indent}{name}.dt = {_emit_expr(val['dt'])}")
+        if val.get("length"):
+            lines.append(f"{base_indent}{extra_indent}{name}.length = {_emit_expr(val['length'])}")
+        return "\n".join(lines)
+    call = val
     call_fn = make_task_call_fn_name(call)
     args = ", ".join(a.replace("$", "_arr") for a in call["args"])
-    name = node["name"] + "_arr"
     return f"{base_indent}{extra_indent}{name} = {call_fn}({args})"
 
 

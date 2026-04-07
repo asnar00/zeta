@@ -1371,7 +1371,7 @@ def _is_task_def(line: str) -> bool:
 
 
 def _scan_body_for_platform_streams(lines, start, platform_streams):
-    """Scan body lines for emit to platform streams or task-like constructs."""
+    """Scan body lines for task-like constructs: for each, platform stream emits, consume patterns."""
     fn_indent = len(lines[start]) - len(lines[start].lstrip())
     i = start + 1
     while i < len(lines):
@@ -1382,10 +1382,10 @@ def _scan_body_for_platform_streams(lines, start, platform_streams):
         if line_indent <= fn_indent:
             break
         stripped = body_line.strip()
-        emit_match = re.match(rf"({W}\$)\s*<-", stripped)
-        if emit_match and emit_match.group(1) in platform_streams:
-            return True
         if stripped.startswith("for each "):
+            return True
+        emit_match = re.match(rf"({W}\$)\s*<-", stripped)
+        if emit_match and platform_streams and emit_match.group(1) in platform_streams:
             return True
         consume_match = re.match(rf"{W}\s+{W}\$?\s*<-", stripped)
         if consume_match:
@@ -1395,14 +1395,14 @@ def _scan_body_for_platform_streams(lines, start, platform_streams):
 
 
 def _is_void_task(line: str, lines: list[str], start: int, uses: list[dict]) -> bool:
-    """Check if a void function should be parsed as a void task."""
+    """Check if a void function should be parsed as a void task.
+    A void function is a task if its body contains for each, platform stream emits,
+    or consume patterns."""
     if not line.startswith("on ") or _is_task_def(line):
         return False
     if re.match(rf"on\s+\({W}\s+{W}\$?\)\s*=", line):
         return False
     platform_streams = {u["name"] for u in uses}
-    if not platform_streams:
-        return False
     return _scan_body_for_platform_streams(lines, start, platform_streams)
 
 

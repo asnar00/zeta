@@ -74,10 +74,14 @@ def _bb_elapsed():
 
 
 def _bb_record_stream(stream_name, iterator):
-    """Wrap a stream iterator to record each yielded value."""
+    """Wrap a stream iterator to record each yielded value.
+    If the iterator has a dt property, sleep between values for real-time playback."""
+    dt = getattr(iterator, 'dt', 0)
     for value in iterator:
         _bb_record_action("stream", stream_name, _bb_serialize_value(value), "", "", 0)
         yield value
+        if dt and dt > 0:
+            time.sleep(dt)
 
 
 def _bb_record_call(fn_name, result):
@@ -161,7 +165,7 @@ def _bb_start_server_recording():
     _bb_tick_timer = threading.Timer(_bb_moment_duration, tick)
     _bb_tick_timer.daemon = True
     _bb_tick_timer.start()
-    print("[blackbox] server recording started")
+_bb_start_server_recording()
 
 
 def _bb_record_action(feature, name, args, correlation, result, elapsed):
@@ -179,9 +183,6 @@ def _bb_record_action(feature, name, args, correlation, result, elapsed):
             "elapsed": elapsed,
             "kind": "call"
         })
-
-
-_bb_start_server_recording()
 
 
 def _bb_snapshot_server_moments():
