@@ -8,4 +8,4 @@ Standard terminal I/O streams. `out$` sends lines to stdout. `in$` receives line
 ## interface
 
     string out$
-    string in$
+    input string in$
