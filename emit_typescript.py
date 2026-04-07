@@ -572,6 +572,21 @@ def _emit_dict_array_variable_ts(name: str, type_ann: str, val: dict, structs: d
     kind = val.get("kind")
     if kind == "stream":
         return _emit_stream_ts(name, type_ann, val, structs)
+    if kind == "timed_step":
+        inner = val["value"]
+        lines = []
+        if inner.get("kind") == "task_call":
+            fn_name = make_task_call_fn_name(inner)
+            args = ", ".join(_coerce_task_arg(a, t, inner) for a, t in
+                             zip(inner["args"], _task_call_param_types(inner)))
+            lines.append(f"const {name} = new _Stream([...{fn_name}({args})]);")
+        else:
+            lines.append(f"const {name} = new _Stream({_emit_expr(inner, structs)});")
+        if val.get("dt"):
+            lines.append(f"{name}.dt = {_emit_expr(val['dt'], structs)};")
+        if val.get("length"):
+            lines.append(f"{name}.capacity = {_emit_expr(val['length'], structs)};")
+        return "\n".join(lines)
     if kind == "task_call":
         return _emit_task_call_ts(name, type_ann, val)
     if kind in ("where", "sort"):
@@ -1061,6 +1076,21 @@ def _emit_task_var_decl_ts(node: dict, structs: dict, base_indent: str, extra_in
     """Emit a var_decl inside a task body (TypeScript)."""
     name = _safe(node["name"]) + "_arr" if node.get("array") else _safe(node["name"])
     val = node.get("value")
+    if node.get("array") and isinstance(val, dict) and val.get("kind") == "timed_step":
+        inner = val["value"]
+        lines = []
+        if inner.get("kind") == "task_call":
+            call_fn = make_task_call_fn_name(inner)
+            args = ", ".join(_coerce_task_arg(a, t, inner) for a, t in
+                             zip(inner["args"], _task_call_param_types(inner)))
+            lines.append(f"{base_indent}{extra_indent}const {name} = new _Stream([...{call_fn}({args})]);")
+        else:
+            lines.append(f"{base_indent}{extra_indent}const {name} = new _Stream({_emit_expr(inner, structs)});")
+        if val.get("dt"):
+            lines.append(f"{base_indent}{extra_indent}{name}.dt = {_emit_expr(val['dt'], structs)};")
+        if val.get("length"):
+            lines.append(f"{base_indent}{extra_indent}{name}.capacity = {_emit_expr(val['length'], structs)};")
+        return "\n".join(lines)
     if node.get("array") and isinstance(val, dict) and val.get("kind") == "task_call":
         call_fn = make_task_call_fn_name(val)
         args = ", ".join(_coerce_task_arg(a, t, val) for a, t in
