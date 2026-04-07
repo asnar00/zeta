@@ -424,6 +424,43 @@ export function fn_rpc_eval__string(expr: string): string {
 }
 
 
+// @zero on (string json) = serialise [items$]
+export function fn_serialise(items: any): string {
+    const data: any = {
+        values: [...items].map(v => {
+            if (v === null || v === undefined) return null;
+            if (typeof v === "object" && !Array.isArray(v)) {
+                const obj: any = {};
+                for (const [k, val] of Object.entries(v)) {
+                    if (!k.startsWith("_")) obj[k] = val;
+                }
+                return obj;
+            }
+            return v;
+        }),
+    };
+    if (items.dt) data.dt = items.dt;
+    if (items.capacity) data.capacity = items.capacity;
+    if (items.t0) data.t0 = items.t0;
+    if (items._timestamps?.length) data.timestamps = [...items._timestamps];
+    return JSON.stringify(data);
+}
+
+
+// @zero on (string result$) = deserialise (string json)
+export function fn_deserialise__string(json_str: string): any {
+    const data = JSON.parse(json_str);
+    const values = data.values ?? [];
+    // @ts-ignore — _Stream may or may not be defined depending on build
+    const result: any = typeof _Stream !== "undefined" ? new (_Stream as any)(values) : [...values];
+    if (data.dt) result.dt = data.dt;
+    if (data.capacity) result.capacity = data.capacity;
+    if (data.t0) result.t0 = data.t0;
+    if (data.timestamps && result._timestamps) result._timestamps = data.timestamps;
+    return result;
+}
+
+
 // Platform implementation: sms (TypeScript)
 // Implements the functions declared in sms.zero.md
 // Server-side only — not used in client bundle
@@ -1089,7 +1126,7 @@ export function User(args: Partial<User> = {}): User {
     return { name: args.name ?? "", phone: args.phone ?? "", role: args.role ?? "" };
 }
 
-// @zero on main (string args$); website/website.zero.md:348
+// @zero on main (string args$); website/website.zero.md:354
 export async function task_main__string(args_arr: readonly string[]): Promise<void> {
     _push_terminal_out(logo);
     const request_arr = task_serve_http__int(port);
@@ -1100,7 +1137,7 @@ export async function task_main__string(args_arr: readonly string[]): Promise<vo
     }
 }
 
-// @zero on (string body) = handle request (Http-Request request); website/website.zero.md:356
+// @zero on (string body) = handle request (Http-Request request); website/website.zero.md:362
 export function fn_handle_request__Http_Request(request: Http_Request): string {
     let body: string = undefined!;
     if (_get_ctx().landing_page.enabled && request.path == "/") {
@@ -1118,7 +1155,7 @@ export function fn_handle_request__Http_Request(request: Http_Request): string {
     return body;
 }
 
-// @zero on stop; website/website.zero.md:364
+// @zero on stop; website/website.zero.md:370
 export function fn_stop(): void {
     fn_print__string("stopping");
 }
@@ -1148,4 +1185,4 @@ try {
 
 const _FEATURE_TREE: [string, string, string | null][] = [["website", "the nøøb website", null], ["not-found", "default 404 response", "website"], ["login", "SMS code authentication", "website"], ["rpc", "RPC endpoint for runtime evaluation", "website"], ["landing-page", "serves the noob landing page at root", "website"], ["background", "per-user background colour", "landing-page"], ["test-blackbox", "integration tests for the flight recorder", "website"]];
 
-const _BUILD_FINGERPRINT: {hash: string, git: string, features: string} = {"hash": "14a20f3f0e63a732", "git": "437f36af86f7", "features": "website,not-found,login,rpc,landing-page,background,test-blackbox"};
+const _BUILD_FINGERPRINT: {hash: string, git: string, features: string} = {"hash": "a0212e5bca4d5025", "git": "ca428c782dd5", "features": "website,not-found,login,rpc,landing-page,background,test-blackbox"};

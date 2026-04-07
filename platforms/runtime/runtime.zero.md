@@ -40,6 +40,14 @@ Terminate the process (with a short delay for response delivery):
 
     on exit process ()
 
+Serialise a stream or array to a JSON string, including values and timing metadata:
+
+    on (string json) = serialise [items$]
+
+Deserialise a JSON string back into a stream or array:
+
+    on (string result$) = deserialise (string json)
+
 ## tests
 
 Random digits produces the requested length:

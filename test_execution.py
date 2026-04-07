@@ -47,6 +47,32 @@ def fn_to_int__string(s):
 def fn_dt_of(items): return getattr(items, 'dt', 0.0)
 def fn_capacity_of(items): return getattr(items, 'capacity', 0.0)
 def fn_t0_of(items): return getattr(items, 't0', 0.0)
+def fn_serialise(items):
+    import json as _json
+    def _ser(v):
+        if v is None: return None
+        if isinstance(v, (str, int, float, bool)): return v
+        if isinstance(v, list): return [_ser(x) for x in v]
+        if hasattr(v, '__dict__'): return {k: _ser(val) for k, val in v.__dict__.items() if not k.startswith('_')}
+        return str(v)
+    data = {"values": [_ser(v) for v in items]}
+    for attr in ('dt', 'capacity', 't0'):
+        val = getattr(items, attr, 0)
+        if val: data[attr] = val
+    ts = getattr(items, '_timestamps', [])
+    if ts: data["timestamps"] = ts
+    return _json.dumps(data)
+def fn_deserialise__string(json_str):
+    import json as _json
+    data = _json.loads(json_str)
+    values = data.get("values", [])
+    result = _Stream(values)
+    for attr in ('dt', 'capacity', 't0'):
+        val = data.get(attr, 0)
+        if val: object.__setattr__(result, attr, val)
+    ts = data.get("timestamps", [])
+    if ts: object.__setattr__(result, '_timestamps', ts)
+    return result
 def fn_snapshot(items):
     cls = type(items) if hasattr(items, '_timestamps') else list
     copy = cls(list(items))
@@ -232,6 +258,45 @@ def test_exec_sparse_stream_capacity():
     i$ <- 1 <- 2 <- 3"""
     # all three appended nearly simultaneously, all within 1 second
     assert _run(source, "list(i_arr)") == [1, 2, 3]
+
+
+# --- serialise / deserialise ---
+
+def test_exec_serialise_plain():
+    """Serialise a plain array to JSON."""
+    source = "    int i$ <- 1 <- 2 <- 3"
+    result = _run(source, "fn_serialise(i_arr)")
+    import json
+    data = json.loads(result)
+    assert data["values"] == [1, 2, 3]
+
+def test_exec_serialise_timed():
+    """Serialise a timed stream preserves dt."""
+    source = "    int i$ <- 1 <- 2 <- 3 at ((10) hz)"
+    result = _run(source, "fn_serialise(i_arr)")
+    import json
+    data = json.loads(result)
+    assert data["values"] == [1, 2, 3]
+    assert data["dt"] == 0.1
+
+def test_exec_serialise_sparse():
+    """Serialise a sparse stream preserves timestamps."""
+    source = """\
+    int i$(capacity = (100) seconds)
+    i$ <- 1 <- 2 <- 3"""
+    result = _run(source, "fn_serialise(i_arr)")
+    import json
+    data = json.loads(result)
+    assert data["values"] == [1, 2, 3]
+    assert len(data["timestamps"]) == 3
+
+def test_exec_deserialise_roundtrip():
+    """Deserialise recovers original values."""
+    source = "    int i$ <- 10 <- 20 <- 30"
+    serialised = _run(source, "fn_serialise(i_arr)")
+    import json
+    recovered = json.loads(serialised)
+    assert recovered["values"] == [10, 20, 30]
 
 def test_exec_snapshot_values():
     """Snapshot copies the stream's current values."""

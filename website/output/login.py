@@ -1515,6 +1515,56 @@ def fn_rpc_eval__string(expr: str) -> str:
         return f"error: {e}"
 
 
+# @zero on (string json) = serialise [items$]
+def fn_serialise(items) -> str:
+    import json
+    def _serialise_item(v):
+        if v is None:
+            return None
+        if isinstance(v, (str, int, float, bool)):
+            return v
+        if isinstance(v, list):
+            return [_serialise_item(x) for x in v]
+        if hasattr(v, '__dict__'):
+            return {k: _serialise_item(val) for k, val in v.__dict__.items()
+                    if not k.startswith('_')}
+        return str(v)
+    data = {
+        "values": [_serialise_item(v) for v in items],
+    }
+    dt = getattr(items, 'dt', 0)
+    if dt:
+        data["dt"] = dt
+    cap = getattr(items, 'capacity', 0)
+    if cap:
+        data["capacity"] = cap
+    t0 = getattr(items, 't0', 0)
+    if t0:
+        data["t0"] = t0
+    ts = getattr(items, '_timestamps', [])
+    if ts:
+        data["timestamps"] = ts
+    return json.dumps(data)
+
+
+# @zero on (string result$) = deserialise (string json)
+def fn_deserialise__string(json_str: str):
+    import json, sys
+    data = json.loads(json_str)
+    values = data.get("values", [])
+    mod = sys.modules.get('__main__')
+    stream_cls = getattr(mod, '_Stream', None) if mod else None
+    result = stream_cls(values) if stream_cls else list(values)
+    for attr in ('dt', 'capacity', 't0'):
+        val = data.get(attr, 0)
+        if val and hasattr(result, '__dict__'):
+            object.__setattr__(result, attr, val)
+    ts = data.get("timestamps", [])
+    if ts and hasattr(result, '_timestamps'):
+        object.__setattr__(result, '_timestamps', ts)
+    return result
+
+
 # Platform implementation: sms (Python)
 # Implements the functions declared in sms.zero.md
 # Uses Vonage SMS API. Credentials from env vars or ../fieldnote/.env
@@ -1957,7 +2007,7 @@ class User(NamedTuple):
     phone: str = ""
     role: str = ""
 
-# @zero on toggle login; website/login/login.zero.md:370
+# @zero on toggle login; website/login/login.zero.md:376
 def fn_toggle_login():
     session = fn_get_cookie__string("session")
     if session == "":
@@ -1965,7 +2015,7 @@ def fn_toggle_login():
     else:
         fn_logout_dialog()
 
-# @zero on login; website/login/login.zero.md:377
+# @zero on login; website/login/login.zero.md:383
 def fn_login():
     try:
         name = fn_input__string("name")
@@ -1982,22 +2032,22 @@ def fn_login():
         else:
             raise
 
-# @zero on logout dialog; website/login/login.zero.md:385
+# @zero on logout dialog; website/login/login.zero.md:391
 def fn_logout_dialog():
     choice = fn_choose__string_or__string("log out", "cancel")
     if choice == "log out":
         fn_clear_cookie__string("session")
         fn_reload_page()
 
-# @zero on unknown user (string name); website/login/login.zero.md:391
+# @zero on unknown user (string name); website/login/login.zero.md:397
 def fn_unknown_user__string(name: str):
     fn_show_message__string("unknown user")
 
-# @zero on invalid code (string code); website/login/login.zero.md:394
+# @zero on invalid code (string code); website/login/login.zero.md:400
 def fn_invalid_code__string(code: str):
     fn_show_message__string("invalid code")
 
-# @zero on (string code) = request login (string name); website/login/login.zero.md:397
+# @zero on (string code) = request login (string name); website/login/login.zero.md:403
 def fn_request_login__string(name: str) -> str:
     found = next((x for x in users_arr if x.name == name), type(users_arr[0])() if users_arr else None)
     if found.name != name:
@@ -2007,7 +2057,7 @@ def fn_request_login__string(name: str) -> str:
     pending_codes_arr[found.phone] = code
     return code
 
-# @zero on (User result) = verify login (string name) with code (string code); website/login/login.zero.md:405
+# @zero on (User result) = verify login (string name) with code (string code); website/login/login.zero.md:411
 def fn_verify_login__string_with_code__string(name: str, code: str) -> User:
     found = next((x for x in users_arr if x.name == name), type(users_arr[0])() if users_arr else None)
     stored = pending_codes_arr[found.phone]
@@ -2017,13 +2067,13 @@ def fn_verify_login__string_with_code__string(name: str, code: str) -> User:
     result = found
     return result
 
-# @zero on (string token) = complete login (string name) with code (string code); website/login/login.zero.md:413
+# @zero on (string token) = complete login (string name) with code (string code); website/login/login.zero.md:419
 def fn_complete_login__string_with_code__string(name: str, code: str) -> str:
     found = fn_verify_login__string_with_code__string(name, code)
     token = fn_create_session__string(name)
     return token
 
-# @zero on (string code) = generate code (User u); website/login/login.zero.md:417
+# @zero on (string code) = generate code (User u); website/login/login.zero.md:423
 def fn_generate_code__User(u: User) -> str:
     code = None
     if u.name == "_alice":
@@ -2034,21 +2084,21 @@ def fn_generate_code__User(u: User) -> str:
         code = fn_random_digits__int(4)
     return code if code is not None else ""
 
-# @zero on logo clicked; website/login/login.zero.md:425
+# @zero on logo clicked; website/login/login.zero.md:431
 def fn_logo_clicked():
     fn_toggle_login()
 
-# @zero on check (string snapshot) contains (string expected); website/login/login.zero.md:428
+# @zero on check (string snapshot) contains (string expected); website/login/login.zero.md:434
 def fn_check__string_contains__string(snapshot: str, expected: str):
     found = fn__string_contains__string(snapshot, expected)
     if found == False:
         raise _ZeroRaise('check failed', ['expected'])
 
-# @zero on check failed (string what); website/login/login.zero.md:433
+# @zero on check failed (string what); website/login/login.zero.md:439
 def fn_check_failed__string(what: str):
     fn_print__string("FAIL: expected " + what)
 
-# @zero on test login; website/login/login.zero.md:436
+# @zero on test login; website/login/login.zero.md:442
 def fn_test_login():
     import threading as _th
     _orig_fn_input__string = globals().get('fn_input__string', fn_input__string)

@@ -1517,6 +1517,56 @@ def fn_rpc_eval__string(expr: str) -> str:
         return f"error: {e}"
 
 
+# @zero on (string json) = serialise [items$]
+def fn_serialise(items) -> str:
+    import json
+    def _serialise_item(v):
+        if v is None:
+            return None
+        if isinstance(v, (str, int, float, bool)):
+            return v
+        if isinstance(v, list):
+            return [_serialise_item(x) for x in v]
+        if hasattr(v, '__dict__'):
+            return {k: _serialise_item(val) for k, val in v.__dict__.items()
+                    if not k.startswith('_')}
+        return str(v)
+    data = {
+        "values": [_serialise_item(v) for v in items],
+    }
+    dt = getattr(items, 'dt', 0)
+    if dt:
+        data["dt"] = dt
+    cap = getattr(items, 'capacity', 0)
+    if cap:
+        data["capacity"] = cap
+    t0 = getattr(items, 't0', 0)
+    if t0:
+        data["t0"] = t0
+    ts = getattr(items, '_timestamps', [])
+    if ts:
+        data["timestamps"] = ts
+    return json.dumps(data)
+
+
+# @zero on (string result$) = deserialise (string json)
+def fn_deserialise__string(json_str: str):
+    import json, sys
+    data = json.loads(json_str)
+    values = data.get("values", [])
+    mod = sys.modules.get('__main__')
+    stream_cls = getattr(mod, '_Stream', None) if mod else None
+    result = stream_cls(values) if stream_cls else list(values)
+    for attr in ('dt', 'capacity', 't0'):
+        val = data.get(attr, 0)
+        if val and hasattr(result, '__dict__'):
+            object.__setattr__(result, attr, val)
+    ts = data.get("timestamps", [])
+    if ts and hasattr(result, '_timestamps'):
+        object.__setattr__(result, '_timestamps', ts)
+    return result
+
+
 # Platform implementation: sms (Python)
 # Implements the functions declared in sms.zero.md
 # Uses Vonage SMS API. Credentials from env vars or ../fieldnote/.env
