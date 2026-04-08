@@ -734,8 +734,90 @@ Three forms of timed stream creation:
 - Standalone compilation produces self-contained runnable programs
 - Blackbox silent auto-start (no print noise)
 
+### concurrent timed streams
+
+Two streams at different rates feeding one output:
+
+```zero
+on main (string args$)
+    concurrently
+        out$ <- count down from (10) at ((1) hz)
+    and
+        out$ <- count up to (20) at ((5) hz)
+```
+
+Interleaved real-time output on both Python (threads + sleep) and TypeScript (async generators + setTimeout). Parser groups `concurrently/and` blocks in task bodies.
+
+### stream operations
+
+- **Sparse streams**: no `dt`, each value timestamped automatically on append. Capacity enforced by time (`newest - oldest > capacity`).
+- **`capacity`**: stream property. `int i$(dt = (1) hz, capacity = (30) seconds)` — circular buffer, discards old values. Runtime `_Stream` class enforces on append and property set.
+- **`snapshot [stream$]`**: static copy with timing preserved. New array function in time platform.
+- **`dt of`, `capacity of`, `t0 of`**: stream property access as array functions (avoids collision with element field mapping on struct streams).
+- **`serialise [items$]` / `deserialise (json)`**: JSON with values + timing metadata. In runtime platform.
+
+### input streams — all non-determinism enters through streams
+
+The `input` keyword marks streams and tasks that receive values from outside the system:
+
+```zero
+input time now$                                          # sample on demand
+input uint random$                                       # pull next value
+input string in$                                         # stdin lines
+on input (Http-Request request$) <- serve http (int port) # HTTP requests
+on input (string result$) <- input (string prompt)        # user types text
+input string cookie$[string]                              # browser cookies (keyed)
+```
+
+Platform inputs converted: time (`now$`), runtime (`random$`, `input$`), terminal (`in$`), http (`request$`), blackbox (`elapsed$`), gui (`user-text$`, `user-choice$`, `cookie$`, `input()`, `choose()`), remote (`connect to`, `request on`), websocket (`open channel`, `receive message on`).
+
+**Taskness propagation**: functions that call tasks auto-promote to tasks. The rule: functions are instant, tasks can wait. `login()` calls `input()` (waits for user) → becomes a task. `toggle login()` calls `login()` → becomes a task.
+
+**Array-to-scalar mapping**: void function calls with array arguments generate a mapping loop. `set cookie of ("session") to (token$)` maps over `token$`.
+
+### blackbox rewritten as pure zero
+
+The blackbox flight recorder is now 30 lines of zero, replacing 890 lines of platform Python/JS:
+
+```zero
+feature blackbox extends website
+use runtime.input$
+
+type Action =
+    string source = ""
+    string name = ""
+    string args = ""
+    string result = ""
+
+on (Action a) <- (Call c)
+    a = Action(source = c.name, name = c.name, args = c.args, result = c.result)
+
+shared Action action$(capacity = (60) seconds)
+action$ <- input$
+
+on (string report$) <- report fault (string comment)
+    Action trace$ = snapshot [action$]
+    string json = serialise [trace$]
+    string report <- "{\"comment\":\"" <- comment <- "\",\"trace\":" <- json <- "}"
+
+on (string data) = get fault (string id)
+    data = retrieve locally ("fault:" + id)
+```
+
+The compiler has zero knowledge of blackbox. `_bb_record_stream` renamed to `_timed_iterate` (just timing, no recording). `_bb_record_call` removed entirely. Recording happens through the `input$` stream subscription.
+
+### key design decisions
+
+- **`$` is just a sequence** — timed or not, the `$` suffix means a sequence of values. Timing is an implementation detail.
+- **`input` marks external sources** — the language knows where non-determinism enters. Everything else is pure.
+- **Functions are instant, tasks can wait** — like async/await but explicit in the type system.
+- **`while` excludes boundary, `until` includes it** — "walk while the road is flat" vs "walk until the bridge."
+- **Capacity not specified in code by default** — the runtime infers from access patterns. Can be overridden with `capacity = (60) seconds`.
+
 ### what's next
 
-- Concurrent timed streams: `concurrently` with multiple timed sources feeding `out$`
-- Rewrite blackbox using timed streams (the original goal)
+- Wire `input$` stream to actually capture input values at runtime
+- Run the blackbox integration test end-to-end
+- Replay harness: feed recorded input streams back for deterministic replay
 - Stream transport: send timed streams between devices
+- UI: "report fault" button in the client
