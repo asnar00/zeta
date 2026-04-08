@@ -1,12 +1,12 @@
 {
   "sessions": {
-    "dda32a54": {
+    "aef7a4c9": {
       "background": {
         "colour": "#ff0000"
       },
       "landing_page": {}
     },
-    "55c58304": {
+    "e7401d0e": {
       "background": {
         "colour": "#0000ff"
       },
@@ -14,7 +14,7 @@
     }
   },
   "names": {
-    "_alice": "dda32a54",
-    "_bob": "55c58304"
+    "_alice": "aef7a4c9",
+    "_bob": "e7401d0e"
   }
 }

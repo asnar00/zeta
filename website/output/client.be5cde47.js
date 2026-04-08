@@ -344,22 +344,6 @@ async function task_logout_dialog(){
     }
 }
 
-// @zero on test blackbox; composed:515
-async function task_test_blackbox(){
-    fn_click_on__string(".logo");
-    fn_press__string_on__string("Escape", "body");
-    const report_arr = [await task_report_fault__string("test: logo did something weird")];
-    for (const _v of report_arr) {
-        await _rpc("bb check " + encodeURIComponent("(" + _v + ")") + " contains " + encodeURIComponent("(" + "comment" + ")") + "");
-    }
-    for (const _v of report_arr) {
-        await _rpc("bb check " + encodeURIComponent("(" + _v + ")") + " contains " + encodeURIComponent("(" + "trace" + ")") + "");
-    }
-    for (const _v of report_arr) {
-        await _rpc("bb check " + encodeURIComponent("(" + _v + ")") + " contains " + encodeURIComponent("(" + "test: logo did something weird" + ")") + "");
-    }
-}
-
 // @zero on toggle login; composed:404
 async function task_toggle_login(){
     let session = cookie_arr["session"] ?? "";

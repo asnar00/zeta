@@ -6,4 +6,3 @@ landing-page
 background
 blackbox
 test-blackbox
-test-replay

@@ -1849,8 +1849,8 @@ class Action(NamedTuple):
 
 # @zero on test blackbox; website/test-blackbox/test-blackbox.zero.md:515
 def task_test_blackbox():
-    fn_click_on__string(".logo")
-    fn_press__string_on__string("Escape", "body")
+    fn_inject_call__string_with__string_result__string("click on", ".logo", "ok")
+    fn_inject_call__string_with__string_result__string("press", "Escape", "ok")
     report_arr = list(blackbox.task_report_fault__string("test: logo did something weird"))
     for _v in report_arr:
         fn_bb_check__string_contains__string(_v, "comment")
@@ -1858,6 +1858,23 @@ def task_test_blackbox():
         fn_bb_check__string_contains__string(_v, "trace")
     for _v in report_arr:
         fn_bb_check__string_contains__string(_v, "test: logo did something weird")
+    for _v in report_arr:
+        fn_bb_check__string_contains__string(_v, "click on")
+    for _v in report_arr:
+        fn_bb_check__string_contains__string(_v, "Escape")
+
+# @zero on test replay; website/test-blackbox/test-blackbox.zero.md:525
+def task_test_replay():
+    fn_inject_call__string_with__string_result__string("click on", ".logo", "ok")
+    fn_inject_call__string_with__string_result__string("press", "Escape", "ok")
+    report1_arr = blackbox.task_report_fault__string("replay source")
+    for _v in report1_arr:
+        blackbox.fn_replay_fault__string(_v)
+    report2_arr = list(blackbox.task_report_fault__string("replay verify"))
+    for _v in report2_arr:
+        fn_bb_check__string_contains__string(_v, "click on")
+    for _v in report2_arr:
+        fn_bb_check__string_contains__string(_v, "Escape")
 
 # @zero on bb check (string actual) contains (string expected); website/test-blackbox/test-blackbox.zero.md:507
 def fn_bb_check__string_contains__string(actual: str, expected: str):

@@ -763,8 +763,8 @@ export function Action(args: Partial<Action> = {}): Action {
 
 // @zero on test blackbox; website/test-blackbox/test-blackbox.zero.md:515
 export async function task_test_blackbox(): Promise<void> {
-    fn_click_on__string(".logo");
-    fn_press__string_on__string("Escape", "body");
+    fn_inject_call__string_with__string_result__string("click on", ".logo", "ok");
+    fn_inject_call__string_with__string_result__string("press", "Escape", "ok");
     const report_arr: any = blackbox.task_report_fault__string("test: logo did something weird");
     for (const _v of report_arr) {
         fn_bb_check__string_contains__string(_v, "comment");
@@ -774,6 +774,29 @@ export async function task_test_blackbox(): Promise<void> {
     }
     for (const _v of report_arr) {
         fn_bb_check__string_contains__string(_v, "test: logo did something weird");
+    }
+    for (const _v of report_arr) {
+        fn_bb_check__string_contains__string(_v, "click on");
+    }
+    for (const _v of report_arr) {
+        fn_bb_check__string_contains__string(_v, "Escape");
+    }
+}
+
+// @zero on test replay; website/test-blackbox/test-blackbox.zero.md:525
+export async function task_test_replay(): Promise<void> {
+    fn_inject_call__string_with__string_result__string("click on", ".logo", "ok");
+    fn_inject_call__string_with__string_result__string("press", "Escape", "ok");
+    const report1_arr: any = blackbox.task_report_fault__string("replay source");
+    for (const _v of report1_arr) {
+        blackbox.fn_replay_fault__string(_v);
+    }
+    const report2_arr: any = blackbox.task_report_fault__string("replay verify");
+    for (const _v of report2_arr) {
+        fn_bb_check__string_contains__string(_v, "click on");
+    }
+    for (const _v of report2_arr) {
+        fn_bb_check__string_contains__string(_v, "Escape");
     }
 }
 

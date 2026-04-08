@@ -13,8 +13,6 @@ import './blackbox.js';
 import * as blackbox from './blackbox.js';
 import './test_blackbox.js';
 import * as test_blackbox from './test_blackbox.js';
-import './test_replay.js';
-import * as test_replay from './test_replay.js';
 
 // Platform implementation: blackbox (TypeScript)
 // Thin OS primitives: elapsed time, timers, local key-value store.
@@ -1281,6 +1279,6 @@ try {
 }
 }
 
-const _FEATURE_TREE: [string, string, string | null][] = [["website", "the nøøb website", null], ["not-found", "default 404 response", "website"], ["login", "SMS code authentication", "website"], ["rpc", "RPC endpoint for runtime evaluation", "website"], ["landing-page", "serves the noob landing page at root", "website"], ["background", "per-user background colour", "landing-page"], ["blackbox", "flight recorder for fault diagnosis", "website"], ["test-blackbox", "integration tests for the flight recorder", "blackbox"], ["test-replay", "round-trip test for blackbox replay", "blackbox"]];
+const _FEATURE_TREE: [string, string, string | null][] = [["website", "the nøøb website", null], ["not-found", "default 404 response", "website"], ["login", "SMS code authentication", "website"], ["rpc", "RPC endpoint for runtime evaluation", "website"], ["landing-page", "serves the noob landing page at root", "website"], ["background", "per-user background colour", "landing-page"], ["blackbox", "flight recorder for fault diagnosis", "website"], ["test-blackbox", "integration tests for the flight recorder", "blackbox"]];
 
-const _BUILD_FINGERPRINT: {hash: string, git: string, features: string} = {"hash": "d68bea50806bf25c", "git": "c4784fe1d9a6", "features": "website,not-found,login,rpc,landing-page,background,blackbox,test-blackbox,test-replay"};
+const _BUILD_FINGERPRINT: {hash: string, git: string, features: string} = {"hash": "b3e00244112b63c9", "git": "330906c44eb8", "features": "website,not-found,login,rpc,landing-page,background,blackbox,test-blackbox"};
