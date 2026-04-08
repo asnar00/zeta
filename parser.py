@@ -1785,8 +1785,26 @@ def _parse_task_conditional(stripped, fn_sigs):
     return None
 
 
+def _parse_task_scoped_hook_line(stripped, fn_sigs):
+    """Parse a scoped hook header line: in target(), on hook(args)."""
+    m = re.match(rf"in\s+({W}[\w\s]*?)\s*\(\),\s*on\s+({W}[\w\s]*?)(?:\s*\(([^)]*)\))?\s*$", stripped)
+    if not m:
+        return None
+    hook_args_str = m.group(3) or ""
+    hook_args = [a.strip().strip('"') for a in hook_args_str.split(",")] if hook_args_str.strip() else []
+    return {
+        "kind": "task_scoped_hook",
+        "target_fn": m.group(1).strip(),
+        "hook_fn": m.group(2).strip(),
+        "hook_args": hook_args,
+    }
+
+
 def _parse_task_body_line(stripped, output_stream, platform_streams, fn_sigs, task_sigs):
     """Parse a single task body line into a node."""
+    node = _parse_task_scoped_hook_line(stripped, fn_sigs)
+    if node:
+        return node
     node = _parse_task_for_each(stripped, fn_sigs)
     if node:
         return node
@@ -1902,6 +1920,20 @@ def _group_task_if_blocks(nodes_with_indent: list) -> list:
         elif node.get("kind") == "name" and node.get("value") == "concurrently":
             grouped, i = _group_task_concurrently(nodes_with_indent, i, indent)
             result.append(grouped)
+        elif node.get("kind") == "task_scoped_hook":
+            body_nodes = []
+            j = i + 1
+            while j < len(nodes_with_indent):
+                ni, nn = nodes_with_indent[j]
+                if ni > indent:
+                    body_nodes.append(nn)
+                    j += 1
+                else:
+                    break
+            node["kind"] = "scoped_hook"
+            node["body"] = body_nodes
+            result.append(node)
+            i = j
         else:
             result.append(node)
             i += 1

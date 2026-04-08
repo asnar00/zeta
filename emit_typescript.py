@@ -200,7 +200,9 @@ def _emit_definitions_ts(ir: dict, structs: dict, enums: dict) -> list[str]:
             if fn_name in _input_fn_names_ts:
                 code += f"\n_instrument_input('{fn_name}', {fn_name});"
             sections.append(code)
-        elif fn.get("is_input"):
+    # instrument all input-tagged abstract functions (platform functions present in every module)
+    for fn in ir.get("_all_functions", ir.get("functions", [])):
+        if fn.get("abstract") and fn.get("is_input"):
             fn_name = _make_function_name(fn["signature_parts"])
             sections.append(f"_instrument_input('{fn_name}', {fn_name});")
     return sections

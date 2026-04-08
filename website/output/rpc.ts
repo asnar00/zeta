@@ -797,3 +797,5 @@ interface Action {
 export function Action(args: Partial<Action> = {}): Action {
     return { source: args.source ?? "", name: args.name ?? "", args: args.args ?? "", result: args.result ?? "" };
 }
+
+_instrument_input('fn_create_session__string', fn_create_session__string);

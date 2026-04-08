@@ -155,7 +155,9 @@ def _emit_definitions(ir: dict, enums: dict) -> list[str]:
             if fn_name in _input_fn_names:
                 code += f"\n{fn_name} = _instrument_input({repr(fn_name)}, {fn_name})"
             sections.append(code)
-        elif fn.get("is_input"):
+    # instrument all input-tagged abstract functions (platform functions present in every module)
+    for fn in ir.get("_all_functions", ir["functions"]):
+        if fn.get("abstract") and fn.get("is_input"):
             fn_name = _make_function_name(fn["signature_parts"])
             sections.append(f"{fn_name} = _instrument_input({repr(fn_name)}, {fn_name})")
     return sections

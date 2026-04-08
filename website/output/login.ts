@@ -876,3 +876,5 @@ export function fn_check__string_contains__string(snapshot: string, expected: st
 export function fn_check_failed__string(what: string): void {
     fn_print__string("FAIL: expected " + what);
 }
+
+_instrument_input('fn_create_session__string', fn_create_session__string);

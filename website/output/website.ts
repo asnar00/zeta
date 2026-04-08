@@ -1225,8 +1225,6 @@ export async function task_main__string(args_arr: readonly string[]): Promise<vo
     }
 }
 
-_instrument_input('fn_create_session__string', fn_create_session__string);
-
 // @zero on (string body) = handle request (Http-Request request); website/website.zero.md:390
 export function fn_handle_request__Http_Request(request: Http_Request): string {
     let body: string = undefined!;
@@ -1256,6 +1254,8 @@ export function fn__Action_from__Call(c: Call): Action {
     return a;
 }
 
+_instrument_input('fn_create_session__string', fn_create_session__string);
+
 
 if (process.argv.includes('--test')) {
     const _names = process.argv.slice(2).filter(a => a !== '--test');
@@ -1281,4 +1281,4 @@ try {
 
 const _FEATURE_TREE: [string, string, string | null][] = [["website", "the nøøb website", null], ["not-found", "default 404 response", "website"], ["login", "SMS code authentication", "website"], ["rpc", "RPC endpoint for runtime evaluation", "website"], ["landing-page", "serves the noob landing page at root", "website"], ["background", "per-user background colour", "landing-page"], ["blackbox", "flight recorder for fault diagnosis", "website"], ["test-blackbox", "integration tests for the flight recorder", "blackbox"]];
 
-const _BUILD_FINGERPRINT: {hash: string, git: string, features: string} = {"hash": "0922583fd262435e", "git": "00ac139d7aac", "features": "website,not-found,login,rpc,landing-page,background,blackbox,test-blackbox"};
+const _BUILD_FINGERPRINT: {hash: string, git: string, features: string} = {"hash": "6748f0f2b4221481", "git": "9285e622268f", "features": "website,not-found,login,rpc,landing-page,background,blackbox,test-blackbox"};

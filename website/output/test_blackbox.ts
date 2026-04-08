@@ -800,6 +800,18 @@ export async function task_test_replay(): Promise<void> {
     }
 }
 
+// @zero on test blackbox auto; website/test-blackbox/test-blackbox.zero.md:534
+export async function task_test_blackbox_auto(): Promise<void> {
+    let token = fn_create_session__string("_bb_auto_test");
+    const report_arr: any = blackbox.task_report_fault__string("auto-instrumentation test");
+    for (const _v of report_arr) {
+        fn_bb_check__string_contains__string(_v, "create_session");
+    }
+    for (const _v of report_arr) {
+        fn_bb_check__string_contains__string(_v, "_bb_auto_test");
+    }
+}
+
 // @zero on bb check (string actual) contains (string expected); website/test-blackbox/test-blackbox.zero.md:507
 export function fn_bb_check__string_contains__string(actual: string, expected: string): void {
     const found = fn__string_contains__string(actual, expected);
@@ -812,3 +824,5 @@ export function fn_bb_check__string_contains__string(actual: string, expected: s
 export function fn_bb_check_failed__string(what: string): void {
     fn_print__string("FAIL: expected " + what);
 }
+
+_instrument_input('fn_create_session__string', fn_create_session__string);

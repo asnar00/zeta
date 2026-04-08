@@ -690,6 +690,9 @@ def _format_value(val):
         return "ok"
     if isinstance(val, bool):
         return "true" if val else "false"
+    if hasattr(val, '__next__'):
+        items = list(val)
+        return _format_value(items[0]) if len(items) == 1 else str(items)
     return str(val)
 
 
@@ -1238,10 +1241,14 @@ def _push_runtime_input(call):
 
 
 def _instrument_input(fn_name, fn):
-    """Wrap an input-tagged function to record calls to the input$ stream."""
+    """Wrap an input-tagged function to record calls to the input$ stream.
+    Pushes to __main__'s input stream for cross-module support."""
+    import sys
     def wrapper(*args):
         result = fn(*args)
-        _push_runtime_input(Call(name=fn_name, args=str(args), result=str(result)))
+        main = sys.modules.get('__main__')
+        push = getattr(main, '_push_runtime_input', _push_runtime_input) if main else _push_runtime_input
+        push(Call(name=fn_name, args=str(args), result=str(result)))
         return result
     wrapper.__name__ = fn.__name__
     wrapper.__qualname__ = fn.__qualname__
@@ -1940,6 +1947,8 @@ def fn_check__string_contains__string(snapshot: str, expected: str):
 # @zero on check failed (string what); website/login/login.zero.md:467
 def fn_check_failed__string(what: str):
     fn_print__string("FAIL: expected " + what)
+
+fn_create_session__string = _instrument_input('fn_create_session__string', fn_create_session__string)
 
 users_arr: list[User] = [User(name="_alice", phone="+440001", role="admin"), User(name="_bob", phone="+440002", role="user"), User(name="ash", phone="+447813943023", role="admin")]
 pending_codes_arr: dict[str, str] = {}

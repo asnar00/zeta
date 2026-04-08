@@ -840,3 +840,5 @@ export function fn_replay_fault__string(report: string): void {
     const trace_arr = fn_deserialise__string(trace_json);
     fn_replay_with_timing(trace_arr);
 }
+
+_instrument_input('fn_create_session__string', fn_create_session__string);

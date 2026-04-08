@@ -790,3 +790,5 @@ export function fn_not_found(): string {
     const body: string = "not found";
     return body;
 }
+
+_instrument_input('fn_create_session__string', fn_create_session__string);

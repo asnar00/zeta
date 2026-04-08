@@ -785,3 +785,5 @@ export function fn_landing_page(): string {
     body = fn_replace__string_in__string_with__string("#34988b", body, _get_ctx().background.colour);
     return body;
 }
+
+_instrument_input('fn_create_session__string', fn_create_session__string);

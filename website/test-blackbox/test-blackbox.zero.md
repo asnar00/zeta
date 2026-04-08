@@ -41,3 +41,11 @@ Test replay — replay a fault report and verify the replayed actions appear in 
         string report2$ <- report fault ("replay verify")
         bb check (report2$) contains ("click on")
         bb check (report2$) contains ("Escape")
+
+Test auto-instrumentation — call an input-tagged function and verify the blackbox captured it:
+
+    on test blackbox auto ()
+        string token = create session ("_bb_auto_test")
+        string report$ <- report fault ("auto-instrumentation test")
+        bb check (report$) contains ("create_session")
+        bb check (report$) contains ("_bb_auto_test")
