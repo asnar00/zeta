@@ -1242,6 +1242,17 @@ def _push_runtime_input(call):
         sub(call)
 
 
+def _instrument_input(fn_name, fn):
+    """Wrap an input-tagged function to record calls to the input$ stream."""
+    def wrapper(*args):
+        result = fn(*args)
+        _push_runtime_input(Call(name=fn_name, args=str(args), result=str(result)))
+        return result
+    wrapper.__name__ = fn.__name__
+    wrapper.__qualname__ = fn.__qualname__
+    return wrapper
+
+
 def _subscribe_to_input(callback):
     """Register a callback to receive each new Call pushed to input$.
     Registers on __main__'s subscriber list for cross-module support."""
@@ -2227,6 +2238,8 @@ def task_main__string(args_arr: str):
         body = fn_handle_request__Http_Request(request)
         _push_http_response(Http_Response(request, body))
 
+fn_create_session__string = _instrument_input('fn_create_session__string', fn_create_session__string)
+
 # @zero on (string body) = handle request (Http-Request request); website/website.zero.md:390
 def fn_handle_request__Http_Request(request: Http_Request) -> str:
     body = None
@@ -2268,4 +2281,4 @@ if __name__ == '__main__':
 
 _FEATURE_TREE = [("website", "the nøøb website", None), ("not-found", "default 404 response", 'website'), ("login", "SMS code authentication", 'website'), ("rpc", "RPC endpoint for runtime evaluation", 'website'), ("landing-page", "serves the noob landing page at root", 'website'), ("background", "per-user background colour", 'landing-page'), ("blackbox", "flight recorder for fault diagnosis", 'website'), ("test-blackbox", "integration tests for the flight recorder", 'blackbox'), ("test-replay", "round-trip test for blackbox replay", 'blackbox')]
 
-_BUILD_FINGERPRINT = {"hash": "024e9a1d49874a00", "git": "3a683ee17b47", "features": "website,not-found,login,rpc,landing-page,background,blackbox,test-blackbox,test-replay"}
+_BUILD_FINGERPRINT = {"hash": "52748b4a9333210b", "git": "08b7b82577b5", "features": "website,not-found,login,rpc,landing-page,background,blackbox,test-blackbox,test-replay"}

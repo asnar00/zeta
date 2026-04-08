@@ -1,5 +1,5 @@
-import test_blackbox
 import blackbox
+import test_blackbox
 
 # Platform implementation: blackbox (Python)
 # Thin OS primitives: elapsed time, timers, local key-value store.
@@ -1233,6 +1233,17 @@ def _push_runtime_input(call):
     input_arr.append(call)
     for sub in _input_subscribers:
         sub(call)
+
+
+def _instrument_input(fn_name, fn):
+    """Wrap an input-tagged function to record calls to the input$ stream."""
+    def wrapper(*args):
+        result = fn(*args)
+        _push_runtime_input(Call(name=fn_name, args=str(args), result=str(result)))
+        return result
+    wrapper.__name__ = fn.__name__
+    wrapper.__qualname__ = fn.__qualname__
+    return wrapper
 
 
 def _subscribe_to_input(callback):

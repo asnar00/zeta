@@ -1,0 +1,20 @@
+{
+  "sessions": {
+    "768beb6d": {
+      "background": {
+        "colour": "#ff0000"
+      },
+      "landing_page": {}
+    },
+    "ca544050": {
+      "background": {
+        "colour": "#0000ff"
+      },
+      "landing_page": {}
+    }
+  },
+  "names": {
+    "_alice": "768beb6d",
+    "_bob": "ca544050"
+  }
+}

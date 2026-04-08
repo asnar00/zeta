@@ -1234,6 +1234,17 @@ def _push_runtime_input(call):
         sub(call)
 
 
+def _instrument_input(fn_name, fn):
+    """Wrap an input-tagged function to record calls to the input$ stream."""
+    def wrapper(*args):
+        result = fn(*args)
+        _push_runtime_input(Call(name=fn_name, args=str(args), result=str(result)))
+        return result
+    wrapper.__name__ = fn.__name__
+    wrapper.__qualname__ = fn.__qualname__
+    return wrapper
+
+
 def _subscribe_to_input(callback):
     """Register a callback to receive each new Call pushed to input$.
     Registers on __main__'s subscriber list for cross-module support."""

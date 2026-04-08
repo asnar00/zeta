@@ -141,7 +141,14 @@ def _emit_definitions(ir: dict, enums: dict) -> list[str]:
             sections.append(source_comment(task, src, "#") + "\n" + _emit_task(task, ir.get("uses", [])))
     for fn in ir["functions"]:
         if not fn.get("abstract"):
-            sections.append(source_comment(fn, src, "#") + "\n" + _emit_function(fn, ir))
+            code = source_comment(fn, src, "#") + "\n" + _emit_function(fn, ir)
+            fn_name = _make_function_name(fn["signature_parts"])
+            if fn_name in _input_fn_names:
+                code += f"\n{fn_name} = _instrument_input({repr(fn_name)}, {fn_name})"
+            sections.append(code)
+        elif fn.get("is_input"):
+            fn_name = _make_function_name(fn["signature_parts"])
+            sections.append(f"{fn_name} = _instrument_input({repr(fn_name)}, {fn_name})")
     return sections
 
 
