@@ -406,9 +406,35 @@ export function fn_exit_process(): void {
 
 // @zero Call input$
 const input_arr: any[] = [];
+const _input_subscribers: ((call: any) => void)[] = (globalThis as any)._input_subscribers ?? [];
+(globalThis as any)._input_subscribers = _input_subscribers;
 
 export function _push_runtime_input(call: any): void {
     input_arr.push(call);
+    for (const sub of _input_subscribers) {
+        sub(call);
+    }
+}
+
+export function _subscribe_to_input(callback: (call: any) => void): void {
+    const g = globalThis as any;
+    if (!g._input_subscribers) {
+        g._input_subscribers = [];
+    }
+    g._input_subscribers.push(callback);
+}
+
+const _input_instrumented: Set<string> = new Set();
+
+export function _instrument_input(fn_name: string, _fn: Function): void {
+    _input_instrumented.add(fn_name);
+}
+
+export function _record_input(fn_name: string, args: string, result: any): any {
+    if (_input_instrumented.has(fn_name)) {
+        _push_runtime_input({name: fn_name, args: args, result: String(result)});
+    }
+    return result;
 }
 
 

@@ -56,7 +56,7 @@ async function _concurrently(...fns: (() => any)[]) {
 
 def _init_globals_ts(ir: dict) -> tuple:
     """Initialize module-level state from IR. Returns (structs, enums)."""
-    global _enum_values, _context_features_ts, _map_vars_ts, _rpc_targets_ts, _client_async_fns_ts, _void_task_names_ts, _output_task_names_ts
+    global _enum_values, _context_features_ts, _map_vars_ts, _rpc_targets_ts, _client_async_fns_ts, _void_task_names_ts, _output_task_names_ts, _input_fn_names_ts
     _context_features_ts = set()
     _void_task_names_ts = {}  # fn_call base name -> task fn name
     _output_task_names_ts = {}
@@ -109,6 +109,19 @@ def _init_globals_ts(ir: dict) -> tuple:
             _map_vars_ts.add(_safe(v["name"] + "_arr"))
     _rpc_targets_ts = ir.get("_rpc_targets", set())
     _client_async_fns_ts = ir.get("_client_async_fns", set())
+    _input_fn_names_ts = set()
+    for fn in ir.get("functions", []):
+        if fn.get("is_input") and fn.get("result"):
+            _input_fn_names_ts.add(_make_function_name(fn["signature_parts"]))
+    global _stream_types_ts
+    _stream_types_ts = {}
+    for var in ir.get("variables", []):
+        if var.get("array") and var.get("type"):
+            _stream_types_ts[var["name"]] = var["type"]
+    from parser import _get_platform_input_streams
+    for var in _get_platform_input_streams():
+        if var.get("type"):
+            _stream_types_ts[var["name"]] = var["type"]
     return structs, enums
 
 
@@ -178,7 +191,14 @@ def _emit_definitions_ts(ir: dict, structs: dict, enums: dict) -> list[str]:
         async_fns |= ir.get("_client_async_fns", set())
     for fn in ir["functions"]:
         if not fn.get("abstract"):
-            sections.append(source_comment(fn, src, "//") + "\n" + _emit_function(fn, structs, async_fns, ir))
+            code = source_comment(fn, src, "//") + "\n" + _emit_function(fn, structs, async_fns, ir)
+            fn_name = _make_function_name(fn["signature_parts"])
+            if fn_name in _input_fn_names_ts:
+                code += f"\n_instrument_input('{fn_name}', {fn_name});"
+            sections.append(code)
+        elif fn.get("is_input"):
+            fn_name = _make_function_name(fn["signature_parts"])
+            sections.append(f"_instrument_input('{fn_name}', {fn_name});")
     return sections
 
 
@@ -260,6 +280,7 @@ class _Stream extends Array<any> {
             for (const item of items) super.push(item);
         }
     }
+    _subscribers: ((v: any) => void)[] = [];
     push(...items: any[]): number {
         const result = super.push(...items);
         if (!this.dt || this.dt === 0) {
@@ -267,7 +288,13 @@ class _Stream extends Array<any> {
             for (const _ of items) this._timestamps.push(now);
         }
         this._enforceCapacity();
+        for (const item of items) {
+            for (const sub of this._subscribers) sub(item);
+        }
         return result;
+    }
+    subscribe(callback: (v: any) => void): void {
+        this._subscribers.push(callback);
     }
     _enforceCapacity(): void {
         if (this.capacity <= 0) return;
@@ -622,6 +649,18 @@ def _emit_dict_array_variable_ts(name: str, type_ann: str, val: dict, structs: d
     kind = val.get("kind")
     if kind == "stream":
         steps = val.get("steps", [])
+        # single name step pointing to another stream: live subscription
+        if len(steps) == 1 and val.get("terminate") is None:
+            step = steps[0]
+            if isinstance(step, dict) and step.get("kind") == "name" and step.get("value", "").endswith("$"):
+                source_name = step["value"].rstrip("$")
+                source_type = _stream_types_ts.get(source_name, "")
+                source_arr = _safe(source_name + "_arr")
+                push_expr = f"{name}.push(v)"
+                if source_type and source_type != type_ann:
+                    push_expr = f"{name}.push({_ts_name(type_ann)}({{source: v.name, name: v.name, args: v.args, result: v.result}}))"
+                subscribe = f"(({source_arr} as any).subscribe ? ({source_arr} as any).subscribe((v: any) => {push_expr}) : _subscribe_to_input((v: any) => {push_expr}))"
+                return f"const {name}: any = new _Stream();\n{subscribe};"
         # single fn_call step with no terminator: just call the function
         if len(steps) == 1 and val.get("terminate") is None:
             step = steps[0]
@@ -1785,7 +1824,10 @@ def _emit_simple_expr_ts(node: dict, structs: dict) -> str | None:
             args = ", ".join(_emit_expr(a, structs) for a in node["args"])
             return f"[...{fn_name}({args})]"
         args = ", ".join(_emit_expr(a, structs) for a in node["args"])
-        return f"{fn_name}({args})"
+        call_expr = f"{fn_name}({args})"
+        if fn_name in _input_fn_names_ts:
+            return f"_record_input('{fn_name}', '{args}', {call_expr})"
+        return call_expr
     if kind == "task_call":
         return _emit_task_call_expr_ts(node)
     if kind == "index":

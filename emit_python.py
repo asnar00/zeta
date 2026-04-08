@@ -43,10 +43,11 @@ _void_task_names = set()
 
 def _init_globals(ir: dict) -> dict:
     """Initialize module-level enum values and context features. Returns enums dict."""
-    global _enum_values, _context_features, _input_fn_names, _input_stream_names, _void_task_names, _output_task_names
+    global _enum_values, _context_features, _input_fn_names, _input_stream_names, _void_task_names, _output_task_names, _stream_types
     _context_features = set()
     _input_fn_names = set()
     _input_stream_names = set()
+    _stream_types = {}  # stream variable name (e.g. "input") -> type name (e.g. "Call")
     _void_task_names = {}  # fn_call base name -> task fn name
     _output_task_names = {}  # fn_call base name -> task fn name (for materialisation)
     for task in ir.get("_all_tasks", ir.get("tasks", [])):
@@ -90,10 +91,14 @@ def _init_globals(ir: dict) -> dict:
     for var in ir["variables"]:
         if var.get("scope") == "input":
             _input_stream_names.add(var["name"])
+        if var.get("array") and var.get("type"):
+            _stream_types[var["name"]] = var["type"]
     # also pick up platform input streams
     from parser import _get_platform_input_streams
     for var in _get_platform_input_streams():
         _input_stream_names.add(var["name"])
+        if var.get("type"):
+            _stream_types[var["name"]] = var["type"]
     enums = {t["name"]: t for t in ir["types"] if t["kind"] == "enum"}
     _enum_values = {}
     for ename, edata in enums.items():
@@ -190,12 +195,17 @@ class _Stream(list):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         super().__setattr__('_timestamps', [])
+        super().__setattr__('_subscribers', [])
     def append(self, value):
         super().append(value)
         dt = getattr(self, 'dt', 0)
         if not dt or dt == 0:
             self._timestamps.append(_stream_time.time())
         self._enforce_capacity()
+        for sub in self._subscribers:
+            sub(value)
+    def subscribe(self, callback):
+        self._subscribers.append(callback)
     def _enforce_capacity(self):
         cap = getattr(self, 'capacity', 0)
         if cap <= 0:
@@ -669,8 +679,16 @@ def _emit_dict_array_variable(name: str, type_ann: str, val: dict) -> str | None
         if len(steps) == 1 and val.get("terminate") is None:
             step = steps[0]
             if isinstance(step, dict) and step.get("kind") == "name" and step.get("value", "").endswith("$"):
-                source = _emit_expr(step)
-                return f"{name} = _Stream()\n_subscribe_to_input(lambda v: {name}.append(v))"
+                source_name = step["value"].rstrip("$")
+                source_type = _stream_types.get(source_name, "")
+                source_arr = _safe(source_name + "_arr")
+                append_expr = f"{name}.append(v)"
+                if source_type and source_type != type_ann:
+                    target = _py_name(type_ann)
+                    append_expr = f"{name}.append({target}(source=v.name, name=v.name, args=v.args, result=v.result))"
+                # use general _Stream.subscribe if source is a _Stream, fall back to _subscribe_to_input for plain lists
+                subscribe = f"({source_arr}.subscribe if hasattr({source_arr}, 'subscribe') else _subscribe_to_input)(lambda v: {append_expr})"
+                return f"{name} = _Stream()\n{subscribe}"
         # single fn_call step with no terminator: just call the function
         if len(steps) == 1 and val.get("terminate") is None:
             step = steps[0]

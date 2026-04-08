@@ -422,9 +422,35 @@ export function fn_exit_process(): void {
 
 // @zero Call input$
 const input_arr: any[] = [];
+const _input_subscribers: ((call: any) => void)[] = (globalThis as any)._input_subscribers ?? [];
+(globalThis as any)._input_subscribers = _input_subscribers;
 
 export function _push_runtime_input(call: any): void {
     input_arr.push(call);
+    for (const sub of _input_subscribers) {
+        sub(call);
+    }
+}
+
+export function _subscribe_to_input(callback: (call: any) => void): void {
+    const g = globalThis as any;
+    if (!g._input_subscribers) {
+        g._input_subscribers = [];
+    }
+    g._input_subscribers.push(callback);
+}
+
+const _input_instrumented: Set<string> = new Set();
+
+export function _instrument_input(fn_name: string, _fn: Function): void {
+    _input_instrumented.add(fn_name);
+}
+
+export function _record_input(fn_name: string, args: string, result: any): any {
+    if (_input_instrumented.has(fn_name)) {
+        _push_runtime_input({name: fn_name, args: args, result: String(result)});
+    }
+    return result;
 }
 
 
@@ -1116,7 +1142,7 @@ export function test_website_58(): void {
 
 export function test_website_59(): void {
     // length of (create session ("test")) => 8
-    const _result = fn_length_of__string(fn_create_session__string("test"));
+    const _result = fn_length_of__string(_record_input('fn_create_session__string', '"test"', fn_create_session__string("test")));
     const _expected = 8;
     if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
 }
@@ -1201,6 +1227,8 @@ export async function task_main__string(args_arr: readonly string[]): Promise<vo
     }
 }
 
+_instrument_input('fn_create_session__string', fn_create_session__string);
+
 // @zero on (string body) = handle request (Http-Request request); website/website.zero.md:390
 export function fn_handle_request__Http_Request(request: Http_Request): string {
     let body: string = undefined!;
@@ -1255,4 +1283,4 @@ try {
 
 const _FEATURE_TREE: [string, string, string | null][] = [["website", "the nøøb website", null], ["not-found", "default 404 response", "website"], ["login", "SMS code authentication", "website"], ["rpc", "RPC endpoint for runtime evaluation", "website"], ["landing-page", "serves the noob landing page at root", "website"], ["background", "per-user background colour", "landing-page"], ["blackbox", "flight recorder for fault diagnosis", "website"], ["test-blackbox", "integration tests for the flight recorder", "blackbox"], ["test-replay", "round-trip test for blackbox replay", "blackbox"]];
 
-const _BUILD_FINGERPRINT: {hash: string, git: string, features: string} = {"hash": "52748b4a9333210b", "git": "08b7b82577b5", "features": "website,not-found,login,rpc,landing-page,background,blackbox,test-blackbox,test-replay"};
+const _BUILD_FINGERPRINT: {hash: string, git: string, features: string} = {"hash": "d68bea50806bf25c", "git": "c4784fe1d9a6", "features": "website,not-found,login,rpc,landing-page,background,blackbox,test-blackbox,test-replay"};

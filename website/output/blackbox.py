@@ -1818,12 +1818,17 @@ class _Stream(list):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         super().__setattr__('_timestamps', [])
+        super().__setattr__('_subscribers', [])
     def append(self, value):
         super().append(value)
         dt = getattr(self, 'dt', 0)
         if not dt or dt == 0:
             self._timestamps.append(_stream_time.time())
         self._enforce_capacity()
+        for sub in self._subscribers:
+            sub(value)
+    def subscribe(self, callback):
+        self._subscribers.append(callback)
     def _enforce_capacity(self):
         cap = getattr(self, 'capacity', 0)
         if cap <= 0:
@@ -1907,5 +1912,5 @@ def fn_replay_fault__string(report: str):
     fn_replay_with_timing(trace_arr)
 
 action_arr = _Stream()
-_subscribe_to_input(lambda v: action_arr.append(v))
+(input_arr.subscribe if hasattr(input_arr, 'subscribe') else _subscribe_to_input)(lambda v: action_arr.append(Action(source=v.name, name=v.name, args=v.args, result=v.result)))
 action_arr.capacity = fn__number_seconds(60)

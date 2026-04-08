@@ -404,9 +404,35 @@ export function fn_exit_process(): void {
 
 // @zero Call input$
 const input_arr: any[] = [];
+const _input_subscribers: ((call: any) => void)[] = (globalThis as any)._input_subscribers ?? [];
+(globalThis as any)._input_subscribers = _input_subscribers;
 
 export function _push_runtime_input(call: any): void {
     input_arr.push(call);
+    for (const sub of _input_subscribers) {
+        sub(call);
+    }
+}
+
+export function _subscribe_to_input(callback: (call: any) => void): void {
+    const g = globalThis as any;
+    if (!g._input_subscribers) {
+        g._input_subscribers = [];
+    }
+    g._input_subscribers.push(callback);
+}
+
+const _input_instrumented: Set<string> = new Set();
+
+export function _instrument_input(fn_name: string, _fn: Function): void {
+    _input_instrumented.add(fn_name);
+}
+
+export function _record_input(fn_name: string, args: string, result: any): any {
+    if (_input_instrumented.has(fn_name)) {
+        _push_runtime_input({name: fn_name, args: args, result: String(result)});
+    }
+    return result;
 }
 
 
@@ -685,6 +711,7 @@ class _Stream extends Array<any> {
             for (const item of items) super.push(item);
         }
     }
+    _subscribers: ((v: any) => void)[] = [];
     push(...items: any[]): number {
         const result = super.push(...items);
         if (!this.dt || this.dt === 0) {
@@ -692,7 +719,13 @@ class _Stream extends Array<any> {
             for (const _ of items) this._timestamps.push(now);
         }
         this._enforceCapacity();
+        for (const item of items) {
+            for (const sub of this._subscribers) sub(item);
+        }
         return result;
+    }
+    subscribe(callback: (v: any) => void): void {
+        this._subscribers.push(callback);
     }
     _enforceCapacity(): void {
         if (this.capacity <= 0) return;
@@ -719,7 +752,8 @@ class _ZeroRaise extends Error {
     }
 }
 
-const action_arr = new _Stream([input_arr]);
+const action_arr: any = new _Stream();
+((input_arr as any).subscribe ? (input_arr as any).subscribe((v: any) => action_arr.push(Action({source: v.name, name: v.name, args: v.args, result: v.result}))) : _subscribe_to_input((v: any) => action_arr.push(Action({source: v.name, name: v.name, args: v.args, result: v.result}))));
 action_arr.capacity = fn__number_seconds(60);
 action_arr._enforceCapacity();
 

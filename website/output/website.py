@@ -2281,4 +2281,4 @@ if __name__ == '__main__':
 
 _FEATURE_TREE = [("website", "the nøøb website", None), ("not-found", "default 404 response", 'website'), ("login", "SMS code authentication", 'website'), ("rpc", "RPC endpoint for runtime evaluation", 'website'), ("landing-page", "serves the noob landing page at root", 'website'), ("background", "per-user background colour", 'landing-page'), ("blackbox", "flight recorder for fault diagnosis", 'website'), ("test-blackbox", "integration tests for the flight recorder", 'blackbox'), ("test-replay", "round-trip test for blackbox replay", 'blackbox')]
 
-_BUILD_FINGERPRINT = {"hash": "52748b4a9333210b", "git": "08b7b82577b5", "features": "website,not-found,login,rpc,landing-page,background,blackbox,test-blackbox,test-replay"}
+_BUILD_FINGERPRINT = {"hash": "d68bea50806bf25c", "git": "c4784fe1d9a6", "features": "website,not-found,login,rpc,landing-page,background,blackbox,test-blackbox,test-replay"}
