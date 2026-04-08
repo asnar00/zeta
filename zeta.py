@@ -922,21 +922,27 @@ def _walk_placeholders(node, result):
 
 
 def _build_client_ir(ctx):
-    """Build an IR containing only client-side functions, with RPC targets set."""
+    """Build an IR containing only client-side functions and tasks, with RPC targets set."""
     from emit_base import get_base_name
     ir = ctx["ir"]
     placement = ir.get("_placement", {})
     client_fns = [fn for fn in ir["functions"]
                   if not fn.get("abstract")
                   and placement.get(get_base_name(fn["signature_parts"])) == "client"]
+    client_tasks = [dict(task, platform_streams=["_client"])
+                    for task in ir.get("tasks", [])
+                    if not task.get("abstract")
+                    and placement.get(_task_base_name(task)) == "client"]
     # server functions called by client code become RPC targets
     rpc_targets = set()
     for fn in client_fns:
         _collect_server_calls(fn.get("body", []), placement, rpc_targets)
+    for task in client_tasks:
+        _collect_server_calls(task.get("body", []), placement, rpc_targets)
     client_ir = dict(ir)
     client_ir["functions"] = client_fns
     client_ir["variables"] = []
-    client_ir["tasks"] = []
+    client_ir["tasks"] = client_tasks
     client_ir["types"] = [t for t in ir["types"] if t["kind"] != "struct" or
                           _type_used_by(t["name"], client_fns)]
     client_ir["_rpc_targets"] = rpc_targets
@@ -990,6 +996,9 @@ def _walk_for_server_calls(node, placement, rpc_targets):
     for arg in node.get("args", []):
         if isinstance(arg, dict):
             _walk_for_server_calls(arg, placement, rpc_targets)
+    for step in node.get("steps", []):
+        if isinstance(step, dict):
+            _walk_for_server_calls(step, placement, rpc_targets)
     for branch in node.get("branches", []):
         if isinstance(branch, dict):
             for s in branch.get("body", []):
@@ -1099,13 +1108,18 @@ def _collect_handlers(features):
     return handlers
 
 
+def _task_base_name(task):
+    """Get the base name for a task from its name_parts."""
+    return "_".join(p.replace("-", "_") for p in task["name_parts"])
+
+
 def _classify_function_placement(ir, client_fn_bases):
-    """Classify each function as 'client' or 'server' based on platform calls.
+    """Classify each function/task as 'client' or 'server' based on platform calls.
     A function is client-side if it directly calls any @client platform function.
     Propagation: if a non-platform function calls a client function, it's also client."""
     from emit_base import get_base_name
 
-    # first pass: direct client callers
+    # first pass: direct client callers (functions)
     placement = {}
     for fn in ir["functions"]:
         if fn.get("abstract"):
@@ -1116,7 +1130,17 @@ def _classify_function_placement(ir, client_fn_bases):
         else:
             placement[base] = "server"
 
-    # propagate: if a server function calls a client function, it becomes client
+    # first pass: direct client callers (tasks)
+    for task in ir.get("tasks", []):
+        if task.get("abstract"):
+            continue
+        base = _task_base_name(task)
+        if _body_calls_any(task.get("body", []), client_fn_bases):
+            placement[base] = "client"
+        else:
+            placement[base] = "server"
+
+    # propagate: if a server function/task calls a client one, it becomes client
     changed = True
     client_bases = {b for b, p in placement.items() if p == "client"}
     while changed:
@@ -1128,6 +1152,16 @@ def _classify_function_placement(ir, client_fn_bases):
             if placement.get(base) == "client":
                 continue
             if _body_calls_any(fn.get("body", []), client_bases):
+                placement[base] = "client"
+                client_bases.add(base)
+                changed = True
+        for task in ir.get("tasks", []):
+            if task.get("abstract"):
+                continue
+            base = _task_base_name(task)
+            if placement.get(base) == "client":
+                continue
+            if _body_calls_any(task.get("body", []), client_bases):
                 placement[base] = "client"
                 client_bases.add(base)
                 changed = True

@@ -42,6 +42,11 @@ const cookie_arr = new Proxy({}, {
     }
 });
 
+// @zero on (string value) = get cookie (string name)
+function fn_get_cookie__string(name) {
+    return cookie_arr[name];
+}
+
 // @zero on clear cookie (string name)
 function fn_clear_cookie__string(name) {
     const secure = location.protocol === "https:" ? "; Secure" : "";
@@ -211,14 +216,18 @@ function _extract_args(s) {
 }
 
 function _find_client_function(fn_words, arg_count) {
-    const prefix = "fn_" + fn_words.replace(/ /g, "_").replace(/-/g, "_");
-    for (const name of Object.getOwnPropertyNames(window)) {
-        if (typeof window[name] !== "function") continue;
-        if (name === prefix && arg_count === 0) return window[name];
-        if (name.startsWith(prefix + "__")) {
-            const typePart = name.slice(prefix.length + 2);
-            const nTypes = (typePart.match(/__/g) || []).length + 1;
-            if (nTypes === arg_count) return window[name];
+    const base = fn_words.replace(/ /g, "_").replace(/-/g, "_");
+    const prefixes = ["fn_", "task_"];
+    for (const pfx of prefixes) {
+        const prefix = pfx + base;
+        for (const name of Object.getOwnPropertyNames(window)) {
+            if (typeof window[name] !== "function") continue;
+            if (name === prefix && arg_count === 0) return window[name];
+            if (name.startsWith(prefix + "__")) {
+                const typePart = name.slice(prefix.length + 2);
+                const nTypes = (typePart.match(/__/g) || []).length + 1;
+                if (nTypes === arg_count) return window[name];
+            }
         }
     }
     return null;
@@ -233,8 +242,10 @@ function _format_client_value(val) {
 function _list_client_functions() {
     const fns = [];
     for (const name of Object.getOwnPropertyNames(window)) {
-        if (typeof window[name] === "function" && name.startsWith("fn_")) {
-            fns.push(name.replace(/^fn_/, "").replace(/__/g, " (").replace(/_/g, " ") + (name.includes("__") ? ")" : " ()"));
+        if (typeof window[name] !== "function") continue;
+        if (name.startsWith("fn_") || name.startsWith("task_")) {
+            const clean = name.replace(/^fn_|^task_/, "");
+            fns.push(clean.replace(/__/g, " (").replace(/_/g, " ") + (name.includes("__") ? ")" : " ()"));
         }
     }
     return fns.join("\n");
@@ -307,17 +318,77 @@ document.addEventListener("DOMContentLoaded", () => {
     const logo = document.querySelector(".logo");
     if (logo) {
         logo.style.cursor = "pointer";
-        logo.addEventListener("click", () => fn_logo_clicked());
+        logo.addEventListener("click", () => _client_eval("logo clicked ()"));
     }
     _connect_ws();
 });
 
-// @zero on unknown user (string name); composed:401
+// @zero on login; composed:411
+async function task_login(){
+    const name_arr = [await task_input__string("name")];
+    const code_arr = [await _rpc("request login " + encodeURIComponent("(" + name_arr + ")") + "")];
+    const entered_arr = [await task_input__string("code")];
+    const token_arr = [await _rpc("complete login " + encodeURIComponent("(" + name_arr + ")") + " with code " + encodeURIComponent("(" + entered_arr + ")") + "")];
+    for (const _v of token_arr) {
+        fn_set_cookie_of__string_to__string("session", _v);
+    }
+    fn_reload_page();
+}
+
+// @zero on logout dialog; composed:419
+async function task_logout_dialog(){
+    const choice_arr = [await task_choose_or__string__string("log out", "cancel")];
+    if (choice_arr == "log out") {
+        fn_clear_cookie__string("session");
+        fn_reload_page();
+    }
+}
+
+// @zero on test blackbox; composed:515
+async function task_test_blackbox(){
+    fn_click_on__string(".logo");
+    fn_press__string_on__string("Escape", "body");
+    const report_arr = [await task_report_fault__string("test: logo did something weird")];
+    for (const _v of report_arr) {
+        await _rpc("bb check " + encodeURIComponent("(" + _v + ")") + " contains " + encodeURIComponent("(" + "comment" + ")") + "");
+    }
+    for (const _v of report_arr) {
+        await _rpc("bb check " + encodeURIComponent("(" + _v + ")") + " contains " + encodeURIComponent("(" + "trace" + ")") + "");
+    }
+    for (const _v of report_arr) {
+        await _rpc("bb check " + encodeURIComponent("(" + _v + ")") + " contains " + encodeURIComponent("(" + "test: logo did something weird" + ")") + "");
+    }
+}
+
+// @zero on toggle login; composed:404
+async function task_toggle_login(){
+    let session = cookie_arr["session"] ?? "";
+    if (session == "") {
+        await task_login();
+    } else {
+        await task_logout_dialog();
+    }
+}
+
+// @zero on test login; composed:470
+async function task_test_login(){
+    /* scoped hook (handled at function level) */;
+    /* scoped hook (handled at function level) */;
+    await task_login();
+    await _rpc("check " + encodeURIComponent("(" + fn_describe_page() + ")") + " contains " + encodeURIComponent("(" + "log out" + ")") + "");
+}
+
+// @zero on logo clicked; composed:459
+async function task_logo_clicked(){
+    await task_toggle_login();
+}
+
+// @zero on unknown user (string name); composed:425
 async function fn_unknown_user__string(name){
     await fn_show_message__string("unknown user");
 }
 
-// @zero on invalid code (string code); composed:404
+// @zero on invalid code (string code); composed:428
 async function fn_invalid_code__string(code){
     await fn_show_message__string("invalid code");
 }

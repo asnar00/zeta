@@ -135,6 +135,32 @@ export function fn_remove_locally__string(key: string): void {
 }
 
 
+// @zero on inject call (string name) with (string args) result (string result)
+export function fn_inject_call__string_with__string_result__string(name: string, args: string, result: string): void {
+    const Call = (globalThis as any).Call;
+    const push = (globalThis as any)._push_runtime_input;
+    if (Call && push) {
+        push(new Call(name, args, result));
+    }
+}
+
+
+// @zero on replay with timing [Action actions$]
+export function fn_replay_with_timing(actions: any): void {
+    const Call = (globalThis as any).Call;
+    const push = (globalThis as any)._push_runtime_input;
+    if (!Call || !push) return;
+    const timestamps: number[] = actions?._timestamps ?? [];
+    for (let i = 0; i < actions.length; i++) {
+        const action = actions[i];
+        const name = action?.name ?? String(action);
+        const args = action?.args ?? "";
+        const result = action?.result ?? "";
+        push(new Call(name, args, result));
+    }
+}
+
+
 // Platform implementation: eval (TypeScript)
 // Implements the functions declared in eval.zero.md
 // Server-side stub — delegates to rpc eval
@@ -164,6 +190,11 @@ export function fn_show_message__string(text: string): void {
 
 // @zero input string cookie$[string]
 const cookie_arr: Map<string, string> = new Map();
+
+// @zero on (string value) = get cookie (string name)
+export function fn_get_cookie__string(name: string): string {
+    return cookie_arr.get(name) ?? "";
+}
 
 // @zero on clear cookie (string name)
 export function fn_clear_cookie__string(name: string): void {
@@ -500,6 +531,18 @@ export function fn_substring_of__string_from__int(s: string, start: number): str
 }
 
 
+// @zero on (string sub) = substring of (string s) from (int start) to (int end)
+export function fn_substring_of__string_from__int_to__int(s: string, start: number, end: number): string {
+    return s.slice(start, end);
+}
+
+
+// @zero on (int pos) = index of (string needle) in (string s)
+export function fn_index_of__string_in__string(needle: string, s: string): number {
+    return s.indexOf(needle);
+}
+
+
 // @zero on (int n) = to int (string s)
 export function fn_to_int__string(s: string): number {
     const n = parseInt(s, 10);
@@ -692,7 +735,7 @@ export function Action(args: Partial<Action> = {}): Action {
     return { source: args.source ?? "", name: args.name ?? "", args: args.args ?? "", result: args.result ?? "" };
 }
 
-// @zero on test blackbox; website/test-blackbox/test-blackbox.zero.md:479
+// @zero on test blackbox; website/test-blackbox/test-blackbox.zero.md:515
 export async function task_test_blackbox(): Promise<void> {
     fn_click_on__string(".logo");
     fn_press__string_on__string("Escape", "body");
@@ -708,7 +751,7 @@ export async function task_test_blackbox(): Promise<void> {
     }
 }
 
-// @zero on bb check (string actual) contains (string expected); website/test-blackbox/test-blackbox.zero.md:471
+// @zero on bb check (string actual) contains (string expected); website/test-blackbox/test-blackbox.zero.md:507
 export function fn_bb_check__string_contains__string(actual: string, expected: string): void {
     const found = fn__string_contains__string(actual, expected);
     if (found == false) {
@@ -716,7 +759,7 @@ export function fn_bb_check__string_contains__string(actual: string, expected: s
 }
 }
 
-// @zero on bb check failed (string what); website/test-blackbox/test-blackbox.zero.md:476
+// @zero on bb check failed (string what); website/test-blackbox/test-blackbox.zero.md:512
 export function fn_bb_check_failed__string(what: string): void {
     fn_print__string("FAIL: expected " + what);
 }

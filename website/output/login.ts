@@ -135,6 +135,32 @@ export function fn_remove_locally__string(key: string): void {
 }
 
 
+// @zero on inject call (string name) with (string args) result (string result)
+export function fn_inject_call__string_with__string_result__string(name: string, args: string, result: string): void {
+    const Call = (globalThis as any).Call;
+    const push = (globalThis as any)._push_runtime_input;
+    if (Call && push) {
+        push(new Call(name, args, result));
+    }
+}
+
+
+// @zero on replay with timing [Action actions$]
+export function fn_replay_with_timing(actions: any): void {
+    const Call = (globalThis as any).Call;
+    const push = (globalThis as any)._push_runtime_input;
+    if (!Call || !push) return;
+    const timestamps: number[] = actions?._timestamps ?? [];
+    for (let i = 0; i < actions.length; i++) {
+        const action = actions[i];
+        const name = action?.name ?? String(action);
+        const args = action?.args ?? "";
+        const result = action?.result ?? "";
+        push(new Call(name, args, result));
+    }
+}
+
+
 // Platform implementation: eval (TypeScript)
 // Implements the functions declared in eval.zero.md
 // Server-side stub — delegates to rpc eval
@@ -164,6 +190,11 @@ export function fn_show_message__string(text: string): void {
 
 // @zero input string cookie$[string]
 const cookie_arr: Map<string, string> = new Map();
+
+// @zero on (string value) = get cookie (string name)
+export function fn_get_cookie__string(name: string): string {
+    return cookie_arr.get(name) ?? "";
+}
 
 // @zero on clear cookie (string name)
 export function fn_clear_cookie__string(name: string): void {
@@ -500,6 +531,18 @@ export function fn_substring_of__string_from__int(s: string, start: number): str
 }
 
 
+// @zero on (string sub) = substring of (string s) from (int start) to (int end)
+export function fn_substring_of__string_from__int_to__int(s: string, start: number, end: number): string {
+    return s.slice(start, end);
+}
+
+
+// @zero on (int pos) = index of (string needle) in (string s)
+export function fn_index_of__string_in__string(needle: string, s: string): number {
+    return s.indexOf(needle);
+}
+
+
 // @zero on (int n) = to int (string s)
 export function fn_to_int__string(s: string): number {
     const n = parseInt(s, 10);
@@ -695,7 +738,7 @@ export function Action(args: Partial<Action> = {}): Action {
     return { source: args.source ?? "", name: args.name ?? "", args: args.args ?? "", result: args.result ?? "" };
 }
 
-// @zero on login; website/login/login.zero.md:387
+// @zero on login; website/login/login.zero.md:411
 export async function task_login(): Promise<void> {
     const name_arr: any = website.task_input__string("name");
     const code_arr = [fn_request_login__string(name_arr)];
@@ -707,7 +750,7 @@ export async function task_login(): Promise<void> {
     fn_reload_page();
 }
 
-// @zero on logout dialog; website/login/login.zero.md:395
+// @zero on logout dialog; website/login/login.zero.md:419
 export async function task_logout_dialog(): Promise<void> {
     const choice_arr: any = website.task_choose_or__string__string("log out", "cancel");
     if (choice_arr == "log out") {
@@ -716,7 +759,7 @@ export async function task_logout_dialog(): Promise<void> {
     }
 }
 
-// @zero on toggle login; website/login/login.zero.md:380
+// @zero on toggle login; website/login/login.zero.md:404
 export function task_toggle_login(): void {
     let session = cookie_arr.get("session") ?? "";
     if (session == "") {
@@ -726,7 +769,7 @@ export function task_toggle_login(): void {
     }
 }
 
-// @zero on test login; website/login/login.zero.md:446
+// @zero on test login; website/login/login.zero.md:470
 export function task_test_login(): void {
     /* scoped hook (handled at function level) */;
     /* scoped hook (handled at function level) */;
@@ -734,22 +777,22 @@ export function task_test_login(): void {
     fn_check__string_contains__string(fn_describe_page(), "log out");
 }
 
-// @zero on logo clicked; website/login/login.zero.md:435
+// @zero on logo clicked; website/login/login.zero.md:459
 export function task_logo_clicked(): void {
     task_toggle_login();
 }
 
-// @zero on unknown user (string name); website/login/login.zero.md:401
+// @zero on unknown user (string name); website/login/login.zero.md:425
 export function fn_unknown_user__string(name: string): void {
     fn_show_message__string("unknown user");
 }
 
-// @zero on invalid code (string code); website/login/login.zero.md:404
+// @zero on invalid code (string code); website/login/login.zero.md:428
 export function fn_invalid_code__string(code: string): void {
     fn_show_message__string("invalid code");
 }
 
-// @zero on (string code) = request login (string name); website/login/login.zero.md:407
+// @zero on (string code) = request login (string name); website/login/login.zero.md:431
 export function fn_request_login__string(name: string): string {
     let code: string = undefined!;
     const found = users_arr.find(x => x.name == name)!;
@@ -762,7 +805,7 @@ export function fn_request_login__string(name: string): string {
     return code;
 }
 
-// @zero on (User result) = verify login (string name) with code (string code); website/login/login.zero.md:415
+// @zero on (User result) = verify login (string name) with code (string code); website/login/login.zero.md:439
 export function fn_verify_login__string_with_code__string(name: string, code: string): User {
     let result: User = undefined!;
     const found = users_arr.find(x => x.name == name)!;
@@ -775,14 +818,14 @@ export function fn_verify_login__string_with_code__string(name: string, code: st
     return result;
 }
 
-// @zero on (string token) = complete login (string name) with code (string code); website/login/login.zero.md:423
+// @zero on (string token) = complete login (string name) with code (string code); website/login/login.zero.md:447
 export function fn_complete_login__string_with_code__string(name: string, code: string): string {
     const found = fn_verify_login__string_with_code__string(name, code);
     const token: string = fn_create_session__string(name);
     return token;
 }
 
-// @zero on (string code) = generate code (User u); website/login/login.zero.md:427
+// @zero on (string code) = generate code (User u); website/login/login.zero.md:451
 export function fn_generate_code__User(u: User): string {
     let code: string = undefined!;
     if (u.name == "_alice") {
@@ -795,7 +838,7 @@ export function fn_generate_code__User(u: User): string {
     return code;
 }
 
-// @zero on check (string snapshot) contains (string expected); website/login/login.zero.md:438
+// @zero on check (string snapshot) contains (string expected); website/login/login.zero.md:462
 export function fn_check__string_contains__string(snapshot: string, expected: string): void {
     const found = fn__string_contains__string(snapshot, expected);
     if (found == false) {
@@ -803,7 +846,7 @@ export function fn_check__string_contains__string(snapshot: string, expected: st
 }
 }
 
-// @zero on check failed (string what); website/login/login.zero.md:443
+// @zero on check failed (string what); website/login/login.zero.md:467
 export function fn_check_failed__string(what: string): void {
     fn_print__string("FAIL: expected " + what);
 }

@@ -64,6 +64,18 @@ function fn_substring_of__string_from__int(s: string, start: number): string {
 }
 
 
+// @zero on (string sub) = substring of (string s) from (int start) to (int end)
+function fn_substring_of__string_from__int_to__int(s: string, start: number, end: number): string {
+    return s.slice(start, end);
+}
+
+
+// @zero on (int pos) = index of (string needle) in (string s)
+function fn_index_of__string_in__string(needle: string, s: string): number {
+    return s.indexOf(needle);
+}
+
+
 // @zero on (int n) = to int (string s)
 function fn_to_int__string(s: string): number {
     const n = parseInt(s, 10);

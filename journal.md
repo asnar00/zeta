@@ -816,8 +816,70 @@ The compiler has zero knowledge of blackbox. `_bb_record_stream` renamed to `_ti
 
 ### what's next
 
-- Wire `input$` stream to actually capture input values at runtime
-- Run the blackbox integration test end-to-end
-- Replay harness: feed recorded input streams back for deterministic replay
+- ~~Wire `input$` stream to actually capture input values at runtime~~ done
+- ~~Run the blackbox integration test end-to-end~~ done
+- ~~Replay harness: feed recorded input streams back for deterministic replay~~ done (basic)
 - Stream transport: send timed streams between devices
+- UI: "report fault" button in the client
+
+## 2026-04-08: client tasks, replay, and silent bugs
+
+### context
+
+After the timed streams / input streams / blackbox-as-pure-zero refactor, the login integration tests were completely broken — 15 of 21 failing. The taskness propagation refactor had promoted interactive functions (`login`, `toggle_login`, `logo_clicked`) from `fn_` to `task_` prefix, but the client-side bundling pipeline only handled functions, not tasks. The login flow was invisible to the browser.
+
+### client-side task emission
+
+The client bundle is generated via the TS emitter from a filtered IR. The problem was in two places:
+
+1. **Placement classifier** (`_classify_function_placement` in `zeta.py`) only iterated `ir["functions"]`, never `ir["tasks"]`. Tasks were never classified as client-side.
+2. **Client IR builder** (`_build_client_ir`) hardcoded `client_ir["tasks"] = []`.
+
+Fixed both, plus:
+- Added `_client_task_mode_ts` flag in the TS emitter so void task calls get `await` in client context (but not server-side where tasks are generators)
+- Fixed `_find_client_function` in `remote.client.js` to search for both `fn_` and `task_` prefixes
+- Changed DOM wiring from hardcoded `fn_logo_clicked()` to `_client_eval("logo clicked ()")` for prefix-agnostic dispatch
+- Fixed keyed collection access (`.get()` vs bracket) in client mode — the Proxy-based `cookie_arr` in the browser doesn't support `.get()`
+- Added `get cookie (string name)` to the GUI platform (had set and clear, but no getter)
+
+Login integration tests: 21/21 passing.
+
+### blackbox replay subfeature
+
+Built the foundation for deterministic fault replay:
+
+- **Platform primitives**: `inject call (name) with (args) result (result)` pushes a Call into `input$` and an Action into `action$`. `replay with timing [actions$]` iterates a deserialised stream with original timing gaps (capped at 1s per step), injecting each action.
+- **Zero functions**: `extract trace (report)` pulls trace JSON from a fault report envelope. `replay fault (report)` deserialises and replays.
+- **Test feature**: `test-replay` injects two actions, reports a fault, replays it, reports again, verifies the replayed actions appear in the new recording. Both assertions pass.
+
+Bugs found along the way:
+- **NamedTuple serialisation** — `_serialise_item` checked `hasattr(v, '__dict__')` which is False for NamedTuples. Added `_fields` check.
+- **`report fault` not yielding** — the `string report <- "..." <- ...` pattern created a local variable instead of emitting to the output stream. Rewrote to `report$ <- expr`.
+- **`action$ <- input$` is init-time only** — the emitter generates `_Stream([input_arr])` which copies at init, not a live pipe. Worked around by having inject functions push to `action_arr` directly.
+
+### the silent bug: generator double-iteration
+
+The most insidious bug found this session. In Python, task calls produce generators. When a task call result is assigned to a stream variable and that variable is used in multiple `for _v in arr:` loops, the generator exhausts after the first loop. Subsequent loops iterate zero times and silently skip.
+
+**Impact**: `test blackbox ()` had three assertions (`bb check (report$) contains ("comment")`, `...("trace")`, `...("test: ...")`). Only the first ever ran. The other two were silently skipped. The test "passed" because the failing checks were never executed.
+
+**Fix**: Added `_find_multi_use_task_streams()` to the Python emitter — scans the task body, counts references to each task-call stream variable, and wraps multi-use generators in `list()` at assignment time. Single-use generators (like the HTTP server's request stream) stay unwrapped to avoid blocking on infinite streams.
+
+### string platform additions
+
+- `index of (string needle) in (string s)` — returns position or -1
+- `substring of (string s) from (int start) to (int end)` — bounded substring
+
+### other fixes
+
+- Stale TS test assertions for `while`/`until` stream semantics updated to match new (correct) codegen pattern
+- Test reports split into per-language files (`test_report_python.md`, `test_report_typescript.md`)
+- Python emitter: void function calls with stream args in task bodies now correctly map over stream elements (matching what the TS emitter already did)
+
+### what's next
+
+- Fix `action$ <- input$` live piping in the emitter (currently init-time copy only)
+- Replay timing controls (speed multiplier, instant replay)
+- Build fingerprinting for replay verification
+- Stream transport between devices
 - UI: "report fault" button in the client

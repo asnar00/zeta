@@ -55,6 +55,14 @@ Get a substring starting from a position:
 
     on (string sub) = substring of (string s) from (int start)
 
+Get a substring between two positions:
+
+    on (string sub) = substring of (string s) from (int start) to (int end)
+
+Find the position of a substring (returns -1 if not found):
+
+    on (int pos) = index of (string needle) in (string s)
+
 Replace all occurrences of a needle in a string:
 
     on (string result) = replace (string needle) in (string s) with (string replacement)
@@ -109,6 +117,17 @@ Length of various strings:
     length of ("") => 0
     length of ("a") => 1
     length of ("hello world") => 11
+
+Index of substring:
+
+    index of ("world") in ("hello world") => 6
+    index of ("xyz") in ("hello") => -1
+    index of ("") in ("hello") => 0
+
+Substring from/to:
+
+    substring of ("hello world") from (6) to (11) => "world"
+    substring of ("abcdef") from (1) to (4) => "bcd"
 
 Substring from various positions:
 

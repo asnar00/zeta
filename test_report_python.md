@@ -1,5 +1,4 @@
-# test report
-*zero to python translation examples*
+# test report: zero to python
 
 ## concrete int type
 
@@ -119,9 +118,9 @@ type vector =
 from typing import NamedTuple
 
 class vector(NamedTuple):
-    x: number = 0
-    y: number = 0
-    z: number = 0
+    x: float = 0
+    y: float = 0
+    z: float = 0
 ```
 
 ## struct with enum default
@@ -345,8 +344,11 @@ int i$ <- 1 <- (i$ + 1) until (i$ == 4)
 
 ```python
 i_arr = [1]
-while not (i_arr[-1] == 4):
-    i_arr.append(i_arr[-1] + 1)
+while True:
+    _next = i_arr[-1] + 1
+    i_arr.append(_next)
+    if _next == 4:
+        break
 ```
 
 ## stream with while
@@ -361,8 +363,11 @@ int i$ <- 0 <- (i$ + 1) while (i$ < 4)
 
 ```python
 i_arr = [0]
-while i_arr[-1] < 4:
-    i_arr.append(i_arr[-1] + 1)
+while True:
+    _next = i_arr[-1] + 1
+    if not (_next < 4):
+        break
+    i_arr.append(_next)
 ```
 
 ## array map with scalar
@@ -415,7 +420,7 @@ on (number n) = double (number x)
 
 ```python
 # @zero on (number n) = double (number x)
-def fn_double__number(x: number) -> number:
+def fn_double__number(x: float) -> float:
     n = x * 2
     return n
 
@@ -437,7 +442,7 @@ on (number n) = double (number x)
 
 ```python
 # @zero on (number n) = double (number x)
-def fn_double__number(x: number) -> number:
+def fn_double__number(x: float) -> float:
     n = x * 2
     return n
 
@@ -460,7 +465,7 @@ on (number n) = smaller of (number a) and (number b)
 
 ```python
 # @zero on (number n) = smaller of (number a) and (number b)
-def fn_smaller_of__number_and__number(a: number, b: number) -> number:
+def fn_smaller_of__number_and__number(a: float, b: float) -> float:
     n = (a) if (a < b) else (b)
     return n
 
@@ -598,7 +603,7 @@ on (number n) = smaller of (number a) and (number b)
 
 ```python
 # @zero on (number n) = smaller of (number a) and (number b)
-def fn_smaller_of__number_and__number(a: number, b: number) -> number:
+def fn_smaller_of__number_and__number(a: float, b: float) -> float:
     n = (a) if (a < b) else (b)
     return n
 ```
@@ -1073,12 +1078,12 @@ on (number n) = double (number x)
 
 ```python
 # @zero on (number n) = double (number x)
-def fn_double__number(x: number) -> number:
+def fn_double__number(x: float) -> float:
     n = x * 2
     return n
 
 # @zero on (number n) = quadruple (number x)
-def fn_quadruple__number(x: number) -> number:
+def fn_quadruple__number(x: float) -> float:
     n = fn_double__number(fn_double__number(x))
     return n
 ```
@@ -1098,12 +1103,12 @@ on (number n) = smaller of (number a) and (number b)
 
 ```python
 # @zero on (number n) = smaller of (number a) and (number b)
-def fn_smaller_of__number_and__number(a: number, b: number) -> number:
+def fn_smaller_of__number_and__number(a: float, b: float) -> float:
     n = (a) if (a < b) else (b)
     return n
 
 # @zero on (number n) = smallest of (number a) and (number b) and (number c)
-def fn_smallest_of__number_and__number_and__number(a: number, b: number, c: number) -> number:
+def fn_smallest_of__number_and__number_and__number(a: float, b: float, c: float) -> float:
     n = fn_smaller_of__number_and__number(fn_smaller_of__number_and__number(a, b), c)
     return n
 ```
@@ -1153,16 +1158,16 @@ type vector =
 from typing import NamedTuple
 
 class vector(NamedTuple):
-    x: number = 0
-    y: number = 0
-    z: number = 0
+    x: float = 0
+    y: float = 0
+    z: float = 0
 
 # @zero on (number n) = length of (vector v)
-def fn_length_of__vector(v: vector) -> number:
+def fn_length_of__vector(v: vector) -> float:
     n = v.x * v.x + v.y * v.y + v.z * v.z
     return n
 
-d: number = fn_length_of__vector(vector(1, 2, 3))
+d: float = fn_length_of__vector(vector(1, 2, 3))
 ```
 
 ## task: filter evens
@@ -1181,15 +1186,18 @@ on (int even$) <- only evens from (int numbers$)
 ### python
 
 ```python
-# blackbox fallback (overridden when blackbox platform is loaded)
-def _bb_record_stream(_name, _iter):
-    return _iter
-def _bb_record_call(_name, _result):
-    return _result
+# timed stream iteration (sleeps dt between values)
+import time as _time
+def _timed_iterate(_name, _iter):
+    _dt = getattr(_iter, 'dt', 0)
+    for _v in _iter:
+        yield _v
+        if _dt and _dt > 0:
+            _time.sleep(_dt)
 
 # @zero on (int even$) <- only evens from (int numbers$)
 def task_only_evens_from__int(numbers_arr: int):
-    for n in _bb_record_stream('numbers_arr', numbers_arr):
+    for n in _timed_iterate('numbers_arr', numbers_arr):
         if n % 2 == 0:
             yield n
 
@@ -1234,9 +1242,9 @@ class tri_state(Enum):
     maybe = "maybe"
 
 class vector(NamedTuple):
-    x: number = 0
-    y: number = 0
-    z: number = 0
+    x: float = 0
+    y: float = 0
+    z: float = 0
 
 # @zero on (vector v) = (vector a) + (vector b)
 def fn__vector_plus__vector(a: vector, b: vector) -> vector:
@@ -1244,8 +1252,50 @@ def fn__vector_plus__vector(a: vector, b: vector) -> vector:
     return v
 
 # @zero on (number n) = smaller of (number a) and (number b)
-def fn_smaller_of__number_and__number(a: number, b: number) -> number:
+def fn_smaller_of__number_and__number(a: float, b: float) -> float:
     n = (a) if (a < b) else (b)
     return n
+```
+
+## ts: full program
+
+### zero
+
+```zero
+type number = int | float
+    type vector =
+        number x, y, z = 0
+
+    on (vector v) = (vector a) + (vector b)
+        v = vector(a.x + b.x, a.y + b.y, a.z + b.z)
+
+    on (number n) = smaller of (number a) and (number b)
+        n = (a) if (a < b) else (b)
+```
+
+### python
+
+```python
+interface vector {
+    readonly x: number;
+    readonly y: number;
+    readonly z: number;
+}
+
+function vector(args: Partial<vector> = {}): vector {
+    return { x: args.x ?? 0, y: args.y ?? 0, z: args.z ?? 0 };
+}
+
+// @zero on (vector v) = (vector a) + (vector b)
+function fn__vector_plus__vector(a: vector, b: vector): vector {
+    const v: vector = vector({ x: a.x + b.x, y: a.y + b.y, z: a.z + b.z });
+    return v;
+}
+
+// @zero on (number n) = smaller of (number a) and (number b)
+function fn_smaller_of__number_and__number(a: number, b: number): number {
+    const n: number = (a < b) ? (a) : (b);
+    return n;
+}
 ```
 

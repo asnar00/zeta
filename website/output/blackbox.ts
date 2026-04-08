@@ -133,6 +133,32 @@ export function fn_remove_locally__string(key: string): void {
 }
 
 
+// @zero on inject call (string name) with (string args) result (string result)
+export function fn_inject_call__string_with__string_result__string(name: string, args: string, result: string): void {
+    const Call = (globalThis as any).Call;
+    const push = (globalThis as any)._push_runtime_input;
+    if (Call && push) {
+        push(new Call(name, args, result));
+    }
+}
+
+
+// @zero on replay with timing [Action actions$]
+export function fn_replay_with_timing(actions: any): void {
+    const Call = (globalThis as any).Call;
+    const push = (globalThis as any)._push_runtime_input;
+    if (!Call || !push) return;
+    const timestamps: number[] = actions?._timestamps ?? [];
+    for (let i = 0; i < actions.length; i++) {
+        const action = actions[i];
+        const name = action?.name ?? String(action);
+        const args = action?.args ?? "";
+        const result = action?.result ?? "";
+        push(new Call(name, args, result));
+    }
+}
+
+
 // Platform implementation: eval (TypeScript)
 // Implements the functions declared in eval.zero.md
 // Server-side stub — delegates to rpc eval
@@ -162,6 +188,11 @@ export function fn_show_message__string(text: string): void {
 
 // @zero input string cookie$[string]
 const cookie_arr: Map<string, string> = new Map();
+
+// @zero on (string value) = get cookie (string name)
+export function fn_get_cookie__string(name: string): string {
+    return cookie_arr.get(name) ?? "";
+}
 
 // @zero on clear cookie (string name)
 export function fn_clear_cookie__string(name: string): void {
@@ -498,6 +529,18 @@ export function fn_substring_of__string_from__int(s: string, start: number): str
 }
 
 
+// @zero on (string sub) = substring of (string s) from (int start) to (int end)
+export function fn_substring_of__string_from__int_to__int(s: string, start: number, end: number): string {
+    return s.slice(start, end);
+}
+
+
+// @zero on (int pos) = index of (string needle) in (string s)
+export function fn_index_of__string_in__string(needle: string, s: string): number {
+    return s.indexOf(needle);
+}
+
+
 // @zero on (int n) = to int (string s)
 export function fn_to_int__string(s: string): number {
     const n = parseInt(s, 10);
@@ -730,15 +773,34 @@ export function Action(args: Partial<Action> = {}): Action {
     return { source: args.source ?? "", name: args.name ?? "", args: args.args ?? "", result: args.result ?? "" };
 }
 
-// @zero on (string report$) <- report fault (string comment); blackbox.zero.md:463
+// @zero on (string report$) <- report fault (string comment); blackbox.zero.md:487
 export function* task_report_fault__string(comment: string): Generator<string> {
     let trace_arr = fn_snapshot(action_arr);
     let json = fn_serialise(trace_arr);
-    let report = "{\"comment\":\"" + String(comment) + "\",\"trace\":" + String(json) + "}";
+    yield "{\"comment\":\"" + comment + "\",\"trace\":" + json + "}";
 }
 
-// @zero on (string data) = get fault (string id); blackbox.zero.md:468
+// @zero on (string data) = get fault (string id); blackbox.zero.md:492
 export function fn_get_fault__string(id: string): string {
     const data: string = fn_retrieve_locally__string("fault:" + id);
     return data;
+}
+
+// @zero on (string json) = extract trace (string report); blackbox.zero.md:495
+export function fn_extract_trace__string(report: string): string {
+    let json: string = undefined!;
+    const start = fn_index_of__string_in__string("\"trace\":", report);
+    if (start < 0) {
+    json = "";
+} else {
+    json = fn_substring_of__string_from__int_to__int(report, start + 8, fn_length_of__string(report) - 1);
+}
+    return json;
+}
+
+// @zero on replay fault (string report); blackbox.zero.md:502
+export function fn_replay_fault__string(report: string): void {
+    const trace_json = fn_extract_trace__string(report);
+    const trace_arr = fn_deserialise__string(trace_json);
+    fn_replay_with_timing(trace_arr);
 }

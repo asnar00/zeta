@@ -144,6 +144,57 @@ def fn_remove_locally__string(key: str):
     _save_store()
 
 
+def _inject_to_action_arr(name, args, result):
+    """Push an Action into the blackbox action$ buffer."""
+    import sys
+    bb = sys.modules.get('blackbox')
+    if bb is None:
+        return
+    Action = getattr(bb, 'Action', None)
+    action_arr = getattr(bb, 'action_arr', None)
+    if Action and action_arr is not None:
+        action_arr.append(Action(source=name, name=name, args=args, result=result))
+
+
+# @zero on inject call (string name) with (string args) result (string result)
+def fn_inject_call__string_with__string_result__string(name: str, args: str, result: str):
+    """Inject a Call into the runtime input$ stream and action$ buffer."""
+    import sys
+    main = sys.modules.get('__main__')
+    if main is None:
+        return
+    Call = getattr(main, 'Call', None)
+    push = getattr(main, '_push_runtime_input', None)
+    if Call and push:
+        push(Call(name=name, args=args, result=result))
+    # also push to action$ buffer (workaround: action$ <- input$ piping is init-time only)
+    _inject_to_action_arr(name, args, result)
+
+
+# @zero on replay with timing [Action actions$]
+def fn_replay_with_timing(actions):
+    """Replay actions into input$ with original timing gaps."""
+    import sys
+    main = sys.modules.get('__main__')
+    if main is None:
+        return
+    Call = getattr(main, 'Call', None)
+    push = getattr(main, '_push_runtime_input', None)
+    if not (Call and push):
+        return
+    timestamps = getattr(actions, '_timestamps', [])
+    for i, action in enumerate(actions):
+        if i > 0 and i < len(timestamps) and (i - 1) < len(timestamps):
+            delta = min(timestamps[i] - timestamps[i - 1], 1.0)
+            if delta > 0:
+                time.sleep(delta)
+        name = action.get('name', str(action)) if isinstance(action, dict) else getattr(action, 'name', str(action))
+        args = action.get('args', '') if isinstance(action, dict) else getattr(action, 'args', '')
+        result = action.get('result', '') if isinstance(action, dict) else getattr(action, 'result', '')
+        push(Call(name=name, args=args, result=result))
+        _inject_to_action_arr(name, args, result)
+
+
 # Platform implementation: eval (Python)
 # Implements the functions declared in eval.zero.md
 # Server-side: delegates to the existing rpc eval machinery in runtime.py
@@ -176,6 +227,11 @@ def fn_show_message__string(text: str):
 
 # @zero input string cookie$[string]
 cookie_arr: dict[str, str] = {}  # server fallback: empty
+
+
+# @zero on (string value) = get cookie (string name)
+def fn_get_cookie__string(name: str) -> str:
+    return cookie_arr.get(name, "")
 
 
 # @zero on clear cookie (string name)
@@ -1266,6 +1322,8 @@ def fn_serialise(items) -> str:
             return v
         if isinstance(v, list):
             return [_serialise_item(x) for x in v]
+        if hasattr(v, '_fields'):
+            return {k: _serialise_item(getattr(v, k)) for k in v._fields}
         if hasattr(v, '__dict__'):
             return {k: _serialise_item(val) for k, val in v.__dict__.items()
                     if not k.startswith('_')}
@@ -1430,6 +1488,16 @@ def fn_length_of__string(s: str) -> int:
 # @zero on (string sub) = substring of (string s) from (int start)
 def fn_substring_of__string_from__int(s: str, start: int) -> str:
     return s[start:]
+
+
+# @zero on (string sub) = substring of (string s) from (int start) to (int end)
+def fn_substring_of__string_from__int_to__int(s: str, start: int, end: int) -> str:
+    return s[start:end]
+
+
+# @zero on (int pos) = index of (string needle) in (string s)
+def fn_index_of__string_in__string(needle: str, s: str) -> int:
+    return s.find(needle)
 
 
 # @zero on (int n) = to int (string s)
@@ -1767,23 +1835,24 @@ class Action(NamedTuple):
     args: str = ""
     result: str = ""
 
-# @zero on login; website/login/login.zero.md:387
+# @zero on login; website/login/login.zero.md:411
 def task_login():
-    name_arr = website.task_input__string("name")
+    name_arr = list(website.task_input__string("name"))
     code_arr = [fn_request_login__string(x) for x in name_arr]
     entered_arr = website.task_input__string("code")
     token_arr = [fn_complete_login__string_with_code__string(a, b) for a, b in zip_longest(name_arr, entered_arr, fillvalue=0)]
-    fn_set_cookie_of__string_to__string("session", token_arr)
+    for _v in token_arr:
+        fn_set_cookie_of__string_to__string("session", _v)
     fn_reload_page()
 
-# @zero on logout dialog; website/login/login.zero.md:395
+# @zero on logout dialog; website/login/login.zero.md:419
 def task_logout_dialog():
     choice_arr = website.task_choose_or__string__string("log out", "cancel")
     if choice_arr == "log out":
         fn_clear_cookie__string("session")
         fn_reload_page()
 
-# @zero on toggle login; website/login/login.zero.md:380
+# @zero on toggle login; website/login/login.zero.md:404
 def task_toggle_login():
     session = _get_cookie()["session"]
     if session == "":
@@ -1791,26 +1860,26 @@ def task_toggle_login():
     else:
         task_logout_dialog()
 
-# @zero on test login; website/login/login.zero.md:446
+# @zero on test login; website/login/login.zero.md:470
 def task_test_login():
     pass  # scoped hook (handled at function level)
     pass  # scoped hook (handled at function level)
     task_login()
     fn_check__string_contains__string(fn_describe_page(), "log out")
 
-# @zero on logo clicked; website/login/login.zero.md:435
+# @zero on logo clicked; website/login/login.zero.md:459
 def task_logo_clicked():
     task_toggle_login()
 
-# @zero on unknown user (string name); website/login/login.zero.md:401
+# @zero on unknown user (string name); website/login/login.zero.md:425
 def fn_unknown_user__string(name: str):
     fn_show_message__string("unknown user")
 
-# @zero on invalid code (string code); website/login/login.zero.md:404
+# @zero on invalid code (string code); website/login/login.zero.md:428
 def fn_invalid_code__string(code: str):
     fn_show_message__string("invalid code")
 
-# @zero on (string code) = request login (string name); website/login/login.zero.md:407
+# @zero on (string code) = request login (string name); website/login/login.zero.md:431
 def fn_request_login__string(name: str) -> str:
     found = next((x for x in users_arr if x.name == name), type(users_arr[0])() if users_arr else None)
     if found.name != name:
@@ -1820,7 +1889,7 @@ def fn_request_login__string(name: str) -> str:
     pending_codes_arr[found.phone] = code
     return code
 
-# @zero on (User result) = verify login (string name) with code (string code); website/login/login.zero.md:415
+# @zero on (User result) = verify login (string name) with code (string code); website/login/login.zero.md:439
 def fn_verify_login__string_with_code__string(name: str, code: str) -> User:
     found = next((x for x in users_arr if x.name == name), type(users_arr[0])() if users_arr else None)
     stored = pending_codes_arr[found.phone]
@@ -1830,13 +1899,13 @@ def fn_verify_login__string_with_code__string(name: str, code: str) -> User:
     result = found
     return result
 
-# @zero on (string token) = complete login (string name) with code (string code); website/login/login.zero.md:423
+# @zero on (string token) = complete login (string name) with code (string code); website/login/login.zero.md:447
 def fn_complete_login__string_with_code__string(name: str, code: str) -> str:
     found = fn_verify_login__string_with_code__string(name, code)
     token = fn_create_session__string(name)
     return token
 
-# @zero on (string code) = generate code (User u); website/login/login.zero.md:427
+# @zero on (string code) = generate code (User u); website/login/login.zero.md:451
 def fn_generate_code__User(u: User) -> str:
     code = None
     if u.name == "_alice":
@@ -1847,13 +1916,13 @@ def fn_generate_code__User(u: User) -> str:
         code = fn_random_digits__int(4)
     return code if code is not None else ""
 
-# @zero on check (string snapshot) contains (string expected); website/login/login.zero.md:438
+# @zero on check (string snapshot) contains (string expected); website/login/login.zero.md:462
 def fn_check__string_contains__string(snapshot: str, expected: str):
     found = fn__string_contains__string(snapshot, expected)
     if found == False:
         raise _ZeroRaise('check failed', ['expected'])
 
-# @zero on check failed (string what); website/login/login.zero.md:443
+# @zero on check failed (string what); website/login/login.zero.md:467
 def fn_check_failed__string(what: str):
     fn_print__string("FAIL: expected " + what)
 

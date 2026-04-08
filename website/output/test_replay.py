@@ -1,3 +1,6 @@
+import blackbox
+import test_blackbox
+
 # Platform implementation: blackbox (Python)
 # Thin OS primitives: elapsed time, timers, local key-value store.
 
@@ -1791,6 +1794,15 @@ def _get_ctx() -> '_Context':
     return _ctx_var.get()
 
 
+# timed stream iteration (sleeps dt between values)
+import time as _time
+def _timed_iterate(_name, _iter):
+    _dt = getattr(_iter, 'dt', 0)
+    for _v in _iter:
+        yield _v
+        if _dt and _dt > 0:
+            _time.sleep(_dt)
+
 from typing import NamedTuple
 
 class _ZeroRaise(Exception):
@@ -1823,3 +1835,16 @@ class Action(NamedTuple):
     name: str = ""
     args: str = ""
     result: str = ""
+
+# @zero on test replay; website/test-replay/test-replay.zero.md:523
+def task_test_replay():
+    fn_inject_call__string_with__string_result__string("click on", ".logo", "ok")
+    fn_inject_call__string_with__string_result__string("press", "Escape", "ok")
+    report1_arr = blackbox.task_report_fault__string("replay source")
+    for _v in report1_arr:
+        blackbox.fn_replay_fault__string(_v)
+    report2_arr = list(blackbox.task_report_fault__string("replay verify"))
+    for _v in report2_arr:
+        test_blackbox.fn_bb_check__string_contains__string(_v, "click on")
+    for _v in report2_arr:
+        test_blackbox.fn_bb_check__string_contains__string(_v, "Escape")

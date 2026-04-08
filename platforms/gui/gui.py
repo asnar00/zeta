@@ -17,6 +17,11 @@ def fn_show_message__string(text: str):
 cookie_arr: dict[str, str] = {}  # server fallback: empty
 
 
+# @zero on (string value) = get cookie (string name)
+def fn_get_cookie__string(name: str) -> str:
+    return cookie_arr.get(name, "")
+
+
 # @zero on clear cookie (string name)
 def fn_clear_cookie__string(name: str):
     pass  # server fallback: no-op

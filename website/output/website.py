@@ -6,6 +6,7 @@ import landing_page
 import background
 import blackbox
 import test_blackbox
+import test_replay
 
 # Platform implementation: blackbox (Python)
 # Thin OS primitives: elapsed time, timers, local key-value store.
@@ -151,6 +152,57 @@ def fn_remove_locally__string(key: str):
     _save_store()
 
 
+def _inject_to_action_arr(name, args, result):
+    """Push an Action into the blackbox action$ buffer."""
+    import sys
+    bb = sys.modules.get('blackbox')
+    if bb is None:
+        return
+    Action = getattr(bb, 'Action', None)
+    action_arr = getattr(bb, 'action_arr', None)
+    if Action and action_arr is not None:
+        action_arr.append(Action(source=name, name=name, args=args, result=result))
+
+
+# @zero on inject call (string name) with (string args) result (string result)
+def fn_inject_call__string_with__string_result__string(name: str, args: str, result: str):
+    """Inject a Call into the runtime input$ stream and action$ buffer."""
+    import sys
+    main = sys.modules.get('__main__')
+    if main is None:
+        return
+    Call = getattr(main, 'Call', None)
+    push = getattr(main, '_push_runtime_input', None)
+    if Call and push:
+        push(Call(name=name, args=args, result=result))
+    # also push to action$ buffer (workaround: action$ <- input$ piping is init-time only)
+    _inject_to_action_arr(name, args, result)
+
+
+# @zero on replay with timing [Action actions$]
+def fn_replay_with_timing(actions):
+    """Replay actions into input$ with original timing gaps."""
+    import sys
+    main = sys.modules.get('__main__')
+    if main is None:
+        return
+    Call = getattr(main, 'Call', None)
+    push = getattr(main, '_push_runtime_input', None)
+    if not (Call and push):
+        return
+    timestamps = getattr(actions, '_timestamps', [])
+    for i, action in enumerate(actions):
+        if i > 0 and i < len(timestamps) and (i - 1) < len(timestamps):
+            delta = min(timestamps[i] - timestamps[i - 1], 1.0)
+            if delta > 0:
+                time.sleep(delta)
+        name = action.get('name', str(action)) if isinstance(action, dict) else getattr(action, 'name', str(action))
+        args = action.get('args', '') if isinstance(action, dict) else getattr(action, 'args', '')
+        result = action.get('result', '') if isinstance(action, dict) else getattr(action, 'result', '')
+        push(Call(name=name, args=args, result=result))
+        _inject_to_action_arr(name, args, result)
+
+
 # Platform implementation: eval (Python)
 # Implements the functions declared in eval.zero.md
 # Server-side: delegates to the existing rpc eval machinery in runtime.py
@@ -183,6 +235,11 @@ def fn_show_message__string(text: str):
 
 # @zero input string cookie$[string]
 cookie_arr: dict[str, str] = {}  # server fallback: empty
+
+
+# @zero on (string value) = get cookie (string name)
+def fn_get_cookie__string(name: str) -> str:
+    return cookie_arr.get(name, "")
 
 
 # @zero on clear cookie (string name)
@@ -1273,6 +1330,8 @@ def fn_serialise(items) -> str:
             return v
         if isinstance(v, list):
             return [_serialise_item(x) for x in v]
+        if hasattr(v, '_fields'):
+            return {k: _serialise_item(getattr(v, k)) for k in v._fields}
         if hasattr(v, '__dict__'):
             return {k: _serialise_item(val) for k, val in v.__dict__.items()
                     if not k.startswith('_')}
@@ -1437,6 +1496,16 @@ def fn_length_of__string(s: str) -> int:
 # @zero on (string sub) = substring of (string s) from (int start)
 def fn_substring_of__string_from__int(s: str, start: int) -> str:
     return s[start:]
+
+
+# @zero on (string sub) = substring of (string s) from (int start) to (int end)
+def fn_substring_of__string_from__int_to__int(s: str, start: int, end: int) -> str:
+    return s[start:end]
+
+
+# @zero on (int pos) = index of (string needle) in (string s)
+def fn_index_of__string_in__string(needle: str, s: str) -> int:
+    return s.find(needle)
 
 
 # @zero on (int n) = to int (string s)
@@ -2020,78 +2089,108 @@ def test_website_44():
     assert _result == _expected, f"expected {_expected}, got {_result}"
 
 def test_website_45():
+    '''index of ("world") in ("hello world") => 6'''
+    _result = fn_index_of__string_in__string("world", "hello world")
+    _expected = 6
+    assert _result == _expected, f"expected {_expected}, got {_result}"
+
+def test_website_46():
+    '''index of ("xyz") in ("hello") => -1'''
+    _result = fn_index_of__string_in__string("xyz", "hello")
+    _expected = -1
+    assert _result == _expected, f"expected {_expected}, got {_result}"
+
+def test_website_47():
+    '''index of ("") in ("hello") => 0'''
+    _result = fn_index_of__string_in__string("", "hello")
+    _expected = 0
+    assert _result == _expected, f"expected {_expected}, got {_result}"
+
+def test_website_48():
+    '''substring of ("hello world") from (6) to (11) => "world"'''
+    _result = fn_substring_of__string_from__int_to__int("hello world", 6, 11)
+    _expected = "world"
+    assert _result == _expected, f"expected {_expected}, got {_result}"
+
+def test_website_49():
+    '''substring of ("abcdef") from (1) to (4) => "bcd"'''
+    _result = fn_substring_of__string_from__int_to__int("abcdef", 1, 4)
+    _expected = "bcd"
+    assert _result == _expected, f"expected {_expected}, got {_result}"
+
+def test_website_50():
     '''substring of ("hello") from (0) => "hello"'''
     _result = fn_substring_of__string_from__int("hello", 0)
     _expected = "hello"
     assert _result == _expected, f"expected {_expected}, got {_result}"
 
-def test_website_46():
+def test_website_51():
     '''substring of ("hello") from (3) => "lo"'''
     _result = fn_substring_of__string_from__int("hello", 3)
     _expected = "lo"
     assert _result == _expected, f"expected {_expected}, got {_result}"
 
-def test_website_47():
+def test_website_52():
     '''substring of ("hello") from (5) => ""'''
     _result = fn_substring_of__string_from__int("hello", 5)
     _expected = ""
     assert _result == _expected, f"expected {_expected}, got {_result}"
 
-def test_website_48():
+def test_website_53():
     '''replace ("a") in ("aaa") with ("b") => "bbb"'''
     _result = fn_replace__string_in__string_with__string("a", "aaa", "b")
     _expected = "bbb"
     assert _result == _expected, f"expected {_expected}, got {_result}"
 
-def test_website_49():
+def test_website_54():
     '''replace ("xy") in ("no match") with ("z") => "no match"'''
     _result = fn_replace__string_in__string_with__string("xy", "no match", "z")
     _expected = "no match"
     assert _result == _expected, f"expected {_expected}, got {_result}"
 
-def test_website_50():
+def test_website_55():
     '''replace ("") in ("hello") with ("x") => "xhxexlxlxox"'''
     _result = fn_replace__string_in__string_with__string("", "hello", "x")
     _expected = "xhxexlxlxox"
     assert _result == _expected, f"expected {_expected}, got {_result}"
 
-def test_website_51():
+def test_website_56():
     '''length of (random digits (1)) => 1'''
     _result = fn_length_of__string(fn_random_digits__int(1))
     _expected = 1
     assert _result == _expected, f"expected {_expected}, got {_result}"
 
-def test_website_52():
+def test_website_57():
     '''length of (random digits (4)) => 4'''
     _result = fn_length_of__string(fn_random_digits__int(4))
     _expected = 4
     assert _result == _expected, f"expected {_expected}, got {_result}"
 
-def test_website_53():
+def test_website_58():
     '''length of (random digits (10)) => 10'''
     _result = fn_length_of__string(fn_random_digits__int(10))
     _expected = 10
     assert _result == _expected, f"expected {_expected}, got {_result}"
 
-def test_website_54():
+def test_website_59():
     '''length of (create session ("test")) => 8'''
     _result = fn_length_of__string(fn_create_session__string("test"))
     _expected = 8
     assert _result == _expected, f"expected {_expected}, got {_result}"
 
-def test_website_55():
+def test_website_60():
     '''handle request (Http-Request(path="/")) => "ᕦ(ツ)ᕤ"'''
     _result = fn_handle_request__Http_Request(Http_Request(path="/"))
     _expected = "ᕦ(ツ)ᕤ"
     assert _result == _expected, f"expected {_expected}, got {_result}"
 
-def test_website_56():
+def test_website_61():
     '''handle request (Http-Request(path="/nope")) => "ᕦ(ツ)ᕤ"'''
     _result = fn_handle_request__Http_Request(Http_Request(path="/nope"))
     _expected = "ᕦ(ツ)ᕤ"
     assert _result == _expected, f"expected {_expected}, got {_result}"
 
-register_tests('website', [(test_website_0, '(1) seconds => 1'), (test_website_1, '(0.5) seconds => 0.5'), (test_website_2, '(1000) ms => 1'), (test_website_3, '(500) ms => 0.5'), (test_website_4, '(1) hz => 1'), (test_website_5, '(10) hz => 0.1'), (test_website_6, '(60) bpm => 1'), (test_website_7, '(120) bpm => 0.5'), (test_website_8, 'trim ("  hello  ") => "hello"'), (test_website_9, 'trim ("already") => "already"'), (test_website_10, 'char (0) of ("hello") => "h"'), (test_website_11, 'char (4) of ("hello") => "o"'), (test_website_12, '("hello world") starts with ("hello") => true'), (test_website_13, '("hello world") starts with ("world") => false'), (test_website_14, '("hello world") contains ("world") => true'), (test_website_15, '("hello world") contains ("xyz") => false'), (test_website_16, '("hello") contains ("hello") => true'), (test_website_17, '("hello") contains ("") => true'), (test_website_18, 'split ("a/b/c") by ("/") => ["a", "b", "c"]'), (test_website_19, 'split ("hello") by ("/") => ["hello"]'), (test_website_20, 'length of ("hello") => 5'), (test_website_21, 'length of ("") => 0'), (test_website_22, 'replace ("world") in ("hello world") with ("zero") => "hello zero"'), (test_website_23, 'substring of ("hello world") from (6) => "world"'), (test_website_24, 'substring of ("abc") from (0) => "abc"'), (test_website_25, 'to int ("42") => 42'), (test_website_26, 'to int ("0") => 0'), (test_website_27, 'trim ("") => ""'), (test_website_28, 'trim ("  ") => ""'), (test_website_29, 'trim ("no spaces") => "no spaces"'), (test_website_30, 'trim ("  leading") => "leading"'), (test_website_31, 'trim ("trailing  ") => "trailing"'), (test_website_32, 'char (0) of ("a") => "a"'), (test_website_33, 'char (2) of ("abcde") => "c"'), (test_website_34, '("") starts with ("") => true'), (test_website_35, '("hello") starts with ("") => true'), (test_website_36, '("") starts with ("x") => false'), (test_website_37, '("abc") starts with ("abc") => true'), (test_website_38, '("abc") starts with ("abcd") => false'), (test_website_39, 'split ("one") by (",") => ["one"]'), (test_website_40, 'split ("a,b") by (",") => ["a", "b"]'), (test_website_41, 'split ("a,,b") by (",") => ["a", "", "b"]'), (test_website_42, 'length of ("") => 0'), (test_website_43, 'length of ("a") => 1'), (test_website_44, 'length of ("hello world") => 11'), (test_website_45, 'substring of ("hello") from (0) => "hello"'), (test_website_46, 'substring of ("hello") from (3) => "lo"'), (test_website_47, 'substring of ("hello") from (5) => ""'), (test_website_48, 'replace ("a") in ("aaa") with ("b") => "bbb"'), (test_website_49, 'replace ("xy") in ("no match") with ("z") => "no match"'), (test_website_50, 'replace ("") in ("hello") with ("x") => "xhxexlxlxox"'), (test_website_51, 'length of (random digits (1)) => 1'), (test_website_52, 'length of (random digits (4)) => 4'), (test_website_53, 'length of (random digits (10)) => 10'), (test_website_54, 'length of (create session ("test")) => 8'), (test_website_55, 'handle request (Http-Request(path="/")) => "ᕦ(ツ)ᕤ"'), (test_website_56, 'handle request (Http-Request(path="/nope")) => "ᕦ(ツ)ᕤ"')])
+register_tests('website', [(test_website_0, '(1) seconds => 1'), (test_website_1, '(0.5) seconds => 0.5'), (test_website_2, '(1000) ms => 1'), (test_website_3, '(500) ms => 0.5'), (test_website_4, '(1) hz => 1'), (test_website_5, '(10) hz => 0.1'), (test_website_6, '(60) bpm => 1'), (test_website_7, '(120) bpm => 0.5'), (test_website_8, 'trim ("  hello  ") => "hello"'), (test_website_9, 'trim ("already") => "already"'), (test_website_10, 'char (0) of ("hello") => "h"'), (test_website_11, 'char (4) of ("hello") => "o"'), (test_website_12, '("hello world") starts with ("hello") => true'), (test_website_13, '("hello world") starts with ("world") => false'), (test_website_14, '("hello world") contains ("world") => true'), (test_website_15, '("hello world") contains ("xyz") => false'), (test_website_16, '("hello") contains ("hello") => true'), (test_website_17, '("hello") contains ("") => true'), (test_website_18, 'split ("a/b/c") by ("/") => ["a", "b", "c"]'), (test_website_19, 'split ("hello") by ("/") => ["hello"]'), (test_website_20, 'length of ("hello") => 5'), (test_website_21, 'length of ("") => 0'), (test_website_22, 'replace ("world") in ("hello world") with ("zero") => "hello zero"'), (test_website_23, 'substring of ("hello world") from (6) => "world"'), (test_website_24, 'substring of ("abc") from (0) => "abc"'), (test_website_25, 'to int ("42") => 42'), (test_website_26, 'to int ("0") => 0'), (test_website_27, 'trim ("") => ""'), (test_website_28, 'trim ("  ") => ""'), (test_website_29, 'trim ("no spaces") => "no spaces"'), (test_website_30, 'trim ("  leading") => "leading"'), (test_website_31, 'trim ("trailing  ") => "trailing"'), (test_website_32, 'char (0) of ("a") => "a"'), (test_website_33, 'char (2) of ("abcde") => "c"'), (test_website_34, '("") starts with ("") => true'), (test_website_35, '("hello") starts with ("") => true'), (test_website_36, '("") starts with ("x") => false'), (test_website_37, '("abc") starts with ("abc") => true'), (test_website_38, '("abc") starts with ("abcd") => false'), (test_website_39, 'split ("one") by (",") => ["one"]'), (test_website_40, 'split ("a,b") by (",") => ["a", "b"]'), (test_website_41, 'split ("a,,b") by (",") => ["a", "", "b"]'), (test_website_42, 'length of ("") => 0'), (test_website_43, 'length of ("a") => 1'), (test_website_44, 'length of ("hello world") => 11'), (test_website_45, 'index of ("world") in ("hello world") => 6'), (test_website_46, 'index of ("xyz") in ("hello") => -1'), (test_website_47, 'index of ("") in ("hello") => 0'), (test_website_48, 'substring of ("hello world") from (6) to (11) => "world"'), (test_website_49, 'substring of ("abcdef") from (1) to (4) => "bcd"'), (test_website_50, 'substring of ("hello") from (0) => "hello"'), (test_website_51, 'substring of ("hello") from (3) => "lo"'), (test_website_52, 'substring of ("hello") from (5) => ""'), (test_website_53, 'replace ("a") in ("aaa") with ("b") => "bbb"'), (test_website_54, 'replace ("xy") in ("no match") with ("z") => "no match"'), (test_website_55, 'replace ("") in ("hello") with ("x") => "xhxexlxlxox"'), (test_website_56, 'length of (random digits (1)) => 1'), (test_website_57, 'length of (random digits (4)) => 4'), (test_website_58, 'length of (random digits (10)) => 10'), (test_website_59, 'length of (create session ("test")) => 8'), (test_website_60, 'handle request (Http-Request(path="/")) => "ᕦ(ツ)ᕤ"'), (test_website_61, 'handle request (Http-Request(path="/nope")) => "ᕦ(ツ)ᕤ"')])
 
 class Call(NamedTuple):
     name: str = ""
@@ -2118,7 +2217,7 @@ class Action(NamedTuple):
     args: str = ""
     result: str = ""
 
-# @zero on main (string args$); website/website.zero.md:358
+# @zero on main (string args$); website/website.zero.md:382
 def task_main__string(args_arr: str):
     _push_terminal_out(logo)
     request_arr = task_serve_http__int(port)
@@ -2127,7 +2226,7 @@ def task_main__string(args_arr: str):
         body = fn_handle_request__Http_Request(request)
         _push_http_response(Http_Response(request, body))
 
-# @zero on (string body) = handle request (Http-Request request); website/website.zero.md:366
+# @zero on (string body) = handle request (Http-Request request); website/website.zero.md:390
 def fn_handle_request__Http_Request(request: Http_Request) -> str:
     body = None
     if _get_ctx().landing_page.enabled and request.path == "/":
@@ -2140,11 +2239,11 @@ def fn_handle_request__Http_Request(request: Http_Request) -> str:
         body = not_found.fn_not_found()
     return body if body is not None else ""
 
-# @zero on stop; website/website.zero.md:374
+# @zero on stop; website/website.zero.md:398
 def fn_stop():
     fn_print__string("stopping")
 
-# @zero on (Action a) = (Action) <- (Call); website/website.zero.md:460
+# @zero on (Action a) = (Action) <- (Call); website/website.zero.md:484
 def fn__Action_from__Call(c: Call) -> Action:
     a = Action(_raise_undefined('source = c.name'), _raise_undefined('name = c.name'), _raise_undefined('args = c.args'), _raise_undefined('result = c.result'))
     return a
@@ -2166,6 +2265,6 @@ if __name__ == '__main__':
     except NameError:
         pass  # no main task defined
 
-_FEATURE_TREE = [("website", "the nøøb website", None), ("not-found", "default 404 response", 'website'), ("login", "SMS code authentication", 'website'), ("rpc", "RPC endpoint for runtime evaluation", 'website'), ("landing-page", "serves the noob landing page at root", 'website'), ("background", "per-user background colour", 'landing-page'), ("blackbox", "flight recorder for fault diagnosis", 'website'), ("test-blackbox", "integration tests for the flight recorder", 'blackbox')]
+_FEATURE_TREE = [("website", "the nøøb website", None), ("not-found", "default 404 response", 'website'), ("login", "SMS code authentication", 'website'), ("rpc", "RPC endpoint for runtime evaluation", 'website'), ("landing-page", "serves the noob landing page at root", 'website'), ("background", "per-user background colour", 'landing-page'), ("blackbox", "flight recorder for fault diagnosis", 'website'), ("test-blackbox", "integration tests for the flight recorder", 'blackbox'), ("test-replay", "round-trip test for blackbox replay", 'blackbox')]
 
-_BUILD_FINGERPRINT = {"hash": "9d88b6917d378695", "git": "28d6142571a7", "features": "website,not-found,login,rpc,landing-page,background,blackbox,test-blackbox"}
+_BUILD_FINGERPRINT = {"hash": "5efe25bf7dfd7900", "git": "f09a8bfd5940", "features": "website,not-found,login,rpc,landing-page,background,blackbox,test-blackbox,test-replay"}

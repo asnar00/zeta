@@ -46,14 +46,18 @@ function _extract_args(s) {
 }
 
 function _find_client_function(fn_words, arg_count) {
-    const prefix = "fn_" + fn_words.replace(/ /g, "_").replace(/-/g, "_");
-    for (const name of Object.getOwnPropertyNames(window)) {
-        if (typeof window[name] !== "function") continue;
-        if (name === prefix && arg_count === 0) return window[name];
-        if (name.startsWith(prefix + "__")) {
-            const typePart = name.slice(prefix.length + 2);
-            const nTypes = (typePart.match(/__/g) || []).length + 1;
-            if (nTypes === arg_count) return window[name];
+    const base = fn_words.replace(/ /g, "_").replace(/-/g, "_");
+    const prefixes = ["fn_", "task_"];
+    for (const pfx of prefixes) {
+        const prefix = pfx + base;
+        for (const name of Object.getOwnPropertyNames(window)) {
+            if (typeof window[name] !== "function") continue;
+            if (name === prefix && arg_count === 0) return window[name];
+            if (name.startsWith(prefix + "__")) {
+                const typePart = name.slice(prefix.length + 2);
+                const nTypes = (typePart.match(/__/g) || []).length + 1;
+                if (nTypes === arg_count) return window[name];
+            }
         }
     }
     return null;
@@ -68,8 +72,10 @@ function _format_client_value(val) {
 function _list_client_functions() {
     const fns = [];
     for (const name of Object.getOwnPropertyNames(window)) {
-        if (typeof window[name] === "function" && name.startsWith("fn_")) {
-            fns.push(name.replace(/^fn_/, "").replace(/__/g, " (").replace(/_/g, " ") + (name.includes("__") ? ")" : " ()"));
+        if (typeof window[name] !== "function") continue;
+        if (name.startsWith("fn_") || name.startsWith("task_")) {
+            const clean = name.replace(/^fn_|^task_/, "");
+            fns.push(clean.replace(/__/g, " (").replace(/_/g, " ") + (name.includes("__") ? ")" : " ()"));
         }
     }
     return fns.join("\n");
@@ -142,7 +148,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const logo = document.querySelector(".logo");
     if (logo) {
         logo.style.cursor = "pointer";
-        logo.addEventListener("click", () => fn_logo_clicked());
+        logo.addEventListener("click", () => _client_eval("logo clicked ()"));
     }
     _connect_ws();
 });

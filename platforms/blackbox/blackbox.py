@@ -140,3 +140,54 @@ def fn_remove_locally__string(key: str):
     _init_store_path()
     _store.pop(key, None)
     _save_store()
+
+
+def _inject_to_action_arr(name, args, result):
+    """Push an Action into the blackbox action$ buffer."""
+    import sys
+    bb = sys.modules.get('blackbox')
+    if bb is None:
+        return
+    Action = getattr(bb, 'Action', None)
+    action_arr = getattr(bb, 'action_arr', None)
+    if Action and action_arr is not None:
+        action_arr.append(Action(source=name, name=name, args=args, result=result))
+
+
+# @zero on inject call (string name) with (string args) result (string result)
+def fn_inject_call__string_with__string_result__string(name: str, args: str, result: str):
+    """Inject a Call into the runtime input$ stream and action$ buffer."""
+    import sys
+    main = sys.modules.get('__main__')
+    if main is None:
+        return
+    Call = getattr(main, 'Call', None)
+    push = getattr(main, '_push_runtime_input', None)
+    if Call and push:
+        push(Call(name=name, args=args, result=result))
+    # also push to action$ buffer (workaround: action$ <- input$ piping is init-time only)
+    _inject_to_action_arr(name, args, result)
+
+
+# @zero on replay with timing [Action actions$]
+def fn_replay_with_timing(actions):
+    """Replay actions into input$ with original timing gaps."""
+    import sys
+    main = sys.modules.get('__main__')
+    if main is None:
+        return
+    Call = getattr(main, 'Call', None)
+    push = getattr(main, '_push_runtime_input', None)
+    if not (Call and push):
+        return
+    timestamps = getattr(actions, '_timestamps', [])
+    for i, action in enumerate(actions):
+        if i > 0 and i < len(timestamps) and (i - 1) < len(timestamps):
+            delta = min(timestamps[i] - timestamps[i - 1], 1.0)
+            if delta > 0:
+                time.sleep(delta)
+        name = action.get('name', str(action)) if isinstance(action, dict) else getattr(action, 'name', str(action))
+        args = action.get('args', '') if isinstance(action, dict) else getattr(action, 'args', '')
+        result = action.get('result', '') if isinstance(action, dict) else getattr(action, 'result', '')
+        push(Call(name=name, args=args, result=result))
+        _inject_to_action_arr(name, args, result)

@@ -144,6 +144,57 @@ def fn_remove_locally__string(key: str):
     _save_store()
 
 
+def _inject_to_action_arr(name, args, result):
+    """Push an Action into the blackbox action$ buffer."""
+    import sys
+    bb = sys.modules.get('blackbox')
+    if bb is None:
+        return
+    Action = getattr(bb, 'Action', None)
+    action_arr = getattr(bb, 'action_arr', None)
+    if Action and action_arr is not None:
+        action_arr.append(Action(source=name, name=name, args=args, result=result))
+
+
+# @zero on inject call (string name) with (string args) result (string result)
+def fn_inject_call__string_with__string_result__string(name: str, args: str, result: str):
+    """Inject a Call into the runtime input$ stream and action$ buffer."""
+    import sys
+    main = sys.modules.get('__main__')
+    if main is None:
+        return
+    Call = getattr(main, 'Call', None)
+    push = getattr(main, '_push_runtime_input', None)
+    if Call and push:
+        push(Call(name=name, args=args, result=result))
+    # also push to action$ buffer (workaround: action$ <- input$ piping is init-time only)
+    _inject_to_action_arr(name, args, result)
+
+
+# @zero on replay with timing [Action actions$]
+def fn_replay_with_timing(actions):
+    """Replay actions into input$ with original timing gaps."""
+    import sys
+    main = sys.modules.get('__main__')
+    if main is None:
+        return
+    Call = getattr(main, 'Call', None)
+    push = getattr(main, '_push_runtime_input', None)
+    if not (Call and push):
+        return
+    timestamps = getattr(actions, '_timestamps', [])
+    for i, action in enumerate(actions):
+        if i > 0 and i < len(timestamps) and (i - 1) < len(timestamps):
+            delta = min(timestamps[i] - timestamps[i - 1], 1.0)
+            if delta > 0:
+                time.sleep(delta)
+        name = action.get('name', str(action)) if isinstance(action, dict) else getattr(action, 'name', str(action))
+        args = action.get('args', '') if isinstance(action, dict) else getattr(action, 'args', '')
+        result = action.get('result', '') if isinstance(action, dict) else getattr(action, 'result', '')
+        push(Call(name=name, args=args, result=result))
+        _inject_to_action_arr(name, args, result)
+
+
 # Platform implementation: eval (Python)
 # Implements the functions declared in eval.zero.md
 # Server-side: delegates to the existing rpc eval machinery in runtime.py
@@ -176,6 +227,11 @@ def fn_show_message__string(text: str):
 
 # @zero input string cookie$[string]
 cookie_arr: dict[str, str] = {}  # server fallback: empty
+
+
+# @zero on (string value) = get cookie (string name)
+def fn_get_cookie__string(name: str) -> str:
+    return cookie_arr.get(name, "")
 
 
 # @zero on clear cookie (string name)
@@ -1266,6 +1322,8 @@ def fn_serialise(items) -> str:
             return v
         if isinstance(v, list):
             return [_serialise_item(x) for x in v]
+        if hasattr(v, '_fields'):
+            return {k: _serialise_item(getattr(v, k)) for k in v._fields}
         if hasattr(v, '__dict__'):
             return {k: _serialise_item(val) for k, val in v.__dict__.items()
                     if not k.startswith('_')}
@@ -1430,6 +1488,16 @@ def fn_length_of__string(s: str) -> int:
 # @zero on (string sub) = substring of (string s) from (int start)
 def fn_substring_of__string_from__int(s: str, start: int) -> str:
     return s[start:]
+
+
+# @zero on (string sub) = substring of (string s) from (int start) to (int end)
+def fn_substring_of__string_from__int_to__int(s: str, start: int, end: int) -> str:
+    return s[start:end]
+
+
+# @zero on (int pos) = index of (string needle) in (string s)
+def fn_index_of__string_in__string(needle: str, s: str) -> int:
+    return s.find(needle)
 
 
 # @zero on (int n) = to int (string s)
@@ -1767,21 +1835,24 @@ class Action(NamedTuple):
     args: str = ""
     result: str = ""
 
-# @zero on test blackbox; website/test-blackbox/test-blackbox.zero.md:479
+# @zero on test blackbox; website/test-blackbox/test-blackbox.zero.md:515
 def task_test_blackbox():
     fn_click_on__string(".logo")
     fn_press__string_on__string("Escape", "body")
-    report_arr = blackbox.task_report_fault__string("test: logo did something weird")
-    fn_bb_check__string_contains__string(report_arr, "comment")
-    fn_bb_check__string_contains__string(report_arr, "trace")
-    fn_bb_check__string_contains__string(report_arr, "test: logo did something weird")
+    report_arr = list(blackbox.task_report_fault__string("test: logo did something weird"))
+    for _v in report_arr:
+        fn_bb_check__string_contains__string(_v, "comment")
+    for _v in report_arr:
+        fn_bb_check__string_contains__string(_v, "trace")
+    for _v in report_arr:
+        fn_bb_check__string_contains__string(_v, "test: logo did something weird")
 
-# @zero on bb check (string actual) contains (string expected); website/test-blackbox/test-blackbox.zero.md:471
+# @zero on bb check (string actual) contains (string expected); website/test-blackbox/test-blackbox.zero.md:507
 def fn_bb_check__string_contains__string(actual: str, expected: str):
     found = fn__string_contains__string(actual, expected)
     if found == False:
         raise _ZeroRaise('bb check failed', ['expected'])
 
-# @zero on bb check failed (string what); website/test-blackbox/test-blackbox.zero.md:476
+# @zero on bb check failed (string what); website/test-blackbox/test-blackbox.zero.md:512
 def fn_bb_check_failed__string(what: str):
     fn_print__string("FAIL: expected " + what)

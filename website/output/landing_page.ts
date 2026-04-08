@@ -136,6 +136,32 @@ export function fn_remove_locally__string(key: string): void {
 }
 
 
+// @zero on inject call (string name) with (string args) result (string result)
+export function fn_inject_call__string_with__string_result__string(name: string, args: string, result: string): void {
+    const Call = (globalThis as any).Call;
+    const push = (globalThis as any)._push_runtime_input;
+    if (Call && push) {
+        push(new Call(name, args, result));
+    }
+}
+
+
+// @zero on replay with timing [Action actions$]
+export function fn_replay_with_timing(actions: any): void {
+    const Call = (globalThis as any).Call;
+    const push = (globalThis as any)._push_runtime_input;
+    if (!Call || !push) return;
+    const timestamps: number[] = actions?._timestamps ?? [];
+    for (let i = 0; i < actions.length; i++) {
+        const action = actions[i];
+        const name = action?.name ?? String(action);
+        const args = action?.args ?? "";
+        const result = action?.result ?? "";
+        push(new Call(name, args, result));
+    }
+}
+
+
 // Platform implementation: eval (TypeScript)
 // Implements the functions declared in eval.zero.md
 // Server-side stub — delegates to rpc eval
@@ -165,6 +191,11 @@ export function fn_show_message__string(text: string): void {
 
 // @zero input string cookie$[string]
 const cookie_arr: Map<string, string> = new Map();
+
+// @zero on (string value) = get cookie (string name)
+export function fn_get_cookie__string(name: string): string {
+    return cookie_arr.get(name) ?? "";
+}
 
 // @zero on clear cookie (string name)
 export function fn_clear_cookie__string(name: string): void {
@@ -501,6 +532,18 @@ export function fn_substring_of__string_from__int(s: string, start: number): str
 }
 
 
+// @zero on (string sub) = substring of (string s) from (int start) to (int end)
+export function fn_substring_of__string_from__int_to__int(s: string, start: number, end: number): string {
+    return s.slice(start, end);
+}
+
+
+// @zero on (int pos) = index of (string needle) in (string s)
+export function fn_index_of__string_in__string(needle: string, s: string): number {
+    return s.indexOf(needle);
+}
+
+
 // @zero on (int n) = to int (string s)
 export function fn_to_int__string(s: string): number {
     const n = parseInt(s, 10);
@@ -709,7 +752,7 @@ export function Action(args: Partial<Action> = {}): Action {
     return { source: args.source ?? "", name: args.name ?? "", args: args.args ?? "", result: args.result ?? "" };
 }
 
-// @zero on (string body) = landing page; website/landing-page/landing-page.zero.md:456
+// @zero on (string body) = landing page; website/landing-page/landing-page.zero.md:480
 export function fn_landing_page(): string {
     let body: string = undefined!;
     body = fn_read_file__string("website/index.html");

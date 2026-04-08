@@ -131,3 +131,29 @@ function fn_remove_locally__string(key: string): void {
     _store.delete(key);
     _remove_key(key);
 }
+
+
+// @zero on inject call (string name) with (string args) result (string result)
+function fn_inject_call__string_with__string_result__string(name: string, args: string, result: string): void {
+    const Call = (globalThis as any).Call;
+    const push = (globalThis as any)._push_runtime_input;
+    if (Call && push) {
+        push(new Call(name, args, result));
+    }
+}
+
+
+// @zero on replay with timing [Action actions$]
+function fn_replay_with_timing(actions: any): void {
+    const Call = (globalThis as any).Call;
+    const push = (globalThis as any)._push_runtime_input;
+    if (!Call || !push) return;
+    const timestamps: number[] = actions?._timestamps ?? [];
+    for (let i = 0; i < actions.length; i++) {
+        const action = actions[i];
+        const name = action?.name ?? String(action);
+        const args = action?.args ?? "";
+        const result = action?.result ?? "";
+        push(new Call(name, args, result));
+    }
+}

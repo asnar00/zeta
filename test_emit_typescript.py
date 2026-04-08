@@ -10,7 +10,7 @@ def _translate(source: str) -> str:
 
 def _check(report, title, source, *assertions):
     out = _translate(source)
-    report.add(title, source, out)
+    report.add(title, source, out, language="typescript")
     for assertion in assertions:
         assertion(out)
 
@@ -192,15 +192,17 @@ def test_emit_stream_until(report):
     _check(report, "ts: stream with until",
            "    int i$ <- 1 <- (i$ + 1) until (i$ == 4)",
            lambda out: _assert_in("const i_arr: number[] = [1];", out),
-           lambda out: _assert_in("while (!(i_arr[i_arr.length - 1] == 4))", out),
-           lambda out: _assert_in("i_arr.push(i_arr[i_arr.length - 1] + 1)", out))
+           lambda out: _assert_in("while (true)", out),
+           lambda out: _assert_in("i_arr.push(_next);", out),
+           lambda out: _assert_in("if (_next == 4) break;", out))
 
 def test_emit_stream_while(report):
     _check(report, "ts: stream with while",
            "    int i$ <- 0 <- (i$ + 1) while (i$ < 4)",
            lambda out: _assert_in("const i_arr: number[] = [0];", out),
-           lambda out: _assert_in("while (i_arr[i_arr.length - 1] < 4)", out),
-           lambda out: _assert_in("i_arr.push(i_arr[i_arr.length - 1] + 1)", out))
+           lambda out: _assert_in("while (true)", out),
+           lambda out: _assert_in("if (!(_next < 4)) break;", out),
+           lambda out: _assert_in("i_arr.push(_next);", out))
 
 
 # --- array mapping ---

@@ -39,6 +39,10 @@ Show a message to the user:
 
     on show message (string text)
 
+Read a cookie value by name:
+
+    on (string value) = get cookie (string name)
+
 Remove a cookie:
 
     on clear cookie (string name)

@@ -34,3 +34,11 @@ List all keys matching a prefix:
 Remove a persisted key:
 
     on remove locally (string key)
+
+Inject a Call into the input stream (for replay):
+
+    on inject call (string name) with (string args) result (string result)
+
+Replay a stream of Actions into input$ with original timing gaps:
+
+    on replay with timing [Action actions$]

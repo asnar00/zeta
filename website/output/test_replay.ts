@@ -1,5 +1,5 @@
-import { register_tests } from './_runtime.js';
-import * as website from './website.js';
+import * as blackbox from './blackbox.js';
+import * as test_blackbox from './test_blackbox.js';
 
 // Platform implementation: blackbox (TypeScript)
 // Thin OS primitives: elapsed time, timers, local key-value store.
@@ -686,29 +686,6 @@ class _ZeroRaise extends Error {
     }
 }
 
-export function test_not_found_0(): void {
-    // not found () => "not found"
-    const _result = fn_not_found();
-    const _expected = "not found";
-    if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
-}
-
-export function test_not_found_1(): void {
-    // handle request (Http-Request(path="/")) => "not found"
-    const _result = website.fn_handle_request__Http_Request(Http_Request({ path: "/" }));
-    const _expected = "not found";
-    if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
-}
-
-export function test_not_found_2(): void {
-    // handle request (Http-Request(path="/nope")) => "not found"
-    const _result = website.fn_handle_request__Http_Request(Http_Request({ path: "/nope" }));
-    const _expected = "not found";
-    if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
-}
-
-register_tests('not-found', [[test_not_found_0, 'not found () => "not found"'], [test_not_found_1, 'handle request (Http-Request(path="/")) => "not found"'], [test_not_found_2, 'handle request (Http-Request(path="/nope")) => "not found"']]);
-
 interface Call {
     readonly name: string;
     readonly args: string;
@@ -759,8 +736,19 @@ export function Action(args: Partial<Action> = {}): Action {
     return { source: args.source ?? "", name: args.name ?? "", args: args.args ?? "", result: args.result ?? "" };
 }
 
-// @zero on (string body) = not found; website/not-found/not-found.zero.md:401
-export function fn_not_found(): string {
-    const body: string = "not found";
-    return body;
+// @zero on test replay; website/test-replay/test-replay.zero.md:523
+export async function task_test_replay(): Promise<void> {
+    fn_inject_call__string_with__string_result__string("click on", ".logo", "ok");
+    fn_inject_call__string_with__string_result__string("press", "Escape", "ok");
+    const report1_arr: any = blackbox.task_report_fault__string("replay source");
+    for (const _v of report1_arr) {
+        blackbox.fn_replay_fault__string(_v);
+    }
+    const report2_arr: any = blackbox.task_report_fault__string("replay verify");
+    for (const _v of report2_arr) {
+        test_blackbox.fn_bb_check__string_contains__string(_v, "click on");
+    }
+    for (const _v of report2_arr) {
+        test_blackbox.fn_bb_check__string_contains__string(_v, "Escape");
+    }
 }

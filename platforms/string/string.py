@@ -55,6 +55,16 @@ def fn_substring_of__string_from__int(s: str, start: int) -> str:
     return s[start:]
 
 
+# @zero on (string sub) = substring of (string s) from (int start) to (int end)
+def fn_substring_of__string_from__int_to__int(s: str, start: int, end: int) -> str:
+    return s[start:end]
+
+
+# @zero on (int pos) = index of (string needle) in (string s)
+def fn_index_of__string_in__string(needle: str, s: str) -> int:
+    return s.find(needle)
+
+
 # @zero on (int n) = to int (string s)
 def fn_to_int__string(s: str) -> int:
     try:

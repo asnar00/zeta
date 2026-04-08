@@ -759,6 +759,8 @@ def fn_serialise(items) -> str:
             return v
         if isinstance(v, list):
             return [_serialise_item(x) for x in v]
+        if hasattr(v, '_fields'):
+            return {k: _serialise_item(getattr(v, k)) for k in v._fields}
         if hasattr(v, '__dict__'):
             return {k: _serialise_item(val) for k, val in v.__dict__.items()
                     if not k.startswith('_')}

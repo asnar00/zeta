@@ -42,6 +42,9 @@ _client_async_fns_ts = set()
 # set of void task names (for task_ prefix in calls)
 _void_task_names_ts = set()
 
+# flag: true when emitting client-side tasks (async/await, not generators)
+_client_task_mode_ts = False
+
 
 _CONCURRENTLY_HELPER_TS = """\
 async function _concurrently(...fns: (() => any)[]) {
@@ -162,6 +165,8 @@ def _emit_definitions_ts(ir: dict, structs: dict, enums: dict) -> list[str]:
         code = _emit_type(typ, enums, structs)
         if code:
             sections.append(code)
+    global _client_task_mode_ts
+    _client_task_mode_ts = bool(ir.get("_force_async_all"))
     src = ir.get("source_file")
     for task in ir.get("tasks", []):
         if not task.get("abstract"):
@@ -1022,7 +1027,10 @@ def _emit_task_if_branch_body(branch: dict, structs: dict) -> list[str]:
         elif kind == "emit":
             lines.append(f"    yield {_emit_expr(stmt['value'], structs)};")
         else:
-            lines.append(f"    {_emit_expr(stmt, structs)};")
+            expr = _emit_expr(stmt, structs)
+            if _needs_task_await(stmt):
+                expr = f"await {expr}"
+            lines.append(f"    {expr};")
     return lines
 
 
@@ -1155,6 +1163,8 @@ def _emit_task_var_decl_ts(node: dict, structs: dict, base_indent: str, extra_in
         call_fn = make_task_call_fn_name(val)
         args = ", ".join(_coerce_task_arg(a, t, val) for a, t in
                          zip(val["args"], _task_call_param_types(val)))
+        if _client_task_mode_ts:
+            return f"{base_indent}{extra_indent}const {name} = [await {call_fn}({args})];"
         return f"{base_indent}{extra_indent}const {name}: any = {call_fn}({args});"
     if node.get("array") and isinstance(val, dict) and "range" in val:
         return f"{base_indent}{extra_indent}{_emit_range_expr_ts(name, val)};"
@@ -1262,7 +1272,28 @@ def _emit_task_body_node_ts(node, structs, uses, has_platform_streams, base_inde
                 f"{base_indent}{extra_indent}}}",
             ]
             return lines, extra_indent
-    return [f"{base_indent}{extra_indent}{_emit_expr(node, structs)};"], extra_indent
+    expr = _emit_expr(node, structs)
+    if _needs_task_await(node):
+        expr = f"await {expr}"
+    return [f"{base_indent}{extra_indent}{expr};"], extra_indent
+
+
+def _needs_task_await(node):
+    """Check if a statement node is a call to a void task that needs await."""
+    if not _client_task_mode_ts:
+        return False
+    if not isinstance(node, dict):
+        return False
+    if node.get("kind") == "fn_call":
+        fn_name = _make_function_name(node["signature_parts"])
+        base = fn_name[3:] if fn_name.startswith("fn_") else fn_name
+        if base in _void_task_names_ts:
+            return True
+    if node.get("kind") == "call":
+        name = node.get("name", "").replace("-", "_")
+        if name in _void_task_names_ts:
+            return True
+    return False
 
 
 def _emit_task_ts(task: dict, structs: dict = None, uses: list[dict] = None) -> str:
@@ -1761,6 +1792,8 @@ def _emit_simple_expr_ts(node: dict, structs: dict) -> str | None:
         arr = _emit_expr(node['array'], structs)
         idx = _emit_expr(node['index'], structs)
         if arr in _map_vars_ts:
+            if _client_task_mode_ts:
+                return f"{arr}[{idx}] ?? \"\""
             return f"{arr}.get({idx}) ?? \"\""
         return f"{arr}[{idx}]"
     if kind == "ternary":

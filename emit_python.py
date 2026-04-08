@@ -1084,6 +1084,50 @@ def _emit_task_consume(node: dict, base_indent: str) -> str:
     return f"{base_indent}for {node['name']} in _timed_iterate(\"stream\", {iter_expr}):"
 
 
+def _count_name_refs(nodes: list, name: str) -> int:
+    """Count how many times a stream variable name appears as a reference in AST nodes."""
+    count = 0
+    for node in nodes:
+        if not isinstance(node, dict):
+            continue
+        if node.get("kind") == "name" and node.get("value") == name:
+            count += 1
+        for key in ("value", "left", "right", "condition", "true", "false", "array", "index", "iter"):
+            child = node.get(key)
+            if isinstance(child, dict):
+                count += _count_name_refs([child], name)
+            elif isinstance(child, list):
+                count += _count_name_refs(child, name)
+        for arg in node.get("args", []):
+            if isinstance(arg, dict):
+                count += _count_name_refs([arg], name)
+            elif isinstance(arg, str) and arg == name:
+                count += 1
+        for branch in node.get("branches", []):
+            if isinstance(branch, dict):
+                count += _count_name_refs(branch.get("body", []), name)
+        for step in node.get("steps", []):
+            if isinstance(step, dict):
+                count += _count_name_refs([step], name)
+    return count
+
+
+def _find_multi_use_task_streams(body: list) -> set:
+    """Find stream variables from task calls that are referenced more than once in subsequent body nodes."""
+    multi_use = set()
+    for i, node in enumerate(body):
+        if not isinstance(node, dict):
+            continue
+        if not _is_task_inner_call(node):
+            continue
+        stream_name = node["name"] + "$"
+        remaining = body[i + 1:]
+        refs = _count_name_refs(remaining, stream_name)
+        if refs > 1:
+            multi_use.add(node["name"] + "_arr")
+    return multi_use
+
+
 def _is_task_inner_call(node: dict) -> bool:
     """Check if node is a task call (or timed task call) inside a task body."""
     if node.get("kind") != "var_decl" or not node.get("array"):
@@ -1098,10 +1142,11 @@ def _is_task_inner_call(node: dict) -> bool:
     return False
 
 
-def _emit_task_inner_call(node: dict, base_indent: str, extra_indent: str) -> str:
+def _emit_task_inner_call(node: dict, base_indent: str, extra_indent: str, multi_use: set = None) -> str:
     """Emit a task call assignment inside a task body."""
     val = node["value"]
     name = node["name"] + "_arr"
+    collect = name in (multi_use or set())
     # unwrap timed_step if present
     if val.get("kind") == "timed_step":
         call = val["value"]
@@ -1116,6 +1161,8 @@ def _emit_task_inner_call(node: dict, base_indent: str, extra_indent: str) -> st
     call = val
     call_fn = make_task_call_fn_name(call)
     args = ", ".join(a.replace("$", "_arr") for a in call["args"])
+    if collect:
+        return f"{base_indent}{extra_indent}{name} = list({call_fn}({args}))"
     return f"{base_indent}{extra_indent}{name} = {call_fn}({args})"
 
 
@@ -1134,7 +1181,7 @@ def _emit_task_concurrently(node, uses, base_indent, extra_indent):
     return lines
 
 
-def _emit_task_body_node(node, uses, base_indent, extra_indent):
+def _emit_task_body_node(node, uses, base_indent, extra_indent, multi_use=None):
     """Emit a single task body node. Returns (lines, new_extra_indent)."""
     kind = node.get("kind")
     if kind == "for_each":
@@ -1186,7 +1233,23 @@ def _emit_task_body_node(node, uses, base_indent, extra_indent):
                        for bl in _emit_if_block(node, is_task=True).split("\n")]
         return block_lines, extra_indent
     if _is_task_inner_call(node):
-        return [_emit_task_inner_call(node, base_indent, extra_indent)], extra_indent
+        return [_emit_task_inner_call(node, base_indent, extra_indent, multi_use)], extra_indent
+    # void function call with stream args: map the function over stream elements
+    if kind in ("fn_call", "call") and node.get("args"):
+        array_args = [(i, a) for i, a in enumerate(node["args"])
+                      if isinstance(a, dict) and a.get("kind") == "name" and a.get("value", "").endswith("$")]
+        if array_args:
+            idx, arr_arg = array_args[0]
+            arr_expr = _emit_expr(arr_arg)
+            new_args = list(node["args"])
+            new_args[idx] = {"kind": "name", "value": "_v_scalar"}
+            new_node = dict(node, args=new_args)
+            call_expr = _emit_expr(new_node).replace("_v_scalar", "_v")
+            lines = [
+                f"{base_indent}{extra_indent}for _v in {arr_expr}:",
+                f"{base_indent}{extra_indent}    {call_expr}",
+            ]
+            return lines, extra_indent
     return [f"{base_indent}{extra_indent}{_emit_expr(node)}"], extra_indent
 
 
@@ -1194,6 +1257,7 @@ def _emit_task(task: dict, uses: list[dict] = None) -> str:
     """Emit a task as a Python generator function (or plain function for void tasks)."""
     uses = uses or []
     fn_name, params_str = _emit_task_header(task)
+    multi_use = _find_multi_use_task_streams(task["body"])
     lines = [f"def {fn_name}({params_str}):"]
     base_indent = "    "
     extra_indent = ""
@@ -1201,7 +1265,7 @@ def _emit_task(task: dict, uses: list[dict] = None) -> str:
         if isinstance(node, str):
             lines.append(f"{base_indent}{extra_indent}{node}")
             continue
-        new_lines, extra_indent = _emit_task_body_node(node, uses, base_indent, extra_indent)
+        new_lines, extra_indent = _emit_task_body_node(node, uses, base_indent, extra_indent, multi_use)
         lines.extend(new_lines)
     return "\n".join(lines)
 

@@ -40,6 +40,11 @@ const cookie_arr = new Proxy({}, {
     }
 });
 
+// @zero on (string value) = get cookie (string name)
+function fn_get_cookie__string(name) {
+    return cookie_arr[name];
+}
+
 // @zero on clear cookie (string name)
 function fn_clear_cookie__string(name) {
     const secure = location.protocol === "https:" ? "; Secure" : "";

@@ -5,23 +5,26 @@ import pytest
 
 class Report:
     def __init__(self):
-        self.entries = []
+        self.languages = {}
 
-    def add(self, title, zero_input, py_output):
-        self.entries.append((title, zero_input, py_output))
+    def add(self, title, zero_input, output, language="python"):
+        self.languages.setdefault(language, []).append((title, zero_input, output))
+
+
+def write_report(language, entries):
+    with open(f"test_report_{language}.md", "w") as f:
+        f.write(f"# test report: zero to {language}\n\n")
+        for title, zero_input, output in entries:
+            f.write(f"## {title}\n\n")
+            f.write("### zero\n\n")
+            f.write(f"```zero\n{zero_input.strip()}\n```\n\n")
+            f.write(f"### {language}\n\n")
+            f.write(f"```{language}\n{output.strip()}\n```\n\n")
 
 
 @pytest.fixture(scope="session")
 def report(request):
     r = Report()
     yield r
-    # write report after all tests complete
-    with open("test_report.md", "w") as f:
-        f.write("# test report\n")
-        f.write("*zero to python translation examples*\n\n")
-        for title, zero_input, py_output in r.entries:
-            f.write(f"## {title}\n\n")
-            f.write("### zero\n\n")
-            f.write(f"```zero\n{zero_input.strip()}\n```\n\n")
-            f.write("### python\n\n")
-            f.write(f"```python\n{py_output.strip()}\n```\n\n")
+    for language, entries in r.languages.items():
+        write_report(language, entries)

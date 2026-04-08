@@ -18,6 +18,11 @@ function fn_show_message__string(text: string): void {
 // @zero input string cookie$[string]
 const cookie_arr: Map<string, string> = new Map();
 
+// @zero on (string value) = get cookie (string name)
+function fn_get_cookie__string(name: string): string {
+    return cookie_arr.get(name) ?? "";
+}
+
 // @zero on clear cookie (string name)
 function fn_clear_cookie__string(name: string): void {
 }
