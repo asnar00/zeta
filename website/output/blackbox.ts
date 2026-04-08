@@ -1,3 +1,5 @@
+import * as website from './website.js';
+
 // Platform implementation: blackbox (TypeScript)
 // Thin OS primitives: elapsed time, timers, local key-value store.
 
@@ -753,7 +755,7 @@ class _ZeroRaise extends Error {
 }
 
 const action_arr: any = new _Stream();
-((input_arr as any).subscribe ? (input_arr as any).subscribe((v: any) => action_arr.push(Action({source: v.name, name: v.name, args: v.args, result: v.result}))) : _subscribe_to_input((v: any) => action_arr.push(Action({source: v.name, name: v.name, args: v.args, result: v.result}))));
+((input_arr as any).subscribe ? (input_arr as any).subscribe((v: any) => action_arr.push(website.fn__Action_from__Call(v))) : _subscribe_to_input((v: any) => action_arr.push(website.fn__Action_from__Call(v))));
 action_arr.capacity = fn__number_seconds(60);
 action_arr._enforceCapacity();
 

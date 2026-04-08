@@ -634,7 +634,7 @@ def _build_module_map(ir_by_feature):
     for feat_name, feat_ir_data in ir_by_feature.items():
         safe_name = feat_name.replace("-", "_")
         for fn in feat_ir_data["functions"]:
-            if fn.get("_platform"):
+            if fn.get("_platform") and "<-" not in fn.get("signature_parts", []):
                 continue
             emitted_name = make_function_name(fn["signature_parts"])
             module_map[emitted_name] = safe_name
@@ -691,6 +691,7 @@ def _build_feat_ir(feat_name, ctx, input_paths):
     feat_ir["_all_user_vars"] = [v for v in ir["variables"]
                                   if v.get("scope") not in ("shared", "input") and not v.get("_platform")]
     feat_ir["_all_tasks"] = ir.get("tasks", [])
+    feat_ir["_all_functions"] = ir.get("functions", [])
     if ir_by_feature[feat_name].get("tests"):
         feat_ir["tests"] = ir_by_feature[feat_name]["tests"]
         feat_ir["test_feature"] = feat_name

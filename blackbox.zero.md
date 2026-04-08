@@ -24,7 +24,7 @@ The action type — a record of something that entered from outside:
 Convert a Call (from the runtime input stream) to an Action:
 
     on (Action a) <- (Call c)
-        a = Action(source = c.name, name = c.name, args = c.args, result = c.result)
+        a = Action(c.name, c.name, c.args, c.result)
 
 The action stream — a sparse circular buffer recording all input activity:
 

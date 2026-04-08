@@ -834,15 +834,18 @@ def _try_match_proto(expr, proto, fn_attr, mod):
 
 def _find_function(mod, fn_words, arg_count=0):
     """Find a compiled function in a module by its zero name words and argument count."""
-    safe_prefix = "fn_" + fn_words.replace(" ", "_").replace("-", "_")
-    # count type separators to match arg count
+    base = fn_words.replace(" ", "_").replace("-", "_")
+    prefixes = ["fn_", "task_"]
     def _matches(attr_name):
-        if attr_name == safe_prefix:
-            return arg_count == 0
-        if attr_name.startswith(safe_prefix + "__"):
-            type_part = attr_name[len(safe_prefix) + 2:]
-            n_types = type_part.count("__") + 1
-            return n_types == arg_count
+        for pfx in prefixes:
+            safe_prefix = pfx + base
+            if attr_name == safe_prefix:
+                return arg_count == 0
+            if attr_name.startswith(safe_prefix + "__"):
+                type_part = attr_name[len(safe_prefix) + 2:]
+                n_types = type_part.count("__") + 1
+                if n_types == arg_count:
+                    return True
         return False
     # search root module
     for attr_name in dir(mod):

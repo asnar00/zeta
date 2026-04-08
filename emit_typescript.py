@@ -56,7 +56,8 @@ async function _concurrently(...fns: (() => any)[]) {
 
 def _init_globals_ts(ir: dict) -> tuple:
     """Initialize module-level state from IR. Returns (structs, enums)."""
-    global _enum_values, _context_features_ts, _map_vars_ts, _rpc_targets_ts, _client_async_fns_ts, _void_task_names_ts, _output_task_names_ts, _input_fn_names_ts
+    global _enum_values, _context_features_ts, _map_vars_ts, _rpc_targets_ts, _client_async_fns_ts, _void_task_names_ts, _output_task_names_ts, _input_fn_names_ts, _conversion_fns_ts
+    _conversion_fns_ts = set()
     _context_features_ts = set()
     _void_task_names_ts = {}  # fn_call base name -> task fn name
     _output_task_names_ts = {}
@@ -113,6 +114,9 @@ def _init_globals_ts(ir: dict) -> tuple:
     for fn in ir.get("functions", []):
         if fn.get("is_input") and fn.get("result"):
             _input_fn_names_ts.add(_make_function_name(fn["signature_parts"]))
+    for fn in ir.get("_all_functions", ir.get("functions", [])):
+        if "<-" in fn.get("signature_parts", []):
+            _conversion_fns_ts.add(_make_function_name(fn["signature_parts"]))
     global _stream_types_ts
     _stream_types_ts = {}
     for var in ir.get("variables", []):
@@ -657,10 +661,15 @@ def _emit_dict_array_variable_ts(name: str, type_ann: str, val: dict, structs: d
                 source_type = _stream_types_ts.get(source_name, "")
                 source_arr = _safe(source_name + "_arr")
                 push_expr = f"{name}.push(v)"
+                conv_line = ""
                 if source_type and source_type != type_ann:
-                    push_expr = f"{name}.push({_ts_name(type_ann)}({{source: v.name, name: v.name, args: v.args, result: v.result}}))"
+                    conv_name = f"fn__{_ts_name(type_ann)}_from__{_ts_name(source_type)}"
+                    if conv_name not in _conversion_fns_ts:
+                        raise ValueError(f"stream pipe {type_ann}$ <- {source_type}$ requires conversion function: on ({type_ann}) <- ({source_type})")
+                    push_expr = f"{name}.push({conv_name}(v))"
+                    conv_line = ""
                 subscribe = f"(({source_arr} as any).subscribe ? ({source_arr} as any).subscribe((v: any) => {push_expr}) : _subscribe_to_input((v: any) => {push_expr}))"
-                return f"const {name}: any = new _Stream();\n{subscribe};"
+                return f"const {name}: any = new _Stream();\n{conv_line}{subscribe};"
         # single fn_call step with no terminator: just call the function
         if len(steps) == 1 and val.get("terminate") is None:
             step = steps[0]

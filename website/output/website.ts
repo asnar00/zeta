@@ -1281,4 +1281,4 @@ try {
 
 const _FEATURE_TREE: [string, string, string | null][] = [["website", "the nøøb website", null], ["not-found", "default 404 response", "website"], ["login", "SMS code authentication", "website"], ["rpc", "RPC endpoint for runtime evaluation", "website"], ["landing-page", "serves the noob landing page at root", "website"], ["background", "per-user background colour", "landing-page"], ["blackbox", "flight recorder for fault diagnosis", "website"], ["test-blackbox", "integration tests for the flight recorder", "blackbox"]];
 
-const _BUILD_FINGERPRINT: {hash: string, git: string, features: string} = {"hash": "b3e00244112b63c9", "git": "330906c44eb8", "features": "website,not-found,login,rpc,landing-page,background,blackbox,test-blackbox"};
+const _BUILD_FINGERPRINT: {hash: string, git: string, features: string} = {"hash": "0922583fd262435e", "git": "00ac139d7aac", "features": "website,not-found,login,rpc,landing-page,background,blackbox,test-blackbox"};

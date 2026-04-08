@@ -43,11 +43,12 @@ _void_task_names = set()
 
 def _init_globals(ir: dict) -> dict:
     """Initialize module-level enum values and context features. Returns enums dict."""
-    global _enum_values, _context_features, _input_fn_names, _input_stream_names, _void_task_names, _output_task_names, _stream_types
+    global _enum_values, _context_features, _input_fn_names, _input_stream_names, _void_task_names, _output_task_names, _stream_types, _conversion_fns
     _context_features = set()
     _input_fn_names = set()
     _input_stream_names = set()
     _stream_types = {}  # stream variable name (e.g. "input") -> type name (e.g. "Call")
+    _conversion_fns = set()  # set of "fn__Target_from__Source" names that exist in the IR
     _void_task_names = {}  # fn_call base name -> task fn name
     _output_task_names = {}  # fn_call base name -> task fn name (for materialisation)
     for task in ir.get("_all_tasks", ir.get("tasks", [])):
@@ -88,6 +89,9 @@ def _init_globals(ir: dict) -> dict:
     for fn in ir["functions"]:
         if fn.get("is_input") and fn.get("result"):
             _input_fn_names.add(_make_function_name(fn["signature_parts"]))
+    for fn in ir.get("_all_functions", ir["functions"]):
+        if "<-" in fn.get("signature_parts", []):
+            _conversion_fns.add(_make_function_name(fn["signature_parts"]))
     for var in ir["variables"]:
         if var.get("scope") == "input":
             _input_stream_names.add(var["name"])
@@ -684,9 +688,10 @@ def _emit_dict_array_variable(name: str, type_ann: str, val: dict) -> str | None
                 source_arr = _safe(source_name + "_arr")
                 append_expr = f"{name}.append(v)"
                 if source_type and source_type != type_ann:
-                    target = _py_name(type_ann)
-                    append_expr = f"{name}.append({target}(source=v.name, name=v.name, args=v.args, result=v.result))"
-                # use general _Stream.subscribe if source is a _Stream, fall back to _subscribe_to_input for plain lists
+                    conv_name = f"fn__{_py_name(type_ann)}_from__{_py_name(source_type)}"
+                    if conv_name not in _conversion_fns:
+                        raise ValueError(f"stream pipe {type_ann}$ <- {source_type}$ requires conversion function: on ({type_ann}) <- ({source_type})")
+                    append_expr = f"{name}.append({conv_name}(v))"
                 subscribe = f"({source_arr}.subscribe if hasattr({source_arr}, 'subscribe') else _subscribe_to_input)(lambda v: {append_expr})"
                 return f"{name} = _Stream()\n{subscribe}"
         # single fn_call step with no terminator: just call the function

@@ -843,15 +843,18 @@ def _try_match_proto(expr, proto, fn_attr, mod):
 
 def _find_function(mod, fn_words, arg_count=0):
     """Find a compiled function in a module by its zero name words and argument count."""
-    safe_prefix = "fn_" + fn_words.replace(" ", "_").replace("-", "_")
-    # count type separators to match arg count
+    base = fn_words.replace(" ", "_").replace("-", "_")
+    prefixes = ["fn_", "task_"]
     def _matches(attr_name):
-        if attr_name == safe_prefix:
-            return arg_count == 0
-        if attr_name.startswith(safe_prefix + "__"):
-            type_part = attr_name[len(safe_prefix) + 2:]
-            n_types = type_part.count("__") + 1
-            return n_types == arg_count
+        for pfx in prefixes:
+            safe_prefix = pfx + base
+            if attr_name == safe_prefix:
+                return arg_count == 0
+            if attr_name.startswith(safe_prefix + "__"):
+                type_part = attr_name[len(safe_prefix) + 2:]
+                n_types = type_part.count("__") + 1
+                if n_types == arg_count:
+                    return True
         return False
     # search root module
     for attr_name in dir(mod):
@@ -2258,7 +2261,7 @@ def fn_stop():
 
 # @zero on (Action a) = (Action) <- (Call); website/website.zero.md:484
 def fn__Action_from__Call(c: Call) -> Action:
-    a = Action(_raise_undefined('source = c.name'), _raise_undefined('name = c.name'), _raise_undefined('args = c.args'), _raise_undefined('result = c.result'))
+    a = Action(c.name, c.name, c.args, c.result)
     return a
 
 port: int = 8084
@@ -2280,4 +2283,4 @@ if __name__ == '__main__':
 
 _FEATURE_TREE = [("website", "the nøøb website", None), ("not-found", "default 404 response", 'website'), ("login", "SMS code authentication", 'website'), ("rpc", "RPC endpoint for runtime evaluation", 'website'), ("landing-page", "serves the noob landing page at root", 'website'), ("background", "per-user background colour", 'landing-page'), ("blackbox", "flight recorder for fault diagnosis", 'website'), ("test-blackbox", "integration tests for the flight recorder", 'blackbox')]
 
-_BUILD_FINGERPRINT = {"hash": "b3e00244112b63c9", "git": "330906c44eb8", "features": "website,not-found,login,rpc,landing-page,background,blackbox,test-blackbox"}
+_BUILD_FINGERPRINT = {"hash": "0922583fd262435e", "git": "00ac139d7aac", "features": "website,not-found,login,rpc,landing-page,background,blackbox,test-blackbox"}
