@@ -1,14 +1,14 @@
 import website
 
 # Platform implementation: blackbox (Python)
-# Implements the functions declared in blackbox.zero.md
+# Thin OS primitives: elapsed time, timers, local key-value store.
 
 import time
 import json
 import os
 import threading
 
-_recording_start = None
+_recording_start = time.monotonic()
 _timers = {}
 _timer_counter = 0
 _timer_lock = threading.Lock()
@@ -55,291 +55,13 @@ def _save_store():
         pass
 
 
-# --- server-side flight recorder ---
-
-_recording_start = time.monotonic()
-_bb_recording = False
-_bb_session_id = ""
-_bb_moments = []
-_bb_current_moment = None
-_bb_max_moments = 6
-_bb_moment_duration = 10  # seconds
-_bb_tick_timer = None
-_bb_correlation_counter = 0
-_bb_lock = threading.Lock()
-_bb_fault_reports = {}  # fault_id -> report dict (received from clients)
-
-
-def _bb_elapsed():
-    """Milliseconds since recording started."""
-    return round((time.monotonic() - _recording_start) * 1000)
-
-
-def _bb_record_stream(stream_name, iterator):
-    """Wrap a stream iterator to record each yielded value.
-    If the iterator has a dt property, sleep between values for real-time playback."""
+# timed stream iteration — sleeps dt between values for real-time playback
+def _timed_iterate(stream_name, iterator):
     dt = getattr(iterator, 'dt', 0)
     for value in iterator:
-        _bb_record_action("stream", stream_name, _bb_serialize_value(value), "", "", 0)
         yield value
         if dt and dt > 0:
             time.sleep(dt)
-
-
-def _bb_record_call(fn_name, result):
-    """Record the return value of a non-deterministic platform call."""
-    _bb_record_action("call", fn_name, "", "", _bb_serialize_value(result), 0)
-    return result
-
-
-def _bb_serialize_value(value):
-    """Serialize a value for recording. Handles structs, primitives, and arrays."""
-    if value is None:
-        return ""
-    if isinstance(value, (str, int, float, bool)):
-        return str(value)
-    if isinstance(value, list):
-        return json.dumps([_bb_serialize_value(v) for v in value])
-    if hasattr(value, '__dict__'):
-        d = {k: _bb_serialize_value(v) for k, v in value.__dict__.items()
-             if not k.startswith('_')}
-        return json.dumps(d)
-    return str(value)
-
-
-def _bb_next_correlation():
-    global _bb_correlation_counter
-    _bb_correlation_counter += 1
-    return f"s{_bb_correlation_counter}"
-
-
-def _bb_capture_keyframe():
-    """Serialize server context state as a keyframe."""
-    import sys
-    mod = sys.modules.get('__main__')
-    if mod and hasattr(mod, '_serialize_ctx') and hasattr(mod, '_ctx_var'):
-        try:
-            ctx = mod._ctx_var.get()
-            return json.dumps(mod._serialize_ctx(ctx))
-        except Exception:
-            pass
-    return "{}"
-
-
-def _bb_new_moment():
-    return {
-        "start_time": _bb_elapsed(),
-        "keyframe": _bb_capture_keyframe(),
-        "actions": []
-    }
-
-
-def _bb_rotate_moment():
-    """Close current moment, start a new one."""
-    global _bb_current_moment
-    if not _bb_recording:
-        return
-    with _bb_lock:
-        if _bb_current_moment:
-            _bb_current_moment["end_time"] = _bb_elapsed()
-            _bb_moments.append(_bb_current_moment)
-            if len(_bb_moments) > _bb_max_moments:
-                _bb_moments.pop(0)
-        _bb_current_moment = _bb_new_moment()
-
-
-def _bb_start_server_recording():
-    """Start server-side recording with periodic moment rotation."""
-    global _bb_recording, _bb_current_moment, _bb_tick_timer
-    _bb_recording = True
-    _bb_moments.clear()
-    _bb_current_moment = _bb_new_moment()
-
-    def tick():
-        if not _bb_recording:
-            return
-        _bb_rotate_moment()
-        if _bb_recording:
-            t = threading.Timer(_bb_moment_duration, tick)
-            t.daemon = True
-            t.start()
-
-    _bb_tick_timer = threading.Timer(_bb_moment_duration, tick)
-    _bb_tick_timer.daemon = True
-    _bb_tick_timer.start()
-_bb_start_server_recording()
-
-
-def _bb_record_action(feature, name, args, correlation, result, elapsed):
-    """Append an action to the current moment."""
-    if not _bb_recording or not _bb_current_moment:
-        return
-    with _bb_lock:
-        _bb_current_moment["actions"].append({
-            "time": _bb_elapsed(),
-            "feature": feature,
-            "name": name,
-            "args": args,
-            "correlation": correlation,
-            "result": result,
-            "elapsed": elapsed,
-            "kind": "call"
-        })
-
-
-def _bb_snapshot_server_moments():
-    """Snapshot the server's current buffer."""
-    with _bb_lock:
-        moments = list(_bb_moments)
-        if _bb_current_moment:
-            snap = dict(_bb_current_moment)
-            snap["end_time"] = _bb_elapsed()
-            moments.append(snap)
-    return moments
-
-
-def _bb_collect_other_devices(fault_id, reporter_session):
-    """Ask all other connected clients to freeze and send their buffers.
-    Skips the reporter (identified by session) and uses a short timeout."""
-    import sys
-    import queue as _queue
-    device_buffers = []
-    mod = sys.modules.get('__main__')
-    if mod is None:
-        return device_buffers
-    list_clients = getattr(mod, '_list_connected_clients', None)
-    if not list_clients:
-        return device_buffers
-    try:
-        clients = list_clients()
-    except Exception:
-        return device_buffers
-    # resolve reporter's route name from session token
-    reporter_name = None
-    resolve_user = getattr(mod, '_resolve_session_user', None)
-    if resolve_user and reporter_session:
-        reporter_name = resolve_user(reporter_session)
-    for client_name in clients:
-        if client_name == reporter_name:
-            continue
-        try:
-            result = _bb_request_with_timeout(
-                f'freeze buffer ("{fault_id}")', client_name, timeout=3
-            )
-            if result and result.startswith("{"):
-                device_buffers.append(json.loads(result))
-        except Exception:
-            pass
-    return device_buffers
-
-
-def _bb_request_with_timeout(command, client_name, timeout=3):
-    """Send a command to a client with a short timeout. Returns result or empty."""
-    import sys
-    import queue as _queue
-    mod = sys.modules.get('__main__')
-    get_channel = getattr(mod, '_get_client_channel', None)
-    get_ws = getattr(mod, '_get_ws_channel', None)
-    if not get_channel or not get_ws:
-        return ""
-    channel_id = get_channel(client_name)
-    if not channel_id:
-        return ""
-    ch = get_ws(channel_id)
-    if ch is None:
-        return ""
-    import json as _json
-    counter = getattr(mod, '_next_request_id', None)
-    pending = getattr(mod, '_pending_responses', None)
-    if not counter or pending is None:
-        return ""
-    req_id = counter()
-    response_q = _queue.Queue()
-    pending[req_id] = response_q
-    ch.send(_json.dumps({"id": req_id, "cmd": command}))
-    try:
-        return response_q.get(timeout=timeout)
-    except _queue.Empty:
-        return ""
-    finally:
-        pending.pop(req_id, None)
-
-
-def _bb_get_build_fingerprint():
-    """Read _BUILD_FINGERPRINT from the root module."""
-    import sys
-    mod = sys.modules.get('__main__')
-    if mod and hasattr(mod, '_BUILD_FINGERPRINT'):
-        return mod._BUILD_FINGERPRINT
-    return {}
-
-
-def _bb_store_report(fault_id, report):
-    """Persist a fault report to the in-memory cache and local store."""
-    _bb_fault_reports[fault_id] = report
-    _init_store_path()
-    _store[f"fault:{fault_id}"] = json.dumps(report)
-    _save_store()
-
-
-# @zero on (string fault) = report fault (string comment)
-def fn_report_fault__string(comment: str) -> str:
-    """Receive a fault report (from client or server). Stores it for retrieval."""
-    # if comment looks like a JSON fault report from the client, store it directly
-    if comment.startswith("{") and "fault_id" in comment:
-        try:
-            report = json.loads(comment)
-            fault_id = report.get("fault_id", "")
-            if fault_id:
-                # attach build fingerprint and server moments
-                report["build_fingerprint"] = _bb_get_build_fingerprint()
-                report["server_moments"] = _bb_snapshot_server_moments()
-                # collect buffers from all other connected devices
-                report["device_buffers"] = _bb_collect_other_devices(
-                    fault_id, report.get("session", "")
-                )
-                _bb_store_report(fault_id, report)
-                print(f"[blackbox] fault received: {fault_id} "
-                      f"({len(report['device_buffers'])} other devices)")
-                return fault_id
-        except json.JSONDecodeError:
-            pass
-
-    # server-side fault report (not from client)
-    import uuid
-    fault_id = str(uuid.uuid4())[:8]
-    report = {
-        "fault_id": fault_id,
-        "session": _bb_session_id,
-        "build_fingerprint": _bb_get_build_fingerprint(),
-        "comment": comment,
-        "moments": _bb_snapshot_server_moments(),
-        "reported_at": _bb_elapsed()
-    }
-    _bb_store_report(fault_id, report)
-    print(f"[blackbox] server fault reported: {fault_id}")
-    return fault_id
-
-
-# @zero on (string result) = get fault (string fault-id)
-def fn_get_fault__string(fault_id: str) -> str:
-    """Retrieve a stored fault report by ID."""
-    report = _bb_fault_reports.get(fault_id)
-    if report:
-        return json.dumps(report)
-    _init_store_path()
-    stored = _store.get(f"fault:{fault_id}", "")
-    if stored:
-        return stored
-    return ""
-
-
-# @zero on (string fp) = build fingerprint ()
-def fn_build_fingerprint() -> str:
-    fp = _bb_get_build_fingerprint()
-    if fp:
-        return json.dumps(fp)
-    return ""
 
 
 # @zero input number elapsed$
@@ -1460,19 +1182,12 @@ def fn_features() -> str:
 
 # @zero Call input$
 # The input stream — receives a Call for every input-tagged function call.
-_input_stream = None
+input_arr = []
 
 
 def _push_runtime_input(call):
-    """Push a Call into the input$ stream (if it exists)."""
-    if _input_stream is not None:
-        _input_stream.append(call)
-
-
-def _register_input_stream(stream):
-    """Register the input$ stream. Called by the compiled module."""
-    global _input_stream
-    _input_stream = stream
+    """Push a Call into the input$ stream."""
+    input_arr.append(call)
 
 
 # @zero on (string result) = rpc eval (string expr)
@@ -2010,18 +1725,14 @@ def _get_ctx() -> '_Context':
     return _ctx_var.get()
 
 
-# blackbox fallback (overridden when blackbox platform is loaded)
+# timed stream iteration (sleeps dt between values)
 import time as _time
-def _bb_record_stream(_name, _iter):
+def _timed_iterate(_name, _iter):
     _dt = getattr(_iter, 'dt', 0)
     for _v in _iter:
         yield _v
         if _dt and _dt > 0:
             _time.sleep(_dt)
-def _bb_record_call(_name, _result):
-    try: _push_runtime_input(Call(name=_name, args='', result=str(_result)))
-    except: pass
-    return _result
 
 from typing import NamedTuple
 
@@ -2050,7 +1761,13 @@ class User(NamedTuple):
     phone: str = ""
     role: str = ""
 
-# @zero on login; website/login/login.zero.md:401
+class Action(NamedTuple):
+    source: str = ""
+    name: str = ""
+    args: str = ""
+    result: str = ""
+
+# @zero on login; website/login/login.zero.md:387
 def task_login():
     name_arr = website.task_input__string("name")
     code_arr = [fn_request_login__string(x) for x in name_arr]
@@ -2059,14 +1776,14 @@ def task_login():
     fn_set_cookie_of__string_to__string("session", token_arr)
     fn_reload_page()
 
-# @zero on logout dialog; website/login/login.zero.md:409
+# @zero on logout dialog; website/login/login.zero.md:395
 def task_logout_dialog():
     choice_arr = website.task_choose_or__string__string("log out", "cancel")
     if choice_arr == "log out":
         fn_clear_cookie__string("session")
         fn_reload_page()
 
-# @zero on toggle login; website/login/login.zero.md:394
+# @zero on toggle login; website/login/login.zero.md:380
 def task_toggle_login():
     session = _get_cookie()["session"]
     if session == "":
@@ -2074,26 +1791,26 @@ def task_toggle_login():
     else:
         task_logout_dialog()
 
-# @zero on test login; website/login/login.zero.md:460
+# @zero on test login; website/login/login.zero.md:446
 def task_test_login():
     pass  # scoped hook (handled at function level)
     pass  # scoped hook (handled at function level)
     task_login()
     fn_check__string_contains__string(fn_describe_page(), "log out")
 
-# @zero on logo clicked; website/login/login.zero.md:449
+# @zero on logo clicked; website/login/login.zero.md:435
 def task_logo_clicked():
     task_toggle_login()
 
-# @zero on unknown user (string name); website/login/login.zero.md:415
+# @zero on unknown user (string name); website/login/login.zero.md:401
 def fn_unknown_user__string(name: str):
     fn_show_message__string("unknown user")
 
-# @zero on invalid code (string code); website/login/login.zero.md:418
+# @zero on invalid code (string code); website/login/login.zero.md:404
 def fn_invalid_code__string(code: str):
     fn_show_message__string("invalid code")
 
-# @zero on (string code) = request login (string name); website/login/login.zero.md:421
+# @zero on (string code) = request login (string name); website/login/login.zero.md:407
 def fn_request_login__string(name: str) -> str:
     found = next((x for x in users_arr if x.name == name), type(users_arr[0])() if users_arr else None)
     if found.name != name:
@@ -2103,7 +1820,7 @@ def fn_request_login__string(name: str) -> str:
     pending_codes_arr[found.phone] = code
     return code
 
-# @zero on (User result) = verify login (string name) with code (string code); website/login/login.zero.md:429
+# @zero on (User result) = verify login (string name) with code (string code); website/login/login.zero.md:415
 def fn_verify_login__string_with_code__string(name: str, code: str) -> User:
     found = next((x for x in users_arr if x.name == name), type(users_arr[0])() if users_arr else None)
     stored = pending_codes_arr[found.phone]
@@ -2113,13 +1830,13 @@ def fn_verify_login__string_with_code__string(name: str, code: str) -> User:
     result = found
     return result
 
-# @zero on (string token) = complete login (string name) with code (string code); website/login/login.zero.md:437
+# @zero on (string token) = complete login (string name) with code (string code); website/login/login.zero.md:423
 def fn_complete_login__string_with_code__string(name: str, code: str) -> str:
     found = fn_verify_login__string_with_code__string(name, code)
     token = fn_create_session__string(name)
     return token
 
-# @zero on (string code) = generate code (User u); website/login/login.zero.md:441
+# @zero on (string code) = generate code (User u); website/login/login.zero.md:427
 def fn_generate_code__User(u: User) -> str:
     code = None
     if u.name == "_alice":
@@ -2130,13 +1847,13 @@ def fn_generate_code__User(u: User) -> str:
         code = fn_random_digits__int(4)
     return code if code is not None else ""
 
-# @zero on check (string snapshot) contains (string expected); website/login/login.zero.md:452
+# @zero on check (string snapshot) contains (string expected); website/login/login.zero.md:438
 def fn_check__string_contains__string(snapshot: str, expected: str):
     found = fn__string_contains__string(snapshot, expected)
     if found == False:
         raise _ZeroRaise('check failed', ['expected'])
 
-# @zero on check failed (string what); website/login/login.zero.md:457
+# @zero on check failed (string what); website/login/login.zero.md:443
 def fn_check_failed__string(what: str):
     fn_print__string("FAIL: expected " + what)
 

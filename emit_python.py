@@ -247,25 +247,19 @@ def _walk_has_kind(stmts, kind):
 
 
 _BB_FALLBACK = """\
-# blackbox fallback (overridden when blackbox platform is loaded)
+# timed stream iteration (sleeps dt between values)
 import time as _time
-def _bb_record_stream(_name, _iter):
+def _timed_iterate(_name, _iter):
     _dt = getattr(_iter, 'dt', 0)
     for _v in _iter:
         yield _v
         if _dt and _dt > 0:
-            _time.sleep(_dt)
-def _bb_record_call(_name, _result):
-    try: _push_runtime_input(Call(name=_name, args='', result=str(_result)))
-    except: pass
-    return _result"""
+            _time.sleep(_dt)"""
 
 
-def _needs_bb_fallback(ir: dict) -> bool:
-    """Check if the emitted code will use blackbox recording functions."""
+def _needs_timed_iterate(ir: dict) -> bool:
+    """Check if the emitted code will use timed iteration."""
     if ir.get("tasks"):
-        return True
-    if _input_fn_names:
         return True
     return False
 
@@ -321,7 +315,7 @@ def _value_has_timing(val):
 def _emit_preamble(ir: dict) -> list[str]:
     """Emit imports and concurrently helper if needed."""
     sections = []
-    if _needs_bb_fallback(ir):
+    if _needs_timed_iterate(ir):
         sections.append(_BB_FALLBACK)
     if _has_timed_streams(ir):
         sections.append(_STREAM_HELPER)
@@ -1052,11 +1046,11 @@ def _emit_task_header(task: dict) -> tuple:
 
 def _emit_task_for_each(node: dict, uses: list, base_indent: str, extra_indent: str) -> list[str]:
     """Emit a for_each block inside a task.
-    Wraps the iterator with _bb_record_stream for flight recording."""
+    Wraps the iterator with _timed_iterate for flight recording."""
     lines = []
     iter_expr = _emit_expr(node["iter"])
     iter_name = iter_expr.replace("_arr", "$") if iter_expr.endswith("_arr") else iter_expr
-    lines.append(f"{base_indent}{extra_indent}for {node['name']} in _bb_record_stream({iter_name!r}, {iter_expr}):")
+    lines.append(f"{base_indent}{extra_indent}for {node['name']} in _timed_iterate({iter_name!r}, {iter_expr}):")
     loop_indent = base_indent + extra_indent + "    "
     for body_node in node["body"]:
         bk = body_node.get("kind", "")
@@ -1075,19 +1069,19 @@ def _emit_task_for_each(node: dict, uses: list, base_indent: str, extra_indent: 
 
 def _emit_task_consume(node: dict, base_indent: str) -> str:
     """Emit a consume or consume_call loop header.
-    Wraps the iterator with _bb_record_stream for flight recording."""
+    Wraps the iterator with _timed_iterate for flight recording."""
     kind = node.get("kind")
     if kind == "consume":
         stream_name = node["stream"].replace("$", "_arr")
-        return f"{base_indent}for {node['name']} in _bb_record_stream({stream_name!r}, {stream_name}):"
+        return f"{base_indent}for {node['name']} in _timed_iterate({stream_name!r}, {stream_name}):"
     call = node["call"]
     if call.get("kind") == "task_call":
         call_fn = make_task_call_fn_name(call)
         args = ", ".join(a.replace("$", "_arr") for a in call["args"])
         stream_label = call_fn
-        return f"{base_indent}for {node['name']} in _bb_record_stream({stream_label!r}, {call_fn}({args})):"
+        return f"{base_indent}for {node['name']} in _timed_iterate({stream_label!r}, {call_fn}({args})):"
     iter_expr = _emit_expr(call)
-    return f"{base_indent}for {node['name']} in _bb_record_stream(\"stream\", {iter_expr}):"
+    return f"{base_indent}for {node['name']} in _timed_iterate(\"stream\", {iter_expr}):"
 
 
 def _is_task_inner_call(node: dict) -> bool:
@@ -1172,7 +1166,7 @@ def _emit_task_body_node(node, uses, base_indent, extra_indent):
                     lines.append(f"{base_indent}{extra_indent}{tmp}.dt = {_emit_expr(val['dt'])}")
                 if val.get("length"):
                     lines.append(f"{base_indent}{extra_indent}{tmp}.length = {_emit_expr(val['length'])}")
-                lines.append(f"{base_indent}{extra_indent}for _v in _bb_record_stream('{tmp}', {tmp}):")
+                lines.append(f"{base_indent}{extra_indent}for _v in _timed_iterate('{tmp}', {tmp}):")
                 lines.append(f"{base_indent}{extra_indent}    {handler}(_v)")
                 return lines, extra_indent
         val_expr = _emit_expr(val)
@@ -1180,7 +1174,7 @@ def _emit_task_body_node(node, uses, base_indent, extra_indent):
         if isinstance(val, dict) and val.get("kind") == "name" and val.get("value", "").endswith("$"):
             arr_name = val_expr
             lines = [
-                f"{base_indent}{extra_indent}for _v in _bb_record_stream({arr_name!r}, {arr_name}):",
+                f"{base_indent}{extra_indent}for _v in _timed_iterate({arr_name!r}, {arr_name}):",
                 f"{base_indent}{extra_indent}    {handler}(_v)",
             ]
             return lines, extra_indent
@@ -1494,8 +1488,6 @@ def _emit_simple_expr(node: dict) -> str | None:
             args = ', '.join(_emit_expr(a) for a in node['args'])
             return f"list({fn_name}({args}))"
         call_expr = f"{fn_name}({', '.join(_emit_expr(a) for a in node['args'])})"
-        if fn_name in _input_fn_names:
-            return f"_bb_record_call({fn_name!r}, {call_expr})"
         return call_expr
     if kind == "task_call":
         return f"list({make_task_call_fn_name(node)}({', '.join(a.replace('$', '_arr') for a in node['args'])}))"

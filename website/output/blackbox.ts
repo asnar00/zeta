@@ -1,5 +1,3 @@
-import * as website from './website.js';
-
 // Platform implementation: blackbox (TypeScript)
 // Thin OS primitives: elapsed time, timers, local key-value store.
 
@@ -632,6 +630,42 @@ export function _get_ctx(): _Context {
 }
 
 
+class _Stream extends Array<any> {
+    dt: number = 0;
+    capacity: number = 0;
+    t0: number = 0;
+    _timestamps: number[] = [];
+    constructor(items?: any[]) {
+        super();
+        this._timestamps = [];
+        if (items) {
+            for (const item of items) super.push(item);
+        }
+    }
+    push(...items: any[]): number {
+        const result = super.push(...items);
+        if (!this.dt || this.dt === 0) {
+            const now = Date.now() / 1000;
+            for (const _ of items) this._timestamps.push(now);
+        }
+        this._enforceCapacity();
+        return result;
+    }
+    _enforceCapacity(): void {
+        if (this.capacity <= 0) return;
+        if (this.dt && this.dt > 0) {
+            const maxItems = Math.floor(this.capacity / this.dt);
+            while (this.length > maxItems) this.shift();
+        } else if (this._timestamps.length > 0) {
+            const newest = this._timestamps[this._timestamps.length - 1];
+            while (this._timestamps.length > 0 && newest - this._timestamps[0] > this.capacity) {
+                this.shift();
+                this._timestamps.shift();
+            }
+        }
+    }
+}
+
 class _ZeroRaise extends Error {
     zeroName: string;
     argsList: any[];
@@ -642,8 +676,9 @@ class _ZeroRaise extends Error {
     }
 }
 
-const users_arr: readonly User[] = [User({ name: "_alice", phone: "+440001", role: "admin" }), User({ name: "_bob", phone: "+440002", role: "user" }), User({ name: "ash", phone: "+447813943023", role: "admin" })];
-const pending_codes_arr: Map<string, string> = new Map();
+const action_arr = new _Stream([input_arr]);
+action_arr.capacity = fn__number_seconds(60);
+action_arr._enforceCapacity();
 
 interface Call {
     readonly name: string;
@@ -695,115 +730,15 @@ export function Action(args: Partial<Action> = {}): Action {
     return { source: args.source ?? "", name: args.name ?? "", args: args.args ?? "", result: args.result ?? "" };
 }
 
-// @zero on login; website/login/login.zero.md:387
-export async function task_login(): Promise<void> {
-    const name_arr: any = website.task_input__string("name");
-    const code_arr = [fn_request_login__string(name_arr)];
-    const entered_arr: any = website.task_input__string("code");
-    const token_arr = [fn_complete_login__string_with_code__string(name_arr, entered_arr)];
-    for (const _v of token_arr) {
-        fn_set_cookie_of__string_to__string("session", _v);
-    }
-    fn_reload_page();
+// @zero on (string report$) <- report fault (string comment); blackbox.zero.md:463
+export function* task_report_fault__string(comment: string): Generator<string> {
+    let trace_arr = fn_snapshot(action_arr);
+    let json = fn_serialise(trace_arr);
+    let report = "{\"comment\":\"" + String(comment) + "\",\"trace\":" + String(json) + "}";
 }
 
-// @zero on logout dialog; website/login/login.zero.md:395
-export async function task_logout_dialog(): Promise<void> {
-    const choice_arr: any = website.task_choose_or__string__string("log out", "cancel");
-    if (choice_arr == "log out") {
-        fn_clear_cookie__string("session");
-        fn_reload_page();
-    }
-}
-
-// @zero on toggle login; website/login/login.zero.md:380
-export function task_toggle_login(): void {
-    let session = cookie_arr.get("session") ?? "";
-    if (session == "") {
-        task_login();
-    } else {
-        task_logout_dialog();
-    }
-}
-
-// @zero on test login; website/login/login.zero.md:446
-export function task_test_login(): void {
-    /* scoped hook (handled at function level) */;
-    /* scoped hook (handled at function level) */;
-    task_login();
-    fn_check__string_contains__string(fn_describe_page(), "log out");
-}
-
-// @zero on logo clicked; website/login/login.zero.md:435
-export function task_logo_clicked(): void {
-    task_toggle_login();
-}
-
-// @zero on unknown user (string name); website/login/login.zero.md:401
-export function fn_unknown_user__string(name: string): void {
-    fn_show_message__string("unknown user");
-}
-
-// @zero on invalid code (string code); website/login/login.zero.md:404
-export function fn_invalid_code__string(code: string): void {
-    fn_show_message__string("invalid code");
-}
-
-// @zero on (string code) = request login (string name); website/login/login.zero.md:407
-export function fn_request_login__string(name: string): string {
-    let code: string = undefined!;
-    const found = users_arr.find(x => x.name == name)!;
-    if (found.name != name) {
-    throw new _ZeroRaise('unknown user', ['name']);
-}
-    code = fn_generate_code__User(found);
-    fn_send_sms__string_to__string("Your nøøb code: " + code, found.phone);
-    pending_codes_arr.set(found.phone, code);
-    return code;
-}
-
-// @zero on (User result) = verify login (string name) with code (string code); website/login/login.zero.md:415
-export function fn_verify_login__string_with_code__string(name: string, code: string): User {
-    let result: User = undefined!;
-    const found = users_arr.find(x => x.name == name)!;
-    const stored = pending_codes_arr.get(found.phone) ?? "";
-    if (found.name != name || stored != code || stored == "") {
-    throw new _ZeroRaise('invalid code', ['code']);
-}
-    pending_codes_arr.set(found.phone, "");
-    result = found;
-    return result;
-}
-
-// @zero on (string token) = complete login (string name) with code (string code); website/login/login.zero.md:423
-export function fn_complete_login__string_with_code__string(name: string, code: string): string {
-    const found = fn_verify_login__string_with_code__string(name, code);
-    const token: string = fn_create_session__string(name);
-    return token;
-}
-
-// @zero on (string code) = generate code (User u); website/login/login.zero.md:427
-export function fn_generate_code__User(u: User): string {
-    let code: string = undefined!;
-    if (u.name == "_alice") {
-    code = "1234";
-} else if (u.name == "_bob") {
-    code = "4321";
-} else {
-    code = fn_random_digits__int(4);
-}
-    return code;
-}
-
-// @zero on check (string snapshot) contains (string expected); website/login/login.zero.md:438
-export function fn_check__string_contains__string(snapshot: string, expected: string): void {
-    const found = fn__string_contains__string(snapshot, expected);
-    if (found == false) {
-    throw new _ZeroRaise('check failed', ['expected']);
-}
-}
-
-// @zero on check failed (string what); website/login/login.zero.md:443
-export function fn_check_failed__string(what: string): void {
-    fn_print__string("FAIL: expected " + what);
+// @zero on (string data) = get fault (string id); blackbox.zero.md:468
+export function fn_get_fault__string(id: string): string {
+    const data: string = fn_retrieve_locally__string("fault:" + id);
+    return data;
 }

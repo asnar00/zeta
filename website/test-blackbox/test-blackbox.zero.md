@@ -3,11 +3,11 @@
 
 ## specification
 
-Tests the blackbox flight recorder end-to-end: records user actions on the client, reports a fault, uploads it to the server, and verifies the fault report contains moments and actions.
+Tests the blackbox flight recorder end-to-end: records user actions, reports a fault, and verifies the fault report contains the recorded trace.
 
 ## definition
 
-    feature test-blackbox extends website
+    feature test-blackbox extends blackbox
 
 Check that a string contains expected text, raise if not:
 
@@ -19,20 +19,12 @@ Check that a string contains expected text, raise if not:
     on bb check failed (string what)
         print ("FAIL: expected " + what)
 
-Test the full blackbox flow — report a fault from the browser, upload it, and verify client moments, server moments, and build fingerprint are in the report:
+Test the full blackbox flow — do some actions, report a fault, check the trace:
 
     on test blackbox ()
         click on (".logo")
         press ("Escape") on ("body")
-        string fault = report fault ("test: logo did something weird")
-        upload pending faults ()
-        string data = get fault (fault)
-        bb check (data) contains ("fault_id")
-        bb check (data) contains ("moments")
-        bb check (data) contains ("test: logo did something weird")
-        bb check (data) contains ("server_moments")
-        bb check (data) contains ("keyframe")
-        bb check (data) contains ("actions")
-        bb check (data) contains ("build_fingerprint")
-        bb check (data) contains ("hash")
-        bb check (data) contains ("git")
+        string report$ <- report fault ("test: logo did something weird")
+        bb check (report$) contains ("comment")
+        bb check (report$) contains ("trace")
+        bb check (report$) contains ("test: logo did something weird")

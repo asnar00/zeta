@@ -1,5 +1,5 @@
 // Platform implementation: blackbox (TypeScript)
-// Implements the functions declared in blackbox.zero.md
+// Thin OS primitives: elapsed time, timers, local key-value store.
 
 const _recording_start: number = performance.now();
 const _timers: Map<string, ReturnType<typeof setInterval>> = new Map();
@@ -42,15 +42,14 @@ export function _remove_key(key: string): void {
 _load_store();
 
 
-export function _bb_record_stream(stream_name: string, iterator: any): any {
+// timed stream iteration — async generator with setTimeout for real-time playback
+export function _timed_iterate(stream_name: string, iterator: any): any {
     const dt = iterator?.dt ?? 0;
-    if (dt > 0 || (iterator && typeof iterator[Symbol.asyncIterator] === "function")) {
+    if (dt > 0) {
         return (async function* () {
             for (const value of iterator) {
                 yield value;
-                if (dt > 0) {
-                    await new Promise(resolve => setTimeout(resolve, dt * 1000));
-                }
+                await new Promise(resolve => setTimeout(resolve, dt * 1000));
             }
         })();
     }
@@ -59,12 +58,6 @@ export function _bb_record_stream(stream_name: string, iterator: any): any {
             yield value;
         }
     })();
-}
-
-
-export function _bb_record_call(fn_name: string, result: any): any {
-    // record the return value of a non-deterministic call (placeholder)
-    return result;
 }
 
 
@@ -137,40 +130,6 @@ export function fn_stored_keys__string(prefix: string): string {
 export function fn_remove_locally__string(key: string): void {
     _store.delete(key);
     _remove_key(key);
-}
-
-
-// @zero on (string fp) = build fingerprint ()
-export function fn_build_fingerprint(): string {
-    return JSON.stringify((globalThis as any)._BUILD_FINGERPRINT ?? {});
-}
-
-
-// @zero on upload pending faults ()
-export function fn_upload_pending_faults(): void {
-    // client-side implementation is in blackbox.client.js
-}
-
-
-// @zero on (string fault) = report fault (string comment)
-export function fn_report_fault__string(comment: string): string {
-    // server-side stub — real implementation is in blackbox.py
-    // client-side implementation is in blackbox.client.js
-    return "";
-}
-
-
-// @zero on (string result) = get fault (string fault-id)
-export function fn_get_fault__string(fault_id: string): string {
-    // server-side stub — real implementation is in blackbox.py
-    return "";
-}
-
-
-// @zero on (string buffer) = freeze buffer (string fault-id)
-export function fn_freeze_buffer__string(fault_id: string): string {
-    // server-side stub — real implementation is in blackbox.client.js
-    return "{}";
 }
 
 
@@ -411,6 +370,14 @@ export function fn_set_session__string(token: string): void {
 export function fn_exit_process(): void {
     setTimeout(() => process.exit(0), 500);
 }
+
+// @zero Call input$
+const input_arr: any[] = [];
+
+export function _push_runtime_input(call: any): void {
+    input_arr.push(call);
+}
+
 
 // @zero on (string result) = rpc eval (string expr)
 export function fn_rpc_eval__string(expr: string): string {
@@ -710,4 +677,15 @@ interface User {
 
 export function User(args: Partial<User> = {}): User {
     return { name: args.name ?? "", phone: args.phone ?? "", role: args.role ?? "" };
+}
+
+interface Action {
+    readonly source: string;
+    readonly name: string;
+    readonly args: string;
+    readonly result: string;
+}
+
+export function Action(args: Partial<Action> = {}): Action {
+    return { source: args.source ?? "", name: args.name ?? "", args: args.args ?? "", result: args.result ?? "" };
 }

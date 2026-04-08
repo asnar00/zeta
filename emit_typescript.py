@@ -330,9 +330,8 @@ def emit(ir: dict) -> str:
     # zeta.py builds always prepend platform .ts files which provide these.
     if ir.get("tasks") and not ir.get("module_map") and not ir.get("source_file"):
         sections.append(
-            "// blackbox fallback (standalone build)\n"
-            "function* _bb_record_stream(_name: string, _iter: any): any { yield* _iter; }\n"
-            "function _bb_record_call(_name: string, _result: any): any { return _result; }"
+            "// timed stream iteration fallback (standalone build)\n"
+            "function* _timed_iterate(_name: string, _iter: any): any { yield* _iter; }"
         )
     if _has_concurrently(ir):
         sections.append(_CONCURRENTLY_HELPER_TS)
@@ -1083,12 +1082,12 @@ def _emit_task_header_ts(task: dict) -> tuple:
 def _emit_task_for_each_ts(node: dict, structs: dict, uses: list, has_platform_streams: bool,
                            base_indent: str, extra_indent: str) -> list[str]:
     """Emit a for_each block inside a task (TypeScript).
-    Wraps the iterator with _bb_record_stream for flight recording."""
+    Wraps the iterator with _timed_iterate for flight recording."""
     lines = []
     iter_expr = _emit_expr(node["iter"], structs)
     iter_name = iter_expr.replace("_arr", "$") if iter_expr.endswith("_arr") else iter_expr
     for_keyword = "for await" if has_platform_streams else "for"
-    lines.append(f'{base_indent}{extra_indent}{for_keyword} (const {_safe(node["name"])} of _bb_record_stream("{iter_name}", {iter_expr})) {{')
+    lines.append(f'{base_indent}{extra_indent}{for_keyword} (const {_safe(node["name"])} of _timed_iterate("{iter_name}", {iter_expr})) {{')
     loop_indent = base_indent + extra_indent + "    "
     for body_node in node["body"]:
         bk = body_node.get("kind", "")
@@ -1110,19 +1109,19 @@ def _emit_task_for_each_ts(node: dict, structs: dict, uses: list, has_platform_s
 
 def _emit_task_consume_ts(node: dict, structs: dict, base_indent: str) -> str:
     """Emit a consume or consume_call loop header (TypeScript).
-    Wraps the iterator with _bb_record_stream for flight recording."""
+    Wraps the iterator with _timed_iterate for flight recording."""
     kind = node.get("kind")
     if kind == "consume":
         stream_name = node["stream"].replace("$", "_arr")
-        return f'{base_indent}for (const {_safe(node["name"])} of _bb_record_stream("{stream_name}", {stream_name})) {{'
+        return f'{base_indent}for (const {_safe(node["name"])} of _timed_iterate("{stream_name}", {stream_name})) {{'
     call = node["call"]
     if call.get("kind") == "task_call":
         call_fn = make_task_call_fn_name(call)
         args = ", ".join(_coerce_task_arg(a, t, call) for a, t in
                          zip(call["args"], _task_call_param_types(call)))
-        return f'{base_indent}for (const {_safe(node["name"])} of _bb_record_stream("{call_fn}", {call_fn}({args}))) {{'
+        return f'{base_indent}for (const {_safe(node["name"])} of _timed_iterate("{call_fn}", {call_fn}({args}))) {{'
     iter_expr = _emit_expr(call, structs)
-    return f'{base_indent}for (const {_safe(node["name"])} of _bb_record_stream("stream", {iter_expr})) {{'
+    return f'{base_indent}for (const {_safe(node["name"])} of _timed_iterate("stream", {iter_expr})) {{'
 
 
 def _emit_task_var_decl_ts(node: dict, structs: dict, base_indent: str, extra_indent: str) -> str:
@@ -1222,7 +1221,7 @@ def _emit_task_body_node_ts(node, structs, uses, has_platform_streams, base_inde
                 if val.get("length"):
                     lines.append(f"{base_indent}{extra_indent}{tmp}.capacity = {_emit_expr(val['length'], structs)};")
                 for_kw = "for await" if has_platform_streams else "for"
-                lines.append(f"{base_indent}{extra_indent}{for_kw} (const _v of _bb_record_stream('{tmp}', {tmp})) {{")
+                lines.append(f"{base_indent}{extra_indent}{for_kw} (const _v of _timed_iterate('{tmp}', {tmp})) {{")
                 lines.append(f"{base_indent}{extra_indent}    {handler}(_v);")
                 lines.append(f"{base_indent}{extra_indent}}}")
                 return lines, extra_indent
@@ -1231,7 +1230,7 @@ def _emit_task_body_node_ts(node, structs, uses, has_platform_streams, base_inde
             arr_name = _emit_expr(val, structs)
             for_kw = "for await" if has_platform_streams else "for"
             lines = [
-                f"{base_indent}{extra_indent}{for_kw} (const _v of _bb_record_stream('{arr_name}', {arr_name})) {{",
+                f"{base_indent}{extra_indent}{for_kw} (const _v of _timed_iterate('{arr_name}', {arr_name})) {{",
                 f"{base_indent}{extra_indent}    {handler}(_v);",
                 f"{base_indent}{extra_indent}}}",
             ]

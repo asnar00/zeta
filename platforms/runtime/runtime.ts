@@ -76,6 +76,14 @@ function fn_exit_process(): void {
     setTimeout(() => process.exit(0), 500);
 }
 
+// @zero Call input$
+const input_arr: any[] = [];
+
+function _push_runtime_input(call: any): void {
+    input_arr.push(call);
+}
+
+
 // @zero on (string result) = rpc eval (string expr)
 function fn_rpc_eval__string(expr: string): string {
     return "error: rpc eval not implemented for TypeScript";

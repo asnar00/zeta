@@ -1,5 +1,3 @@
-from _runtime import register_tests
-
 # Platform implementation: blackbox (Python)
 # Thin OS primitives: elapsed time, timers, local key-value store.
 
@@ -1725,6 +1723,49 @@ def _get_ctx() -> '_Context':
     return _ctx_var.get()
 
 
+# timed stream iteration (sleeps dt between values)
+import time as _time
+def _timed_iterate(_name, _iter):
+    _dt = getattr(_iter, 'dt', 0)
+    for _v in _iter:
+        yield _v
+        if _dt and _dt > 0:
+            _time.sleep(_dt)
+
+import time as _stream_time
+class _Stream(list):
+    """A list that supports stream timing properties (dt, capacity, t0)."""
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        super().__setattr__('_timestamps', [])
+    def append(self, value):
+        super().append(value)
+        dt = getattr(self, 'dt', 0)
+        if not dt or dt == 0:
+            self._timestamps.append(_stream_time.time())
+        self._enforce_capacity()
+    def _enforce_capacity(self):
+        cap = getattr(self, 'capacity', 0)
+        if cap <= 0:
+            return
+        dt = getattr(self, 'dt', 0)
+        if dt and dt > 0:
+            max_items = int(cap / dt)
+            while len(self) > max_items:
+                self.pop(0)
+        elif self._timestamps:
+            newest = self._timestamps[-1]
+            while self._timestamps and newest - self._timestamps[0] > cap:
+                self.pop(0)
+                self._timestamps.pop(0)
+    def __setattr__(self, name, value):
+        super().__setattr__(name, value)
+        if name == 'capacity' and len(self) > 0 and not self._timestamps:
+            now = _stream_time.time()
+            self._timestamps.extend([now] * len(self))
+        if name in ('capacity', 'dt'):
+            self._enforce_capacity()
+
 from typing import NamedTuple
 
 class _ZeroRaise(Exception):
@@ -1732,38 +1773,6 @@ class _ZeroRaise(Exception):
         self.name = name
         self.args_list = args or []
         super().__init__(f"{name}({', '.join(str(a) for a in self.args_list)})")
-
-def test_rpc_0():
-    '''rpc eval ("port") => "8084"'''
-    _result = fn_rpc_eval__string("port")
-    _expected = "8084"
-    assert _result == _expected, f"expected {_expected}, got {_result}"
-
-def test_rpc_1():
-    '''rpc eval ("logo = hi") => "logo = hi"'''
-    _result = fn_rpc_eval__string("logo = hi")
-    _expected = "logo = hi"
-    assert _result == _expected, f"expected {_expected}, got {_result}"
-
-def test_rpc_2():
-    '''rpc eval ("not found ()") => "not found"'''
-    _result = fn_rpc_eval__string("not found ()")
-    _expected = "not found"
-    assert _result == _expected, f"expected {_expected}, got {_result}"
-
-def test_rpc_3():
-    '''rpc eval ("trim (\"  hello  \")") => "hello"'''
-    _result = fn_rpc_eval__string("trim (\"  hello  \")")
-    _expected = "hello"
-    assert _result == _expected, f"expected {_expected}, got {_result}"
-
-def test_rpc_4():
-    '''rpc eval ("length of (\"test\")") => "4"'''
-    _result = fn_rpc_eval__string("length of (\"test\")")
-    _expected = "4"
-    assert _result == _expected, f"expected {_expected}, got {_result}"
-
-register_tests('rpc', [(test_rpc_0, 'rpc eval ("port") => "8084"'), (test_rpc_1, 'rpc eval ("logo = hi") => "logo = hi"'), (test_rpc_2, 'rpc eval ("not found ()") => "not found"'), (test_rpc_3, 'rpc eval ("trim (\\"  hello  \\")") => "hello"'), (test_rpc_4, 'rpc eval ("length of (\\"test\\")") => "4"')])
 
 class Call(NamedTuple):
     name: str = ""
@@ -1789,3 +1798,17 @@ class Action(NamedTuple):
     name: str = ""
     args: str = ""
     result: str = ""
+
+# @zero on (string report$) <- report fault (string comment); blackbox.zero.md:463
+def task_report_fault__string(comment: str):
+    trace_arr = fn_snapshot(action_arr)
+    json = fn_serialise(trace_arr)
+    report = "{\"comment\":\"" + str(comment) + "\",\"trace\":" + str(json) + "}"
+
+# @zero on (string data) = get fault (string id); blackbox.zero.md:468
+def fn_get_fault__string(id: str) -> str:
+    data = fn_retrieve_locally__string("fault:" + id)
+    return data
+
+action_arr = _Stream([input_arr])
+action_arr.capacity = fn__number_seconds(60)

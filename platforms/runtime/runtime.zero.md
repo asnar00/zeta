@@ -14,7 +14,7 @@ A record of a function call from outside the system:
         string args = ""
         string result = ""
 
-The input stream — every call to an `input`-tagged function pushes a Call here:
+The input stream — every value entering through an `input`-tagged stream or task pushes a record here:
 
     Call input$
 

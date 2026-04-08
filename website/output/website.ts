@@ -9,11 +9,13 @@ import './landing_page.js';
 import * as landing_page from './landing_page.js';
 import './background.js';
 import * as background from './background.js';
+import './blackbox.js';
+import * as blackbox from './blackbox.js';
 import './test_blackbox.js';
 import * as test_blackbox from './test_blackbox.js';
 
 // Platform implementation: blackbox (TypeScript)
-// Implements the functions declared in blackbox.zero.md
+// Thin OS primitives: elapsed time, timers, local key-value store.
 
 const _recording_start: number = performance.now();
 const _timers: Map<string, ReturnType<typeof setInterval>> = new Map();
@@ -56,15 +58,14 @@ export function _remove_key(key: string): void {
 _load_store();
 
 
-export function _bb_record_stream(stream_name: string, iterator: any): any {
+// timed stream iteration — async generator with setTimeout for real-time playback
+export function _timed_iterate(stream_name: string, iterator: any): any {
     const dt = iterator?.dt ?? 0;
-    if (dt > 0 || (iterator && typeof iterator[Symbol.asyncIterator] === "function")) {
+    if (dt > 0) {
         return (async function* () {
             for (const value of iterator) {
                 yield value;
-                if (dt > 0) {
-                    await new Promise(resolve => setTimeout(resolve, dt * 1000));
-                }
+                await new Promise(resolve => setTimeout(resolve, dt * 1000));
             }
         })();
     }
@@ -73,12 +74,6 @@ export function _bb_record_stream(stream_name: string, iterator: any): any {
             yield value;
         }
     })();
-}
-
-
-export function _bb_record_call(fn_name: string, result: any): any {
-    // record the return value of a non-deterministic call (placeholder)
-    return result;
 }
 
 
@@ -151,40 +146,6 @@ export function fn_stored_keys__string(prefix: string): string {
 export function fn_remove_locally__string(key: string): void {
     _store.delete(key);
     _remove_key(key);
-}
-
-
-// @zero on (string fp) = build fingerprint ()
-export function fn_build_fingerprint(): string {
-    return JSON.stringify((globalThis as any)._BUILD_FINGERPRINT ?? {});
-}
-
-
-// @zero on upload pending faults ()
-export function fn_upload_pending_faults(): void {
-    // client-side implementation is in blackbox.client.js
-}
-
-
-// @zero on (string fault) = report fault (string comment)
-export function fn_report_fault__string(comment: string): string {
-    // server-side stub — real implementation is in blackbox.py
-    // client-side implementation is in blackbox.client.js
-    return "";
-}
-
-
-// @zero on (string result) = get fault (string fault-id)
-export function fn_get_fault__string(fault_id: string): string {
-    // server-side stub — real implementation is in blackbox.py
-    return "";
-}
-
-
-// @zero on (string buffer) = freeze buffer (string fault-id)
-export function fn_freeze_buffer__string(fault_id: string): string {
-    // server-side stub — real implementation is in blackbox.client.js
-    return "{}";
 }
 
 
@@ -425,6 +386,14 @@ export function fn_set_session__string(token: string): void {
 export function fn_exit_process(): void {
     setTimeout(() => process.exit(0), 500);
 }
+
+// @zero Call input$
+const input_arr: any[] = [];
+
+export function _push_runtime_input(call: any): void {
+    input_arr.push(call);
+}
+
 
 // @zero on (string result) = rpc eval (string expr)
 export function fn_rpc_eval__string(expr: string): string {
@@ -1073,27 +1042,20 @@ export function test_website_54(): void {
 }
 
 export function test_website_55(): void {
-    // length of (report fault ("test")) => 8
-    const _result = fn_length_of__string(fn_report_fault__string("test"));
-    const _expected = 8;
-    if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
-}
-
-export function test_website_56(): void {
     // handle request (Http-Request(path="/")) => "ᕦ(ツ)ᕤ"
     const _result = fn_handle_request__Http_Request(Http_Request({ path: "/" }));
     const _expected = "ᕦ(ツ)ᕤ";
     if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
 }
 
-export function test_website_57(): void {
+export function test_website_56(): void {
     // handle request (Http-Request(path="/nope")) => "ᕦ(ツ)ᕤ"
     const _result = fn_handle_request__Http_Request(Http_Request({ path: "/nope" }));
     const _expected = "ᕦ(ツ)ᕤ";
     if (_result !== _expected) throw new Error(`expected ${_expected}, got ${_result}`);
 }
 
-register_tests('website', [[test_website_0, '(1) seconds => 1'], [test_website_1, '(0.5) seconds => 0.5'], [test_website_2, '(1000) ms => 1'], [test_website_3, '(500) ms => 0.5'], [test_website_4, '(1) hz => 1'], [test_website_5, '(10) hz => 0.1'], [test_website_6, '(60) bpm => 1'], [test_website_7, '(120) bpm => 0.5'], [test_website_8, 'trim ("  hello  ") => "hello"'], [test_website_9, 'trim ("already") => "already"'], [test_website_10, 'char (0) of ("hello") => "h"'], [test_website_11, 'char (4) of ("hello") => "o"'], [test_website_12, '("hello world") starts with ("hello") => true'], [test_website_13, '("hello world") starts with ("world") => false'], [test_website_14, '("hello world") contains ("world") => true'], [test_website_15, '("hello world") contains ("xyz") => false'], [test_website_16, '("hello") contains ("hello") => true'], [test_website_17, '("hello") contains ("") => true'], [test_website_18, 'split ("a/b/c") by ("/") => ["a", "b", "c"]'], [test_website_19, 'split ("hello") by ("/") => ["hello"]'], [test_website_20, 'length of ("hello") => 5'], [test_website_21, 'length of ("") => 0'], [test_website_22, 'replace ("world") in ("hello world") with ("zero") => "hello zero"'], [test_website_23, 'substring of ("hello world") from (6) => "world"'], [test_website_24, 'substring of ("abc") from (0) => "abc"'], [test_website_25, 'to int ("42") => 42'], [test_website_26, 'to int ("0") => 0'], [test_website_27, 'trim ("") => ""'], [test_website_28, 'trim ("  ") => ""'], [test_website_29, 'trim ("no spaces") => "no spaces"'], [test_website_30, 'trim ("  leading") => "leading"'], [test_website_31, 'trim ("trailing  ") => "trailing"'], [test_website_32, 'char (0) of ("a") => "a"'], [test_website_33, 'char (2) of ("abcde") => "c"'], [test_website_34, '("") starts with ("") => true'], [test_website_35, '("hello") starts with ("") => true'], [test_website_36, '("") starts with ("x") => false'], [test_website_37, '("abc") starts with ("abc") => true'], [test_website_38, '("abc") starts with ("abcd") => false'], [test_website_39, 'split ("one") by (",") => ["one"]'], [test_website_40, 'split ("a,b") by (",") => ["a", "b"]'], [test_website_41, 'split ("a,,b") by (",") => ["a", "", "b"]'], [test_website_42, 'length of ("") => 0'], [test_website_43, 'length of ("a") => 1'], [test_website_44, 'length of ("hello world") => 11'], [test_website_45, 'substring of ("hello") from (0) => "hello"'], [test_website_46, 'substring of ("hello") from (3) => "lo"'], [test_website_47, 'substring of ("hello") from (5) => ""'], [test_website_48, 'replace ("a") in ("aaa") with ("b") => "bbb"'], [test_website_49, 'replace ("xy") in ("no match") with ("z") => "no match"'], [test_website_50, 'replace ("") in ("hello") with ("x") => "xhxexlxlxox"'], [test_website_51, 'length of (random digits (1)) => 1'], [test_website_52, 'length of (random digits (4)) => 4'], [test_website_53, 'length of (random digits (10)) => 10'], [test_website_54, 'length of (create session ("test")) => 8'], [test_website_55, 'length of (report fault ("test")) => 8'], [test_website_56, 'handle request (Http-Request(path="/")) => "ᕦ(ツ)ᕤ"'], [test_website_57, 'handle request (Http-Request(path="/nope")) => "ᕦ(ツ)ᕤ"']]);
+register_tests('website', [[test_website_0, '(1) seconds => 1'], [test_website_1, '(0.5) seconds => 0.5'], [test_website_2, '(1000) ms => 1'], [test_website_3, '(500) ms => 0.5'], [test_website_4, '(1) hz => 1'], [test_website_5, '(10) hz => 0.1'], [test_website_6, '(60) bpm => 1'], [test_website_7, '(120) bpm => 0.5'], [test_website_8, 'trim ("  hello  ") => "hello"'], [test_website_9, 'trim ("already") => "already"'], [test_website_10, 'char (0) of ("hello") => "h"'], [test_website_11, 'char (4) of ("hello") => "o"'], [test_website_12, '("hello world") starts with ("hello") => true'], [test_website_13, '("hello world") starts with ("world") => false'], [test_website_14, '("hello world") contains ("world") => true'], [test_website_15, '("hello world") contains ("xyz") => false'], [test_website_16, '("hello") contains ("hello") => true'], [test_website_17, '("hello") contains ("") => true'], [test_website_18, 'split ("a/b/c") by ("/") => ["a", "b", "c"]'], [test_website_19, 'split ("hello") by ("/") => ["hello"]'], [test_website_20, 'length of ("hello") => 5'], [test_website_21, 'length of ("") => 0'], [test_website_22, 'replace ("world") in ("hello world") with ("zero") => "hello zero"'], [test_website_23, 'substring of ("hello world") from (6) => "world"'], [test_website_24, 'substring of ("abc") from (0) => "abc"'], [test_website_25, 'to int ("42") => 42'], [test_website_26, 'to int ("0") => 0'], [test_website_27, 'trim ("") => ""'], [test_website_28, 'trim ("  ") => ""'], [test_website_29, 'trim ("no spaces") => "no spaces"'], [test_website_30, 'trim ("  leading") => "leading"'], [test_website_31, 'trim ("trailing  ") => "trailing"'], [test_website_32, 'char (0) of ("a") => "a"'], [test_website_33, 'char (2) of ("abcde") => "c"'], [test_website_34, '("") starts with ("") => true'], [test_website_35, '("hello") starts with ("") => true'], [test_website_36, '("") starts with ("x") => false'], [test_website_37, '("abc") starts with ("abc") => true'], [test_website_38, '("abc") starts with ("abcd") => false'], [test_website_39, 'split ("one") by (",") => ["one"]'], [test_website_40, 'split ("a,b") by (",") => ["a", "b"]'], [test_website_41, 'split ("a,,b") by (",") => ["a", "", "b"]'], [test_website_42, 'length of ("") => 0'], [test_website_43, 'length of ("a") => 1'], [test_website_44, 'length of ("hello world") => 11'], [test_website_45, 'substring of ("hello") from (0) => "hello"'], [test_website_46, 'substring of ("hello") from (3) => "lo"'], [test_website_47, 'substring of ("hello") from (5) => ""'], [test_website_48, 'replace ("a") in ("aaa") with ("b") => "bbb"'], [test_website_49, 'replace ("xy") in ("no match") with ("z") => "no match"'], [test_website_50, 'replace ("") in ("hello") with ("x") => "xhxexlxlxox"'], [test_website_51, 'length of (random digits (1)) => 1'], [test_website_52, 'length of (random digits (4)) => 4'], [test_website_53, 'length of (random digits (10)) => 10'], [test_website_54, 'length of (create session ("test")) => 8'], [test_website_55, 'handle request (Http-Request(path="/")) => "ᕦ(ツ)ᕤ"'], [test_website_56, 'handle request (Http-Request(path="/nope")) => "ᕦ(ツ)ᕤ"']]);
 
 const port: number = 8084;
 const logo: string = "ᕦ(ツ)ᕤ";
@@ -1137,18 +1099,29 @@ export function User(args: Partial<User> = {}): User {
     return { name: args.name ?? "", phone: args.phone ?? "", role: args.role ?? "" };
 }
 
-// @zero on main (string args$); website/website.zero.md:372
+interface Action {
+    readonly source: string;
+    readonly name: string;
+    readonly args: string;
+    readonly result: string;
+}
+
+export function Action(args: Partial<Action> = {}): Action {
+    return { source: args.source ?? "", name: args.name ?? "", args: args.args ?? "", result: args.result ?? "" };
+}
+
+// @zero on main (string args$); website/website.zero.md:358
 export async function task_main__string(args_arr: readonly string[]): Promise<void> {
     _push_terminal_out(logo);
     const request_arr: any = task_serve_http__int(port);
-    for await (const request of _bb_record_stream("request$", request_arr)) {
+    for await (const request of _timed_iterate("request$", request_arr)) {
         _push_terminal_out(request.path);
         const body = fn_handle_request__Http_Request(request);
         _push_http_response(Http_Response({ request: request, body: body }));
     }
 }
 
-// @zero on (string body) = handle request (Http-Request request); website/website.zero.md:380
+// @zero on (string body) = handle request (Http-Request request); website/website.zero.md:366
 export function fn_handle_request__Http_Request(request: Http_Request): string {
     let body: string = undefined!;
     if (_get_ctx().landing_page.enabled && request.path == "/") {
@@ -1166,9 +1139,15 @@ export function fn_handle_request__Http_Request(request: Http_Request): string {
     return body;
 }
 
-// @zero on stop; website/website.zero.md:388
+// @zero on stop; website/website.zero.md:374
 export function fn_stop(): void {
     fn_print__string("stopping");
+}
+
+// @zero on (Action a) = (Action) <- (Call); website/website.zero.md:460
+export function fn__Action_from__Call(c: Call): Action {
+    const a: Action = Action({ source: c.name, name: c.name, args: c.args, result: c.result });
+    return a;
 }
 
 
@@ -1194,6 +1173,6 @@ try {
 }
 }
 
-const _FEATURE_TREE: [string, string, string | null][] = [["website", "the nøøb website", null], ["not-found", "default 404 response", "website"], ["login", "SMS code authentication", "website"], ["rpc", "RPC endpoint for runtime evaluation", "website"], ["landing-page", "serves the noob landing page at root", "website"], ["background", "per-user background colour", "landing-page"], ["test-blackbox", "integration tests for the flight recorder", "website"]];
+const _FEATURE_TREE: [string, string, string | null][] = [["website", "the nøøb website", null], ["not-found", "default 404 response", "website"], ["login", "SMS code authentication", "website"], ["rpc", "RPC endpoint for runtime evaluation", "website"], ["landing-page", "serves the noob landing page at root", "website"], ["background", "per-user background colour", "landing-page"], ["blackbox", "flight recorder for fault diagnosis", "website"], ["test-blackbox", "integration tests for the flight recorder", "blackbox"]];
 
-const _BUILD_FINGERPRINT: {hash: string, git: string, features: string} = {"hash": "d509d44ae671a143", "git": "938cf45260af", "features": "website,not-found,login,rpc,landing-page,background,test-blackbox"};
+const _BUILD_FINGERPRINT: {hash: string, git: string, features: string} = {"hash": "9d88b6917d378695", "git": "28d6142571a7", "features": "website,not-found,login,rpc,landing-page,background,blackbox,test-blackbox"};

@@ -1,5 +1,5 @@
 // Platform implementation: blackbox (TypeScript)
-// Implements the functions declared in blackbox.zero.md
+// Thin OS primitives: elapsed time, timers, local key-value store.
 
 const _recording_start: number = performance.now();
 const _timers: Map<string, ReturnType<typeof setInterval>> = new Map();
@@ -42,15 +42,14 @@ function _remove_key(key: string): void {
 _load_store();
 
 
-function _bb_record_stream(stream_name: string, iterator: any): any {
+// timed stream iteration — async generator with setTimeout for real-time playback
+function _timed_iterate(stream_name: string, iterator: any): any {
     const dt = iterator?.dt ?? 0;
-    if (dt > 0 || (iterator && typeof iterator[Symbol.asyncIterator] === "function")) {
+    if (dt > 0) {
         return (async function* () {
             for (const value of iterator) {
                 yield value;
-                if (dt > 0) {
-                    await new Promise(resolve => setTimeout(resolve, dt * 1000));
-                }
+                await new Promise(resolve => setTimeout(resolve, dt * 1000));
             }
         })();
     }
@@ -59,12 +58,6 @@ function _bb_record_stream(stream_name: string, iterator: any): any {
             yield value;
         }
     })();
-}
-
-
-function _bb_record_call(fn_name: string, result: any): any {
-    // record the return value of a non-deterministic call (placeholder)
-    return result;
 }
 
 
@@ -137,38 +130,4 @@ function fn_stored_keys__string(prefix: string): string {
 function fn_remove_locally__string(key: string): void {
     _store.delete(key);
     _remove_key(key);
-}
-
-
-// @zero on (string fp) = build fingerprint ()
-function fn_build_fingerprint(): string {
-    return JSON.stringify((globalThis as any)._BUILD_FINGERPRINT ?? {});
-}
-
-
-// @zero on upload pending faults ()
-function fn_upload_pending_faults(): void {
-    // client-side implementation is in blackbox.client.js
-}
-
-
-// @zero on (string fault) = report fault (string comment)
-function fn_report_fault__string(comment: string): string {
-    // server-side stub — real implementation is in blackbox.py
-    // client-side implementation is in blackbox.client.js
-    return "";
-}
-
-
-// @zero on (string result) = get fault (string fault-id)
-function fn_get_fault__string(fault_id: string): string {
-    // server-side stub — real implementation is in blackbox.py
-    return "";
-}
-
-
-// @zero on (string buffer) = freeze buffer (string fault-id)
-function fn_freeze_buffer__string(fault_id: string): string {
-    // server-side stub — real implementation is in blackbox.client.js
-    return "{}";
 }

@@ -4,4 +4,5 @@ login
 rpc
 landing-page
 background
+blackbox
 test-blackbox
