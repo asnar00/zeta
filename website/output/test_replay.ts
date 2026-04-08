@@ -1,5 +1,5 @@
-import * as blackbox from './blackbox.js';
 import * as test_blackbox from './test_blackbox.js';
+import * as blackbox from './blackbox.js';
 
 // Platform implementation: blackbox (TypeScript)
 // Thin OS primitives: elapsed time, timers, local key-value store.

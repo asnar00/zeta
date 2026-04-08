@@ -676,11 +676,27 @@ def fn_features() -> str:
 # @zero Call input$
 # The input stream — receives a Call for every input-tagged function call.
 input_arr = []
+_input_subscribers = globals().get('_input_subscribers', [])
 
 
 def _push_runtime_input(call):
-    """Push a Call into the input$ stream."""
+    """Push a Call into the input$ stream and notify subscribers."""
     input_arr.append(call)
+    for sub in _input_subscribers:
+        sub(call)
+
+
+def _subscribe_to_input(callback):
+    """Register a callback to receive each new Call pushed to input$.
+    Registers on __main__'s subscriber list for cross-module support."""
+    import sys
+    main = sys.modules.get('__main__')
+    if main:
+        if not hasattr(main, '_input_subscribers'):
+            main._input_subscribers = []
+        main._input_subscribers.append(callback)
+    else:
+        _input_subscribers.append(callback)
 
 
 # @zero on (string result) = rpc eval (string expr)

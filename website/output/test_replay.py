@@ -1,5 +1,5 @@
-import blackbox
 import test_blackbox
+import blackbox
 
 # Platform implementation: blackbox (Python)
 # Thin OS primitives: elapsed time, timers, local key-value store.
@@ -145,21 +145,9 @@ def fn_remove_locally__string(key: str):
     _save_store()
 
 
-def _inject_to_action_arr(name, args, result):
-    """Push an Action into the blackbox action$ buffer."""
-    import sys
-    bb = sys.modules.get('blackbox')
-    if bb is None:
-        return
-    Action = getattr(bb, 'Action', None)
-    action_arr = getattr(bb, 'action_arr', None)
-    if Action and action_arr is not None:
-        action_arr.append(Action(source=name, name=name, args=args, result=result))
-
-
 # @zero on inject call (string name) with (string args) result (string result)
 def fn_inject_call__string_with__string_result__string(name: str, args: str, result: str):
-    """Inject a Call into the runtime input$ stream and action$ buffer."""
+    """Inject a Call into the runtime input$ stream (flows to action$ via live pipe)."""
     import sys
     main = sys.modules.get('__main__')
     if main is None:
@@ -168,8 +156,6 @@ def fn_inject_call__string_with__string_result__string(name: str, args: str, res
     push = getattr(main, '_push_runtime_input', None)
     if Call and push:
         push(Call(name=name, args=args, result=result))
-    # also push to action$ buffer (workaround: action$ <- input$ piping is init-time only)
-    _inject_to_action_arr(name, args, result)
 
 
 # @zero on replay with timing [Action actions$]
@@ -193,7 +179,6 @@ def fn_replay_with_timing(actions):
         args = action.get('args', '') if isinstance(action, dict) else getattr(action, 'args', '')
         result = action.get('result', '') if isinstance(action, dict) else getattr(action, 'result', '')
         push(Call(name=name, args=args, result=result))
-        _inject_to_action_arr(name, args, result)
 
 
 # Platform implementation: eval (Python)
@@ -1240,11 +1225,27 @@ def fn_features() -> str:
 # @zero Call input$
 # The input stream — receives a Call for every input-tagged function call.
 input_arr = []
+_input_subscribers = globals().get('_input_subscribers', [])
 
 
 def _push_runtime_input(call):
-    """Push a Call into the input$ stream."""
+    """Push a Call into the input$ stream and notify subscribers."""
     input_arr.append(call)
+    for sub in _input_subscribers:
+        sub(call)
+
+
+def _subscribe_to_input(callback):
+    """Register a callback to receive each new Call pushed to input$.
+    Registers on __main__'s subscriber list for cross-module support."""
+    import sys
+    main = sys.modules.get('__main__')
+    if main:
+        if not hasattr(main, '_input_subscribers'):
+            main._input_subscribers = []
+        main._input_subscribers.append(callback)
+    else:
+        _input_subscribers.append(callback)
 
 
 # @zero on (string result) = rpc eval (string expr)

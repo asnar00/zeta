@@ -658,6 +658,12 @@ def _emit_dict_array_variable(name: str, type_ann: str, val: dict) -> str | None
     kind = val.get("kind")
     if kind == "stream":
         steps = val.get("steps", [])
+        # single name step pointing to another stream: live subscription
+        if len(steps) == 1 and val.get("terminate") is None:
+            step = steps[0]
+            if isinstance(step, dict) and step.get("kind") == "name" and step.get("value", "").endswith("$"):
+                source = _emit_expr(step)
+                return f"{name} = _Stream()\n_subscribe_to_input(lambda v: {name}.append(v))"
         # single fn_call step with no terminator: just call the function
         if len(steps) == 1 and val.get("terminate") is None:
             step = steps[0]
